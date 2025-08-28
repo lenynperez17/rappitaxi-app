@@ -1,0 +1,89 @@
+{
+  "name": "rappitaxi-testing-suite",
+  "version": "1.0.0",
+  "description": "Suite completa de testing para la aplicación RappiTaxi - Incluye tests de API REST, WebSockets, base de datos, carga y rendimiento",
+  "main": "master_test_runner.js",
+  "scripts": {
+    "test": "node master_test_runner.js",
+    "test:all": "node master_test_runner.js",
+    "test:api": "bash test_all_endpoints.sh",
+    "test:websockets": "node test_websockets.js",
+    "test:database": "node test_database_integrity.js",
+    "test:performance": "node test_load_performance.js",
+    "install-deps": "npm install",
+    "setup": "npm install && chmod +x *.sh",
+    "clean": "rm -rf ../docs/test_results/*"
+  },
+  "keywords": [
+    "rappitaxi",
+    "testing",
+    "api",
+    "websockets",
+    "database",
+    "performance",
+    "load-testing",
+    "ride-hailing",
+    "taxi-app"
+  ],
+  "author": "RappiTaxi Development Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "socket.io-client": "^4.7.4",
+    "firebase-admin": "^11.11.1",
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rappitaxi/app.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rappitaxi/app/issues"
+  },
+  "homepage": "https://github.com/rappitaxi/app#readme",
+  "config": {
+    "test_server_url": "http://localhost:3000",
+    "test_duration": "60000",
+    "max_concurrent_users": "100",
+    "timeout": "30000"
+  },
+  "testing": {
+    "environments": {
+      "development": {
+        "server_url": "http://localhost:3000",
+        "database": "rappitaxi-dev",
+        "firebase_project": "rappitaxi-dev"
+      },
+      "staging": {
+        "server_url": "https://staging-api.rappitaxi.com",
+        "database": "rappitaxi-staging",
+        "firebase_project": "rappitaxi-staging"
+      },
+      "production": {
+        "server_url": "https://api.rappitaxi.com",
+        "database": "rappitaxi-prod",
+        "firebase_project": "rappitaxi-prod"
+      }
+    },
+    "thresholds": {
+      "api_response_time": 2000,
+      "websocket_connection_time": 5000,
+      "database_operation_time": 1000,
+      "success_rate_minimum": 95,
+      "critical_success_rate_minimum": 100
+    },
+    "load_testing": {
+      "ramp_up_users": 100,
+      "sustained_load_users": 50,
+      "spike_test_users": 200,
+      "test_duration_seconds": 300
+    }
+  }
+}

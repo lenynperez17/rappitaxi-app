@@ -1,0 +1,469 @@
+// OASIS TAXI - Firestore Security Rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserId() {
+      return request.auth.uid;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && getUserId() == userId;
+    }
+    
+    function hasRole(role) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(getUserId())) &&
+             get(/databases/$(database)/documents/users/$(getUserId())).data.role == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isDriver() {
+      return hasRole('driver');
+    }
+    
+    function isPassenger() {
+      return hasRole('passenger');
+    }
+    
+    function isDriverOrPassenger() {
+      return isDriver() || isPassenger();
+    }
+    
+    function isActiveUser() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(getUserId())) &&
+             get(/databases/$(database)/documents/users/$(getUserId())).data.isActive == true;
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches('.*@.*\\..*');
+    }
+    
+    function isValidPhoneNumber(phone) {
+      return phone is string && phone.matches('\\+[1-9]\\d{10,14}');
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (
+        isOwner(userId) || 
+        isAdmin() || 
+        (isDriverOrPassenger() && resource.data.isActive == true)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isOwner(userId) &&
+                   isValidEmail(resource.data.email) &&
+                   isValidPhoneNumber(resource.data.phoneNumber) &&
+                   resource.data.role in ['passenger', 'driver'] &&
+                   resource.data.isActive == true &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && 
+         !('role' in resource.data.diff(request.resource.data).affectedKeys()) &&
+         !('isActive' in resource.data.diff(request.resource.data).affectedKeys()) &&
+         request.resource.data.updatedAt == request.time) ||
+        (isAdmin() && request.resource.data.updatedAt == request.time)
+      );
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Rides collection
+    match /rides/{rideId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.passengerId) ||
+        isOwner(resource.data.driverId) ||
+        (isDriver() && resource.data.status == 'searching')
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isPassenger() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.passengerId) &&
+                   resource.data.status == 'searching' &&
+                   resource.data.createdAt == request.time &&
+                   resource.data.pickup.lat is number &&
+                   resource.data.pickup.lng is number &&
+                   resource.data.destination.lat is number &&
+                   resource.data.destination.lng is number;
+      
+      allow update: if isAuthenticated() && isActiveUser() && (
+        (isOwner(resource.data.passengerId) && 
+         resource.data.status in ['searching', 'assigned'] &&
+         request.resource.data.status == 'cancelled_by_passenger') ||
+        (isOwner(resource.data.driverId) && 
+         resource.data.status in ['assigned', 'driver_arrived', 'in_progress'] &&
+         request.resource.data.status in ['cancelled_by_driver', 'driver_arrived', 'in_progress', 'completed']) ||
+        (isDriver() && 
+         resource.data.status == 'searching' &&
+         request.resource.data.status == 'assigned' &&
+         request.resource.data.driverId == getUserId()) ||
+        isAdmin()
+      ) && request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Payments collection
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.userId)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isActiveUser() &&
+                   isOwner(resource.data.userId) &&
+                   resource.data.amount > 0 &&
+                   resource.data.currency == 'ARS' &&
+                   resource.data.method in ['card', 'cash', 'wallet'] &&
+                   resource.data.status == 'pending' &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        (isOwner(resource.data.userId) && resource.data.status == 'pending') ||
+        isAdmin()
+      ) && request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && 
+                 isOwner(resource.data.userId);
+      
+      allow create: if false; // Only backend can create notifications
+      
+      allow update: if isAuthenticated() && 
+                   isOwner(resource.data.userId) &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        isAdmin()
+      );
+    }
+    
+    // Chat messages collection
+    match /chat_messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.senderId) ||
+        isOwner(resource.data.receiverId) ||
+        isAdmin()
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isActiveUser() &&
+                   isOwner(resource.data.senderId) &&
+                   resource.data.type in ['text', 'image', 'audio', 'location'] &&
+                   resource.data.createdAt == request.time &&
+                   exists(/databases/$(database)/documents/rides/$(resource.data.rideId)) &&
+                   (isOwner(get(/databases/$(database)/documents/rides/$(resource.data.rideId)).data.passengerId) ||
+                    isOwner(get(/databases/$(database)/documents/rides/$(resource.data.rideId)).data.driverId));
+      
+      allow update: if isAuthenticated() && 
+                   isOwner(resource.data.senderId) &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.senderId) ||
+        isAdmin()
+      );
+    }
+    
+    // Driver profiles collection
+    match /driver_profiles/{driverId} {
+      allow read: if isAuthenticated() && (
+        isOwner(driverId) ||
+        isAdmin() ||
+        (isPassenger() && resource.data.isActive == true)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isDriver() &&
+                   isOwner(driverId) &&
+                   resource.data.isActive == true &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        (isOwner(driverId) && 
+         !('isActive' in resource.data.diff(request.resource.data).affectedKeys())) ||
+        isAdmin()
+      ) && request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Driver locations collection (real-time)
+    match /driver_locations/{driverId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        (isPassenger() && 
+         exists(/databases/$(database)/documents/rides) &&
+         exists(/databases/$(database)/documents/rides/{rideId}) &&
+         get(/databases/$(database)/documents/rides/{rideId}).data.driverId == driverId &&
+         get(/databases/$(database)/documents/rides/{rideId}).data.passengerId == getUserId())
+      );
+      
+      allow write: if isAuthenticated() && 
+                  isDriver() &&
+                  isActiveUser() &&
+                  isOwner(driverId) &&
+                  resource.data.lat is number &&
+                  resource.data.lng is number &&
+                  resource.data.updatedAt == request.time;
+    }
+    
+    // Vehicle information
+    match /vehicles/{vehicleId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.driverId) ||
+        (isPassenger() && 
+         exists(/databases/$(database)/documents/rides) &&
+         resource.data.driverId in get(/databases/$(database)/documents/rides).data.driverId)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isDriver() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.driverId) &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.driverId) ||
+        isAdmin()
+      ) && request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAdmin();
+    }
+    
+    // User preferences
+    match /user_preferences/{userId} {
+      allow read, write: if isAuthenticated() && 
+                        isOwner(userId);
+    }
+    
+    // User notification preferences
+    match /user_notification_preferences/{userId} {
+      allow read, write: if isAuthenticated() && 
+                        isOwner(userId);
+    }
+    
+    // User device tokens (for push notifications)
+    match /user_device_tokens/{userId} {
+      allow read, write: if isAuthenticated() && 
+                        isOwner(userId);
+    }
+    
+    // User topic subscriptions
+    match /user_topic_subscriptions/{userId} {
+      allow read, write: if isAuthenticated() && 
+                        isOwner(userId);
+    }
+    
+    // Rating and reviews
+    match /ratings/{ratingId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.userId) ||
+        isOwner(resource.data.driverId)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isPassenger() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.userId) &&
+                   resource.data.rating >= 1 &&
+                   resource.data.rating <= 5 &&
+                   resource.data.createdAt == request.time &&
+                   exists(/databases/$(database)/documents/rides/$(resource.data.rideId)) &&
+                   get(/databases/$(database)/documents/rides/$(resource.data.rideId)).data.status == 'completed';
+      
+      allow update: if isAuthenticated() && 
+                   isOwner(resource.data.userId) &&
+                   request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Analytics collections (read-only for users, write-only for backend)
+    match /daily_analytics/{date} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write
+    }
+    
+    match /user_analytics/{userId} {
+      allow read: if isAuthenticated() && (
+        isOwner(userId) ||
+        isAdmin()
+      );
+      allow write: if false; // Only backend can write
+    }
+    
+    match /driver_analytics/{driverId} {
+      allow read: if isAuthenticated() && (
+        isOwner(driverId) ||
+        isAdmin()
+      );
+      allow write: if false; // Only backend can write
+    }
+    
+    // Driver earnings
+    match /driver_earnings/{driverId} {
+      allow read: if isAuthenticated() && (
+        isOwner(driverId) ||
+        isAdmin()
+      );
+      allow write: if false; // Only backend can write
+    }
+    
+    // Driver payouts
+    match /driver_payouts/{payoutId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.driverId) ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && 
+                   isDriver() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.driverId) &&
+                   resource.data.amount > 0 &&
+                   resource.data.status == 'pending' &&
+                   resource.data.createdAt == request.time;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Promotions (read-only for users)
+    match /promotions/{promotionId} {
+      allow read: if isAuthenticated() && isActiveUser();
+      allow write: if isAdmin();
+    }
+    
+    // Support tickets
+    match /support_tickets/{ticketId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        isAdmin()
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isActiveUser() &&
+                   isOwner(resource.data.userId) &&
+                   resource.data.status == 'open' &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        (isOwner(resource.data.userId) && 
+         resource.data.status == 'open' &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messages', 'updatedAt'])) ||
+        isAdmin()
+      );
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Shifts (driver schedules)
+    match /shifts/{shiftId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.driverId)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isDriver() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.driverId) &&
+                   resource.data.status == 'scheduled' &&
+                   resource.data.startTime is timestamp &&
+                   resource.data.endTime is timestamp &&
+                   resource.data.startTime < resource.data.endTime &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        (isOwner(resource.data.driverId) && 
+         resource.data.status in ['scheduled', 'active'] &&
+         request.resource.data.status in ['scheduled', 'active', 'completed', 'cancelled']) ||
+        isAdmin()
+      ) && request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isAuthenticated() && (
+        (isOwner(resource.data.driverId) && resource.data.status == 'scheduled') ||
+        isAdmin()
+      );
+    }
+    
+    // Shift templates (recurring schedules)
+    match /shift_templates/{templateId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isOwner(resource.data.driverId)
+      );
+      
+      allow create: if isAuthenticated() && 
+                   isDriver() &&
+                   isActiveUser() &&
+                   isOwner(resource.data.driverId) &&
+                   resource.data.isActive == true &&
+                   resource.data.createdAt == request.time;
+      
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.driverId) ||
+        isAdmin()
+      );
+      
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.driverId) ||
+        isAdmin()
+      );
+    }
+
+    // System configuration (admin only)
+    match /system_config/{configId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Archived data (admin only)
+    match /archived_payments/{paymentId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write
+    }
+    
+    match /archived_rides/{rideId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write
+    }
+    
+    // Payment reconciliation (admin only)
+    match /payment_reconciliation/{date} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write
+    }
+    
+    // User notification stats (cache)
+    match /user_notification_stats/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if false; // Only backend can write
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

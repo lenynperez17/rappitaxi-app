@@ -1,0 +1,321 @@
+name: CI - Continuous Integration
+
+on:
+  push:
+    branches: [ main, master, development ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.16.0'
+  NODE_VERSION: '20.x'
+  JAVA_VERSION: '17'
+
+jobs:
+  # Análisis de código
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        
+    - name: Analyze Backend Code
+      working-directory: backend
+      run: |
+        npm ci
+        npm run lint || true
+        
+    - name: Analyze Flutter Code  
+      working-directory: app
+      run: |
+        flutter pub get
+        dart analyze --no-fatal-infos
+        dart format lib --set-exit-if-changed --output=none || true
+
+  # Tests del Backend
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      firebase:
+        image: andreysenov/firebase-tools:latest
+        options: >-
+          --health-cmd "firebase --version"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Cache Node modules
+      uses: actions/cache@v3
+      with:
+        path: backend/node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('backend/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+          
+    - name: Install dependencies
+      working-directory: backend
+      run: npm ci
+      
+    - name: Build Backend
+      working-directory: backend
+      run: npm run build
+      
+    - name: Run Backend Tests
+      working-directory: backend
+      run: npm test
+      env:
+        NODE_ENV: test
+        FIREBASE_PROJECT_ID: test-project
+        
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        directory: backend/coverage
+        flags: backend
+        
+  # Tests de Flutter
+  flutter-tests:
+    name: Flutter Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          app/.dart_tool
+          app/.pub-cache
+        key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-flutter-
+          
+    - name: Install dependencies
+      working-directory: app
+      run: flutter pub get
+      
+    - name: Run code generation
+      working-directory: app
+      run: |
+        flutter pub run build_runner build --delete-conflicting-outputs || true
+        
+    - name: Run Flutter Tests
+      working-directory: app
+      run: flutter test --coverage
+      
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        directory: app/coverage
+        flags: flutter
+
+  # Build Android
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: [code-quality, flutter-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: ${{ env.JAVA_VERSION }}
+        
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          app/.dart_tool
+          app/.pub-cache
+        key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+        
+    - name: Create .env file
+      working-directory: app
+      run: |
+        echo "NODE_ENV=production" > .env
+        echo "API_BASE_URL=https://api.rappitaxi.com" >> .env
+        echo "MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }}" >> .env
+        echo "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}" >> .env
+        
+    - name: Build APK
+      working-directory: app
+      run: |
+        flutter pub get
+        flutter build apk --release --split-per-abi
+        
+    - name: Upload APK artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: android-apk-${{ github.sha }}
+        path: app/build/app/outputs/flutter-apk/*.apk
+        retention-days: 7
+        
+    - name: Build App Bundle
+      working-directory: app
+      run: flutter build appbundle --release
+      
+    - name: Upload AAB artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: android-aab-${{ github.sha }}
+        path: app/build/app/outputs/bundle/release/app-release.aab
+        retention-days: 7
+
+  # Build iOS (requiere macOS runner)
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    needs: [code-quality, flutter-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          app/.dart_tool
+          app/.pub-cache
+        key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+        
+    - name: Create .env file
+      working-directory: app
+      run: |
+        echo "NODE_ENV=production" > .env
+        echo "API_BASE_URL=https://api.rappitaxi.com" >> .env
+        echo "MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }}" >> .env
+        echo "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}" >> .env
+        
+    - name: Install dependencies
+      working-directory: app
+      run: flutter pub get
+      
+    - name: Build iOS (no signing)
+      working-directory: app
+      run: flutter build ios --release --no-codesign
+      
+    - name: Create IPA
+      working-directory: app
+      run: |
+        cd ios
+        xcodebuild -workspace Runner.xcworkspace \
+                   -scheme Runner \
+                   -sdk iphoneos \
+                   -configuration Release \
+                   -archivePath build/Runner.xcarchive \
+                   archive \
+                   CODE_SIGN_IDENTITY="" \
+                   CODE_SIGNING_REQUIRED=NO \
+                   CODE_SIGNING_ALLOWED=NO
+                   
+    - name: Upload iOS artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ios-build-${{ github.sha }}
+        path: app/ios/build/Runner.xcarchive
+        retention-days: 7
+
+  # Build Web
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    needs: [code-quality, flutter-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        
+    - name: Cache Flutter dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          app/.dart_tool
+          app/.pub-cache
+        key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+        
+    - name: Create .env file
+      working-directory: app
+      run: |
+        echo "NODE_ENV=production" > .env
+        echo "API_BASE_URL=https://api.rappitaxi.com" >> .env
+        echo "MERCADOPAGO_PUBLIC_KEY=${{ secrets.MERCADOPAGO_PUBLIC_KEY }}" >> .env
+        echo "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}" >> .env
+        
+    - name: Build Web
+      working-directory: app
+      run: |
+        flutter pub get
+        flutter build web --release --web-renderer canvaskit
+        
+    - name: Upload Web artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: web-build-${{ github.sha }}
+        path: app/build/web
+        retention-days: 7
+
+  # Notificación de estado
+  notify:
+    name: Notify Build Status
+    runs-on: ubuntu-latest
+    needs: [build-android, build-web]
+    if: always()
+    
+    steps:
+    - name: Send notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: |
+          Build Status: ${{ job.status }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref }}
+          Author: ${{ github.actor }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always() && env.SLACK_WEBHOOK != ''
