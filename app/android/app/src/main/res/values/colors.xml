@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ✅ CORREGIDO: Transparente en lugar de blanco para el ícono -->
+    <color name="ic_launcher_background">#00000000</color>
+</resources>

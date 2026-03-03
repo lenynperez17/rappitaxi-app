@@ -1,0 +1,164 @@
+// RAPITEAM - Firebase Storage Rules
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserId() {
+      return request.auth.uid;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && getUserId() == userId;
+    }
+    
+    function hasRole(role) {
+      return isAuthenticated() && 
+             resource.metadata != null &&
+             resource.metadata.userRole == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isValidImageFile() {
+      return request.resource.contentType.matches('image/.*') &&
+             request.resource.size < 10 * 1024 * 1024; // 10MB limit
+    }
+    
+    function isValidAudioFile() {
+      return request.resource.contentType.matches('audio/.*') &&
+             request.resource.size < 5 * 1024 * 1024; // 5MB limit
+    }
+    
+    function isValidDocumentFile() {
+      return request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png'] &&
+             request.resource.size < 20 * 1024 * 1024; // 20MB limit
+    }
+    
+    // User profile photos (ruta legacy)
+    match /users/{userId}/profile/{imageId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                  isOwner(userId) &&
+                  isValidImageFile();
+      allow delete: if isAuthenticated() &&
+                   (isOwner(userId) || isAdmin());
+    }
+
+    // User profile photos (ruta nueva - profile_photos)
+    match /profile_photos/{userId}/{imageId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                  isOwner(userId) &&
+                  isValidImageFile();
+      allow delete: if isAuthenticated() &&
+                   (isOwner(userId) || isAdmin());
+    }
+
+    // Driver documents (licenses, vehicle registration, etc.)
+    match /drivers/{driverId}/documents/{documentId} {
+      allow read: if isAuthenticated() && 
+                 (isOwner(driverId) || isAdmin());
+      allow write: if isAuthenticated() && 
+                  isOwner(driverId) && 
+                  isValidDocumentFile();
+      allow delete: if isAuthenticated() && 
+                   (isOwner(driverId) || isAdmin());
+    }
+    
+    // Vehicle photos (ruta correcta según el código)
+    match /drivers/{driverId}/vehicle/photos/{photoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                  isOwner(driverId) &&
+                  isValidImageFile();
+      allow delete: if isAuthenticated() &&
+                   (isOwner(driverId) || isAdmin());
+    }
+
+    // Vehicle documents (nueva ruta para documentos de vehículos)
+    match /drivers/{driverId}/vehicle/documents/{documentId} {
+      allow read: if isAuthenticated() &&
+                 (isOwner(driverId) || isAdmin());
+      allow write: if isAuthenticated() &&
+                  isOwner(driverId) &&
+                  isValidDocumentFile();
+      allow delete: if isAuthenticated() &&
+                   (isOwner(driverId) || isAdmin());
+    }
+    
+    // Chat message attachments (images and audio) - ruta legacy
+    match /chats/{rideId}/messages/{messageId}/{fileId} {
+      allow read: if isAuthenticated() &&
+                 (resource.metadata != null &&
+                  (isOwner(resource.metadata.senderId) ||
+                   isOwner(resource.metadata.receiverId) ||
+                   isAdmin()));
+      allow write: if isAuthenticated() &&
+                  (isValidImageFile() || isValidAudioFile());
+      allow delete: if isAuthenticated() &&
+                   (resource.metadata != null &&
+                    (isOwner(resource.metadata.senderId) || isAdmin()));
+    }
+
+    // Chat media (ruta actual usada por chat_service.dart)
+    match /chat_media/{rideId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                  (isValidImageFile() || isValidAudioFile());
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+    
+    // Support ticket attachments
+    match /support/{ticketId}/attachments/{attachmentId} {
+      allow read: if isAuthenticated() && 
+                 (resource.metadata != null && 
+                  (isOwner(resource.metadata.userId) || isAdmin()));
+      allow write: if isAuthenticated() && 
+                  (isValidImageFile() || isValidDocumentFile());
+      allow delete: if isAuthenticated() && 
+                   (resource.metadata != null && 
+                    (isOwner(resource.metadata.userId) || isAdmin()));
+    }
+    
+    // Promotional content (admin only)
+    match /promotions/{promotionId}/{imageId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidImageFile();
+      allow delete: if isAuthenticated();
+    }
+    
+    // System assets (admin only)
+    match /system/{path=**} {
+      allow read: if true; // Public read for app assets
+      allow write: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Temporary uploads (for processing)
+    match /temp/{userId}/{fileId} {
+      allow read, write: if isAuthenticated() && 
+                        isOwner(userId);
+      allow delete: if isAuthenticated() && 
+                   (isOwner(userId) || isAdmin());
+    }
+    
+    // Backup files (admin only)
+    match /backups/{path=**} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write backups
+      allow delete: if isAdmin();
+    }
+    
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

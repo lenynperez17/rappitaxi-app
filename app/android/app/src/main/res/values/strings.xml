@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nombre de la aplicación -->
+    <string name="app_name">RapiTeam</string>
+
+    <!-- ==================== CONFIGURACIÓN GOOGLE SIGN-IN ==================== -->
+    <!-- Web Client ID para Google Sign-In (OAuth) - Proyecto rapi-team -->
+    <!-- Este ID viene del google-services.json (client_type: 3) -->
+    <string name="default_web_client_id">52925359166-ksndlq97t4lbi0dd1bmeu67697eou1dg.apps.googleusercontent.com</string>
+</resources>

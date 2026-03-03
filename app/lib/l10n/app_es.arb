@@ -1,0 +1,2856 @@
+{
+  "@@locale": "es",
+
+  "profile": "Perfil",
+  "@profile": {
+    "description": "Título de la pantalla de perfil"
+  },
+
+  "language": "Idioma",
+  "@language": {
+    "description": "Etiqueta para la opción de idioma"
+  },
+
+  "spanish": "Español",
+  "@spanish": {
+    "description": "Nombre del idioma español"
+  },
+
+  "english": "English",
+  "@english": {
+    "description": "Nombre del idioma inglés"
+  },
+
+  "notifications": "Notificaciones",
+  "@notifications": {
+    "description": "Etiqueta para notificaciones"
+  },
+
+  "sound": "Sonido",
+  "@sound": {
+    "description": "Etiqueta para sonido"
+  },
+
+  "vibration": "Vibración",
+  "@vibration": {
+    "description": "Etiqueta para vibración"
+  },
+
+  "promotions": "Promociones",
+  "@promotions": {
+    "description": "Etiqueta para promociones"
+  },
+
+  "news": "Noticias",
+  "@news": {
+    "description": "Etiqueta para noticias"
+  },
+
+  "privacy": "Privacidad",
+  "@privacy": {
+    "description": "Etiqueta para privacidad"
+  },
+
+  "termsAndConditions": "Términos y Condiciones",
+  "@termsAndConditions": {
+    "description": "Términos y condiciones del servicio"
+  },
+
+  "privacyPolicy": "Política de Privacidad",
+  "@privacyPolicy": {
+    "description": "Política de privacidad"
+  },
+
+  "managePermissions": "Gestionar Permisos",
+  "@managePermissions": {
+    "description": "Gestionar permisos de la aplicación"
+  },
+
+  "exportMyData": "Exportar mis Datos",
+  "@exportMyData": {
+    "description": "Exportar datos personales"
+  },
+
+  "paymentMethods": "Métodos de Pago",
+  "@paymentMethods": {
+    "description": "Métodos de pago disponibles"
+  },
+
+  "tripHistory": "Historial de Viajes",
+  "@tripHistory": {
+    "description": "Historial de viajes realizados"
+  },
+
+  "ratings": "Calificaciones",
+  "@ratings": {
+    "description": "Calificaciones del usuario"
+  },
+
+  "favoritePlaces": "Lugares Favoritos",
+  "@favoritePlaces": {
+    "description": "Lugares favoritos guardados"
+  },
+
+  "logout": "Cerrar Sesión",
+  "@logout": {
+    "description": "Cerrar sesión del usuario"
+  },
+
+  "languageChangedToSpanish": "Idioma cambiado a Español",
+  "@languageChangedToSpanish": {
+    "description": "Mensaje de confirmación de cambio de idioma a español"
+  },
+
+  "languageChangedToEnglish": "Language changed to English",
+  "@languageChangedToEnglish": {
+    "description": "Mensaje de confirmación de cambio de idioma a inglés"
+  },
+
+  "defaultPaymentMethod": "Método de Pago Predeterminado",
+  "@defaultPaymentMethod": {
+    "description": "Método de pago predeterminado"
+  },
+
+  "cash": "Efectivo",
+  "@cash": {
+    "description": "Método de pago en efectivo"
+  },
+
+  "card": "Tarjeta",
+  "@card": {
+    "description": "Método de pago con tarjeta"
+  },
+
+  "home": "Inicio",
+  "@home": {
+    "description": "Pantalla de inicio"
+  },
+
+  "trips": "Viajes",
+  "@trips": {
+    "description": "Sección de viajes"
+  },
+
+  "messages": "Mensajes",
+  "@messages": {
+    "description": "Sección de mensajes"
+  },
+
+  "settings": "Configuración",
+  "@settings": {
+    "description": "Configuración de la aplicación"
+  },
+
+  "upgradeToDriver": "Convertirse en Conductor",
+  "@upgradeToDriver": {
+    "description": "Opción para convertirse en conductor"
+  },
+
+  "loading": "Cargando...",
+  "@loading": {
+    "description": "Mensaje de carga"
+  },
+
+  "error": "Error",
+  "@error": {
+    "description": "Mensaje de error genérico"
+  },
+
+  "success": "Éxito",
+  "@success": {
+    "description": "Mensaje de éxito genérico"
+  },
+
+  "cancel": "Cancelar",
+  "@cancel": {
+    "description": "Botón cancelar"
+  },
+
+  "accept": "Aceptar",
+  "@accept": {
+    "description": "Botón aceptar"
+  },
+
+  "save": "Guardar",
+  "@save": {
+    "description": "Botón guardar"
+  },
+
+  "information": "Información",
+  "@information": {
+    "description": "Tab de información personal"
+  },
+
+  "statistics": "Estadísticas",
+  "@statistics": {
+    "description": "Tab de estadísticas"
+  },
+
+  "preferences": "Preferencias",
+  "@preferences": {
+    "description": "Tab de preferencias"
+  },
+
+  "personalInformation": "Información Personal",
+  "@personalInformation": {
+    "description": "Título de sección información personal"
+  },
+
+  "fullName": "Nombre completo",
+  "@fullName": {
+    "description": "Campo nombre completo"
+  },
+
+  "email": "Correo electrónico",
+  "@email": {
+    "description": "Campo correo electrónico"
+  },
+
+  "phone": "Teléfono",
+  "@phone": {
+    "description": "Campo teléfono"
+  },
+
+  "birthDate": "Fecha de nacimiento",
+  "@birthDate": {
+    "description": "Campo fecha de nacimiento"
+  },
+
+  "verification": "Verificación",
+  "@verification": {
+    "description": "Título de verificación de cuenta"
+  },
+
+  "emailVerified": "Email verificado",
+  "@emailVerified": {
+    "description": "Email verificado"
+  },
+
+  "phoneVerified": "Teléfono verificado",
+  "@phoneVerified": {
+    "description": "Teléfono verificado"
+  },
+
+  "identityDocument": "Documento de identidad",
+  "@identityDocument": {
+    "description": "Documento de identidad"
+  },
+
+  "becomeDriver": "¡Conviértete en Conductor!",
+  "@becomeDriver": {
+    "description": "Llamada a acción para ser conductor"
+  },
+
+  "earnMoneyDriving": "Gana dinero conduciendo",
+  "@earnMoneyDriving": {
+    "description": "Subtítulo convertirse en conductor"
+  },
+
+  "changePassword": "Cambiar contraseña",
+  "@changePassword": {
+    "description": "Botón cambiar contraseña"
+  },
+
+  "deleteAccount": "Eliminar cuenta",
+  "@deleteAccount": {
+    "description": "Botón eliminar cuenta"
+  },
+
+  "yourStatistics": "Tus Estadísticas",
+  "@yourStatistics": {
+    "description": "Título de estadísticas"
+  },
+
+  "totalTrips": "Viajes Totales",
+  "@totalTrips": {
+    "description": "Total de viajes"
+  },
+
+  "totalSpent": "Gasto Total",
+  "@totalSpent": {
+    "description": "Gasto total"
+  },
+
+  "distance": "Distancia",
+  "@distance": {
+    "description": "Distancia recorrida"
+  },
+
+  "rating": "Calificación",
+  "@rating": {
+    "description": "Calificación del usuario"
+  },
+
+  "achievementsUnlocked": "Logros Desbloqueados",
+  "@achievementsUnlocked": {
+    "description": "Título de logros"
+  },
+
+  "frequentTraveler": "Viajero Frecuente",
+  "@frequentTraveler": {
+    "description": "Logro viajero frecuente"
+  },
+
+  "punctual": "Puntual",
+  "@punctual": {
+    "description": "Logro puntual"
+  },
+
+  "explorer": "Explorador",
+  "@explorer": {
+    "description": "Logro explorador"
+  },
+
+  "vip": "VIP",
+  "@vip": {
+    "description": "Logro VIP"
+  },
+
+  "ambassador": "Embajador",
+  "@ambassador": {
+    "description": "Logro embajador"
+  },
+
+  "monthlyActivity": "Actividad Mensual",
+  "@monthlyActivity": {
+    "description": "Título de actividad mensual"
+  },
+
+  "memberSince": "Miembro desde",
+  "@memberSince": {
+    "description": "Miembro desde"
+  },
+
+  "referredFriends": "Amigos referidos",
+  "@referredFriends": {
+    "description": "Amigos referidos"
+  },
+
+  "pushNotifications": "Notificaciones push",
+  "@pushNotifications": {
+    "description": "Notificaciones push"
+  },
+
+  "receiveTripAlerts": "Recibe alertas de viajes y ofertas",
+  "@receiveTripAlerts": {
+    "description": "Descripción notificaciones"
+  },
+
+  "activateSounds": "Activa sonidos de notificación",
+  "@activateSounds": {
+    "description": "Descripción sonido"
+  },
+
+  "vibrateOnNotifications": "Vibra al recibir notificaciones",
+  "@vibrateOnNotifications": {
+    "description": "Descripción vibración"
+  },
+
+  "receiveOffers": "Recibe ofertas y descuentos especiales",
+  "@receiveOffers": {
+    "description": "Descripción promociones"
+  },
+
+  "newsTitle": "Novedades",
+  "@newsTitle": {
+    "description": "Título novedades"
+  },
+
+  "learnNewFeatures": "Entérate de nuevas funciones",
+  "@learnNewFeatures": {
+    "description": "Descripción novedades"
+  },
+
+  "travelPreferences": "Preferencias de Viaje",
+  "@travelPreferences": {
+    "description": "Título preferencias de viaje"
+  },
+
+  "wallet": "Billetera",
+  "@wallet": {
+    "description": "Método de pago billetera"
+  },
+
+  "privacyAndSecurity": "Privacidad y Seguridad",
+  "@privacyAndSecurity": {
+    "description": "Título privacidad y seguridad"
+  },
+
+  "profileUpdated": "Perfil actualizado exitosamente",
+  "@profileUpdated": {
+    "description": "Mensaje perfil actualizado"
+  },
+
+  "changeProfilePhoto": "Cambiar foto de perfil",
+  "@changeProfilePhoto": {
+    "description": "Cambiar foto de perfil"
+  },
+
+  "takePhoto": "Tomar foto",
+  "@takePhoto": {
+    "description": "Tomar foto"
+  },
+
+  "chooseFromGallery": "Elegir de galería",
+  "@chooseFromGallery": {
+    "description": "Elegir de galería"
+  },
+
+  "deletePhoto": "Eliminar foto",
+  "@deletePhoto": {
+    "description": "Eliminar foto"
+  },
+
+  "profilePhotoDeleted": "Foto de perfil eliminada",
+  "@profilePhotoDeleted": {
+    "description": "Foto eliminada"
+  },
+
+  "permissionsNeeded": "Se necesitan permisos para acceder a la cámara/galería",
+  "@permissionsNeeded": {
+    "description": "Se necesitan permisos"
+  },
+
+  "openSettings": "Abrir configuración",
+  "@openSettings": {
+    "description": "Abrir configuración"
+  },
+
+  "profilePhotoUpdated": "Foto de perfil actualizada",
+  "@profilePhotoUpdated": {
+    "description": "Foto actualizada"
+  },
+
+  "errorSelectingImage": "Error al seleccionar imagen",
+  "@errorSelectingImage": {
+    "description": "Error al seleccionar imagen"
+  },
+
+  "paymentMethodPrefix": "Método de pago:",
+  "@paymentMethodPrefix": {
+    "description": "Prefijo método de pago"
+  },
+
+  "changePasswordTitle": "Cambiar Contraseña",
+  "@changePasswordTitle": {
+    "description": "Título cambiar contraseña"
+  },
+
+  "currentPassword": "Contraseña actual",
+  "@currentPassword": {
+    "description": "Contraseña actual"
+  },
+
+  "newPassword": "Nueva contraseña",
+  "@newPassword": {
+    "description": "Nueva contraseña"
+  },
+
+  "confirmNewPassword": "Confirmar nueva contraseña",
+  "@confirmNewPassword": {
+    "description": "Confirmar nueva contraseña"
+  },
+
+  "passwordUpdated": "Contraseña actualizada",
+  "@passwordUpdated": {
+    "description": "Contraseña actualizada"
+  },
+
+  "change": "Cambiar",
+  "@change": {
+    "description": "Botón cambiar"
+  },
+
+  "deleteAccountTitle": "Eliminar Cuenta",
+  "@deleteAccountTitle": {
+    "description": "Título eliminar cuenta"
+  },
+
+  "deleteAccountConfirmation": "¿Estás seguro de que deseas eliminar tu cuenta? Esta acción no se puede deshacer.",
+  "@deleteAccountConfirmation": {
+    "description": "Confirmación eliminar cuenta"
+  },
+
+  "delete": "Eliminar",
+  "@delete": {
+    "description": "Botón eliminar"
+  },
+
+  "understood": "Entendido",
+  "@understood": {
+    "description": "Botón entendido"
+  },
+
+  "userInfoError": "No se pudo obtener información del usuario",
+  "@userInfoError": {
+    "description": "Error obteniendo info usuario"
+  },
+
+  "dataExported": "Datos Exportados",
+  "@dataExported": {
+    "description": "Título datos exportados"
+  },
+
+  "dataExportedSuccess": "Tus datos han sido exportados exitosamente.",
+  "@dataExportedSuccess": {
+    "description": "Mensaje éxito exportación"
+  },
+
+  "location": "Ubicación:",
+  "@location": {
+    "description": "Ubicación del archivo"
+  },
+
+  "errorExportingData": "Error al exportar datos:",
+  "@errorExportingData": {
+    "description": "Error exportando datos"
+  },
+
+  "couldNotOpenSettings": "No se pudo abrir la configuración",
+  "@couldNotOpenSettings": {
+    "description": "No se pudo abrir configuración"
+  },
+
+  "openSettingsManually": "Por favor, abre Configuración > Apps > RapiTeam > Permisos manualmente",
+  "@openSettingsManually": {
+    "description": "Instrucciones abrir configuración manualmente"
+  },
+
+  "passenger": "Pasajero",
+  "@passenger": {
+    "description": "Rol de usuario pasajero"
+  },
+
+  "driver": "Conductor",
+  "@driver": {
+    "description": "Rol de usuario conductor"
+  },
+
+  "administrator": "Administrador",
+  "@administrator": {
+    "description": "Rol de usuario administrador"
+  },
+
+  "phoneNumber": "Número de teléfono",
+  "@phoneNumber": {
+    "description": "Campo número de teléfono"
+  },
+
+  "phoneHint": "999 999 999",
+  "@phoneHint": {
+    "description": "Hint para formato de teléfono"
+  },
+
+  "enterPhoneNumber": "Ingresa tu número de teléfono",
+  "@enterPhoneNumber": {
+    "description": "Validación campo teléfono vacío"
+  },
+
+  "invalidPhoneNumber": "Número peruano inválido\\nFormato: 9XXXXXXXX",
+  "@invalidPhoneNumber": {
+    "description": "Error de validación número de teléfono"
+  },
+
+  "invalidPhoneDetails": "Número inválido. Debe ser peruano móvil: 9XXXXXXXX\\nOperadores válidos: Claro, Movistar, Entel",
+  "@invalidPhoneDetails": {
+    "description": "Error detallado de validación de teléfono"
+  },
+
+  "operatorNotRecognized": "Operador móvil no reconocido. Use números de Claro, Movistar o Entel.",
+  "@operatorNotRecognized": {
+    "description": "Error operador móvil no válido"
+  },
+
+  "operatorNotValid": "Operador no válido\\nUse Claro, Movistar o Entel",
+  "@operatorNotValid": {
+    "description": "Error operador no válido corto"
+  },
+
+  "password": "Contraseña",
+  "@password": {
+    "description": "Campo contraseña"
+  },
+
+  "passwordHint": "Mínimo 8 caracteres",
+  "@passwordHint": {
+    "description": "Hint de contraseña"
+  },
+
+  "enterPassword": "Ingresa tu contraseña",
+  "@enterPassword": {
+    "description": "Validación contraseña vacía"
+  },
+
+  "passwordMinLength": "La contraseña debe tener al menos 8 caracteres",
+  "@passwordMinLength": {
+    "description": "Error longitud mínima contraseña"
+  },
+
+  "forgotPassword": "¿Olvidaste tu contraseña?",
+  "@forgotPassword": {
+    "description": "Link recuperar contraseña"
+  },
+
+  "signIn": "Iniciar Sesión",
+  "@signIn": {
+    "description": "Botón de inicio de sesión"
+  },
+
+  "orContinueWith": "O continúa con",
+  "@orContinueWith": {
+    "description": "Divider para login con redes sociales"
+  },
+
+  "noAccount": "¿No tienes cuenta? ",
+  "@noAccount": {
+    "description": "Pregunta si no tiene cuenta"
+  },
+
+  "register": "Regístrate",
+  "@register": {
+    "description": "Link para registrarse"
+  },
+
+  "tagline": "Tu viaje, rápido y seguro",
+  "@tagline": {
+    "description": "Eslogan de RapiTeam"
+  },
+
+  "tooManyAttempts": "Demasiados intentos fallidos. Intenta de nuevo en {minutes} minutos.",
+  "@tooManyAttempts": {
+    "description": "Error de rate limiting",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "accountLocked": "Tu cuenta ha sido bloqueada temporalmente por seguridad. Intenta de nuevo más tarde o contacta soporte.",
+  "@accountLocked": {
+    "description": "Mensaje de cuenta bloqueada"
+  },
+
+  "verifyEmailFirst": "Por favor verifica tu email antes de continuar. Revisa tu bandeja de entrada.",
+  "@verifyEmailFirst": {
+    "description": "Error email no verificado"
+  },
+
+  "loginError": "Error al iniciar sesión",
+  "@loginError": {
+    "description": "Error genérico de login"
+  },
+
+  "unexpectedError": "Error inesperado: {error}",
+  "@unexpectedError": {
+    "description": "Error inesperado genérico",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+
+  "googleSignInNotConfigured": "Google Sign-In no configurado.\\nContacta al administrador del sistema.",
+  "@googleSignInNotConfigured": {
+    "description": "Error Google OAuth no configurado"
+  },
+
+  "facebookLoginNotConfigured": "Facebook Login no configurado.\\nContacta al administrador del sistema.",
+  "@facebookLoginNotConfigured": {
+    "description": "Error Facebook OAuth no configurado"
+  },
+
+  "appleSignInNotConfigured": "Apple Sign-In no configurado.\\nContacta al administrador del sistema.",
+  "@appleSignInNotConfigured": {
+    "description": "Error Apple OAuth no configurado"
+  },
+
+  "googleSignInError": "Error al iniciar sesión con Google. Intenta nuevamente.",
+  "@googleSignInError": {
+    "description": "Error genérico Google Sign-In"
+  },
+
+  "facebookSignInError": "Error al iniciar sesión con Facebook. Intenta nuevamente.",
+  "@facebookSignInError": {
+    "description": "Error genérico Facebook Login"
+  },
+
+  "appleSignInError": "Error al iniciar sesión con Apple. Intenta nuevamente.",
+  "@appleSignInError": {
+    "description": "Error genérico Apple Sign-In"
+  },
+
+  "tripHistory": "Historial de Viajes",
+  "@tripHistory": {
+    "description": "Título historial de viajes"
+  },
+
+  "monthSummary": "Resumen del Mes",
+  "@monthSummary": {
+    "description": "Título resumen mensual"
+  },
+
+  "spent": "Gastado",
+  "@spent": {
+    "description": "Label de dinero gastado"
+  },
+
+  "all": "Todos",
+  "@all": {
+    "description": "Filtro todos"
+  },
+
+  "completed": "Completados",
+  "@completed": {
+    "description": "Filtro viajes completados"
+  },
+
+  "cancelled": "Cancelados",
+  "@cancelled": {
+    "description": "Filtro viajes cancelados"
+  },
+
+  "date": "Fecha",
+  "@date": {
+    "description": "Label fecha"
+  },
+
+  "downloading": "Descargando historial...",
+  "@downloading": {
+    "description": "Mensaje descargando historial"
+  },
+
+  "noTrips": "No hay viajes",
+  "@noTrips": {
+    "description": "Mensaje sin viajes"
+  },
+
+  "adjustFilters": "Ajusta los filtros para ver más resultados",
+  "@adjustFilters": {
+    "description": "Sugerencia ajustar filtros"
+  },
+
+  "tripDetails": "Detalles del Viaje",
+  "@tripDetails": {
+    "description": "Título detalles del viaje"
+  },
+
+  "tripRoute": "Ruta del Viaje",
+  "@tripRoute": {
+    "description": "Sección ruta del viaje"
+  },
+
+  "origin": "Origen",
+  "@origin": {
+    "description": "Label origen"
+  },
+
+  "destination": "Destino",
+  "@destination": {
+    "description": "Label destino"
+  },
+
+  "duration": "Duración",
+  "@duration": {
+    "description": "Label duración"
+  },
+
+  "vehicle": "Vehículo",
+  "@vehicle": {
+    "description": "Label vehículo"
+  },
+
+  "payment": "Pago",
+  "@payment": {
+    "description": "Sección pago"
+  },
+
+  "amount": "Monto",
+  "@amount": {
+    "description": "Label monto"
+  },
+
+  "method": "Método",
+  "@method": {
+    "description": "Label método de pago"
+  },
+
+  "defaultCash": "Efectivo (predeterminado)",
+  "@defaultCash": {
+    "description": "Método de pago predeterminado"
+  },
+
+  "rateTrip": "Calificar Viaje",
+  "@rateTrip": {
+    "description": "Botón calificar viaje"
+  },
+
+  "yourRating": "Tu calificación: {rating}",
+  "@yourRating": {
+    "description": "Label tu calificación",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      }
+    }
+  },
+
+  "reportProblem": "Reportar problema",
+  "@reportProblem": {
+    "description": "Botón reportar problema"
+  },
+
+  "viewReceipt": "Ver recibo",
+  "@viewReceipt": {
+    "description": "Botón ver recibo"
+  },
+
+  "today": "Hoy",
+  "@today": {
+    "description": "Fecha relativa hoy"
+  },
+
+  "yesterday": "Ayer",
+  "@yesterday": {
+    "description": "Fecha relativa ayer"
+  },
+
+  "daysAgo": "Hace {days} días",
+  "@daysAgo": {
+    "description": "Fecha relativa días atrás",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "completedStatus": "Completado",
+  "@completedStatus": {
+    "description": "Estado completado"
+  },
+
+  "cancelledStatus": "Cancelado",
+  "@cancelledStatus": {
+    "description": "Estado cancelado"
+  },
+
+  "whereAreYou": "¿Dónde estás?",
+  "@whereAreYou": {
+    "description": "Hint campo origen"
+  },
+
+  "whereAreYouGoing": "¿A dónde vas?",
+  "@whereAreYouGoing": {
+    "description": "Hint campo destino"
+  },
+
+  "enterOriginAndDestination": "Debes ingresar origen y destino",
+  "@enterOriginAndDestination": {
+    "description": "Error validación origen y destino"
+  },
+
+  "userNotAuthenticated": "Error: Usuario no autenticado",
+  "@userNotAuthenticated": {
+    "description": "Error usuario no autenticado"
+  },
+
+  "locationPermissionDenied": "No se pudo obtener la ubicación actual. Verifica los permisos GPS.",
+  "@locationPermissionDenied": {
+    "description": "Error permisos de ubicación"
+  },
+
+  "destinationAddressNotFound": "No se pudo encontrar la dirección de destino",
+  "@destinationAddressNotFound": {
+    "description": "Error geocoding destino"
+  },
+
+  "searchingAvailableDrivers": "Buscando conductores disponibles...",
+  "@searchingAvailableDrivers": {
+    "description": "Mensaje buscando conductores"
+  },
+
+  "errorRequestingTrip": "Error al solicitar viaje: {error}",
+  "@errorRequestingTrip": {
+    "description": "Error al solicitar viaje",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+
+  "selectDestinationFirst": "Por favor selecciona un destino",
+  "@selectDestinationFirst": {
+    "description": "Error validación destino vacío"
+  },
+
+  "selectPickupLocation": "Seleccionar punto de recogida",
+  "@selectPickupLocation": {
+    "description": "Título para selector de ubicación de origen en mapa"
+  },
+
+  "selectDestination": "Seleccionar destino",
+  "@selectDestination": {
+    "description": "Título para selector de ubicación de destino en mapa"
+  },
+
+  "couldNotGetCurrentLocation": "No se pudo obtener tu ubicación actual",
+  "@couldNotGetCurrentLocation": {
+    "description": "Error obtener ubicación actual"
+  },
+
+  "helpCenter": "Ayuda",
+  "@helpCenter": {
+    "description": "Menú ayuda"
+  },
+
+  "logoutConfirmation": "¿Cerrar sesión?",
+  "@logoutConfirmation": {
+    "description": "Confirmación cerrar sesión"
+  },
+
+  "ratingSubmittedSuccessfully": "Calificación enviada correctamente",
+  "@ratingSubmittedSuccessfully": {
+    "description": "Mensaje éxito al calificar"
+  },
+
+  "errorSubmittingRating": "Error al enviar calificación: {error}",
+  "@errorSubmittingRating": {
+    "description": "Error al calificar",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+
+  "enterPrice": "Ingresa tu precio",
+  "@enterPrice": {
+    "description": "Hint campo precio"
+  },
+
+  "rapiteamTaxi": "RAPITEAM",
+  "preparingExperience": "Preparando tu experiencia...",
+  "appVersion": "Versión 2.0.0",
+
+  "createAccount": "Crear cuenta",
+  "continueButton": "Continuar",
+  "back": "Atrás",
+  "howToUseRapiteam": "¿Cómo quieres usar RapiTeam?",
+  "requestTrips": "Solicita viajes y negocia precios",
+  "acceptTrips": "Acepta viajes y gana dinero",
+  "personalInfo": "Información personal",
+  "enterName": "Ingresa tu nombre",
+  "nineDigits": "9 dígitos",
+  "enterPhoneNumberShort": "Ingresa tu número",
+  "mustBeNineDigits": "Debe tener exactamente 9 dígitos",
+  "mustStartWith9": "Número móvil debe empezar con 9",
+  "enterEmail": "Ingresa tu correo",
+  "enterValidEmail": "Ingresa un correo válido",
+  "createPassword": "Crea tu contraseña",
+  "passwordRequirements": "Mín. 8 caracteres: MAYÚSCULA, minúscula, número y especial (!@#$%)",
+  "enterPasswordShort": "Ingresa una contraseña",
+  "minimumEightChars": "Mínimo 8 caracteres",
+  "mustIncludeUppercase": "Debe incluir al menos una MAYÚSCULA",
+  "mustIncludeLowercase": "Debe incluir al menos una minúscula",
+  "mustIncludeNumber": "Debe incluir al menos un número",
+  "mustIncludeSpecialChar": "Debe incluir un carácter especial (!@#$%^&*)",
+  "confirmPassword": "Confirmar contraseña",
+  "passwordsDoNotMatch": "Las contraseñas no coinciden",
+  "acceptTerms": "Acepto los términos y condiciones",
+  "mustAcceptTerms": "Debes aceptar los términos para continuar",
+  "createAccountButton": "CREAR CUENTA",
+  "registrationSuccess": "✅ REGISTRO EXITOSO! Redirigiendo...",
+  "registrationFailed": "❌ El registro falló. Intenta nuevamente.",
+
+  "recoverPassword": "Recuperar Contraseña",
+  "phoneTab": "Teléfono",
+  "verifyTab": "Verificar",
+  "newTab": "Nueva",
+  "enterPhoneNumberForgot": "Ingrese su número de teléfono",
+  "enterPhoneNumberPlaceholder": "Ingresa tu número de teléfono",
+  "sendVerificationCode": "Te enviaremos un código de verificación por SMS",
+  "sendCode": "Enviar Código",
+  "smsVerification": "Verificación por SMS",
+  "enterSixDigitCode": "Ingresa el código de 6 dígitos enviado a",
+  "resendCode": "Reenviar código",
+  "verify": "Verificar",
+  "createNewPassword": "Crear Nueva Contraseña",
+  "enterNewSecurePassword": "Ingresa tu nueva contraseña segura",
+  "newPasswordLabel": "Nueva contraseña",
+  "enterPasswordLabel": "Ingrese una contraseña",
+  "passwordMinSixChars": "La contraseña debe tener al menos 6 caracteres",
+  "confirmPasswordLabel": "Confirmar contraseña",
+  "passwordsDoNotMatchLabel": "Las contraseñas no coinciden",
+  "updatePassword": "Actualizar Contraseña",
+  "passwordUpdatedSuccess": "¡Contraseña Actualizada!",
+  "passwordUpdatedMessage": "Tu contraseña ha sido actualizada exitosamente",
+  "goToLogin": "Ir al Login",
+  "incorrectCode": "Código incorrecto",
+
+  "favoritePlacesTitle": "Lugares Favoritos",
+  "@favoritePlacesTitle": {
+    "description": "Título de la pantalla de favoritos"
+  },
+
+  "searchPlaceholder": "Buscar lugar...",
+  "@searchPlaceholder": {
+    "description": "Placeholder del campo de búsqueda"
+  },
+
+  "yourPlaces": "Tus Lugares",
+  "@yourPlaces": {
+    "description": "Título de la sección de lugares"
+  },
+
+  "recentlyVisited": "Visitados Recientemente",
+  "@recentlyVisited": {
+    "description": "Título de lugares visitados recientemente"
+  },
+
+  "favorites": "Favoritos",
+  "@favorites": {
+    "description": "Label de favoritos"
+  },
+
+  "visits": "Visitas",
+  "@visits": {
+    "description": "Label de visitas"
+  },
+
+  "mostVisited": "Más visitado",
+  "@mostVisited": {
+    "description": "Label de más visitado"
+  },
+
+  "mainBadge": "Principal",
+  "@mainBadge": {
+    "description": "Badge de lugar principal"
+  },
+
+  "visitsLabel": "visitas",
+  "@visitsLabel": {
+    "description": "Texto de visitas"
+  },
+
+  "addPlace": "Agregar Lugar",
+  "@addPlace": {
+    "description": "Botón agregar lugar"
+  },
+
+  "addFavorite": "Agregar Favorito",
+  "@addFavorite": {
+    "description": "Título diálogo agregar favorito"
+  },
+
+  "editPlace": "Editar Lugar",
+  "@editPlace": {
+    "description": "Título diálogo editar lugar"
+  },
+
+  "placeName": "Nombre del lugar",
+  "@placeName": {
+    "description": "Label nombre del lugar"
+  },
+
+  "address": "Dirección",
+  "@address": {
+    "description": "Label dirección"
+  },
+
+  "icon": "Icono",
+  "@icon": {
+    "description": "Label icono"
+  },
+
+  "color": "Color",
+  "@color": {
+    "description": "Label color"
+  },
+
+  "add": "Agregar",
+  "@add": {
+    "description": "Botón agregar"
+  },
+
+  "selectAddressFromAutocomplete": "Por favor, selecciona una dirección del autocomplete",
+  "@selectAddressFromAutocomplete": {
+    "description": "Error validación dirección"
+  },
+
+  "placeAddedToFavorites": "Lugar agregado a favoritos",
+  "@placeAddedToFavorites": {
+    "description": "Mensaje éxito agregar favorito"
+  },
+
+  "errorLoadingFavorites": "Error al cargar favoritos",
+  "@errorLoadingFavorites": {
+    "description": "Error al cargar favoritos"
+  },
+
+  "errorAddingFavorite": "Error al agregar favorito",
+  "@errorAddingFavorite": {
+    "description": "Error al agregar favorito"
+  },
+
+  "placeUpdated": "Lugar actualizado",
+  "@placeUpdated": {
+    "description": "Mensaje éxito actualizar lugar"
+  },
+
+  "errorUpdatingFavorite": "Error al actualizar favorito",
+  "@errorUpdatingFavorite": {
+    "description": "Error al actualizar favorito"
+  },
+
+  "deleteConfirmation": "¿Estás seguro de que deseas eliminar este lugar de tus favoritos?",
+  "@deleteConfirmation": {
+    "description": "Confirmación eliminar favorito"
+  },
+
+  "navigatingTo": "Navegando a",
+  "@navigatingTo": {
+    "description": "Mensaje navegando a lugar"
+  },
+
+  "favoritesMap": "Mapa de Favoritos",
+  "@favoritesMap": {
+    "description": "Título del mapa de favoritos"
+  },
+
+  "addFavoritePlacesToSeeMap": "Agrega lugares favoritos para verlos en el mapa",
+  "@addFavoritePlacesToSeeMap": {
+    "description": "Mensaje mapa vacío"
+  },
+
+  "paymentMethodsTitle": "Métodos de Pago",
+  "@paymentMethodsTitle": {
+    "description": "Título de métodos de pago"
+  },
+
+  "paymentMethodsTab": "Métodos de Pago",
+  "@paymentMethodsTab": {
+    "description": "Tab de métodos de pago"
+  },
+
+  "historyTab": "Historial",
+  "@historyTab": {
+    "description": "Tab de historial"
+  },
+
+  "addMethod": "Agregar Método",
+  "@addMethod": {
+    "description": "Botón agregar método"
+  },
+
+  "rapiteamWallet": "Billetera RapiTeam",
+  "@rapiteamWallet": {
+    "description": "Título billetera RapiTeam"
+  },
+
+  "recharge": "Recargar",
+  "@recharge": {
+    "description": "Botón recargar"
+  },
+
+  "history": "Historial",
+  "@history": {
+    "description": "Botón historial"
+  },
+
+  "savedMethods": "Métodos Guardados",
+  "@savedMethods": {
+    "description": "Título métodos guardados"
+  },
+
+  "defaultLabel": "PREDETERMINADO",
+  "@defaultLabel": {
+    "description": "Label predeterminado"
+  },
+
+  "holder": "TITULAR",
+  "@holder": {
+    "description": "Label titular"
+  },
+
+  "expires": "VENCE",
+  "@expires": {
+    "description": "Label vence"
+  },
+
+  "defaultBadge": "Predeterminado",
+  "@defaultBadge": {
+    "description": "Badge predeterminado"
+  },
+
+  "creditCard": "Tarjeta de Crédito",
+  "@creditCard": {
+    "description": "Tipo tarjeta de crédito"
+  },
+
+  "debitCard": "Tarjeta de Débito",
+  "@debitCard": {
+    "description": "Tipo tarjeta de débito"
+  },
+
+  "paypal": "PayPal",
+  "@paypal": {
+    "description": "Método PayPal"
+  },
+
+  "cashPayment": "Efectivo",
+  "@cashPayment": {
+    "description": "Método efectivo"
+  },
+
+  "setAsDefault": "Establecer como predeterminado",
+  "@setAsDefault": {
+    "description": "Opción establecer como predeterminado"
+  },
+
+  "editMethod": "Editar método",
+  "@editMethod": {
+    "description": "Opción editar método"
+  },
+
+  "deleteMethod": "Eliminar método",
+  "@deleteMethod": {
+    "description": "Opción eliminar método"
+  },
+
+  "noPaymentMethods": "No hay métodos de pago",
+  "@noPaymentMethods": {
+    "description": "Mensaje sin métodos de pago"
+  },
+
+  "addFirstPaymentMethod": "Agrega tu primer método de pago para realizar transacciones más rápido",
+  "@addFirstPaymentMethod": {
+    "description": "Mensaje agregar primer método"
+  },
+
+  "deletePaymentMethodTitle": "Eliminar Método de Pago",
+  "@deletePaymentMethodTitle": {
+    "description": "Título diálogo eliminar método"
+  },
+
+  "deletePaymentMethodConfirmation": "¿Estás seguro de que deseas eliminar este método de pago?",
+  "@deletePaymentMethodConfirmation": {
+    "description": "Confirmación eliminar método"
+  },
+
+  "paymentMethodDeleted": "Método de pago eliminado",
+  "@paymentMethodDeleted": {
+    "description": "Mensaje método eliminado"
+  },
+
+  "defaultMethodUpdated": "Método predeterminado actualizado",
+  "@defaultMethodUpdated": {
+    "description": "Mensaje método predeterminado actualizado"
+  },
+
+  "addPaymentMethodTitle": "Agregar Método de Pago",
+  "@addPaymentMethodTitle": {
+    "description": "Título agregar método de pago"
+  },
+
+  "selectPaymentType": "Selecciona el tipo de pago",
+  "@selectPaymentType": {
+    "description": "Instrucción seleccionar tipo"
+  },
+
+  "cardNumber": "Número de tarjeta",
+  "@cardNumber": {
+    "description": "Label número de tarjeta"
+  },
+
+  "cardNumberPlaceholder": "1234 5678 9012 3456",
+  "@cardNumberPlaceholder": {
+    "description": "Placeholder número de tarjeta"
+  },
+
+  "cardholderName": "Nombre del titular",
+  "@cardholderName": {
+    "description": "Label nombre titular"
+  },
+
+  "cardholderNamePlaceholder": "JUAN PÉREZ",
+  "@cardholderNamePlaceholder": {
+    "description": "Placeholder nombre titular"
+  },
+
+  "expirationDate": "Fecha de expiración",
+  "@expirationDate": {
+    "description": "Label fecha expiración"
+  },
+
+  "expirationDatePlaceholder": "MM/AA",
+  "@expirationDatePlaceholder": {
+    "description": "Placeholder fecha expiración"
+  },
+
+  "cvv": "CVV",
+  "@cvv": {
+    "description": "Label CVV"
+  },
+
+  "cvvPlaceholder": "123",
+  "@cvvPlaceholder": {
+    "description": "Placeholder CVV"
+  },
+
+  "paypalEmail": "Email de PayPal",
+  "@paypalEmail": {
+    "description": "Label email PayPal"
+  },
+
+  "paypalEmailPlaceholder": "correo@paypal.com",
+  "@paypalEmailPlaceholder": {
+    "description": "Placeholder email PayPal"
+  },
+
+  "cashNote": "Paga directamente al conductor al finalizar el viaje",
+  "@cashNote": {
+    "description": "Nota método efectivo"
+  },
+
+  "addPaymentMethod": "Agregar Método de Pago",
+  "@addPaymentMethod": {
+    "description": "Botón agregar método de pago"
+  },
+
+  "paymentMethodAdded": "Método de pago agregado",
+  "@paymentMethodAdded": {
+    "description": "Mensaje método agregado"
+  },
+
+  "invalidCardNumber": "Número de tarjeta inválido",
+  "@invalidCardNumber": {
+    "description": "Error número tarjeta inválido"
+  },
+
+  "invalidExpirationDate": "Fecha de expiración inválida",
+  "@invalidExpirationDate": {
+    "description": "Error fecha expiración inválida"
+  },
+
+  "invalidCvv": "CVV inválido",
+  "@invalidCvv": {
+    "description": "Error CVV inválido"
+  },
+
+  "invalidPaypalEmail": "Email de PayPal inválido",
+  "@invalidPaypalEmail": {
+    "description": "Error email PayPal inválido"
+  },
+
+  "rechargeWalletTitle": "Recargar Billetera",
+  "@rechargeWalletTitle": {
+    "description": "Título recargar billetera"
+  },
+
+  "enterAmount": "Ingresa el monto a recargar",
+  "@enterAmount": {
+    "description": "Instrucción ingresar monto"
+  },
+
+  "amountToRecharge": "Monto a recargar",
+  "@amountToRecharge": {
+    "description": "Label monto a recargar"
+  },
+
+  "quickAmounts": "Montos Rápidos",
+  "@quickAmounts": {
+    "description": "Título montos rápidos"
+  },
+
+  "selectPaymentMethod": "Selecciona método de pago",
+  "@selectPaymentMethod": {
+    "description": "Label seleccionar método"
+  },
+
+  "rechargeButton": "Recargar S/. {amount}",
+  "@rechargeButton": {
+    "description": "Botón recargar con monto",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+
+  "minimumRechargeAmount": "El monto mínimo de recarga es S/. 10",
+  "@minimumRechargeAmount": {
+    "description": "Error monto mínimo"
+  },
+
+  "maximumRechargeAmount": "El monto máximo de recarga es S/. 1000",
+  "@maximumRechargeAmount": {
+    "description": "Error monto máximo"
+  },
+
+  "selectPaymentMethodToRecharge": "Selecciona un método de pago",
+  "@selectPaymentMethodToRecharge": {
+    "description": "Error seleccionar método"
+  },
+
+  "rechargeSuccessful": "Recarga exitosa",
+  "@rechargeSuccessful": {
+    "description": "Mensaje recarga exitosa"
+  },
+
+  "transactionHistory": "Historial de Transacciones",
+  "@transactionHistory": {
+    "description": "Título historial de transacciones"
+  },
+
+  "filterByType": "Filtrar por tipo",
+  "@filterByType": {
+    "description": "Label filtrar por tipo"
+  },
+
+  "allTransactions": "Todas",
+  "@allTransactions": {
+    "description": "Filtro todas las transacciones"
+  },
+
+  "recharges": "Recargas",
+  "@recharges": {
+    "description": "Filtro recargas"
+  },
+
+  "payments": "Pagos",
+  "@payments": {
+    "description": "Filtro pagos"
+  },
+
+  "refunds": "Reembolsos",
+  "@refunds": {
+    "description": "Filtro reembolsos"
+  },
+
+  "noTransactions": "No hay transacciones",
+  "@noTransactions": {
+    "description": "Mensaje sin transacciones"
+  },
+
+  "transactionsWillAppearHere": "Aquí aparecerán tus transacciones realizadas",
+  "@transactionsWillAppearHere": {
+    "description": "Mensaje sin transacciones descripción"
+  },
+
+  "walletRecharge": "Recarga de billetera",
+  "@walletRecharge": {
+    "description": "Tipo transacción recarga"
+  },
+
+  "tripPayment": "Pago de viaje",
+  "@tripPayment": {
+    "description": "Tipo transacción pago viaje"
+  },
+
+  "refund": "Reembolso",
+  "@refund": {
+    "description": "Tipo transacción reembolso"
+  },
+
+  "myRatingsTitle": "Mis Calificaciones",
+  "@myRatingsTitle": {
+    "description": "Título mis calificaciones"
+  },
+
+  "totalLabel": "Total",
+  "@totalLabel": {
+    "description": "Label total"
+  },
+
+  "averageLabel": "Promedio",
+  "@averageLabel": {
+    "description": "Label promedio"
+  },
+
+  "allRatings": "Todas",
+  "@allRatings": {
+    "description": "Filtro todas las calificaciones"
+  },
+
+  "oneStarRating": "1 estrella",
+  "@oneStarRating": {
+    "description": "Filtro 1 estrella"
+  },
+
+  "twoStarRating": "2 estrellas",
+  "@twoStarRating": {
+    "description": "Filtro 2 estrellas"
+  },
+
+  "threeStarRating": "3 estrellas",
+  "@threeStarRating": {
+    "description": "Filtro 3 estrellas"
+  },
+
+  "fourStarRating": "4 estrellas",
+  "@fourStarRating": {
+    "description": "Filtro 4 estrellas"
+  },
+
+  "fiveStarRating": "5 estrellas",
+  "@fiveStarRating": {
+    "description": "Filtro 5 estrellas"
+  },
+
+  "noRatings": "No hay calificaciones",
+  "@noRatings": {
+    "description": "Mensaje sin calificaciones"
+  },
+
+  "ratingsWillAppearHere": "Aquí aparecerán tus calificaciones",
+  "@ratingsWillAppearHere": {
+    "description": "Mensaje sin calificaciones descripción"
+  },
+
+  "ratingDetailsTitle": "Detalles de la Calificación",
+  "@ratingDetailsTitle": {
+    "description": "Título detalles calificación"
+  },
+
+  "dateLabel": "Fecha",
+  "@dateLabel": {
+    "description": "Label fecha"
+  },
+
+  "timeLabel": "Hora",
+  "@timeLabel": {
+    "description": "Label hora"
+  },
+
+  "routeLabel": "Ruta",
+  "@routeLabel": {
+    "description": "Label ruta"
+  },
+
+  "amountLabel": "Monto",
+  "@amountLabel": {
+    "description": "Label monto"
+  },
+
+  "tripIdLabel": "ID Viaje",
+  "@tripIdLabel": {
+    "description": "Label ID viaje"
+  },
+
+  "excellentService": "Excelente servicio",
+  "@excellentService": {
+    "description": "Tag excelente servicio"
+  },
+
+  "verySatisfied": "Muy satisfecho",
+  "@verySatisfied": {
+    "description": "Tag muy satisfecho"
+  },
+
+  "goodService": "Buen servicio",
+  "@goodService": {
+    "description": "Tag buen servicio"
+  },
+
+  "satisfied": "Satisfecho",
+  "@satisfied": {
+    "description": "Tag satisfecho"
+  },
+
+  "acceptableService": "Servicio aceptable",
+  "@acceptableService": {
+    "description": "Tag servicio aceptable"
+  },
+
+  "regularService": "Servicio regular",
+  "@regularService": {
+    "description": "Tag servicio regular"
+  },
+
+  "poorService": "Mal servicio",
+  "@poorService": {
+    "description": "Tag mal servicio"
+  },
+
+  "needsImprovement": "Necesita mejorar",
+  "@needsImprovement": {
+    "description": "Tag necesita mejorar"
+  },
+
+  "veryPoorService": "Muy mal servicio",
+  "@veryPoorService": {
+    "description": "Tag muy mal servicio"
+  },
+
+  "unacceptable": "Inaceptable",
+  "@unacceptable": {
+    "description": "Tag inaceptable"
+  },
+
+  "errorLoadingRatings": "Error al cargar calificaciones",
+  "@errorLoadingRatings": {
+    "description": "Error al cargar calificaciones"
+  },
+
+  "initializingChat": "Iniciando chat...",
+  "@initializingChat": {
+    "description": "Mensaje iniciando chat"
+  },
+
+  "onlineStatus": "En línea",
+  "@onlineStatus": {
+    "description": "Estado en línea"
+  },
+
+  "lastSeenJustNow": "Visto hace un momento",
+  "@lastSeenJustNow": {
+    "description": "Visto hace un momento"
+  },
+
+  "lastSeenMinutesAgo": "Visto hace {minutes} min",
+  "@lastSeenMinutesAgo": {
+    "description": "Visto hace minutos",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "lastSeenHoursAgo": "Visto hace {hours}h",
+  "@lastSeenHoursAgo": {
+    "description": "Visto hace horas",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+
+  "lastSeenDaysAgo": "Visto hace {days}d",
+  "@lastSeenDaysAgo": {
+    "description": "Visto hace días",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "startConversation": "¡Inicia la conversación!",
+  "@startConversation": {
+    "description": "Mensaje iniciar conversación"
+  },
+
+  "stayInTouch": "Mantente en contacto con tu conductor/pasajero",
+  "@stayInTouch": {
+    "description": "Mensaje mantente en contacto"
+  },
+
+  "sharedLocation": "Ubicación compartida",
+  "@sharedLocation": {
+    "description": "Tipo mensaje ubicación"
+  },
+
+  "imageMessage": "Imagen",
+  "@imageMessage": {
+    "description": "Tipo mensaje imagen"
+  },
+
+  "audioMessage": "Audio",
+  "@audioMessage": {
+    "description": "Tipo mensaje audio"
+  },
+
+  "videoMessage": "Video",
+  "@videoMessage": {
+    "description": "Tipo mensaje video"
+  },
+
+  "fileMessage": "Archivo",
+  "@fileMessage": {
+    "description": "Tipo mensaje archivo"
+  },
+
+  "writeMessagePlaceholder": "Escribe un mensaje...",
+  "@writeMessagePlaceholder": {
+    "description": "Placeholder escribir mensaje"
+  },
+
+  "onWay": "En camino",
+  "@onWay": {
+    "description": "Mensaje rápido en camino"
+  },
+
+  "arrived": "He llegado",
+  "@arrived": {
+    "description": "Mensaje rápido he llegado"
+  },
+
+  "waiting": "Esperando",
+  "@waiting": {
+    "description": "Mensaje rápido esperando"
+  },
+
+  "traffic": "Hay tráfico",
+  "@traffic": {
+    "description": "Mensaje rápido hay tráfico"
+  },
+
+  "cantFindYou": "No te encuentro",
+  "@cantFindYou": {
+    "description": "Mensaje rápido no te encuentro"
+  },
+
+  "now": "Ahora",
+  "@now": {
+    "description": "Tiempo ahora"
+  },
+
+  "clearChat": "Limpiar chat",
+  "@clearChat": {
+    "description": "Opción limpiar chat"
+  },
+
+  "reportUser": "Reportar usuario",
+  "@reportUser": {
+    "description": "Opción reportar usuario"
+  },
+
+  "clearChatConfirmation": "¿Estás seguro de que quieres limpiar toda la conversación?",
+  "@clearChatConfirmation": {
+    "description": "Confirmación limpiar chat"
+  },
+
+  "errorInitializingChat": "Error al inicializar el chat",
+  "@errorInitializingChat": {
+    "description": "Error inicializar chat"
+  },
+
+  "errorSendingMessage": "Error al enviar mensaje",
+  "@errorSendingMessage": {
+    "description": "Error enviar mensaje"
+  },
+
+  "errorSendingFile": "Error al enviar archivo",
+  "@errorSendingFile": {
+    "description": "Error enviar archivo"
+  },
+
+  "tripDetailsTitle": "Detalles del Viaje",
+  "@tripDetailsTitle": {
+    "description": "Título detalles del viaje"
+  },
+
+  "loadingTripDetails": "Cargando detalles del viaje...",
+  "@loadingTripDetails": {
+    "description": "Mensaje cargando detalles"
+  },
+
+  "tripNotFound": "Viaje no encontrado",
+  "@tripNotFound": {
+    "description": "Mensaje viaje no encontrado"
+  },
+
+  "couldNotLoadTripDetails": "No se pudieron cargar los detalles de este viaje",
+  "@couldNotLoadTripDetails": {
+    "description": "Mensaje error cargar detalles"
+  },
+
+  "distanceLabel": "Distancia",
+  "@distanceLabel": {
+    "description": "Label distancia"
+  },
+
+  "durationLabel": "Duración",
+  "@durationLabel": {
+    "description": "Label duración"
+  },
+
+  "fareLabel": "Tarifa",
+  "@fareLabel": {
+    "description": "Label tarifa"
+  },
+
+  "tripCompleted": "Viaje Completado",
+  "@tripCompleted": {
+    "description": "Estado viaje completado"
+  },
+
+  "inProgress": "En Progreso",
+  "@inProgress": {
+    "description": "Estado en progreso"
+  },
+
+  "cancelledTrip": "Cancelado",
+  "@cancelledTrip": {
+    "description": "Estado cancelado"
+  },
+
+  "pendingTrip": "Pendiente",
+  "@pendingTrip": {
+    "description": "Estado pendiente"
+  },
+
+  "participants": "Participantes",
+  "@participants": {
+    "description": "Título participantes"
+  },
+
+  "driverLabel": "Conductor",
+  "@driverLabel": {
+    "description": "Label conductor"
+  },
+
+  "passengerLabel": "Pasajero",
+  "@passengerLabel": {
+    "description": "Label pasajero"
+  },
+
+  "clientLabel": "Cliente",
+  "@clientLabel": {
+    "description": "Label cliente"
+  },
+
+  "tripRouteLabel": "Ruta del Viaje",
+  "@tripRouteLabel": {
+    "description": "Título ruta del viaje"
+  },
+
+  "originLabel": "Origen",
+  "@originLabel": {
+    "description": "Label origen"
+  },
+
+  "destinationLabel": "Destino",
+  "@destinationLabel": {
+    "description": "Label destino"
+  },
+
+  "paymentMethodLabel": "Método de Pago",
+  "@paymentMethodLabel": {
+    "description": "Título método de pago"
+  },
+
+  "tripHistoryLabel": "Historial del Viaje",
+  "@tripHistoryLabel": {
+    "description": "Título historial del viaje"
+  },
+
+  "requestCreated": "Solicitud creada",
+  "@requestCreated": {
+    "description": "Evento solicitud creada"
+  },
+
+  "tripStarted": "Viaje iniciado",
+  "@tripStarted": {
+    "description": "Evento viaje iniciado"
+  },
+
+  "tripCompletedEvent": "Viaje completado",
+  "@tripCompletedEvent": {
+    "description": "Evento viaje completado"
+  },
+
+  "viewOnMaps": "Ver en Maps",
+  "@viewOnMaps": {
+    "description": "Botón ver en Maps"
+  },
+
+  "chat": "Chat",
+  "@chat": {
+    "description": "Botón chat"
+  },
+
+  "repeatTrip": "Repetir Viaje",
+  "@repeatTrip": {
+    "description": "Botón repetir viaje"
+  },
+
+  "shareTrip": "Compartir viaje",
+  "@shareTrip": {
+    "description": "Opción compartir viaje"
+  },
+
+  "downloadReceipt": "Descargar recibo",
+  "@downloadReceipt": {
+    "description": "Opción descargar recibo"
+  },
+
+  "reportProblemOption": "Reportar problema",
+  "@reportProblemOption": {
+    "description": "Opción reportar problema"
+  },
+
+  "cannotMakeCall": "No se puede realizar la llamada",
+  "@cannotMakeCall": {
+    "description": "Error no se puede llamar"
+  },
+
+  "cannotOpenGoogleMaps": "No se puede abrir Google Maps",
+  "@cannotOpenGoogleMaps": {
+    "description": "Error no se puede abrir Maps"
+  },
+
+  "acceptable": "Aceptable",
+  "@acceptable": {
+    "description": "Tag calificación aceptable"
+  },
+
+  "dissatisfied": "Insatisfecho",
+  "@dissatisfied": {
+    "description": "Tag insatisfecho"
+  },
+
+  "tripInfoLabel": "Información del Viaje",
+  "@tripInfoLabel": {
+    "description": "Label información del viaje"
+  },
+
+  "yourCommentLabel": "Tu Comentario",
+  "@yourCommentLabel": {
+    "description": "Label tu comentario"
+  },
+
+  "tagsLabel": "Etiquetas",
+  "@tagsLabel": {
+    "description": "Label etiquetas"
+  },
+
+  "cannotEdit": "No se puede editar",
+  "@cannotEdit": {
+    "description": "Mensaje no se puede editar"
+  },
+
+  "sendingFile": "Enviando archivo...",
+  "@sendingFile": {
+    "description": "Mensaje enviando archivo"
+  },
+
+  "initiatingChat": "Iniciando chat...",
+  "@initiatingChat": {
+    "description": "Mensaje iniciando chat"
+  },
+
+  "online": "En línea",
+  "@online": {
+    "description": "Estado en línea"
+  },
+
+  "seenMomentAgo": "Visto hace un momento",
+  "@seenMomentAgo": {
+    "description": "Visto hace un momento"
+  },
+
+  "seenMinutesAgo": "Visto hace {minutes} min",
+  "@seenMinutesAgo": {
+    "description": "Visto hace minutos",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "seenHoursAgo": "Visto hace {hours}h",
+  "@seenHoursAgo": {
+    "description": "Visto hace horas",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+
+  "seenDaysAgo": "Visto hace {days}d",
+  "@seenDaysAgo": {
+    "description": "Visto hace días",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "stayInTouchWithDriver": "Mantente en contacto con tu conductor",
+  "@stayInTouchWithDriver": {
+    "description": "Mensaje mantente en contacto conductor"
+  },
+
+  "stayInTouchWithPassenger": "Mantente en contacto con tu pasajero",
+  "@stayInTouchWithPassenger": {
+    "description": "Mensaje mantente en contacto pasajero"
+  },
+
+  "imageLabel": "Imagen",
+  "@imageLabel": {
+    "description": "Label tipo imagen"
+  },
+
+  "audioLabel": "Audio",
+  "@audioLabel": {
+    "description": "Label tipo audio"
+  },
+
+  "videoLabel": "Video",
+  "@videoLabel": {
+    "description": "Label tipo video"
+  },
+
+  "fileLabel": "Archivo",
+  "@fileLabel": {
+    "description": "Label tipo archivo"
+  },
+
+  "writeMessage": "Escribe un mensaje...",
+  "@writeMessage": {
+    "description": "Placeholder escribir mensaje"
+  },
+
+  "onMyWay": "Voy en camino",
+  "@onMyWay": {
+    "description": "Mensaje rápido voy en camino"
+  },
+
+  "clear": "Limpiar",
+  "@clear": {
+    "description": "Botón limpiar"
+  },
+
+  "cantFind": "No te encuentro",
+  "@cantFind": {
+    "description": "Mensaje rápido no encuentro"
+  },
+
+  "trafficDelay": "Hay tráfico, llegaré tarde",
+  "@trafficDelay": {
+    "description": "Mensaje rápido tráfico"
+  },
+
+  "errorLoadingTripDetails": "Error al cargar detalles del viaje",
+  "@errorLoadingTripDetails": {
+    "description": "Error cargar detalles viaje"
+  },
+
+  "goBack": "Volver",
+  "@goBack": {
+    "description": "Botón volver"
+  },
+
+  "participantsLabel": "Participantes",
+  "@participantsLabel": {
+    "description": "Label participantes"
+  },
+
+  "tripRouteTitle": "Ruta del Viaje",
+  "@tripRouteTitle": {
+    "description": "Título ruta del viaje"
+  },
+
+  "ratingLabel": "Calificación",
+  "@ratingLabel": {
+    "description": "Label calificación"
+  },
+
+  "tripHistoryTitle": "Historial del Viaje",
+  "@tripHistoryTitle": {
+    "description": "Título historial del viaje"
+  },
+
+  "requestCreatedLabel": "Solicitud creada",
+  "@requestCreatedLabel": {
+    "description": "Label solicitud creada"
+  },
+
+  "tripStartedLabel": "Viaje iniciado",
+  "@tripStartedLabel": {
+    "description": "Label viaje iniciado"
+  },
+
+  "tripCompletedLabel": "Viaje completado",
+  "@tripCompletedLabel": {
+    "description": "Label viaje completado"
+  },
+
+  "viewInMaps": "Ver en Maps",
+  "@viewInMaps": {
+    "description": "Botón ver en Maps"
+  },
+
+  "chatButton": "Chat",
+  "@chatButton": {
+    "description": "Botón chat"
+  },
+
+  "repeatTripComingSoon": "Próximamente disponible",
+  "@repeatTripComingSoon": {
+    "description": "Mensaje función próximamente"
+  },
+
+  "cannotOpenMaps": "No se puede abrir Google Maps",
+  "@cannotOpenMaps": {
+    "description": "Error abrir Maps"
+  },
+
+  "pending": "Pendiente",
+  "@pending": {
+    "description": "Estado pendiente"
+  },
+
+  "placeRemovedMessage": "{name} eliminado",
+  "@placeRemovedMessage": {
+    "description": "Mensaje lugar eliminado",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+
+  "undo": "Deshacer",
+  "@undo": {
+    "description": "Botón deshacer"
+  },
+
+  "errorRemovingFavorite": "Error al eliminar favorito",
+  "@errorRemovingFavorite": {
+    "description": "Error eliminar favorito"
+  },
+
+  "searchPlaceHint": "Buscar lugar...",
+  "@searchPlaceHint": {
+    "description": "Hint buscar lugar"
+  },
+
+  "favoritesLabel": "Favoritos",
+  "@favoritesLabel": {
+    "description": "Label favoritos"
+  },
+
+  "mainLabel": "Principal",
+  "@mainLabel": {
+    "description": "Badge principal"
+  },
+
+  "visitsCount": "{count} visitas",
+  "@visitsCount": {
+    "description": "Contador visitas",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+
+  "minutesAgo": "Hace {minutes} min",
+  "@minutesAgo": {
+    "description": "Tiempo hace minutos",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "hoursAgo": "Hace {hours} h",
+  "@hoursAgo": {
+    "description": "Tiempo hace horas",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+
+  "daysAgoFavorites": "Hace {days} días",
+  "@daysAgoFavorites": {
+    "description": "Tiempo hace días",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "placeNameLabel": "Nombre del lugar",
+  "@placeNameLabel": {
+    "description": "Label nombre del lugar"
+  },
+
+  "addressLabel": "Dirección",
+  "@addressLabel": {
+    "description": "Label dirección"
+  },
+
+  "searchAddressHint": "Buscar dirección...",
+  "@searchAddressHint": {
+    "description": "Hint buscar dirección"
+  },
+
+  "iconLabel": "Ícono",
+  "@iconLabel": {
+    "description": "Label ícono"
+  },
+
+  "colorLabel": "Color",
+  "@colorLabel": {
+    "description": "Label color"
+  },
+
+  "deletePlace": "Eliminar {name}",
+  "@deletePlace": {
+    "description": "Título eliminar lugar",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+
+  "confirmDeletePlace": "¿Estás seguro de que deseas eliminar este lugar?",
+  "@confirmDeletePlace": {
+    "description": "Confirmación eliminar lugar"
+  },
+
+  "addFavoritesToViewMap": "Agrega lugares favoritos para verlos en el mapa",
+  "@addFavoritesToViewMap": {
+    "description": "Mensaje mapa vacío"
+  },
+
+  "favoritesMapTitle": "Mapa de Favoritos",
+  "@favoritesMapTitle": {
+    "description": "Título mapa favoritos"
+  },
+
+  "historyButton": "Historial",
+  "@historyButton": {
+    "description": "Botón historial"
+  },
+
+  "cardHolder": "TITULAR",
+  "@cardHolder": {
+    "description": "Label titular tarjeta"
+  },
+
+  "expiresLabel": "VENCE",
+  "@expiresLabel": {
+    "description": "Label vence"
+  },
+
+  "balanceLabel": "Saldo: S/. {balance}",
+  "@balanceLabel": {
+    "description": "Label saldo",
+    "placeholders": {
+      "balance": {
+        "type": "String"
+      }
+    }
+  },
+
+  "makeDefault": "Hacer predeterminado",
+  "@makeDefault": {
+    "description": "Opción hacer predeterminado"
+  },
+
+  "deleteButton": "Eliminar",
+  "@deleteButton": {
+    "description": "Botón eliminar"
+  },
+
+  "monthlySummary": "Resumen del Mes",
+  "@monthlySummary": {
+    "description": "Título resumen mensual"
+  },
+
+  "transactionsLabel": "Transacciones",
+  "@transactionsLabel": {
+    "description": "Label transacciones"
+  },
+
+  "successfulLabel": "Exitosas",
+  "@successfulLabel": {
+    "description": "Label exitosas"
+  },
+
+  "tripLabel": "Viaje {tripId}",
+  "@tripLabel": {
+    "description": "Label viaje con ID",
+    "placeholders": {
+      "tripId": {
+        "type": "String"
+      }
+    }
+  },
+
+  "successfulStatus": "Exitoso",
+  "@successfulStatus": {
+    "description": "Estado exitoso"
+  },
+
+  "failedStatus": "Fallido",
+  "@failedStatus": {
+    "description": "Estado fallido"
+  },
+
+  "paymentsProtected": "Tus pagos están protegidos",
+  "@paymentsProtected": {
+    "description": "Mensaje pagos protegidos"
+  },
+
+  "encryptionMessage": "Utilizamos encriptación de grado bancario para proteger tu información.",
+  "@encryptionMessage": {
+    "description": "Mensaje encriptación"
+  },
+
+  "cashDescription": "Pago al finalizar el viaje",
+  "@cashDescription": {
+    "description": "Descripción método efectivo"
+  },
+
+  "walletDescription": "Pago con saldo de billetera",
+  "@walletDescription": {
+    "description": "Descripción método billetera"
+  },
+
+  "paypalDescription": "Pago seguro con PayPal",
+  "@paypalDescription": {
+    "description": "Descripción método PayPal"
+  },
+
+  "paymentMethodDefault": "Método de pago",
+  "@paymentMethodDefault": {
+    "description": "Descripción método por defecto"
+  },
+
+  "todayDate": "Hoy",
+  "@todayDate": {
+    "description": "Fecha hoy"
+  },
+
+  "yesterdayDate": "Ayer",
+  "@yesterdayDate": {
+    "description": "Fecha ayer"
+  },
+
+  "defaultMethodMessage": "{name} es ahora tu método predeterminado",
+  "@defaultMethodMessage": {
+    "description": "Mensaje método predeterminado",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+
+  "deletePaymentMethod": "Eliminar método de pago",
+  "@deletePaymentMethod": {
+    "description": "Título eliminar método"
+  },
+
+  "confirmDeleteMethod": "¿Estás seguro de que deseas eliminar {name}?",
+  "@confirmDeleteMethod": {
+    "description": "Confirmación eliminar método",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+
+  "cancelButton": "Cancelar",
+  "@cancelButton": {
+    "description": "Botón cancelar"
+  },
+
+  "methodDeleted": "Método de pago eliminado",
+  "@methodDeleted": {
+    "description": "Mensaje método eliminado"
+  },
+
+  "rechargeWallet": "Recargar Billetera",
+  "@rechargeWallet": {
+    "description": "Título recargar billetera"
+  },
+
+  "rechargingAmount": "Recargando S/. {amount}...",
+  "@rechargingAmount": {
+    "description": "Mensaje recargando",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+
+  "customAmount": "Monto personalizado",
+  "@customAmount": {
+    "description": "Label monto personalizado"
+  },
+
+  "processingRecharge": "Procesando recarga...",
+  "@processingRecharge": {
+    "description": "Mensaje procesando recarga"
+  },
+
+  "loadingWalletHistory": "Cargando historial de billetera...",
+  "@loadingWalletHistory": {
+    "description": "Mensaje cargando historial billetera"
+  },
+
+  "transactionDetails": "Detalles de Transacción",
+  "@transactionDetails": {
+    "description": "Título detalles transacción"
+  },
+
+  "transactionId": "ID Transacción",
+  "@transactionId": {
+    "description": "Label ID transacción"
+  },
+
+  "tripDetailLabel": "Viaje",
+  "@tripDetailLabel": {
+    "description": "Label viaje en detalles"
+  },
+
+  "dateDetailLabel": "Fecha",
+  "@dateDetailLabel": {
+    "description": "Label fecha en detalles"
+  },
+
+  "methodDetailLabel": "Método",
+  "@methodDetailLabel": {
+    "description": "Label método en detalles"
+  },
+
+  "amountDetailLabel": "Monto",
+  "@amountDetailLabel": {
+    "description": "Label monto en detalles"
+  },
+
+  "statusDetailLabel": "Estado",
+  "@statusDetailLabel": {
+    "description": "Label estado en detalles"
+  },
+
+  "downloadingReceipt": "Descargando recibo...",
+  "@downloadingReceipt": {
+    "description": "Mensaje descargando recibo"
+  },
+
+  "downloadButton": "Descargar",
+  "@downloadButton": {
+    "description": "Botón descargar"
+  },
+
+  "openingSupport": "Abriendo soporte...",
+  "@openingSupport": {
+    "description": "Mensaje abriendo soporte"
+  },
+
+  "helpButton": "Ayuda",
+  "@helpButton": {
+    "description": "Botón ayuda"
+  },
+
+  "helpTitle": "Ayuda",
+  "@helpTitle": {
+    "description": "Título ayuda"
+  },
+
+  "helpItem1": "• Para establecer un método predeterminado, mantén presionado sobre él.",
+  "@helpItem1": {
+    "description": "Item ayuda 1"
+  },
+
+  "helpItem2": "• Puedes eliminar métodos de pago deslizando hacia la izquierda.",
+  "@helpItem2": {
+    "description": "Item ayuda 2"
+  },
+
+  "helpItem3": "• Tu información está encriptada y segura.",
+  "@helpItem3": {
+    "description": "Item ayuda 3"
+  },
+
+  "helpItem4": "• La billetera RapiTeam te permite pagar sin tarjetas.",
+  "@helpItem4": {
+    "description": "Item ayuda 4"
+  },
+
+  "addCard": "Agregar Tarjeta",
+  "@addCard": {
+    "description": "Título agregar tarjeta"
+  },
+
+  "cardNumberLabel": "Número de tarjeta",
+  "@cardNumberLabel": {
+    "description": "Label número de tarjeta"
+  },
+
+  "cardNumberRequired": "Por favor ingresa el número de tarjeta",
+  "@cardNumberRequired": {
+    "description": "Validación número tarjeta"
+  },
+
+  "cardHolderLabel": "Titular de la tarjeta",
+  "@cardHolderLabel": {
+    "description": "Label titular de tarjeta"
+  },
+
+  "cardHolderRequired": "Por favor ingresa el nombre del titular",
+  "@cardHolderRequired": {
+    "description": "Validación titular tarjeta"
+  },
+
+  "expiryLabel": "MM/AA",
+  "@expiryLabel": {
+    "description": "Label fecha expiración"
+  },
+
+  "requiredField": "Requerido",
+  "@requiredField": {
+    "description": "Validación campo requerido"
+  },
+
+  "cvvLabel": "CVV",
+  "@cvvLabel": {
+    "description": "Label CVV"
+  },
+
+  "dataSecureMessage": "Tus datos están seguros y encriptados",
+  "@dataSecureMessage": {
+    "description": "Mensaje datos seguros"
+  },
+
+  "cardAddedSuccess": "Tarjeta agregada exitosamente",
+  "@cardAddedSuccess": {
+    "description": "Mensaje tarjeta agregada"
+  },
+
+  "emailSent": "Correo enviado",
+  "@emailSent": {
+    "description": "Título correo enviado"
+  },
+
+  "checkInboxInstructions": "Revisa tu bandeja de entrada y sigue las instrucciones para recuperar tu contraseña.",
+  "@checkInboxInstructions": {
+    "description": "Instrucciones revisar bandeja"
+  },
+
+  "forgotPasswordQuestion": "¿Olvidaste tu contraseña?",
+  "@forgotPasswordQuestion": {
+    "description": "Pregunta olvidaste contraseña"
+  },
+
+  "enterEmailInstructions": "Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
+  "@enterEmailInstructions": {
+    "description": "Instrucciones ingresar email para recuperar"
+  },
+
+  "sendRecoveryLink": "Enviar enlace de recuperación",
+  "@sendRecoveryLink": {
+    "description": "Botón enviar enlace de recuperación"
+  },
+
+  "emailAlreadyRegistered": "Email ya registrado",
+  "@emailAlreadyRegistered": {
+    "description": "Título email ya registrado"
+  },
+
+  "emailAlreadyRegisteredMessage": "El email {email} ya está registrado como {userType}.\n\n¿Deseas iniciar sesión en su lugar?",
+  "@emailAlreadyRegisteredMessage": {
+    "description": "Mensaje email ya registrado",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      },
+      "userType": {
+        "type": "String"
+      }
+    }
+  },
+
+  "goToLoginButton": "Ir a Login",
+  "@goToLoginButton": {
+    "description": "Botón ir a login"
+  },
+
+  "phoneAlreadyRegistered": "Teléfono ya registrado",
+  "@phoneAlreadyRegistered": {
+    "description": "Título teléfono ya registrado"
+  },
+
+  "phoneAlreadyRegisteredMessage": "El teléfono {phone} ya está registrado con el email:\n\n{email}\n\nTipo de cuenta: {userType}\n\n¿Deseas iniciar sesión?",
+  "@phoneAlreadyRegisteredMessage": {
+    "description": "Mensaje teléfono ya registrado",
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      },
+      "email": {
+        "type": "String"
+      },
+      "userType": {
+        "type": "String"
+      }
+    }
+  },
+
+  "buttonPressed": "✅ BOTÓN PRESIONADO!",
+  "@buttonPressed": {
+    "description": "Mensaje debug botón presionado"
+  },
+
+  "complaintsBook": "Libro de Reclamaciones",
+  "@complaintsBook": {
+    "description": "Título del libro de reclamaciones"
+  },
+
+  "legalInformation": "Información Legal",
+  "@legalInformation": {
+    "description": "Título información legal"
+  },
+
+  "complaintsLegalInfo": "Según la Ley N° 29571 - Código de Protección y Defensa del Consumidor, tienes derecho a presentar un reclamo o queja sobre el servicio recibido. Los reclamos deben ser atendidos en un plazo máximo de 30 días calendario.",
+  "@complaintsLegalInfo": {
+    "description": "Información legal del libro de reclamaciones"
+  },
+
+  "complaintsLaw": "Ley N° 29571 - INDECOPI (Perú)",
+  "@complaintsLaw": {
+    "description": "Referencia a la ley"
+  },
+
+  "newClaim": "Nuevo Reclamo",
+  "@newClaim": {
+    "description": "Botón nuevo reclamo"
+  },
+
+  "newComplaint": "Nueva Queja",
+  "@newComplaint": {
+    "description": "Botón nueva queja"
+  },
+
+  "myComplaints": "Mis Reclamos",
+  "@myComplaints": {
+    "description": "Título sección mis reclamos"
+  },
+
+  "records": "registros",
+  "@records": {
+    "description": "Contador de registros"
+  },
+
+  "noComplaints": "No tienes reclamos registrados",
+  "@noComplaints": {
+    "description": "Mensaje sin reclamos"
+  },
+
+  "noComplaintsDescription": "Aquí aparecerán tus reclamos y quejas cuando los presentes",
+  "@noComplaintsDescription": {
+    "description": "Descripción sin reclamos"
+  },
+
+  "providerData": "Datos del Proveedor",
+  "@providerData": {
+    "description": "Título datos del proveedor"
+  },
+
+  "overdueResponse": "Respuesta vencida",
+  "@overdueResponse": {
+    "description": "Etiqueta respuesta vencida"
+  },
+
+  "daysToRespond": "días para responder",
+  "@daysToRespond": {
+    "description": "Etiqueta días para responder"
+  },
+
+  "recordType": "Tipo de registro",
+  "@recordType": {
+    "description": "Título tipo de registro"
+  },
+
+  "claim": "Reclamo",
+  "@claim": {
+    "description": "Tipo reclamo"
+  },
+
+  "complaint": "Queja",
+  "@complaint": {
+    "description": "Tipo queja"
+  },
+
+  "claimDescription": "Respuesta obligatoria en 30 días",
+  "@claimDescription": {
+    "description": "Descripción tipo reclamo"
+  },
+
+  "complaintDescription": "Malestar por la atención",
+  "@complaintDescription": {
+    "description": "Descripción tipo queja"
+  },
+
+  "consumerData": "Datos del Consumidor",
+  "@consumerData": {
+    "description": "Título datos del consumidor"
+  },
+
+  "dniDocument": "DNI",
+  "@dniDocument": {
+    "description": "Documento de identidad"
+  },
+
+  "invalidDni": "DNI debe tener 8 dígitos",
+  "@invalidDni": {
+    "description": "Error DNI inválido"
+  },
+
+  "invalidEmail": "Ingresa un correo válido",
+  "@invalidEmail": {
+    "description": "Error email inválido"
+  },
+
+  "complaintDetails": "Detalle del Reclamo",
+  "@complaintDetails": {
+    "description": "Título detalle del reclamo"
+  },
+
+  "claimedAmount": "Monto reclamado (S/)",
+  "@claimedAmount": {
+    "description": "Campo monto reclamado"
+  },
+
+  "optional": "Opcional",
+  "@optional": {
+    "description": "Etiqueta opcional"
+  },
+
+  "serviceDescription": "Descripción del servicio",
+  "@serviceDescription": {
+    "description": "Campo descripción del servicio"
+  },
+
+  "complaintDetail": "Detalle del reclamo",
+  "@complaintDetail": {
+    "description": "Campo detalle del reclamo"
+  },
+
+  "minCharacters": "Mínimo {count} caracteres",
+  "@minCharacters": {
+    "description": "Helper mínimo caracteres",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+
+  "minCharactersError": "Debe tener al menos {count} caracteres",
+  "@minCharactersError": {
+    "description": "Error mínimo caracteres",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+
+  "consumerRequest": "¿Qué solicitas como solución?",
+  "@consumerRequest": {
+    "description": "Campo pedido del consumidor"
+  },
+
+  "consumerRequestHint": "Describe lo que esperas como solución a tu reclamo",
+  "@consumerRequestHint": {
+    "description": "Hint pedido del consumidor"
+  },
+
+  "complaintTermsAcceptance": "Acepto que mis datos personales sean utilizados para procesar este reclamo conforme a la Ley N° 29571 y la política de privacidad.",
+  "@complaintTermsAcceptance": {
+    "description": "Texto aceptación de términos"
+  },
+
+  "submitClaim": "Enviar Reclamo",
+  "@submitClaim": {
+    "description": "Botón enviar reclamo"
+  },
+
+  "submitComplaint": "Enviar Queja",
+  "@submitComplaint": {
+    "description": "Botón enviar queja"
+  },
+
+  "complaintCreated": "Reclamo registrado exitosamente. Número:",
+  "@complaintCreated": {
+    "description": "Mensaje reclamo creado"
+  },
+
+  "copyNumber": "Copiar número",
+  "@copyNumber": {
+    "description": "Tooltip copiar número"
+  },
+
+  "numberCopied": "Número de reclamo copiado",
+  "@numberCopied": {
+    "description": "Mensaje número copiado"
+  },
+
+  "createdDate": "Fecha de registro",
+  "@createdDate": {
+    "description": "Label fecha de registro"
+  },
+
+  "resolvedDate": "Fecha de resolución",
+  "@resolvedDate": {
+    "description": "Label fecha de resolución"
+  },
+
+  "pendingResponse": "Respuesta pendiente",
+  "@pendingResponse": {
+    "description": "Título respuesta pendiente"
+  },
+
+  "daysRemaining": "días restantes",
+  "@daysRemaining": {
+    "description": "Label días restantes"
+  },
+
+  "responseOverdue": "Respuesta vencida",
+  "@responseOverdue": {
+    "description": "Título respuesta vencida"
+  },
+
+  "overdueDescription": "El plazo de 30 días ha vencido. Puedes presentar tu caso ante INDECOPI.",
+  "@overdueDescription": {
+    "description": "Descripción respuesta vencida"
+  },
+
+  "providerResponse": "Respuesta del Proveedor",
+  "@providerResponse": {
+    "description": "Título respuesta del proveedor"
+  },
+
+  "responseDate": "Fecha de respuesta",
+  "@responseDate": {
+    "description": "Label fecha de respuesta"
+  },
+
+  "response": "Respuesta",
+  "@response": {
+    "description": "Label respuesta"
+  },
+
+  "businessName": "Razón Social",
+  "@businessName": {
+    "description": "Label razón social"
+  },
+
+  "complaintLegalNote": "Este reclamo está regulado por la Ley N° 29571 - Código de Protección y Defensa del Consumidor. Ante cualquier incumplimiento, puedes presentar tu caso ante INDECOPI.",
+  "@complaintLegalNote": {
+    "description": "Nota legal del reclamo"
+  }
+}

@@ -1,0 +1,903 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== FUNCIONES HELPER DE AUTENTICACIÓN Y AUTORIZACIÓN =====
+
+    // Verificar si el usuario está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Verificar si es el propietario del documento
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ✅ CORREGIDO: Verificar si es administrador
+    // Verifica AMBOS campos: userType == 'admin' O isAdmin == true
+    function isAdmin() {
+      let userData = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isAuthenticated() &&
+             (userData.userType == 'admin' || userData.isAdmin == true);
+    }
+
+    // Verificar si es conductor (incluye dual)
+    function isDriver() {
+      return isAuthenticated() &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'driver' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'dual');
+    }
+
+    // ✅ CRÍTICO: Detectar si se intenta modificar campos protegidos
+    // Estos campos SOLO pueden ser modificados por administradores
+    // NOTA: 'email' fue REMOVIDO de campos protegidos para permitir que usuarios
+    // actualicen su email durante el flujo de completar perfil (login social)
+    function hasProtectedFieldChanges() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['isAdmin', 'isVerified', 'id', 'createdAt', 'rating', 'totalTrips']);
+    }
+
+    // ✅ NUEVO: Validar upgrade a conductor legítimo
+    // Permite cambiar userType SOLO de 'passenger' a 'dual' con driverStatus 'pending_approval'
+    function isValidDriverUpgrade() {
+      let oldType = resource.data.userType;
+      let newType = request.resource.data.userType;
+      let newStatus = request.resource.data.get('driverStatus', '');
+      let newMode = request.resource.data.get('currentMode', '');
+      let newRoles = request.resource.data.get('availableRoles', []);
+
+      return oldType == 'passenger' &&
+             newType == 'dual' &&
+             newStatus == 'pending_approval' &&
+             newMode == 'driver' &&
+             newRoles.hasAll(['passenger', 'driver']) &&
+             newRoles.size() == 2;
+    }
+
+    // ✅ PROTECCIÓN DE CÓDIGOS DE VERIFICACIÓN MUTUA:
+    // Los códigos NO se pueden modificar directamente por clientes
+    function hasVerificationCodeChanges() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['passengerVerificationCode', 'driverVerificationCode']);
+    }
+
+    // ===== REGLAS PARA COLECCIÓN DE USUARIOS =====
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+
+      // ✅ CORREGIDO: Permitir queries limitados PRIMERO (para usuarios nuevos en login social)
+      // CRÍTICO: Evaluar la condición simple ANTES de isAdmin() para evitar errores con usuarios nuevos
+      // - Usuarios autenticados: queries con limit <= 10 (para verificar email duplicado al hacer login)
+      // - Admins: queries sin límite
+      allow list: if (isAuthenticated() && request.query.limit <= 10) || isAdmin();
+
+      // ✅ CRÍTICO: Permitir crear documento SI el usuario está autenticado y es su propio documento
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+
+      // Protección contra escalación de privilegios excepto upgrade a conductor válido
+      allow update: if isOwner(userId) && (!hasProtectedFieldChanges() || isValidDriverUpgrade());
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
+
+      match /favorites/{favoriteId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // ✅ NUEVO: Reglas para métodos de pago
+      match /payment_methods/{methodId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // ✅ NUEVO: Reglas para promociones usadas por el usuario
+      match /used_promotions/{promoId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // ===== REGLAS PARA CONDUCTORES =====
+
+    match /drivers/{driverId} {
+      // Lectura: Cualquier usuario autenticado (para ver conductores disponibles)
+      allow read: if isAuthenticated();
+
+      // Creación: Usuario creando su propio perfil de conductor
+      allow create: if isAuthenticated() && request.auth.uid == driverId;
+
+      // Actualización: El conductor mismo o un administrador
+      allow update: if isOwner(driverId) || isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+
+      // ===== SUBCOLECCIÓN: DOCUMENTOS DEL CONDUCTOR =====
+      match /documents/{documentId} {
+        // Lectura: El conductor propietario o administrador
+        allow read: if isOwner(driverId) || isAdmin();
+
+        // Creación: El conductor puede subir sus propios documentos
+        allow create: if isOwner(driverId);
+
+        // Actualización: El conductor o administrador (para actualizar estado de aprobación)
+        allow update: if isOwner(driverId) || isAdmin();
+
+        // Eliminación: El conductor o administrador
+        allow delete: if isOwner(driverId) || isAdmin();
+      }
+    }
+
+    // ===== REGLAS PARA PASAJEROS =====
+
+    match /passengers/{passengerId} {
+      // Lectura: El pasajero mismo, conductores, o admin
+      allow read: if isOwner(passengerId) || isDriver() || isAdmin();
+
+      // Creación: El pasajero mismo al registrarse
+      allow create: if isAuthenticated() && request.auth.uid == passengerId;
+
+      // Actualización: El pasajero mismo o un administrador
+      allow update: if isOwner(passengerId) || isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA VIAJES (TRIPS) =====
+
+    match /trips/{tripId} {
+      // ✅ CORREGIDO: Separar get (documento individual) y list (queries)
+      // GET: Participantes del viaje o administrador
+      allow get: if isAuthenticated() &&
+                    (resource.data.userId == request.auth.uid ||
+                     resource.data.driverId == request.auth.uid ||
+                     isAdmin());
+
+      // LIST: Admins pueden hacer queries, participantes solo ven sus propios viajes
+      allow list: if isAdmin();
+
+      // Creación: Cualquier usuario autenticado
+      allow create: if isAuthenticated();
+
+      // Actualización: Participantes del viaje o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid ||
+                       resource.data.driverId == request.auth.uid ||
+                       isAdmin());
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA VIAJES (RIDES) =====
+
+    match /rides/{rideId} {
+      // ✅ CORREGIDO: Separar get y list para mejor control
+      // GET: Participantes del viaje o administrador
+      allow get: if isAuthenticated() &&
+                    (resource.data.userId == request.auth.uid ||
+                     resource.data.driverId == request.auth.uid ||
+                     isAdmin());
+
+      // LIST: Admins pueden hacer queries sin restricción
+      // Usuarios autenticados pueden hacer queries limitadas (max 100 resultados)
+      // NOTA: La app filtra por userId/passengerId/driverId en el cliente
+      allow list: if isAdmin() ||
+                     (isAuthenticated() && request.query.limit <= 100);
+
+      // Creación: Cualquier usuario autenticado puede crear un viaje
+      allow create: if isAuthenticated();
+
+      // Actualización: Solo participantes del viaje o administrador
+      // ✅ CRÍTICO: NO permitir cambios en códigos de verificación
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid ||
+                       resource.data.driverId == request.auth.uid ||
+                       isAdmin()) &&
+                      !hasVerificationCodeChanges(); // Los códigos NO se pueden cambiar
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA CALIFICACIONES (RATINGS) =====
+
+    match /ratings/{ratingId} {
+      // Lectura: Usuarios involucrados o administrador
+      allow read: if isAuthenticated() &&
+                     (resource.data.fromUserId == request.auth.uid ||
+                      resource.data.toUserId == request.auth.uid ||
+                      isAdmin());
+
+      // Creación: Usuario autenticado
+      allow create: if isAuthenticated();
+
+      // ✅ SEGURIDAD: Las calificaciones NO se pueden editar (evitar manipulación)
+      allow update: if false;
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA CHATS (SISTEMA DE MENSAJERÍA) =====
+    // ✅ CORREGIDO: Permitir acceso basado en el rideId del chat
+    // El chatId es el mismo que el rideId del viaje
+
+    match /chats/{chatId} {
+      // Lectura: Usuarios autenticados (el filtro se hace verificando el viaje)
+      allow read: if isAuthenticated();
+
+      // Creación: Usuarios autenticados pueden crear el documento del chat
+      allow create: if isAuthenticated();
+
+      // Actualización: Usuarios autenticados (para actualizar metadata)
+      allow update: if isAuthenticated();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+
+      // ===== SUBCOLECCIÓN DE MENSAJES =====
+      match /messages/{messageId} {
+        // Lectura: Usuarios autenticados
+        allow read: if isAuthenticated();
+
+        // Creación: Usuarios autenticados pueden enviar mensajes
+        allow create: if isAuthenticated();
+
+        // Actualización: Para marcar como leído
+        allow update: if isAuthenticated();
+
+        // Eliminación: Solo administradores
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ===== REGLAS PARA PRESENCIA DE USUARIOS =====
+    // ✅ NUEVO: Colección para el estado online/offline de usuarios
+
+    match /userPresence/{userId} {
+      // Lectura: Cualquier usuario autenticado
+      allow read: if isAuthenticated();
+
+      // Escritura: Solo el propio usuario
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ===== REGLAS PARA NOTIFICACIONES =====
+
+    match /notifications/{notificationId} {
+      // Lectura: Solo el destinatario o administrador
+      allow read: if isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Creación: Usuarios autenticados pueden crear notificaciones
+      // (para notificar a conductores de nuevas solicitudes, etc.)
+      allow create: if isAuthenticated();
+
+      // Actualización: El destinatario o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Eliminación: El destinatario o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ===== REGLAS PARA TICKETS DE SOPORTE =====
+
+    match /supportTickets/{ticketId} {
+      // Lectura: El creador del ticket o administrador
+      allow read: if isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Creación: Cualquier usuario autenticado
+      allow create: if isAuthenticated();
+
+      // Actualización: El creador o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA CONFIGURACIÓN DEL SISTEMA =====
+
+    match /settings/{settingId} {
+      // Lectura: Admins y conductores (necesitan leer config de créditos: serviceFee, minServiceCredits)
+      allow read: if isAdmin() || (isAuthenticated() && isDriver());
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== REGLAS PARA ZONAS (Lectura Pública) =====
+
+    match /zones/{zoneId} {
+      // Lectura: Público (para calcular tarifas)
+      allow read: if true;
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== REGLAS PARA CONFIGURACIÓN (Públicas) =====
+
+    match /config/{document} {
+      // Lectura: Público
+      allow read: if true;
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== REGLAS PARA TARIFAS (Públicas) =====
+
+    match /rates/{rateId} {
+      // Lectura: Público
+      allow read: if true;
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== REGLAS PARA PROMOCIONES =====
+
+    match /promotions/{promoId} {
+      // ✅ GET: Lectura individual pública (para validar código de promoción)
+      allow get: if true;
+
+      // ✅ LIST: Queries de promociones activas
+      // - Usuarios autenticados: filtrar por targetUserType
+      // - No autenticados: solo promociones 'both'
+      // - Admins: sin restricción
+      allow list: if isAdmin() ||
+                     (isAuthenticated() &&
+                      request.query.limit <= 100) ||
+                     (!isAuthenticated() &&
+                      request.query.limit <= 20);
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== REGLAS PARA MÉTODO DE PAGO =====
+
+    match /paymentMethods/{methodId} {
+      // Lectura: Solo el propietario o administrador
+      allow read: if isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Creación: El usuario creando su método de pago
+      allow create: if isAuthenticated() &&
+                      request.resource.data.userId == request.auth.uid;
+
+      // Actualización: El propietario o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Eliminación: El propietario o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ===== REGLAS PARA AUDITORÍA (Solo Lectura para Admins) =====
+
+    match /auditLogs/{logId} {
+      // Lectura: Solo administradores
+      allow read: if isAdmin();
+
+      // Escritura: Solo sistema (Cloud Functions)
+      allow write: if false;
+    }
+
+    // ===== REGLAS PARA LOGS DE SEGURIDAD =====
+
+    match /security_logs/{logId} {
+      // Lectura: Solo administradores
+      allow read: if isAdmin();
+
+      // Creación: Usuarios autenticados pueden registrar eventos de seguridad
+      // (login, logout, cambios de contraseña, intentos fallidos, etc.)
+      allow create: if isAuthenticated();
+
+      // Actualización y eliminación: NO permitidas (integridad de logs)
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ===== REGLAS PARA LOGROS/ACHIEVEMENTS =====
+
+    match /achievements/{achievementId} {
+      // ✅ CORREGIDO: GET individual - el propietario del logro o admin
+      allow get: if isAuthenticated() &&
+                    (resource.data.userId == request.auth.uid || isAdmin());
+
+      // ✅ CORREGIDO: LIST - usuarios autenticados pueden listar (filtro en cliente)
+      // Necesario para que conductores puedan ver sus propios logros
+      allow list: if isAuthenticated();
+
+      // Creación: Solo sistema/Cloud Functions o administradores
+      allow create: if isAdmin();
+
+      // Actualización: Solo sistema/Cloud Functions o administradores
+      allow update: if isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA NEGOCIACIONES DE PRECIO =====
+
+    match /price_negotiations/{negotiationId} {
+      // Lectura: El conductor o pasajero involucrado, o administrador
+      allow read: if isAuthenticated() &&
+                     (resource.data.driverId == request.auth.uid ||
+                      resource.data.passengerId == request.auth.uid ||
+                      isAdmin());
+
+      // Creación: El pasajero puede crear una negociación
+      allow create: if isAuthenticated() &&
+                      request.resource.data.passengerId == request.auth.uid;
+
+      // Actualización: El conductor o pasajero involucrado, o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.driverId == request.auth.uid ||
+                       resource.data.passengerId == request.auth.uid ||
+                       isAdmin());
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== REGLAS PARA NEGOCIACIONES (ALIAS) =====
+    // Colección usada por la app para el sistema de negociación estilo InDriver
+
+    match /negotiations/{negotiationId} {
+      // GET: Cualquier usuario autenticado puede ver negociaciones activas
+      // (conductores necesitan ver las solicitudes disponibles)
+      allow get: if isAuthenticated();
+
+      // LIST: Conductores y pasajeros pueden ver listado
+      // Los conductores ven solicitudes activas para ofertar
+      // Los pasajeros ven sus propias negociaciones
+      allow list: if isAuthenticated();
+
+      // Creación: Cualquier usuario autenticado (pasajeros crean solicitudes)
+      allow create: if isAuthenticated();
+
+      // Actualización: Participantes o cualquier conductor (para hacer ofertas)
+      allow update: if isAuthenticated();
+
+      // Eliminación: El pasajero creador o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.passengerId == request.auth.uid || isAdmin());
+
+      // Subcolección de ofertas de conductores
+      match /offers/{offerId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ===== 💳 TRANSACCIONES DE RECARGA (MERCADOPAGO) =====
+    match /recharge_transactions/{transactionId} {
+      // Lectura: El usuario propietario, administrador, o Cloud Functions (sin auth)
+      allow read: if (isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin()))
+                     || request.auth == null;
+
+      // Creación: Solo desde backend (Firebase Functions - sin auth)
+      allow create: if request.auth == null;
+
+      // Actualización: Solo desde backend (Firebase Functions - sin auth)
+      allow update: if request.auth == null;
+
+      // Eliminación: Solo administradores o Cloud Functions
+      allow delete: if isAdmin() || request.auth == null;
+    }
+
+    // ===== 💸 SOLICITUDES DE RETIRO (CONDUCTORES) =====
+    match /withdrawal_requests/{withdrawalId} {
+      // ✅ CORREGIDO: Separar get y list
+      // GET: El conductor propietario, administrador, o Cloud Functions
+      allow get: if (isAuthenticated() &&
+                     (resource.data.driverId == request.auth.uid || isAdmin()))
+                     || request.auth == null;
+
+      // ✅ CORREGIDO: Permitir a conductores listar sus propios retiros
+      allow list: if isAuthenticated() || isAdmin() || request.auth == null;
+
+      // Creación: Conductores para sí mismos o Cloud Functions
+      allow create: if (isAuthenticated() &&
+                      isDriver() &&
+                      request.resource.data.driverId == request.auth.uid &&
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.amount >= 50) // Monto mínimo S/ 50
+                      || request.auth == null;
+
+      // ✅ CORREGIDO: Actualización por Admin (para procesar retiros) o Cloud Functions
+      allow update: if isAdmin() || request.auth == null;
+
+      // Eliminación: Solo administradores o Cloud Functions
+      allow delete: if isAdmin() || request.auth == null;
+    }
+
+    // ===== 💸 RETIROS (ALIAS PARA WITHDRAWAL_REQUESTS) =====
+    match /withdrawals/{withdrawalId} {
+      // Mismas reglas que withdrawal_requests para compatibilidad
+      allow get: if (isAuthenticated() &&
+                     (resource.data.driverId == request.auth.uid || isAdmin()))
+                     || request.auth == null;
+
+      // ✅ CORREGIDO: Permitir a conductores listar sus propios retiros
+      allow list: if isAuthenticated() || isAdmin() || request.auth == null;
+
+      allow create: if (isAuthenticated() &&
+                      isDriver() &&
+                      request.resource.data.driverId == request.auth.uid)
+                      || request.auth == null;
+
+      allow update: if request.auth == null || isAdmin();
+      allow delete: if isAdmin() || request.auth == null;
+    }
+
+    // ===== 🚨 DISPUTAS Y REPORTES =====
+    match /disputes/{disputeId} {
+      // GET: Participantes de la disputa o administrador
+      allow get: if isAuthenticated() &&
+                    (resource.data.reporterId == request.auth.uid ||
+                     resource.data.reportedUserId == request.auth.uid ||
+                     isAdmin());
+
+      // LIST: Solo administradores pueden listar todas las disputas
+      allow list: if isAdmin();
+
+      // Creación: Usuarios autenticados pueden reportar
+      allow create: if isAuthenticated() &&
+                      request.resource.data.reporterId == request.auth.uid;
+
+      // Actualización: Solo administradores (para resolver disputas)
+      allow update: if isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 🚨 EMERGENCIAS (BOTÓN DE PÁNICO) =====
+    match /emergencies/{emergencyId} {
+      // GET: El usuario que creó la emergencia, admin, o Cloud Functions
+      allow get: if (isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin()))
+                     || request.auth == null;
+
+      // LIST: Solo administradores o Cloud Functions
+      allow list: if isAdmin() || request.auth == null;
+
+      // Creación: Usuario autenticado o Cloud Functions
+      allow create: if (isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid)
+                       || request.auth == null;
+
+      // Actualización: Solo administradores o Cloud Functions
+      allow update: if isAdmin() || request.auth == null;
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 🚗 VEHÍCULOS DE CONDUCTORES =====
+    match /vehicles/{vehicleId} {
+      // GET: El conductor propietario o administrador
+      allow get: if isAuthenticated() &&
+                   (resource.data.driverId == request.auth.uid || isAdmin());
+
+      // LIST: Todos los usuarios autenticados (para ver vehículos disponibles)
+      // Conductores pueden ver sus propios vehículos con query
+      allow list: if isAuthenticated();
+
+      // Creación: Conductores pueden crear sus propios vehículos
+      allow create: if isAuthenticated() &&
+                      isDriver() &&
+                      request.resource.data.driverId == request.auth.uid;
+
+      // Actualización: El conductor propietario o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.driverId == request.auth.uid || isAdmin());
+
+      // Eliminación: El conductor propietario o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.driverId == request.auth.uid || isAdmin());
+    }
+
+    // ===== 📊 TRANSACCIONES Y WALLET =====
+    match /transactions/{transactionId} {
+      // GET: El usuario propietario, administrador, o Cloud Functions
+      allow get: if (isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin()))
+                     || request.auth == null;
+
+      // ✅ CORREGIDO: Permitir a usuarios autenticados listar sus transacciones
+      // El filtro por userId se hace en el cliente
+      allow list: if isAuthenticated() || isAdmin() || request.auth == null;
+
+      // Creación: Solo desde backend (Cloud Functions - sin auth)
+      allow create: if request.auth == null;
+
+      // Actualización: Solo desde backend (Cloud Functions - sin auth)
+      allow update: if request.auth == null;
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 💰 WALLETS DE CONDUCTORES =====
+    match /wallets/{walletId} {
+      // GET: El conductor propietario (walletId == uid), administrador, o Cloud Functions
+      allow get: if (isAuthenticated() &&
+                     (walletId == request.auth.uid ||
+                      resource.data.userId == request.auth.uid ||
+                      resource.data.driverId == request.auth.uid ||
+                      isAdmin()))
+                     || request.auth == null;
+
+      // LIST: Usuarios autenticados (filtro en cliente) o Cloud Functions
+      allow list: if isAuthenticated() || isAdmin() || request.auth == null;
+
+      // Creación: Conductores para sí mismos, administradores, o Cloud Functions
+      allow create: if (isAuthenticated() &&
+                       (isDriver() &&
+                       (request.resource.data.driverId == request.auth.uid ||
+                        request.resource.data.userId == request.auth.uid)))
+                       || isAdmin()
+                       || request.auth == null;
+
+      // ✅ CORREGIDO: Actualización por Admin (para agregar créditos) o Cloud Functions
+      allow update: if isAdmin() || request.auth == null;
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+
+      // ✅ NUEVO: Subcolección de transacciones de créditos
+      match /credit_transactions/{transactionId} {
+        // Lectura: El propietario del wallet o admin
+        allow read: if isAuthenticated() &&
+                       (walletId == request.auth.uid || isAdmin());
+
+        // Creación: Admin (para agregar créditos) o Cloud Functions
+        allow create: if isAdmin() || request.auth == null;
+
+        // Actualización: Solo Cloud Functions
+        allow update: if request.auth == null;
+
+        // Eliminación: Solo administradores
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ===== 💳 TRANSACCIONES DE WALLET (CONDUCTORES) =====
+    match /walletTransactions/{transactionId} {
+      // GET: El conductor propietario o administrador
+      allow get: if (isAuthenticated() &&
+                     (resource.data.walletId == request.auth.uid ||
+                      resource.data.userId == request.auth.uid ||
+                      isAdmin()))
+                     || request.auth == null;
+
+      // LIST: Usuarios autenticados pueden listar sus transacciones
+      allow list: if isAuthenticated() || isAdmin() || request.auth == null;
+
+      // Creación: Solo Cloud Functions
+      allow create: if request.auth == null;
+
+      // Actualización: Solo Cloud Functions
+      allow update: if request.auth == null;
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 🎯 CÓDIGOS DE DESCUENTO Y CUPONES =====
+    match /discount_codes/{codeId} {
+      // GET: Cualquier usuario autenticado (para validar código)
+      allow get: if isAuthenticated();
+
+      // LIST: Solo administradores
+      allow list: if isAdmin();
+
+      // Creación: Solo administradores
+      allow create: if isAdmin();
+
+      // Actualización: Solo administradores
+      allow update: if isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 📱 FCM TOKENS (PARA NOTIFICACIONES PUSH) =====
+    match /fcm_tokens/{tokenId} {
+      // GET: El usuario propietario o administrador
+      allow get: if isAuthenticated() &&
+                   (resource.data.userId == request.auth.uid || isAdmin());
+
+      // LIST: Solo administradores (para envío masivo de notificaciones)
+      allow list: if isAdmin();
+
+      // Creación: El usuario guardando su propio token
+      allow create: if isAuthenticated() &&
+                      request.resource.data.userId == request.auth.uid;
+
+      // Actualización: El usuario actualizando su token o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Eliminación: El usuario eliminando su token o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ===== 📍 UBICACIONES EN TIEMPO REAL =====
+    match /locations/{locationId} {
+      // GET: Usuarios autenticados (para tracking)
+      allow get: if isAuthenticated();
+
+      // LIST: Solo administradores
+      allow list: if isAdmin();
+
+      // Creación: Conductores actualizando su ubicación
+      allow create: if isAuthenticated() &&
+                      isDriver() &&
+                      request.resource.data.driverId == request.auth.uid;
+
+      // Actualización: El conductor propietario
+      allow update: if isAuthenticated() &&
+                      isDriver() &&
+                      resource.data.driverId == request.auth.uid;
+
+      // Eliminación: El conductor o administrador
+      allow delete: if isAuthenticated() &&
+                      (isDriver() && resource.data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ===== 🏁 VIAJES ACTIVOS (CACHÉ EN TIEMPO REAL) =====
+    match /active_rides/{rideId} {
+      // GET: Participantes del viaje o administrador
+      allow get: if isAuthenticated() &&
+                   (resource.data.userId == request.auth.uid ||
+                    resource.data.driverId == request.auth.uid ||
+                    isAdmin());
+
+      // LIST: Conductores disponibles (para ver solicitudes cercanas)
+      allow list: if isAuthenticated() && (isDriver() || isAdmin());
+
+      // Creación: Pasajeros creando solicitud
+      allow create: if isAuthenticated() &&
+                      request.resource.data.userId == request.auth.uid;
+
+      // Actualización: Participantes o administrador
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid ||
+                       resource.data.driverId == request.auth.uid ||
+                       isAdmin());
+
+      // Eliminación: Participantes o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid ||
+                       resource.data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ===== 📧 INVITACIONES Y REFERIDOS =====
+    match /referrals/{referralId} {
+      // GET: El usuario que hizo la referencia o el referido
+      allow get: if isAuthenticated() &&
+                   (resource.data.referrerId == request.auth.uid ||
+                    resource.data.referredUserId == request.auth.uid ||
+                    isAdmin());
+
+      // LIST: Solo administradores
+      allow list: if isAdmin();
+
+      // Creación: Usuario autenticado haciendo referencia
+      allow create: if isAuthenticated() &&
+                      request.resource.data.referrerId == request.auth.uid;
+
+      // Actualización: Solo Cloud Functions (para actualizar recompensas)
+      allow update: if request.auth == null || isAdmin();
+
+      // Eliminación: Solo administradores
+      allow delete: if isAdmin();
+    }
+
+    // ===== 📊 MÉTRICAS Y ESTADÍSTICAS =====
+    match /metrics/{metricId} {
+      // Lectura: Solo administradores
+      allow read: if isAdmin();
+
+      // Escritura: Solo Cloud Functions
+      allow write: if request.auth == null;
+    }
+
+    // ===== 🔔 PREFERENCIAS DE NOTIFICACIONES =====
+    match /notification_preferences/{userId} {
+      // Lectura: El usuario propietario o administrador
+      allow read: if isAuthenticated() &&
+                     (userId == request.auth.uid || isAdmin());
+
+      // Creación: El usuario creando sus preferencias
+      allow create: if isAuthenticated() && userId == request.auth.uid;
+
+      // Actualización: El usuario actualizando sus preferencias
+      allow update: if isAuthenticated() && userId == request.auth.uid;
+
+      // Eliminación: El usuario o administrador
+      allow delete: if isAuthenticated() &&
+                      (userId == request.auth.uid || isAdmin());
+    }
+
+    // ===== 🎫 TICKETS DE SOPORTE (ALIAS PARA supportTickets) =====
+    match /support/{ticketId} {
+      // Mismas reglas que supportTickets para compatibilidad
+      allow read: if isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isAuthenticated();
+
+      allow update: if isAuthenticated() &&
+                      (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow delete: if isAdmin();
+    }
+
+    // ===== 🚫 BLOQUEOS DE USUARIOS =====
+    match /blocked_users/{blockId} {
+      // GET: El usuario que bloqueó o administrador
+      allow get: if isAuthenticated() &&
+                   (resource.data.blockedBy == request.auth.uid || isAdmin());
+
+      // LIST: El usuario puede ver a quién ha bloqueado
+      allow list: if isAuthenticated();
+
+      // Creación: Usuario bloqueando a otro
+      allow create: if isAuthenticated() &&
+                      request.resource.data.blockedBy == request.auth.uid;
+
+      // Actualización: No permitida (para desbloquear, eliminar el documento)
+      allow update: if false;
+
+      // Eliminación: El usuario que bloqueó o administrador
+      allow delete: if isAuthenticated() &&
+                      (resource.data.blockedBy == request.auth.uid || isAdmin());
+    }
+
+    // ===== ⚙️ CONFIGURACIÓN DE LA APP =====
+    match /app_config/{configId} {
+      // Lectura: Público (versión mínima, features habilitados, etc.)
+      allow read: if true;
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+
+    // ===== 📢 ANUNCIOS Y BANNERS =====
+    match /announcements/{announcementId} {
+      // Lectura: Público
+      allow read: if true;
+
+      // Escritura: Solo administradores
+      allow write: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,147 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ==================== PERMISOS DE UBICACIÓN ==================== -->
+    <!-- Ubicación precisa para Google Maps y seguimiento de viajes -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Ubicación aproximada -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Ubicación en segundo plano (para conductores activos) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- Ubicación en primer plano (Android 10+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- ==================== PERMISOS DE RED ==================== -->
+    <!-- Acceso a internet -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Estado de la red -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Estado de WiFi -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Cambiar estado de WiFi -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- ==================== PERMISOS DE CÁMARA Y FOTOS ==================== -->
+    <!-- Tomar fotos (documentos, selfies, vehículo) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Leer almacenamiento externo (Android < 13) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Escribir en almacenamiento externo (Android < 13) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- NOTA: NO usar READ_MEDIA_IMAGES - Google Play lo rechaza desde 2025
+         image_picker usa Android Photo Picker automáticamente en Android 13+
+         que NO requiere permisos -->
+
+    <!-- ==================== PERMISOS DE AUDIO ==================== -->
+    <!-- Grabar audio (para llamadas VoIP en el futuro) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Modificar configuración de audio -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- ==================== PERMISOS DE LLAMADAS ==================== -->
+    <!-- Realizar llamadas telefónicas (contactar conductor/pasajero) -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Leer estado del teléfono -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!-- ==================== PERMISOS DE SMS ==================== -->
+    <!-- NOTA: No usamos RECEIVE_SMS ni READ_SMS. Firebase Auth usa el SMS Retriever API
+         que NO requiere estos permisos y es la forma recomendada por Google.
+         El código de verificación se obtiene automáticamente sin acceder a los SMS del usuario. -->
+
+    <!-- ==================== PERMISOS DE NOTIFICACIONES ==================== -->
+    <!-- Mostrar notificaciones (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Vibrar el dispositivo -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Despertar dispositivo -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Recibir mensajes de Firebase Cloud Messaging -->
+    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+
+    <!-- ==================== PERMISOS DE COMPARTIR Y DESCARGAR ==================== -->
+    <!-- Las actualizaciones se manejan automáticamente por Google Play -->
+
+    <!-- ==================== PERMISOS DE SISTEMA ==================== -->
+    <!-- Iniciar al arranque (para notificaciones persistentes) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Ejecutar al iniciar -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Bluetooth (para dispositivos de manos libres) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <!-- ==================== CARACTERÍSTICAS OPCIONALES ==================== -->
+    <!-- Cámara es opcional pero recomendada -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- GPS es requerido -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="true" />
+    <!-- Micrófono es opcional -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Teléfono es opcional -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <application
+        android:label="RapiTeam"
+        android:name=".RapiteamApplication"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDSJTGoS9yv6mi8-c3V1o1CltAeKZeHx5U" />
+
+    </application>
+    <!-- Queries requeridas para url_launcher en Android 11+ (API 30+) -->
+    <!-- Referencia: https://pub.dev/packages/url_launcher -->
+    <queries>
+        <!-- Para abrir URLs https (PDFs, links externos) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- Para abrir URLs http -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <!-- Para llamadas telefónicas -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <!-- Para SMS -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="sms" />
+        </intent>
+        <!-- Para email -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
+</manifest>

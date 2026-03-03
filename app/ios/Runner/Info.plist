@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>RapiTeam</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>rapiteam</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	
+	<!-- Facebook Configuration -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- ✅ Facebook App ID URL Scheme (CONFIGURADO) -->
+				<string>fb1289349759483925</string>
+			</array>
+		</dict>
+		<!-- Google Sign In -->
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.747030072271-9s3d31dadde9bipp954jbpp0stc92k12</string>
+			</array>
+		</dict>
+		<!-- App Deep Links -->
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>rapiteamapp</string>
+			</array>
+		</dict>
+	</array>
+	
+	<!-- ✅ Facebook App ID and Display Name (CONFIGURADO) -->
+	<key>FacebookAppID</key>
+	<string>1289349759483925</string>
+	<!-- ✅ Client Token configurado -->
+	<key>FacebookClientToken</key>
+	<string>367f0737179dbc29554a3f3f48ac3aaa</string>
+	<key>FacebookDisplayName</key>
+	<string>RapiTeam</string>
+	
+	<!-- Facebook LSApplicationQueriesSchemes -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
+	</array>
+	
+	<!-- ==================== PERMISOS DE UBICACIÓN ==================== -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>RapiTeam necesita acceder a tu ubicación para mostrarte conductores cercanos y calcular rutas de tus viajes</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>RapiTeam necesita acceder a tu ubicación para seguimiento del viaje incluso cuando la app está en segundo plano</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>RapiTeam necesita acceder a tu ubicación constantemente para el seguimiento continuo y seguridad del viaje</string>
+	<key>NSMotionUsageDescription</key>
+	<string>RapiTeam detecta el movimiento del dispositivo para mejorar la precisión del seguimiento y detectar tipo de transporte</string>
+
+	<!-- ==================== PERMISOS DE CÁMARA Y FOTOS ==================== -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>RapiTeam necesita acceso a tu galería de fotos para que puedas subir tu foto de perfil, documentos de conductor y fotos del vehículo</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>RapiTeam necesita guardar fotos en tu galería, como recibos de viajes y comprobantes de pago</string>
+	<key>NSCameraUsageDescription</key>
+	<string>RapiTeam necesita acceso a la cámara para tomar fotos de perfil, documentos de identidad, licencia de conducir y fotos del vehículo</string>
+
+	<!-- ==================== PERMISOS DE AUDIO Y LLAMADAS ==================== -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>RapiTeam necesita acceso al micrófono para realizar llamadas de voz con el conductor o pasajero durante el viaje</string>
+
+	<!-- ==================== PERMISOS DE CONTACTOS ==================== -->
+	<key>NSContactsUsageDescription</key>
+	<string>RapiTeam necesita acceso a tus contactos para que puedas compartir tu ubicación o invitar amigos a usar la aplicación</string>
+
+	<!-- ==================== PERMISOS DE CALENDARIO ==================== -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>RapiTeam puede agregar viajes programados a tu calendario para recordatorios</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>RapiTeam puede crear recordatorios para viajes programados próximos</string>
+
+	<!-- ==================== PERMISOS DE NOTIFICACIONES ==================== -->
+	<key>NSUserNotificationAlertStyle</key>
+	<string>alert</string>
+	<key>NSUserNotificationSoundEnabled</key>
+	<true/>
+
+	<!-- ==================== PERMISOS DE COMPARTIR ==================== -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>RapiTeam puede guardar recibos y comprobantes en tu galería de fotos</string>
+
+	<!-- ==================== PERMISOS DE BLUETOOTH ==================== -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>RapiTeam puede usar Bluetooth para conectarse con dispositivos de audio manos libres durante el viaje</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>RapiTeam puede usar Bluetooth para mejorar la conectividad con accesorios y dispositivos externos</string>
+
+	<!-- ==================== PERMISOS DE TELÉFONO ==================== -->
+	<key>NSPhoneCallUsageDescription</key>
+	<string>RapiTeam puede realizar llamadas directas al conductor o pasajero para coordinar el viaje</string>
+
+	<!-- ==================== PERMISOS DE MEDIOS ==================== -->
+	<key>NSAppleMusicUsageDescription</key>
+	<string>RapiTeam puede acceder a tu biblioteca de música para reproducción durante el viaje</string>
+	<key>NSMediaLibraryUsageDescription</key>
+	<string>RapiTeam puede acceder a tu biblioteca de medios para una mejor experiencia</string>
+
+	<!-- ==================== PERMISOS DE RECONOCIMIENTO DE VOZ ==================== -->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>RapiTeam puede usar reconocimiento de voz para comandos por voz y búsqueda de destinos</string>
+
+	<!-- ==================== PERMISOS DE SIRI ==================== -->
+	<key>NSSiriUsageDescription</key>
+	<string>RapiTeam puede integrarse con Siri para solicitar viajes por voz</string>
+
+	<!-- ==================== PERMISOS DE FACE ID / TOUCH ID ==================== -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>RapiTeam usa Face ID para autenticación segura y confirmación de pagos</string>
+
+	<!-- ==================== PERMISOS DE SALUD (OPCIONAL) ==================== -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>RapiTeam puede acceder a datos de salud para detectar emergencias y mejorar la seguridad</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>RapiTeam puede registrar actividad de viajes en la app de Salud</string>
+
+	<!-- ==================== PERMISOS DE ARCHIVOS ==================== -->
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>RapiTeam necesita acceso a la carpeta de documentos para guardar recibos y comprobantes de viaje</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>RapiTeam puede guardar archivos descargados como facturas y comprobantes de pago</string>
+	
+	<!-- App Transport Security for Facebook -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>facebook.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+			<key>fbcdn.net</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+			<key>akamaihd.net</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSThirdPartyExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
+	
+	<!-- Google Maps API Key -->
+	<key>GMSApiKey</key>
+	<string>AIzaSyDSJTGoS9yv6mi8-c3V1o1CltAeKZeHx5U</string>
+	
+	<!-- Firebase Configuration -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	
+	<!-- Background Modes -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

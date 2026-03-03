@@ -1,0 +1,19 @@
+# Archivos a ignorar en deploy
+
+node_modules/
+.git/
+.gitignore
+
+# Build artifacts
+*.js.map
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+.nyc_output/
+coverage/
+
+# ⚠️ IMPORTANTE: NO ignorar .env (necesario para producción)
+# .env

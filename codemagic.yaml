@@ -1,0 +1,42 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.rapiteam.app
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files com.rapiteam.app --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Create .env file
+        script: |
+          echo "GOOGLE_MAPS_API_KEY=AIzaSyDSJTGoS9yv6mi8-c3V1o1CltAeKZeHx5U" > app/.env
+      - name: Get Flutter packages
+        script: |
+          cd app && flutter pub get
+      - name: Install CocoaPods dependencies
+        script: |
+          cd app/ios && pod install
+      - name: Flutter build iOS
+        script: |
+          cd app && flutter build ipa --release \
+            --export-options-plist=$HOME/export_options.plist
+    artifacts:
+      - app/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Logs/gym/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
