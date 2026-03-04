@@ -1303,6 +1303,7 @@ class AuthProvider with ChangeNotifier {
 
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: fullPhoneNumber,
+        forceResendingToken: null,
         verificationCompleted: (PhoneAuthCredential credential) async {
           // Auto-verificación en Android
           AppLogger.debug('✅ verificationCompleted - SMS verificado automáticamente');
@@ -1318,7 +1319,32 @@ class AuthProvider with ChangeNotifier {
           AppLogger.debug('❌ Código de error: ${e.code}');
           AppLogger.debug('❌ Mensaje: ${e.message}');
           AppLogger.debug('❌ Stack: ${e.stackTrace}');
-          _errorMessage = 'Error de verificación: ${e.message}';
+          // Map error codes to user-friendly messages
+          switch (e.code) {
+            case 'too-many-requests':
+              _errorMessage = 'Demasiados intentos. Espera unos minutos antes de reintentar';
+              break;
+            case 'invalid-phone-number':
+              _errorMessage = 'Número de teléfono inválido';
+              break;
+            case 'app-not-authorized':
+              _errorMessage = 'La app no está autorizada para verificación por SMS. Contacta soporte';
+              break;
+            case 'quota-exceeded':
+              _errorMessage = 'Se agotó la cuota de SMS. Intenta más tarde';
+              break;
+            case 'billing-not-enabled':
+              _errorMessage = 'Servicio de SMS no disponible temporalmente';
+              break;
+            case 'captcha-check-failed':
+              _errorMessage = 'Verificación de seguridad falló. Intenta de nuevo';
+              break;
+            case 'missing-client-identifier':
+              _errorMessage = 'Error de configuración. Contacta soporte';
+              break;
+            default:
+              _errorMessage = 'Error al enviar SMS: ${e.message}';
+          }
           _isLoading = false;
           notifyListeners();
         },
