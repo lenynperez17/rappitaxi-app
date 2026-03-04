@@ -163,15 +163,13 @@ void main() {
 
     // ✅ FIX: App Check — debug provider en simuladores, deviceCheck en producción
     try {
+      // NOTE: Using debug provider until app is signed with release key
+      // and registered in Google Play. PlayIntegrity requires both.
       await FirebaseAppCheck.instance.activate(
-        androidProvider: kDebugMode
-            ? AndroidProvider.debug
-            : AndroidProvider.playIntegrity,
-        appleProvider: kDebugMode
-            ? AppleProvider.debug
-            : AppleProvider.deviceCheck,
+        androidProvider: AndroidProvider.debug,
+        appleProvider: AppleProvider.debug,
       );
-      AppLogger.info('Firebase App Check activado (debug: $kDebugMode)');
+      AppLogger.info('Firebase App Check activado (debug provider)');
     } catch (e) {
       AppLogger.warning('App Check no disponible (no fatal): $e');
     }
