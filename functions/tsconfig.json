@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "outDir": "lib",
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2017",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "compileOnSave": true,
+  "include": [
+    "src/index.ts",
+    "src/handlers/**/*.ts",
+    "src/services/**/*.ts"
+  ],
+  "exclude": [
+    "src/routes",
+    "src/payments",
+    "src/middleware",
+    "src/app.ts",
+    "tests",
+    "node_modules"
+  ]
+}

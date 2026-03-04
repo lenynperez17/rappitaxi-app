@@ -1,0 +1,1103 @@
+{
+  "@@locale": "en",
+
+  "profile": "Profile",
+  "language": "Language",
+  "spanish": "Español",
+  "english": "English",
+  "notifications": "Notifications",
+  "sound": "Sound",
+  "vibration": "Vibration",
+  "promotions": "Promotions",
+  "news": "News",
+  "privacy": "Privacy",
+  "termsAndConditions": "Terms and Conditions",
+  "privacyPolicy": "Privacy Policy",
+  "managePermissions": "Manage Permissions",
+  "exportMyData": "Export My Data",
+  "paymentMethods": "Payment Methods",
+  "tripHistory": "Trip History",
+  "ratings": "Ratings",
+  "favoritePlaces": "Favorite Places",
+  "logout": "Logout",
+  "languageChangedToSpanish": "Idioma cambiado a Español",
+  "languageChangedToEnglish": "Language changed to English",
+  "defaultPaymentMethod": "Default Payment Method",
+  "cash": "Cash",
+  "card": "Card",
+  "home": "Home",
+  "trips": "Trips",
+  "messages": "Messages",
+  "settings": "Settings",
+  "upgradeToDriver": "Become a Driver",
+  "loading": "Loading...",
+  "error": "Error",
+  "success": "Success",
+  "cancel": "Cancel",
+  "accept": "Accept",
+  "save": "Save",
+  "information": "Information",
+  "statistics": "Statistics",
+  "preferences": "Preferences",
+  "personalInformation": "Personal Information",
+  "fullName": "Full name",
+  "email": "Email",
+  "phone": "Phone",
+  "birthDate": "Birth date",
+  "verification": "Verification",
+  "emailVerified": "Email verified",
+  "phoneVerified": "Phone verified",
+  "identityDocument": "Identity document",
+  "becomeDriver": "Become a Driver!",
+  "earnMoneyDriving": "Earn money by driving",
+  "changePassword": "Change password",
+  "deleteAccount": "Delete account",
+  "yourStatistics": "Your Statistics",
+  "totalTrips": "Total Trips",
+  "totalSpent": "Total Spent",
+  "distance": "Distance",
+  "rating": "Rating",
+  "achievementsUnlocked": "Achievements Unlocked",
+  "frequentTraveler": "Frequent Traveler",
+  "punctual": "Punctual",
+  "explorer": "Explorer",
+  "vip": "VIP",
+  "ambassador": "Ambassador",
+  "monthlyActivity": "Monthly Activity",
+  "memberSince": "Member since",
+  "referredFriends": "Referred friends",
+  "pushNotifications": "Push notifications",
+  "receiveTripAlerts": "Receive trip alerts and offers",
+  "activateSounds": "Activate notification sounds",
+  "vibrateOnNotifications": "Vibrate on notifications",
+  "receiveOffers": "Receive special offers and discounts",
+  "newsTitle": "News",
+  "learnNewFeatures": "Learn about new features",
+  "travelPreferences": "Travel Preferences",
+  "wallet": "Wallet",
+  "privacyAndSecurity": "Privacy and Security",
+  "profileUpdated": "Profile updated successfully",
+  "changeProfilePhoto": "Change profile photo",
+  "takePhoto": "Take photo",
+  "chooseFromGallery": "Choose from gallery",
+  "deletePhoto": "Delete photo",
+  "profilePhotoDeleted": "Profile photo deleted",
+  "permissionsNeeded": "Permissions needed to access camera/gallery",
+  "openSettings": "Open settings",
+  "profilePhotoUpdated": "Profile photo updated",
+  "errorSelectingImage": "Error selecting image",
+  "paymentMethodPrefix": "Payment method:",
+  "changePasswordTitle": "Change Password",
+  "currentPassword": "Current password",
+  "newPassword": "New password",
+  "confirmNewPassword": "Confirm new password",
+  "passwordUpdated": "Password updated",
+  "change": "Change",
+  "deleteAccountTitle": "Delete Account",
+  "deleteAccountConfirmation": "Are you sure you want to delete your account? This action cannot be undone.",
+  "delete": "Delete",
+  "understood": "Understood",
+  "userInfoError": "Could not get user information",
+  "dataExported": "Data Exported",
+  "dataExportedSuccess": "Your data has been exported successfully.",
+  "location": "Location:",
+  "errorExportingData": "Error exporting data:",
+  "couldNotOpenSettings": "Could not open settings",
+  "openSettingsManually": "Please open Settings > Apps > Rappi Team > Permissions manually",
+
+  "passenger": "Passenger",
+  "driver": "Driver",
+  "administrator": "Administrator",
+  "phoneNumber": "Phone number",
+  "phoneHint": "999 999 999",
+  "enterPhoneNumber": "Enter your phone number",
+  "invalidPhoneNumber": "Invalid Peruvian number\\nFormat: 9XXXXXXXX",
+  "invalidPhoneDetails": "Invalid number. Must be Peruvian mobile: 9XXXXXXXX\\nValid operators: Claro, Movistar, Entel",
+  "operatorNotRecognized": "Mobile operator not recognized. Use Claro, Movistar or Entel numbers.",
+  "operatorNotValid": "Operator not valid\\nUse Claro, Movistar or Entel",
+  "password": "Password",
+  "passwordHint": "Minimum 8 characters",
+  "enterPassword": "Enter your password",
+  "passwordMinLength": "Password must be at least 8 characters",
+  "forgotPassword": "Forgot your password?",
+  "signIn": "Sign In",
+  "orContinueWith": "Or continue with",
+  "noAccount": "Don't have an account? ",
+  "register": "Sign Up",
+  "tagline": "Your ride, your price",
+  "tooManyAttempts": "Too many failed attempts. Try again in {minutes} minutes.",
+  "accountLocked": "Your account has been temporarily locked for security. Try again later or contact support.",
+  "verifyEmailFirst": "Please verify your email before continuing. Check your inbox.",
+  "loginError": "Login error",
+  "unexpectedError": "Unexpected error: {error}",
+  "googleSignInNotConfigured": "Google Sign-In not configured.\\nContact system administrator.",
+  "facebookLoginNotConfigured": "Facebook Login not configured.\\nContact system administrator.",
+  "appleSignInNotConfigured": "Apple Sign-In not configured.\\nContact system administrator.",
+  "googleSignInError": "Error signing in with Google. Please try again.",
+  "facebookSignInError": "Error signing in with Facebook. Please try again.",
+  "appleSignInError": "Error signing in with Apple. Please try again.",
+  "tripHistory": "Trip History",
+  "monthSummary": "Month Summary",
+  "spent": "Spent",
+  "all": "All",
+  "completed": "Completed",
+  "cancelled": "Cancelled",
+  "date": "Date",
+  "downloading": "Downloading history...",
+  "noTrips": "No trips",
+  "adjustFilters": "Adjust filters to see more results",
+  "tripDetails": "Trip Details",
+  "tripRoute": "Trip Route",
+  "origin": "Origin",
+  "destination": "Destination",
+  "duration": "Duration",
+  "vehicle": "Vehicle",
+  "payment": "Payment",
+  "amount": "Amount",
+  "method": "Method",
+  "defaultCash": "Cash (default)",
+  "rateTrip": "Rate Trip",
+  "yourRating": "Your rating: {rating}",
+  "reportProblem": "Report problem",
+  "viewReceipt": "View receipt",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "daysAgo": "{days} days ago",
+  "completedStatus": "Completed",
+  "cancelledStatus": "Cancelled",
+  "whereAreYou": "Where are you?",
+  "whereAreYouGoing": "Where are you going?",
+  "enterOriginAndDestination": "You must enter origin and destination",
+  "userNotAuthenticated": "Error: User not authenticated",
+  "locationPermissionDenied": "Could not get current location. Check GPS permissions.",
+  "destinationAddressNotFound": "Could not find destination address",
+  "searchingAvailableDrivers": "Searching available drivers...",
+  "errorRequestingTrip": "Error requesting trip: {error}",
+  "selectDestinationFirst": "Please select a destination first",
+  "couldNotGetCurrentLocation": "Could not get your current location",
+  "helpCenter": "Help",
+  "logoutConfirmation": "Log out?",
+  "ratingSubmittedSuccessfully": "Rating submitted successfully",
+  "errorSubmittingRating": "Error submitting rating: {error}",
+  "enterPrice": "Enter your price",
+
+  "rappiTeam": "RAPPI TEAM",
+  "preparingExperience": "Preparing your experience...",
+  "appVersion": "Version 2.0.0",
+
+  "createAccount": "Create account",
+  "continueButton": "Continue",
+  "back": "Back",
+  "howToUseRappiTeam": "How do you want to use Rappi Team?",
+  "requestTrips": "Request rides and negotiate prices",
+  "acceptTrips": "Accept rides and earn money",
+  "personalInfo": "Personal information",
+  "enterName": "Enter your name",
+  "nineDigits": "9 digits",
+  "enterPhoneNumberShort": "Enter your number",
+  "mustBeNineDigits": "Must be exactly 9 digits",
+  "mustStartWith9": "Mobile number must start with 9",
+  "enterEmail": "Enter your email",
+  "enterValidEmail": "Enter a valid email",
+  "createPassword": "Create your password",
+  "passwordRequirements": "Min. 8 characters: UPPERCASE, lowercase, number and special (!@#$%)",
+  "enterPasswordShort": "Enter a password",
+  "minimumEightChars": "Minimum 8 characters",
+  "mustIncludeUppercase": "Must include at least one UPPERCASE",
+  "mustIncludeLowercase": "Must include at least one lowercase",
+  "mustIncludeNumber": "Must include at least one number",
+  "mustIncludeSpecialChar": "Must include a special character (!@#$%^&*)",
+  "confirmPassword": "Confirm password",
+  "passwordsDoNotMatch": "Passwords do not match",
+  "acceptTerms": "I accept the terms and conditions",
+  "mustAcceptTerms": "You must accept the terms to continue",
+  "createAccountButton": "CREATE ACCOUNT",
+  "registrationSuccess": "✅ REGISTRATION SUCCESSFUL! Redirecting...",
+  "registrationFailed": "❌ Registration failed. Please try again.",
+
+  "recoverPassword": "Recover Password",
+  "phoneTab": "Phone",
+  "verifyTab": "Verify",
+  "newTab": "New",
+  "enterPhoneNumberForgot": "Enter your phone number",
+  "enterPhoneNumberPlaceholder": "Enter your phone number",
+  "sendVerificationCode": "We will send you a verification code via SMS",
+  "sendCode": "Send Code",
+  "smsVerification": "SMS Verification",
+  "enterSixDigitCode": "Enter the 6-digit code sent to",
+  "resendCode": "Resend code",
+  "verify": "Verify",
+  "createNewPassword": "Create New Password",
+  "enterNewSecurePassword": "Enter your new secure password",
+  "newPasswordLabel": "New password",
+  "enterPasswordLabel": "Enter a password",
+  "passwordMinSixChars": "Password must be at least 6 characters",
+  "confirmPasswordLabel": "Confirm password",
+  "passwordsDoNotMatchLabel": "Passwords do not match",
+  "updatePassword": "Update Password",
+  "passwordUpdatedSuccess": "Password Updated!",
+  "passwordUpdatedMessage": "Your password has been updated successfully",
+  "goToLogin": "Go to Login",
+  "incorrectCode": "Incorrect code",
+
+  "favoritePlacesTitle": "Favorite Places",
+  "searchPlaceholder": "Search place...",
+  "yourPlaces": "Your Places",
+  "recentlyVisited": "Recently Visited",
+  "favorites": "Favorites",
+  "visits": "Visits",
+  "mostVisited": "Most visited",
+  "mainBadge": "Main",
+  "visitsLabel": "visits",
+  "addPlace": "Add Place",
+  "addFavorite": "Add Favorite",
+  "editPlace": "Edit Place",
+  "placeName": "Place name",
+  "address": "Address",
+  "icon": "Icon",
+  "color": "Color",
+  "add": "Add",
+  "selectAddressFromAutocomplete": "Please select an address from the autocomplete",
+  "placeAddedToFavorites": "Place added to favorites",
+  "errorLoadingFavorites": "Error loading favorites",
+  "errorAddingFavorite": "Error adding favorite",
+  "placeUpdated": "Place updated",
+  "errorUpdatingFavorite": "Error updating favorite",
+  "deleteConfirmation": "Are you sure you want to remove this place from your favorites?",
+  "navigatingTo": "Navigating to",
+  "favoritesMap": "Favorites Map",
+  "addFavoritePlacesToSeeMap": "Add favorite places to see them on the map",
+
+  "paymentMethodsTitle": "Payment Methods",
+  "paymentMethodsTab": "Payment Methods",
+  "historyTab": "History",
+  "addMethod": "Add Method",
+  "rappiWallet": "Rappi Team Wallet",
+  "recharge": "Recharge",
+  "history": "History",
+  "savedMethods": "Saved Methods",
+  "defaultLabel": "DEFAULT",
+  "holder": "HOLDER",
+  "expires": "EXPIRES",
+  "defaultBadge": "Default",
+  "creditCard": "Credit Card",
+  "debitCard": "Debit Card",
+  "paypal": "PayPal",
+  "cashPayment": "Cash",
+  "setAsDefault": "Set as default",
+  "editMethod": "Edit method",
+  "deleteMethod": "Delete method",
+  "noPaymentMethods": "No payment methods",
+  "addFirstPaymentMethod": "Add your first payment method to make transactions faster",
+  "deletePaymentMethodTitle": "Delete Payment Method",
+  "deletePaymentMethodConfirmation": "Are you sure you want to delete this payment method?",
+  "paymentMethodDeleted": "Payment method deleted",
+  "defaultMethodUpdated": "Default method updated",
+  "addPaymentMethodTitle": "Add Payment Method",
+  "selectPaymentType": "Select payment type",
+  "cardNumber": "Card number",
+  "cardNumberPlaceholder": "1234 5678 9012 3456",
+  "cardholderName": "Cardholder name",
+  "cardholderNamePlaceholder": "JOHN DOE",
+  "expirationDate": "Expiration date",
+  "expirationDatePlaceholder": "MM/YY",
+  "cvv": "CVV",
+  "cvvPlaceholder": "123",
+  "paypalEmail": "PayPal email",
+  "paypalEmailPlaceholder": "email@paypal.com",
+  "cashNote": "Pay the driver directly at the end of the trip",
+  "addPaymentMethod": "Add Payment Method",
+  "paymentMethodAdded": "Payment method added",
+  "invalidCardNumber": "Invalid card number",
+  "invalidExpirationDate": "Invalid expiration date",
+  "invalidCvv": "Invalid CVV",
+  "invalidPaypalEmail": "Invalid PayPal email",
+  "rechargeWalletTitle": "Recharge Wallet",
+  "enterAmount": "Enter the amount to recharge",
+  "amountToRecharge": "Amount to recharge",
+  "quickAmounts": "Quick Amounts",
+  "selectPaymentMethod": "Select payment method",
+  "rechargeButton": "Recharge S/. {amount}",
+  "minimumRechargeAmount": "The minimum recharge amount is S/. 10",
+  "maximumRechargeAmount": "The maximum recharge amount is S/. 1000",
+  "selectPaymentMethodToRecharge": "Select a payment method",
+  "rechargeSuccessful": "Recharge successful",
+  "transactionHistory": "Transaction History",
+  "filterByType": "Filter by type",
+  "allTransactions": "All",
+  "recharges": "Recharges",
+  "payments": "Payments",
+  "refunds": "Refunds",
+  "noTransactions": "No transactions",
+  "transactionsWillAppearHere": "Your completed transactions will appear here",
+  "walletRecharge": "Wallet recharge",
+  "tripPayment": "Trip payment",
+  "refund": "Refund",
+
+  "myRatingsTitle": "My Ratings",
+  "totalLabel": "Total",
+  "averageLabel": "Average",
+  "allRatings": "All",
+  "oneStarRating": "1 star",
+  "twoStarRating": "2 stars",
+  "threeStarRating": "3 stars",
+  "fourStarRating": "4 stars",
+  "fiveStarRating": "5 stars",
+  "noRatings": "No ratings",
+  "ratingsWillAppearHere": "Your ratings will appear here",
+  "ratingDetailsTitle": "Rating Details",
+  "dateLabel": "Date",
+  "timeLabel": "Time",
+  "routeLabel": "Route",
+  "amountLabel": "Amount",
+  "tripIdLabel": "Trip ID",
+  "excellentService": "Excellent service",
+  "verySatisfied": "Very satisfied",
+  "goodService": "Good service",
+  "satisfied": "Satisfied",
+  "acceptableService": "Acceptable service",
+  "regularService": "Regular service",
+  "poorService": "Poor service",
+  "needsImprovement": "Needs improvement",
+  "veryPoorService": "Very poor service",
+  "unacceptable": "Unacceptable",
+  "errorLoadingRatings": "Error loading ratings",
+
+  "initializingChat": "Initializing chat...",
+  "onlineStatus": "Online",
+  "lastSeenJustNow": "Seen just now",
+  "lastSeenMinutesAgo": "Seen {minutes} min ago",
+  "lastSeenHoursAgo": "Seen {hours}h ago",
+  "lastSeenDaysAgo": "Seen {days}d ago",
+  "startConversation": "Start the conversation!",
+  "stayInTouch": "Stay in touch with your driver/passenger",
+  "sharedLocation": "Shared location",
+  "imageMessage": "Image",
+  "audioMessage": "Audio",
+  "videoMessage": "Video",
+  "fileMessage": "File",
+  "writeMessagePlaceholder": "Write a message...",
+  "onWay": "On my way",
+  "arrived": "I've arrived",
+  "waiting": "Waiting",
+  "traffic": "There's traffic",
+  "cantFindYou": "Can't find you",
+  "now": "Now",
+  "clearChat": "Clear chat",
+  "reportUser": "Report user",
+  "clearChatConfirmation": "Are you sure you want to clear the entire conversation?",
+  "errorInitializingChat": "Error initializing chat",
+  "errorSendingMessage": "Error sending message",
+  "errorSendingFile": "Error sending file",
+
+  "tripDetailsTitle": "Trip Details",
+  "loadingTripDetails": "Loading trip details...",
+  "tripNotFound": "Trip not found",
+  "couldNotLoadTripDetails": "Could not load the details of this trip",
+  "distanceLabel": "Distance",
+  "durationLabel": "Duration",
+  "fareLabel": "Fare",
+  "tripCompleted": "Trip Completed",
+  "inProgress": "In Progress",
+  "cancelledTrip": "Cancelled",
+  "pendingTrip": "Pending",
+  "participants": "Participants",
+  "driverLabel": "Driver",
+  "passengerLabel": "Passenger",
+  "clientLabel": "Client",
+  "tripRouteLabel": "Trip Route",
+  "originLabel": "Origin",
+  "destinationLabel": "Destination",
+  "paymentMethodLabel": "Payment Method",
+  "tripHistoryLabel": "Trip History",
+  "requestCreated": "Request created",
+  "tripStarted": "Trip started",
+  "tripCompletedEvent": "Trip completed",
+  "viewOnMaps": "View on Maps",
+  "chat": "Chat",
+  "repeatTrip": "Repeat Trip",
+  "shareTrip": "Share trip",
+  "downloadReceipt": "Download receipt",
+  "reportProblemOption": "Report problem",
+  "cannotMakeCall": "Cannot make call",
+  "cannotOpenGoogleMaps": "Cannot open Google Maps",
+
+  "acceptable": "Acceptable",
+  "@acceptable": {
+    "description": "Acceptable rating tag"
+  },
+
+  "dissatisfied": "Dissatisfied",
+  "@dissatisfied": {
+    "description": "Dissatisfied tag"
+  },
+
+  "tripInfoLabel": "Trip info",
+  "@tripInfoLabel": {
+    "description": "Trip information label"
+  },
+
+  "yourCommentLabel": "Your comment",
+  "@yourCommentLabel": {
+    "description": "Your comment label"
+  },
+
+  "tagsLabel": "Tags",
+  "@tagsLabel": {
+    "description": "Tags label"
+  },
+
+  "cannotEdit": "You cannot edit a rating after 24 hours",
+  "@cannotEdit": {
+    "description": "Cannot edit rating message"
+  },
+
+  "sendingFile": "Sending file...",
+  "@sendingFile": {
+    "description": "Sending file message"
+  },
+
+  "initiatingChat": "Starting chat...",
+  "@initiatingChat": {
+    "description": "Starting chat message"
+  },
+
+  "online": "Online",
+  "@online": {
+    "description": "Online status"
+  },
+
+  "seenMomentAgo": "Seen just now",
+  "@seenMomentAgo": {
+    "description": "Seen moment ago"
+  },
+
+  "seenMinutesAgo": "Seen {minutes} min ago",
+  "@seenMinutesAgo": {
+    "description": "Seen minutes ago",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "seenHoursAgo": "Seen {hours}h ago",
+  "@seenHoursAgo": {
+    "description": "Seen hours ago",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+
+  "seenDaysAgo": "Seen {days}d ago",
+  "@seenDaysAgo": {
+    "description": "Seen days ago",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "stayInTouchWithDriver": "Stay in touch with your driver",
+  "@stayInTouchWithDriver": {
+    "description": "Stay in touch with driver"
+  },
+
+  "stayInTouchWithPassenger": "Stay in touch with your passenger",
+  "@stayInTouchWithPassenger": {
+    "description": "Stay in touch with passenger"
+  },
+
+  "imageLabel": "Image",
+  "@imageLabel": {
+    "description": "Image label"
+  },
+
+  "audioLabel": "Audio",
+  "@audioLabel": {
+    "description": "Audio label"
+  },
+
+  "videoLabel": "Video",
+  "@videoLabel": {
+    "description": "Video label"
+  },
+
+  "fileLabel": "File",
+  "@fileLabel": {
+    "description": "File label"
+  },
+
+  "writeMessage": "Write a message...",
+  "@writeMessage": {
+    "description": "Write message placeholder"
+  },
+
+  "onMyWay": "On my way",
+  "@onMyWay": {
+    "description": "On my way quick message"
+  },
+
+  "clear": "Clear",
+  "@clear": {
+    "description": "Clear button"
+  },
+
+  "cantFind": "Can't find you",
+  "@cantFind": {
+    "description": "Can't find you message"
+  },
+
+  "trafficDelay": "There's traffic",
+  "@trafficDelay": {
+    "description": "Traffic delay message"
+  },
+
+  "errorLoadingTripDetails": "Error loading trip details",
+  "@errorLoadingTripDetails": {
+    "description": "Error loading trip details"
+  },
+
+  "goBack": "Go back",
+  "@goBack": {
+    "description": "Go back button"
+  },
+
+  "participantsLabel": "Participants",
+  "@participantsLabel": {
+    "description": "Participants label"
+  },
+
+  "tripRouteTitle": "Trip Route",
+  "@tripRouteTitle": {
+    "description": "Trip route title"
+  },
+
+  "ratingLabel": "Rating",
+  "@ratingLabel": {
+    "description": "Rating label"
+  },
+
+  "tripHistoryTitle": "Trip History",
+  "@tripHistoryTitle": {
+    "description": "Trip history title"
+  },
+
+  "requestCreatedLabel": "Request created",
+  "@requestCreatedLabel": {
+    "description": "Request created label"
+  },
+
+  "tripStartedLabel": "Trip started",
+  "@tripStartedLabel": {
+    "description": "Trip started label"
+  },
+
+  "tripCompletedLabel": "Trip completed",
+  "@tripCompletedLabel": {
+    "description": "Trip completed label"
+  },
+
+  "viewInMaps": "View on Maps",
+  "@viewInMaps": {
+    "description": "View in Maps button"
+  },
+
+  "chatButton": "Chat",
+  "@chatButton": {
+    "description": "Chat button"
+  },
+
+  "repeatTripComingSoon": "Repeat trip (coming soon)",
+  "@repeatTripComingSoon": {
+    "description": "Repeat trip coming soon"
+  },
+
+  "cannotOpenMaps": "Cannot open Google Maps",
+  "@cannotOpenMaps": {
+    "description": "Cannot open maps error"
+  },
+
+  "pending": "Pending",
+  "@pending": {
+    "description": "Pending status"
+  },
+
+  "placeRemovedMessage": "{name} removed",
+  "@placeRemovedMessage": {
+    "description": "Place removed message",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+
+  "undo": "Undo",
+  "@undo": {
+    "description": "Undo button"
+  },
+
+  "errorRemovingFavorite": "Error removing favorite",
+  "@errorRemovingFavorite": {
+    "description": "Error removing favorite"
+  },
+
+  "searchPlaceHint": "Search place...",
+  "@searchPlaceHint": {
+    "description": "Search place hint"
+  },
+
+  "favoritesLabel": "Favorites",
+  "@favoritesLabel": {
+    "description": "Favorites label"
+  },
+
+  "mainLabel": "Main",
+  "@mainLabel": {
+    "description": "Main label"
+  },
+
+  "visitsCount": "visits",
+  "@visitsCount": {
+    "description": "Visits count label"
+  },
+
+  "minutesAgo": "{minutes} min ago",
+  "@minutesAgo": {
+    "description": "Minutes ago",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+
+  "hoursAgo": "{hours}h ago",
+  "@hoursAgo": {
+    "description": "Hours ago",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+
+  "daysAgoFavorites": "{days} days ago",
+  "@daysAgoFavorites": {
+    "description": "Days ago for favorites",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+
+  "placeNameLabel": "Place name",
+  "@placeNameLabel": {
+    "description": "Place name label"
+  },
+
+  "addressLabel": "Address",
+  "@addressLabel": {
+    "description": "Address label"
+  },
+
+  "searchAddressHint": "Search address...",
+  "@searchAddressHint": {
+    "description": "Search address hint"
+  },
+
+  "iconLabel": "Icon",
+  "@iconLabel": {
+    "description": "Icon label"
+  },
+
+  "colorLabel": "Color",
+  "@colorLabel": {
+    "description": "Color label"
+  },
+
+  "deletePlace": "Delete place",
+  "@deletePlace": {
+    "description": "Delete place button"
+  },
+
+  "confirmDeletePlace": "Delete this place from favorites?",
+  "@confirmDeletePlace": {
+    "description": "Confirm delete place"
+  },
+
+  "addFavoritesToViewMap": "Add favorite places to see them on the map",
+  "@addFavoritesToViewMap": {
+    "description": "Add favorites to view map"
+  },
+
+  "favoritesMapTitle": "Favorites Map",
+  "@favoritesMapTitle": {
+    "description": "Favorites map title"
+  },
+
+  "historyButton": "History",
+  "@historyButton": {
+    "description": "History button"
+  },
+
+  "cardHolder": "HOLDER",
+  "@cardHolder": {
+    "description": "Card holder label"
+  },
+
+  "expiresLabel": "EXPIRES",
+  "@expiresLabel": {
+    "description": "Expires label"
+  },
+
+  "balanceLabel": "Balance: S/. {balance}",
+  "@balanceLabel": {
+    "description": "Balance label",
+    "placeholders": {
+      "balance": {
+        "type": "String"
+      }
+    }
+  },
+
+  "makeDefault": "Set as default",
+  "@makeDefault": {
+    "description": "Set as default button"
+  },
+
+  "deleteButton": "Delete",
+  "@deleteButton": {
+    "description": "Delete button"
+  },
+
+  "monthlySummary": "Monthly Summary",
+  "@monthlySummary": {
+    "description": "Monthly summary title"
+  },
+
+  "transactionsLabel": "Transactions",
+  "@transactionsLabel": {
+    "description": "Transactions label"
+  },
+
+  "successfulLabel": "Successful",
+  "@successfulLabel": {
+    "description": "Successful label"
+  },
+
+  "tripLabel": "Trip {tripId}",
+  "@tripLabel": {
+    "description": "Trip label with ID",
+    "placeholders": {
+      "tripId": {
+        "type": "String"
+      }
+    }
+  },
+
+  "successfulStatus": "Successful",
+  "@successfulStatus": {
+    "description": "Successful status"
+  },
+
+  "failedStatus": "Failed",
+  "@failedStatus": {
+    "description": "Failed status"
+  },
+
+  "paymentsProtected": "Your payments are protected",
+  "@paymentsProtected": {
+    "description": "Payments protected message"
+  },
+
+  "encryptionMessage": "We use bank-level encryption",
+  "@encryptionMessage": {
+    "description": "Encryption message"
+  },
+
+  "cashDescription": "Pay directly to the driver at the end of the trip. Safe and convenient.",
+  "@cashDescription": {
+    "description": "Cash payment description"
+  },
+
+  "walletDescription": "Digital wallet with instant balance. Fast and secure.",
+  "@walletDescription": {
+    "description": "Wallet description"
+  },
+
+  "paypalDescription": "Pay with your PayPal account. Quick and reliable.",
+  "@paypalDescription": {
+    "description": "PayPal description"
+  },
+
+  "paymentMethodDefault": "default",
+  "@paymentMethodDefault": {
+    "description": "Payment method default badge"
+  },
+
+  "todayDate": "Today",
+  "@todayDate": {
+    "description": "Today date"
+  },
+
+  "yesterdayDate": "Yesterday",
+  "@yesterdayDate": {
+    "description": "Yesterday date"
+  },
+
+  "defaultMethodMessage": "Updated default payment method",
+  "@defaultMethodMessage": {
+    "description": "Default method message"
+  },
+
+  "deletePaymentMethod": "Delete Payment Method",
+  "@deletePaymentMethod": {
+    "description": "Delete payment method title"
+  },
+
+  "confirmDeleteMethod": "Are you sure you want to delete this payment method?",
+  "@confirmDeleteMethod": {
+    "description": "Confirm delete method"
+  },
+
+  "cancelButton": "Cancel",
+  "@cancelButton": {
+    "description": "Cancel button"
+  },
+
+  "methodDeleted": "Payment method deleted",
+  "@methodDeleted": {
+    "description": "Method deleted message"
+  },
+
+  "rechargeWallet": "Recharge Wallet",
+  "@rechargeWallet": {
+    "description": "Recharge wallet title"
+  },
+
+  "rechargingAmount": "Recharging S/. {amount}...",
+  "@rechargingAmount": {
+    "description": "Recharging amount message",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+
+  "customAmount": "Custom amount",
+  "@customAmount": {
+    "description": "Custom amount label"
+  },
+
+  "processingRecharge": "Processing recharge...",
+  "@processingRecharge": {
+    "description": "Processing recharge message"
+  },
+
+  "loadingWalletHistory": "Loading wallet history...",
+  "@loadingWalletHistory": {
+    "description": "Loading wallet history"
+  },
+
+  "transactionDetails": "Transaction Details",
+  "@transactionDetails": {
+    "description": "Transaction details title"
+  },
+
+  "transactionId": "Transaction ID",
+  "@transactionId": {
+    "description": "Transaction ID label"
+  },
+
+  "tripDetailLabel": "Trip",
+  "@tripDetailLabel": {
+    "description": "Trip detail label"
+  },
+
+  "dateDetailLabel": "Date",
+  "@dateDetailLabel": {
+    "description": "Date detail label"
+  },
+
+  "methodDetailLabel": "Method",
+  "@methodDetailLabel": {
+    "description": "Method detail label"
+  },
+
+  "amountDetailLabel": "Amount",
+  "@amountDetailLabel": {
+    "description": "Amount detail label"
+  },
+
+  "statusDetailLabel": "Status",
+  "@statusDetailLabel": {
+    "description": "Status detail label"
+  },
+
+  "downloadingReceipt": "Downloading receipt...",
+  "@downloadingReceipt": {
+    "description": "Downloading receipt message"
+  },
+
+  "downloadButton": "Download",
+  "@downloadButton": {
+    "description": "Download button"
+  },
+
+  "openingSupport": "Opening support...",
+  "@openingSupport": {
+    "description": "Opening support message"
+  },
+
+  "helpButton": "Help",
+  "@helpButton": {
+    "description": "Help button"
+  },
+
+  "helpTitle": "Need help?",
+  "@helpTitle": {
+    "description": "Help title"
+  },
+
+  "helpItem1": "How to add a payment method?",
+  "@helpItem1": {
+    "description": "Help item 1"
+  },
+
+  "helpItem2": "How to recharge my wallet?",
+  "@helpItem2": {
+    "description": "Help item 2"
+  },
+
+  "helpItem3": "My payment was declined",
+  "@helpItem3": {
+    "description": "Help item 3"
+  },
+
+  "helpItem4": "Payment security",
+  "@helpItem4": {
+    "description": "Help item 4"
+  },
+
+  "addCard": "Add Card",
+  "@addCard": {
+    "description": "Add card title"
+  },
+
+  "cardNumberLabel": "Card number",
+  "@cardNumberLabel": {
+    "description": "Card number label"
+  },
+
+  "cardNumberRequired": "Card number is required",
+  "@cardNumberRequired": {
+    "description": "Card number required"
+  },
+
+  "cardHolderLabel": "Cardholder",
+  "@cardHolderLabel": {
+    "description": "Cardholder label"
+  },
+
+  "cardHolderRequired": "Cardholder is required",
+  "@cardHolderRequired": {
+    "description": "Cardholder required"
+  },
+
+  "expiryLabel": "Expiry (MM/YY)",
+  "@expiryLabel": {
+    "description": "Expiry label"
+  },
+
+  "requiredField": "This field is required",
+  "@requiredField": {
+    "description": "Required field message"
+  },
+
+  "cvvLabel": "CVV",
+  "@cvvLabel": {
+    "description": "CVV label"
+  },
+
+  "dataSecureMessage": "Your data is secure with 256-bit encryption",
+  "@dataSecureMessage": {
+    "description": "Data secure message"
+  },
+
+  "cardAddedSuccess": "Card added successfully",
+  "@cardAddedSuccess": {
+    "description": "Card added success"
+  },
+
+  "emailSent": "Email sent",
+  "@emailSent": {
+    "description": "Email sent title"
+  },
+
+  "checkInboxInstructions": "Check your inbox and follow the instructions to recover your password.",
+  "@checkInboxInstructions": {
+    "description": "Check inbox instructions"
+  },
+
+  "forgotPasswordQuestion": "Forgot your password?",
+  "@forgotPasswordQuestion": {
+    "description": "Forgot password question"
+  },
+
+  "enterEmailInstructions": "Enter your email and we will send you a link to reset your password.",
+  "@enterEmailInstructions": {
+    "description": "Enter email instructions"
+  },
+
+  "sendRecoveryLink": "Send recovery link",
+  "@sendRecoveryLink": {
+    "description": "Send recovery link button"
+  },
+
+  "emailAlreadyRegistered": "Email already registered",
+  "@emailAlreadyRegistered": {
+    "description": "Email already registered title"
+  },
+
+  "emailAlreadyRegisteredMessage": "The email {email} is already registered as {userType}.\n\nDo you want to log in instead?",
+  "@emailAlreadyRegisteredMessage": {
+    "description": "Email already registered message",
+    "placeholders": {
+      "email": {"type": "String"},
+      "userType": {"type": "String"}
+    }
+  },
+
+  "goToLoginButton": "Go to Login",
+  "@goToLoginButton": {
+    "description": "Go to login button"
+  },
+
+  "phoneAlreadyRegistered": "Phone already registered",
+  "@phoneAlreadyRegistered": {
+    "description": "Phone already registered title"
+  },
+
+  "phoneAlreadyRegisteredMessage": "The phone {phone} is already registered with the email:\n\n{email}\n\nAccount type: {userType}\n\nDo you want to log in?",
+  "@phoneAlreadyRegisteredMessage": {
+    "description": "Phone already registered message",
+    "placeholders": {
+      "phone": {"type": "String"},
+      "email": {"type": "String"},
+      "userType": {"type": "String"}
+    }
+  },
+
+  "buttonPressed": "✅ BUTTON PRESSED!",
+  "@buttonPressed": {
+    "description": "Debug button pressed message"
+  }
+}

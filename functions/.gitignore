@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Build
+lib/
+*.js
+*.js.map
+
+# Variables de entorno - ⚠️ NUNCA SUBIR CREDENCIALES
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.*.log*
+
+# Sistema
+.DS_Store
+Thumbs.db

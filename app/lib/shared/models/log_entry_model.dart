@@ -1,24 +1,4 @@
-// Log entry model for Rappi Taxi
-import 'package:freezed_annotation/freezed_annotation.dart';
-
-part 'log_entry_model.freezed.dart';
-part 'log_entry_model.g.dart';
-
-@freezed
-class LogEntry with _$LogEntry {
-  const factory LogEntry({
-    required LogLevel level,
-    required String message,
-    required String tag,
-    String? error,
-    String? stackTrace,
-    Map<String, dynamic>? additionalData,
-    required DateTime timestamp,
-  }) = _LogEntry;
-
-  factory LogEntry.fromJson(Map<String, dynamic> json) =>
-      _$LogEntryFromJson(json);
-}
+// Log entry model for Rappi Team
 
 enum LogLevel {
   debug,
@@ -40,5 +20,52 @@ extension LogLevelExtension on LogLevel {
       case LogLevel.error:
         return 'ERROR';
     }
+  }
+}
+
+class LogEntry {
+  final LogLevel level;
+  final String message;
+  final String tag;
+  final String? error;
+  final String? stackTrace;
+  final Map<String, dynamic>? additionalData;
+  final DateTime timestamp;
+
+  LogEntry({
+    required this.level,
+    required this.message,
+    required this.tag,
+    this.error,
+    this.stackTrace,
+    this.additionalData,
+    required this.timestamp,
+  });
+
+  factory LogEntry.fromJson(Map<String, dynamic> json) {
+    return LogEntry(
+      level: LogLevel.values.firstWhere(
+        (e) => e.toString() == 'LogLevel.${json['level']}',
+        orElse: () => LogLevel.info,
+      ),
+      message: (json['message'] as String?) ?? '',
+      tag: (json['tag'] as String?) ?? 'unknown',
+      error: json['error'],
+      stackTrace: json['stackTrace'],
+      additionalData: json['additionalData'] as Map<String, dynamic>?,
+      timestamp: DateTime.parse(json['timestamp']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'level': level.toString().split('.').last,
+      'message': message,
+      'tag': tag,
+      'error': error,
+      'stackTrace': stackTrace,
+      'additionalData': additionalData,
+      'timestamp': timestamp.toIso8601String(),
+    };
   }
 }

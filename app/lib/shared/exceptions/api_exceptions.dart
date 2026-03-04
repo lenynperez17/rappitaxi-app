@@ -1,5 +1,5 @@
-// API Exceptions for OASIS TAXI
-class ApiException implements Exception {
+// API Exceptions for RAPPI TEAM
+abstract class ApiException implements Exception {
   final String message;
   final int? statusCode;
   final String? errorCode;
@@ -196,29 +196,29 @@ class LocationException extends ApiException {
 class ExceptionHandler {
   static String getLocalizedMessage(ApiException exception) {
     switch (exception.runtimeType) {
-      case NetworkException:
+      case NetworkException _:
         return 'Error de conexión. Verifica tu conexión a internet.';
-      case TimeoutException:
+      case TimeoutException _:
         return 'La solicitud ha expirado. Intenta nuevamente.';
-      case UnauthorizedException:
+      case UnauthorizedException _:
         return 'Tu sesión ha expirado. Inicia sesión nuevamente.';
-      case ForbiddenException:
+      case ForbiddenException _:
         return 'No tienes permisos para realizar esta acción.';
-      case NotFoundException:
+      case NotFoundException _:
         return 'El recurso solicitado no fue encontrado.';
-      case ValidationException:
+      case ValidationException _:
         return 'Datos inválidos. Verifica la información ingresada.';
-      case ConflictException:
+      case ConflictException _:
         return 'Conflicto con los datos existentes.';
-      case RateLimitException:
+      case RateLimitException _:
         return 'Demasiadas solicitudes. Espera un momento e intenta nuevamente.';
-      case ServerException:
+      case ServerException _:
         return 'Error interno del servidor. Intenta más tarde.';
-      case RideException:
+      case RideException _:
         return 'Error en el viaje: ${exception.message}';
-      case PaymentException:
+      case PaymentException _:
         return 'Error en el pago: ${exception.message}';
-      case LocationException:
+      case LocationException _:
         return 'Error de ubicación: ${exception.message}';
       default:
         return exception.message.isNotEmpty 

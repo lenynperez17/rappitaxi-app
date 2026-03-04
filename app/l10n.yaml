@@ -1,0 +1,7 @@
+# Configuración de localización para Flutter
+# Este archivo le indica a Flutter cómo generar código de localización
+
+arb-dir: lib/l10n
+template-arb-file: app_es.arb
+output-localization-file: app_localizations.dart
+output-dir: lib/generated/l10n

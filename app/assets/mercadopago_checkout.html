@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pago Seguro - MercadoPago</title>
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #F8F9FD;
+      padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 500px;
+      width: 100%;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      padding: 30px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      color: #1A1A2E;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: #64748B;
+      font-size: 14px;
+    }
+
+    .amount {
+      background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 16px;
+      text-align: center;
+      margin-bottom: 30px;
+      box-shadow: 0 8px 20px rgba(0, 200, 0, 0.2);
+    }
+
+    .amount .label {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+
+    .amount .value {
+      font-size: 36px;
+      font-weight: bold;
+    }
+
+    #cardPaymentBrick_container {
+      margin-bottom: 20px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 200, 0, 0.2);
+    }
+
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #666;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .error {
+      background: #fee;
+      color: #c33;
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 12px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .error.show {
+      display: block;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #FF6B00;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Eliminar cualquier subrayado del SDK de MercadoPago */
+    a, a:hover, a:focus, a:active {
+      text-decoration: none !important;
+      border-bottom: none !important;
+    }
+
+    /* Asegurar que los inputs del SDK usen colores de OasisTaxi */
+    input:focus, select:focus, textarea:focus {
+      border-color: #FF6B00 !important;
+      outline-color: #FF6B00 !important;
+      box-shadow: 0 0 0 2px rgba(0, 200, 0, 0.1) !important;
+    }
+
+    /* Botones del SDK en verde */
+    button[type="submit"], .mp-button, button[class*="mercadopago"] {
+      background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+      border: none !important;
+      color: white !important;
+    }
+
+    /* Forzar colores verdes en TODOS los elementos del SDK de MercadoPago */
+    [class*="mercadopago"] input:focus,
+    [class*="mp-"] input:focus,
+    .cho-container input:focus,
+    #cardPaymentBrick_container input:focus {
+      border-color: #FF6B00 !important;
+      outline-color: #FF6B00 !important;
+      box-shadow: 0 0 0 2px rgba(0, 200, 0, 0.15) !important;
+    }
+
+    /* Cambiar colores de labels y textos del SDK */
+    [class*="mercadopago"] label,
+    [class*="mp-"] label,
+    .cho-container label,
+    #cardPaymentBrick_container label {
+      color: #1A1A2E !important;
+    }
+
+    /* Cambiar cualquier color morado/púrpura a verde */
+    [style*="#667eea"], [style*="#764ba2"], [style*="rgb(102, 126, 234)"] {
+      color: #FF6B00 !important;
+      background-color: #FF6B00 !important;
+      border-color: #FF6B00 !important;
+    }
+
+    /* Sobrescribir cualquier background morado */
+    [class*="mercadopago"] [style*="background"],
+    [class*="mp-"] [style*="background"] {
+      background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+    }
+
+    /* Checkboxes y radio buttons en verde */
+    input[type="checkbox"]:checked,
+    input[type="radio"]:checked {
+      background-color: #FF6B00 !important;
+      border-color: #FF6B00 !important;
+    }
+
+    /* Elementos seleccionados en verde */
+    [class*="mercadopago"] .selected,
+    [class*="mp-"] .selected,
+    .cho-container .selected {
+      background-color: rgba(0, 200, 0, 0.1) !important;
+      border-color: #FF6B00 !important;
+    }
+
+    /* ============================================= */
+    /* CSS ULTRA AGRESIVO PARA EL BRICK DE PAGO */
+    /* ============================================= */
+
+    /* Forzar TODOS los botones a verde - Sin excepciones */
+    #cardPaymentBrick_container button,
+    #cardPaymentBrick_container button[type="submit"],
+    #cardPaymentBrick_container button[type="button"],
+    #cardPaymentBrick_container [role="button"],
+    #cardPaymentBrick_container [class*="button"],
+    #cardPaymentBrick_container [class*="btn"],
+    #cardPaymentBrick_container [class*="submit"],
+    #cardPaymentBrick_container [class*="Button"],
+    #cardPaymentBrick_container [class*="Btn"] {
+      background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+      background-color: #FF6B00 !important;
+      background-image: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+      border: none !important;
+      border-color: #FF6B00 !important;
+      color: white !important;
+      font-weight: 600 !important;
+      box-shadow: 0 4px 12px rgba(0, 200, 0, 0.2) !important;
+    }
+
+    #cardPaymentBrick_container button:hover {
+      background: linear-gradient(135deg, #E55100 0%, #008000 100%) !important;
+      background-color: #E55100 !important;
+    }
+
+    /* Inputs con borde verde al focus */
+    #cardPaymentBrick_container input,
+    #cardPaymentBrick_container select,
+    #cardPaymentBrick_container textarea {
+      border: 1px solid #E2E8F0 !important;
+      border-radius: 8px !important;
+    }
+
+    #cardPaymentBrick_container input:focus,
+    #cardPaymentBrick_container select:focus,
+    #cardPaymentBrick_container textarea:focus {
+      border-color: #FF6B00 !important;
+      outline: 2px solid rgba(0, 200, 0, 0.2) !important;
+      box-shadow: 0 0 0 3px rgba(0, 200, 0, 0.1) !important;
+    }
+
+    /* ELIMINAR ABSOLUTAMENTE TODO RASTRO DE MORADO/PÚRPURA */
+    #cardPaymentBrick_container * {
+      /* Resetear cualquier gradiente morado */
+      background-image: none !important;
+    }
+
+    /* Forzar verde en cualquier elemento con color morado inline */
+    #cardPaymentBrick_container [style*="#667eea"],
+    #cardPaymentBrick_container [style*="#764ba2"],
+    #cardPaymentBrick_container [style*="rgb(102, 126, 234)"],
+    #cardPaymentBrick_container [style*="rgb(118, 75, 162)"],
+    #cardPaymentBrick_container [style*="102, 126, 234"],
+    #cardPaymentBrick_container [style*="118, 75, 162"] {
+      color: #FF6B00 !important;
+      background: #FF6B00 !important;
+      background-color: #FF6B00 !important;
+      background-image: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+      border-color: #FF6B00 !important;
+      fill: #FF6B00 !important;
+      stroke: #FF6B00 !important;
+    }
+
+    /* Labels con color oscuro */
+    #cardPaymentBrick_container label,
+    #cardPaymentBrick_container [class*="label"],
+    #cardPaymentBrick_container [class*="Label"] {
+      color: #1A1A2E !important;
+      font-weight: 500 !important;
+    }
+
+    /* Wrappers de inputs */
+    #cardPaymentBrick_container [class*="wrapper"],
+    #cardPaymentBrick_container [class*="Wrapper"],
+    #cardPaymentBrick_container [class*="container"]:not(#cardPaymentBrick_container),
+    #cardPaymentBrick_container [class*="Container"] {
+      border-color: #E2E8F0 !important;
+    }
+
+    #cardPaymentBrick_container [class*="wrapper"]:focus-within,
+    #cardPaymentBrick_container [class*="Wrapper"]:focus-within {
+      border-color: #FF6B00 !important;
+    }
+
+    /* Checkboxes y radios */
+    #cardPaymentBrick_container input[type="checkbox"],
+    #cardPaymentBrick_container input[type="radio"] {
+      accent-color: #FF6B00 !important;
+    }
+
+    #cardPaymentBrick_container input[type="checkbox"]:checked,
+    #cardPaymentBrick_container input[type="radio"]:checked {
+      background-color: #FF6B00 !important;
+      border-color: #FF6B00 !important;
+    }
+
+    /* Enlaces verdes */
+    #cardPaymentBrick_container a,
+    #cardPaymentBrick_container [class*="link"],
+    #cardPaymentBrick_container [class*="Link"] {
+      color: #FF6B00 !important;
+      text-decoration: none !important;
+    }
+
+    /* Mensajes de éxito */
+    #cardPaymentBrick_container [class*="success"],
+    #cardPaymentBrick_container [class*="Success"],
+    #cardPaymentBrick_container [class*="valid"],
+    #cardPaymentBrick_container [class*="Valid"] {
+      color: #FF6B00 !important;
+      border-color: #FF6B00 !important;
+    }
+
+    /* SVG icons */
+    #cardPaymentBrick_container svg {
+      fill: currentColor !important;
+    }
+
+    #cardPaymentBrick_container [class*="check"] svg,
+    #cardPaymentBrick_container [class*="Check"] svg,
+    #cardPaymentBrick_container [class*="success"] svg,
+    #cardPaymentBrick_container [class*="Success"] svg {
+      fill: #FF6B00 !important;
+      stroke: #FF6B00 !important;
+    }
+
+    /* Spinners y loaders */
+    #cardPaymentBrick_container [class*="spinner"],
+    #cardPaymentBrick_container [class*="Spinner"],
+    #cardPaymentBrick_container [class*="loader"],
+    #cardPaymentBrick_container [class*="Loader"],
+    #cardPaymentBrick_container [class*="loading"],
+    #cardPaymentBrick_container [class*="Loading"] {
+      border-top-color: #FF6B00 !important;
+      border-left-color: #FF6B00 !important;
+      border-right-color: transparent !important;
+      border-bottom-color: transparent !important;
+    }
+
+    /* VARIABLES CSS GLOBALES PARA MERCADOPAGO BRICKS */
+    :root {
+      --mp-primary-color: #FF6B00 !important;
+      --mp-secondary-color: #E55100 !important;
+      --mp-success-color: #FF6B00 !important;
+      --mp-error-color: #EF4444 !important;
+      --mp-text-primary-color: #1A1A2E !important;
+      --mp-text-secondary-color: #64748B !important;
+      --mp-background-color: #F8F9FD !important;
+      --mp-border-color-default: #E2E8F0 !important;
+      --mp-border-color-focus: #FF6B00 !important;
+      --mp-button-primary-background: #FF6B00 !important;
+      --mp-button-primary-background-hover: #E55100 !important;
+      --mp-button-primary-color: #FFFFFF !important;
+    }
+
+    /* Forzar variables CSS en el contenedor del Brick */
+    #cardPaymentBrick_container {
+      --mercadopago-primary-color: #FF6B00 !important;
+      --mercadopago-secondary-color: #E55100 !important;
+      --primary-color: #FF6B00 !important;
+      --secondary-color: #E55100 !important;
+      --accent-color: #FF6B00 !important;
+      --button-primary-background: linear-gradient(135deg, #FF6B00 0%, #E55100 100%) !important;
+      --button-primary-color: #FFFFFF !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>💳 Pago Seguro</h1>
+      <p id="description">Procesando pago con MercadoPago</p>
+    </div>
+
+    <div class="amount">
+      <div class="label">Total a pagar</div>
+      <div class="value" id="amountDisplay">S/ 0.00</div>
+    </div>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Cargando formulario de pago seguro...</p>
+    </div>
+
+    <div id="cardPaymentBrick_container" style="display: none;"></div>
+
+    <div id="error" class="error"></div>
+
+    <div class="buttons" style="display: none;" id="buttons">
+      <button class="btn btn-secondary" onclick="cancelPayment()">Cancelar</button>
+    </div>
+  </div>
+
+  <script>
+    // Variables globales que serán inicializadas desde Flutter
+    let mp = null;
+    let bricksBuilder = null;
+    let paymentConfig = {};
+
+    // Función llamada por Flutter para inicializar el pago
+    async function initializePayment(config) {
+      try {
+        console.log('🔧 Inicializando pago con config:', config);
+
+        paymentConfig = config;
+
+        // Actualizar UI con los datos
+        document.getElementById('description').textContent = config.description;
+        document.getElementById('amountDisplay').textContent = `S/ ${config.amount.toFixed(2)}`;
+
+        // Inicializar MercadoPago
+        mp = new MercadoPago(config.publicKey, {
+          locale: 'es-PE'
+        });
+
+        bricksBuilder = mp.bricks();
+
+        // Renderizar el formulario (ahora con await para capturar errores)
+        console.log('🔵 Llamando a renderCardPaymentBrick con await...');
+        await renderCardPaymentBrick();
+        console.log('🔵 renderCardPaymentBrick completado exitosamente');
+      } catch (error) {
+        console.error('❌ Error inicializando pago:', error);
+        showError('Error al inicializar el sistema de pago: ' + error.message);
+      }
+    }
+
+    async function renderCardPaymentBrick() {
+      console.log('🟢🟢🟢 renderCardPaymentBrick FUNCIÓN LLAMADA 🟢🟢🟢');
+      try {
+        console.log('🟢 DENTRO del bloque try');
+        console.log('🟢 Ocultando loading...');
+        document.getElementById('loading').style.display = 'none';
+        console.log('🟢 Mostrando container...');
+        document.getElementById('cardPaymentBrick_container').style.display = 'block';
+        console.log('🟢 Mostrando botones...');
+        document.getElementById('buttons').style.display = 'flex';
+        console.log('🟢 Elementos del DOM configurados correctamente');
+
+        console.log('🚀 ANTES de crear el Brick');
+
+        const cardPaymentBrickController = await bricksBuilder.create('cardPayment', 'cardPaymentBrick_container', {
+          initialization: {
+            amount: paymentConfig.amount,
+            payer: {
+              email: paymentConfig.payerEmail,
+              firstName: paymentConfig.payerName.split(' ')[0],
+              lastName: paymentConfig.payerName.split(' ').slice(1).join(' ') || ''
+            }
+          },
+          customization: {
+            visual: {
+              style: {
+                theme: 'flat',
+                customVariables: {
+                  baseColor: '#FF6B00',
+                  baseColorFirstVariant: '#E55100',
+                  baseColorSecondVariant: '#008000',
+                  textPrimaryColor: '#1A1A2E',
+                  textSecondaryColor: '#64748B',
+                  inputBackgroundColor: '#FFFFFF',
+                  formBackgroundColor: '#FFFFFF',
+                  borderRadiusSmall: '8px',
+                  borderRadiusMedium: '12px',
+                  borderRadiusLarge: '16px',
+                  fontSizeSmall: '14px',
+                  fontSizeMedium: '16px',
+                  fontSizeLarge: '18px'
+                }
+              }
+            },
+            paymentMethods: {
+              maxInstallments: 12,
+              creditCard: 'all',
+              debitCard: 'all'
+            }
+          },
+          callbacks: {
+            onReady: () => {
+              console.log('🎉🎉🎉 CALLBACK ONREADY PERSONALIZADO EJECUTADO! 🎉🎉🎉');
+              console.log('✅ El callback está funcionando correctamente');
+            },
+            onSubmit: async (formData) => {
+              return await processPayment(formData);
+            },
+            onError: (error) => {
+              console.error('❌ Error en Brick:', error);
+              showError('Error al cargar el formulario de pago');
+            }
+          }
+        });
+
+        console.log('🎉 DESPUÉS de crear el Brick');
+        console.log('📦 Brick controller:', cardPaymentBrickController);
+
+        // Aplicar estilos personalizados DESPUÉS de que el Brick esté completamente cargado
+        setTimeout(() => {
+          console.log('⏰ TIMEOUT: Intentando aplicar colores verdes...');
+          const brickContainer = document.getElementById('cardPaymentBrick_container');
+          if (brickContainer) {
+            console.log('✅ Container encontrado en timeout');
+
+            // Forzar botones a verde
+            const buttons = brickContainer.querySelectorAll('button');
+            console.log(`🔘 Botones encontrados: ${buttons.length}`);
+            buttons.forEach((btn, index) => {
+              btn.style.setProperty('background', 'linear-gradient(135deg, #FF6B00 0%, #E55100 100%)', 'important');
+              btn.style.setProperty('background-color', '#FF6B00', 'important');
+              btn.style.setProperty('color', 'white', 'important');
+              console.log(`✅ Botón ${index + 1} modificado`);
+            });
+          } else {
+            console.error('❌ Container NO encontrado en timeout');
+          }
+        }, 2000);
+
+      } catch (error) {
+        console.error('❌ Error creando Brick:', error);
+        showError('No se pudo cargar el formulario de pago: ' + error.message);
+      }
+    }
+
+    async function processPayment(formData) {
+      try {
+        console.log('💳 Procesando pago...', formData);
+
+        // Enviar token al Flutter app con TODOS los datos del pagador
+        const result = {
+          token: formData.token,
+          payment_method_id: formData.payment_method_id,
+          issuer_id: formData.issuer_id,
+          installments: formData.installments,
+          transaction_amount: paymentConfig.amount,
+          payer: formData.payer || { email: paymentConfig.payerEmail },
+          description: paymentConfig.description
+        };
+
+        PaymentResult.postMessage(JSON.stringify({
+          type: 'token',
+          data: result
+        }));
+
+        // Mostrar loading mientras se procesa
+        document.getElementById('cardPaymentBrick_container').innerHTML =
+          '<div class="loading"><div class="spinner"></div><p>Procesando pago...</p></div>';
+
+      } catch (error) {
+        console.error('❌ Error procesando pago:', error);
+        showError('Error al procesar el pago: ' + error.message);
+      }
+    }
+
+    function cancelPayment() {
+      if (confirm('¿Estás seguro de cancelar el pago?')) {
+        PaymentResult.postMessage(JSON.stringify({
+          type: 'cancel'
+        }));
+      }
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = message;
+      errorDiv.classList.add('show');
+      setTimeout(() => {
+        errorDiv.classList.remove('show');
+      }, 5000);
+    }
+
+    // Log inicial para debug
+    console.log('✅ HTML cargado correctamente. Esperando inicialización desde Flutter...');
+  </script>
+</body>
+</html>
