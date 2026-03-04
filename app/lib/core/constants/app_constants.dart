@@ -1,6 +1,69 @@
+// ignore_for_file: constant_identifier_names
+
 class AppConstants {
+  // ==================== CONFIGURACIÓN DE MONEDA E INTERNACIONALIZACIÓN ====================
+
+  /// País actual de la aplicación (MODIFICAR PARA CAMBIAR PAÍS/MONEDA)
+  static const String CURRENT_COUNTRY = 'PE'; // PE = Perú, US = USA, MX = México, etc.
+
+  /// Configuración de monedas por país
+  static const Map<String, CurrencyConfig> CURRENCIES = {
+    // ✅ CORREGIDO: Símbolo sin punto para consistencia (S/ en lugar de S/.)
+    'PE': CurrencyConfig(
+      symbol: 'S/',
+      code: 'PEN',
+      name: 'Sol Peruano',
+      locale: 'es_PE',
+      decimalDigits: 2,
+    ),
+    'US': CurrencyConfig(
+      symbol: '\$',
+      code: 'USD',
+      name: 'US Dollar',
+      locale: 'en_US',
+      decimalDigits: 2,
+    ),
+    'MX': CurrencyConfig(
+      symbol: '\$',
+      code: 'MXN',
+      name: 'Peso Mexicano',
+      locale: 'es_MX',
+      decimalDigits: 2,
+    ),
+    'CO': CurrencyConfig(
+      symbol: '\$',
+      code: 'COP',
+      name: 'Peso Colombiano',
+      locale: 'es_CO',
+      decimalDigits: 0, // Pesos colombianos no usan decimales
+    ),
+  };
+
+  /// Obtener la configuración de moneda actual
+  static CurrencyConfig get currentCurrency =>
+      CURRENCIES[CURRENT_COUNTRY] ?? CURRENCIES['PE']!;
+
+  /// Símbolo de moneda actual (ej: 'S/', '\$')
+  static String get currencySymbol => currentCurrency.symbol;
+
+  /// Código ISO de moneda actual (ej: 'PEN', 'USD')
+  static String get currencyCode => currentCurrency.code;
+
+  /// Locale actual (ej: 'es_PE', 'en_US')
+  static String get currentLocale => currentCurrency.locale;
+
+  /// Dígitos decimales para la moneda actual
+  static int get decimalDigits => currentCurrency.decimalDigits;
+
+  /// Idiomas soportados
+  static const List<String> SUPPORTED_LANGUAGES = ['es', 'en'];
+
+  /// Idioma por defecto
+  static const String DEFAULT_LANGUAGE = 'es';
+
+  // ==================== APP INFO ====================
   // App Info
-  static const String appName = 'Rappi Taxi';
+  static const String appName = 'Rappi Team';
   static const String appVersion = '1.0.0';
   static const String appBuildNumber = '1';
   
@@ -97,4 +160,21 @@ class AppConstants {
   static final RegExp nameRegex = RegExp(
     r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]{2,50}$',
   );
+}
+
+/// Configuración de moneda por país
+class CurrencyConfig {
+  final String symbol;     // Símbolo de moneda (ej: 'S/', '\$')
+  final String code;       // Código ISO 4217 (ej: 'PEN', 'USD')
+  final String name;       // Nombre completo de la moneda
+  final String locale;     // Locale (ej: 'es_PE', 'en_US')
+  final int decimalDigits; // Cantidad de decimales a mostrar
+
+  const CurrencyConfig({
+    required this.symbol,
+    required this.code,
+    required this.name,
+    required this.locale,
+    required this.decimalDigits,
+  });
 }

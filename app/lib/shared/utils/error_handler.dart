@@ -1,12 +1,10 @@
-// Global Error Handler for OASIS TAXI
+// Global Error Handler for RAPPI TEAM
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../exceptions/api_exceptions.dart';
-import '../models/error_report_model.dart';
-import '../../shared/models/log_entry_model.dart';
 import 'crash_reporter.dart';
-import 'package:rappitaxi_app/shared/utils/logger.dart' as core_logger;
+import '../../utils/logger.dart';
 
 class GlobalErrorHandler {
   static final GlobalErrorHandler _instance = GlobalErrorHandler._internal();
@@ -28,7 +26,7 @@ class GlobalErrorHandler {
       return true;
     };
 
-    core_logger.Logger.info('Global error handler initialized');
+    AppLogger.info('Global error handler initialized');
   }
 
   // Handle Flutter framework errors
@@ -122,7 +120,7 @@ class GlobalErrorHandler {
     Duration? duration,
     VoidCallback? onRetry,
   }) {
-    core_logger.Logger.warning('User error: $message');
+    AppLogger.warning('User error: $message');
 
     if (context != null && context.mounted) {
       _showErrorDialog(
@@ -138,11 +136,11 @@ class GlobalErrorHandler {
   // Log error details
   void _logError(ErrorReport errorReport) {
     if (errorReport.isFatal) {
-      core_logger.Logger.error('Error occurred: ${errorReport.error}',
+      AppLogger.error('Error occurred: ${errorReport.error}',
         errorReport.error,
         errorReport.stackTrace != null ? StackTrace.fromString(errorReport.stackTrace!) : null);
     } else {
-      core_logger.Logger.warning('Warning: ${errorReport.error}');
+      AppLogger.warning('Warning: ${errorReport.error}');
     }
 
     // Also log to developer console in debug mode

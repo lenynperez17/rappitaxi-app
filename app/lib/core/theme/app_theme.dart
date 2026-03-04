@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Colores principales
-  static const Color primaryColor = Color(0xFF0066CC);
-  static const Color secondaryColor = Color(0xFF00AA44);
-  static const Color accentColor = Color(0xFFFF6600);
+  // Colores principales - Tema Rappi Team
+  static const Color primaryColor = Color(0xFFFF6B00); // Verde Rappi Team oficial
+  static const Color secondaryColor = Color(0xFF000000); // Negro
+  static const Color accentColor = Color(0xFFFF6B00); // Verde Rappi Team
   
   // Colores neutros
   static const Color backgroundColor = Color(0xFFF5F5F5);
@@ -17,13 +17,13 @@ class AppTheme {
   static const Color errorColor = Color(0xFFDC3545);
   static const Color warningColor = Color(0xFFFFC107);
   static const Color successColor = Color(0xFF00AA44);
-  static const Color infoColor = Color(0xFF17A2B8);
+  static const Color infoColor = Color(0xFFFF6B00);
   
   // Colores para estado del conductor
   static const Color onlineColor = Color(0xFF00AA44);
   static const Color offlineColor = Color(0xFF666666);
   static const Color busyColor = Color(0xFFFFC107);
-  static const Color inRideColor = Color(0xFF0066CC);
+  static const Color inRideColor = Color(0xFFFF6B00);
   
   // Colores para ganancias
   static const Color earningsColor = Color(0xFF00AA44);
@@ -218,15 +218,15 @@ class AppTheme {
       ),
       hintStyle: GoogleFonts.roboto(
         fontSize: 14,
-        color: textSecondaryColor.withOpacity(0.6),
+        color: textSecondaryColor.withValues(alpha: 0.6),
       ),
     ),
     
     // Card
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: surfaceColor,
       elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.1),
+      shadowColor: Colors.black.withValues(alpha: 0.1),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -288,7 +288,7 @@ class AppTheme {
     ),
     
     // Dialog
-    dialogTheme: DialogTheme(
+    dialogTheme: DialogThemeData(
       backgroundColor: surfaceColor,
       elevation: 8,
       shape: RoundedRectangleBorder(
@@ -342,10 +342,10 @@ class AppTheme {
       elevation: 0,
       centerTitle: true,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: const Color(0xFF1E1E1E),
       elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.3),
+      shadowColor: Colors.black.withValues(alpha: 0.3),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
