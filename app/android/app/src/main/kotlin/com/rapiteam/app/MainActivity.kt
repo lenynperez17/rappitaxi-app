@@ -1,4 +1,4 @@
-package com.example.rappi_taxi
+package com.rapiteam.app
 
 import io.flutter.embedding.android.FlutterActivity
 
