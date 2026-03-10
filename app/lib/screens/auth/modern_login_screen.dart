@@ -919,23 +919,10 @@ class _ModernLoginScreenState extends State<ModernLoginScreen>
                                   
                                   SizedBox(height: 20),
                                   
-                                  // Botones de redes sociales en fila horizontal con iconos circulares
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      _buildSocialButton(
-                                        icon: Icons.g_mobiledata,
-                                        color: const Color(0xFFDB4437),
-                                        onPressed: _loginWithGoogle,
-                                      ),
-                                      const SizedBox(width: 20),
-                                      _buildSocialButton(
-                                        icon: Icons.apple,
-                                        color: Colors.black,
-                                        onPressed: _loginWithApple,
-                                      ),
-                                    ],
-                                  ),
+                                  // Botones de redes sociales - prominentes con texto completo
+                                  _buildGoogleButton(),
+                                  const SizedBox(height: 12),
+                                  _buildAppleButton(),
                                 ],
                               ),
                             ),
@@ -952,24 +939,62 @@ class _ModernLoginScreenState extends State<ModernLoginScreen>
     );
   }
 
-  // Botones de login social circulares
-  Widget _buildSocialButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(32),
-      child: Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          shape: BoxShape.circle,
-          border: Border.all(color: color.withValues(alpha: 0.45), width: 1.5),
+  // Botón de Google Sign-In - estilo oficial
+  Widget _buildGoogleButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: OutlinedButton.icon(
+        onPressed: _isLoading ? null : _loginWithGoogle,
+        icon: const Text(
+          'G',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFDB4437),
+          ),
         ),
-        child: Icon(icon, color: color, size: 28),
+        label: Text(
+          'Continuar con Google',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: ModernTheme.textPrimary,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.white,
+          side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
+      ),
+    );
+  }
+
+  // Botón de Apple Sign-In - estilo oficial
+  Widget _buildAppleButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: _isLoading ? null : _loginWithApple,
+        icon: const Icon(Icons.apple, size: 24, color: Colors.white),
+        label: const Text(
+          'Continuar con Apple',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
       ),
     );
   }

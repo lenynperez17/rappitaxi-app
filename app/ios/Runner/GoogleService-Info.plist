@@ -28,6 +28,8 @@
 	<true/>
 	<key>IS_SIGNIN_ENABLED</key>
 	<true/>
+	<key>SERVER_CLIENT_ID</key>
+	<string>52925359166-ksndlq97t4lbi0dd1bmeu67697eou1dg.apps.googleusercontent.com</string>
 	<key>GOOGLE_APP_ID</key>
 	<string>1:52925359166:ios:ceb29da064ddd1cc6fdd6f</string>
 </dict>

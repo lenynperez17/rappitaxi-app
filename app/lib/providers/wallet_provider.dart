@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/logger.dart';
 import '../services/firebase_service.dart';
 import '../services/payment_service.dart';
-import '../widgets/mercadopago_checkout_widget.dart';
+import '../widgets/mercadopago_checkout_pro_widget.dart';
 import '../core/constants/credit_constants.dart';
 
 // Modelo para billetera
@@ -981,7 +981,7 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// Procesar recarga con MercadoPago Checkout Bricks (in-app)
+  /// Procesar recarga con MercadoPago Checkout Pro (hosted page with Yape, Plin, cards, etc.)
   Future<Map<String, dynamic>> processRechargeWithMercadoPago({
     required double amount,
     required double bonus,
@@ -993,82 +993,86 @@ class WalletProvider extends ChangeNotifier {
         return {'success': false, 'message': 'Usuario no autenticado'};
       }
 
-      debugPrint('💳 WalletProvider: Iniciando recarga con MercadoPago - S/. ${amount.toStringAsFixed(2)}');
+      debugPrint('💳 WalletProvider: Iniciando recarga con MercadoPago Checkout Pro - S/. ${amount.toStringAsFixed(2)}');
 
-      // Obtener datos del usuario para MercadoPago
+      // Get user data for MercadoPago preference
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data() ?? {};
       final userName = userData['name'] ?? userData['displayName'] ?? userData['fullName'] ?? 'Usuario';
       final userEmail = user.email ?? userData['email'] ?? 'usuario@rapiteam.app';
 
-      debugPrint('💳 Usuario: $userName, Email: $userEmail');
+      final rechargeId = 'recharge_${user.uid}_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Obtener public key directamente de Cloud Functions
-      String publicKey;
-      try {
-        final paymentService = PaymentService();
-        await paymentService.initialize(isProduction: true);
-        publicKey = paymentService.mercadoPagoPublicKey;
-        debugPrint('💳 Public key obtenida: ${publicKey.substring(0, 20)}...');
-      } catch (e) {
-        debugPrint('❌ Error obteniendo public key: $e');
-        return {'success': false, 'message': 'Error conectando con MercadoPago. Verifica tu conexión a internet.'};
+      // Create MercadoPago preference via Cloud Functions
+      final paymentService = PaymentService();
+      await paymentService.initialize(isProduction: true);
+
+      final preferenceResult = await paymentService.createMercadoPagoPreference(
+        rideId: rechargeId,
+        amount: amount,
+        payerEmail: userEmail,
+        payerName: userName,
+        description: 'Recarga de créditos Rappi Team - S/. ${amount.toStringAsFixed(2)}',
+      );
+
+      if (!preferenceResult.success || preferenceResult.initPoint == null) {
+        return {'success': false, 'message': preferenceResult.error ?? 'No se pudo crear la preferencia de pago'};
       }
 
-      // Mostrar checkout de MercadoPago Bricks
       if (!context.mounted) return {'success': false, 'message': 'Contexto no disponible'};
 
-      String? paymentId;
-      String? paymentStatus;
-      final rideId = 'recharge_${user.uid}_${DateTime.now().millisecondsSinceEpoch}';
+      debugPrint('💳 Abriendo MercadoPago Checkout Pro...');
 
-      debugPrint('💳 Abriendo MercadoPago Checkout Bricks...');
+      // Track payment result from the checkout
+      String? resultStatus;
+      final completer = Completer<String?>();
 
-      final completed = await Navigator.push<bool>(
+      await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (ctx) => MercadoPagoCheckoutWidget(
-            publicKey: publicKey,
-            rideId: rideId,
+          builder: (ctx) => MercadoPagoCheckoutProWidget(
+            initPoint: preferenceResult.initPoint!,
+            transactionId: rechargeId,
             amount: amount,
-            description: 'Recarga de créditos Rappi Team - S/. ${amount.toStringAsFixed(2)}',
-            payerEmail: userEmail,
-            payerName: userName,
-            onPaymentComplete: (id, status) {
-              debugPrint('💳 Pago completado: id=$id, status=$status');
-              paymentId = id;
-              paymentStatus = status;
-              Navigator.pop(ctx, status == 'approved');
+            onPaymentComplete: (status, transactionId) {
+              debugPrint('💳 Pago completado: status=$status, txId=$transactionId');
+              resultStatus = status;
+              Navigator.pop(ctx);
+              if (!completer.isCompleted) completer.complete(status);
             },
             onCancel: () {
               debugPrint('💳 Pago cancelado por el usuario');
-              Navigator.pop(ctx, false);
+              Navigator.pop(ctx);
+              if (!completer.isCompleted) completer.complete(null);
             },
           ),
         ),
       );
 
-      debugPrint('💳 Resultado del checkout: completed=$completed, status=$paymentStatus');
+      // If Navigator.push returned without callback (back button), treat as cancel
+      if (!completer.isCompleted) completer.complete(resultStatus);
+      final finalStatus = await completer.future;
 
-      if (completed != true || paymentStatus != 'approved') {
-        return {'success': false, 'message': 'Pago cancelado o no completado'};
-      }
+      if (finalStatus == 'approved') {
+        // Payment approved - add credits
+        debugPrint('💳 Pago aprobado, agregando créditos...');
+        final credited = await rechargeServiceCredits(
+          amount: amount,
+          paymentMethod: 'mercadopago',
+          paymentId: rechargeId,
+          bonus: bonus,
+        );
 
-      // Pago exitoso - agregar créditos
-      debugPrint('💳 Pago exitoso, agregando créditos...');
-      final credited = await rechargeServiceCredits(
-        amount: amount,
-        paymentMethod: 'mercadopago',
-        paymentId: paymentId,
-        bonus: bonus,
-      );
-
-      if (credited) {
-        debugPrint('✅ Créditos agregados exitosamente');
-        return {'success': true, 'message': 'Créditos agregados exitosamente'};
+        if (credited) {
+          debugPrint('✅ Créditos agregados exitosamente');
+          return {'success': true, 'message': 'Créditos agregados exitosamente'};
+        } else {
+          return {'success': false, 'message': 'Error agregando créditos después del pago'};
+        }
+      } else if (finalStatus == 'pending') {
+        return {'success': false, 'message': 'Pago en proceso. Tu saldo se actualizará cuando sea confirmado.'};
       } else {
-        debugPrint('❌ Error agregando créditos después del pago');
-        return {'success': false, 'message': 'Error agregando créditos después del pago'};
+        return {'success': false, 'message': 'Pago cancelado o no completado'};
       }
     } catch (e) {
       AppLogger.error('Error en processRechargeWithMercadoPago', e);

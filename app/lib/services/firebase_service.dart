@@ -38,6 +38,9 @@ class FirebaseService {
   bool _initialized = false;
   bool get isInitialized => _initialized;
 
+  // Google Sign-In must only be initialized once (v7.x requirement)
+  bool _googleSignInInitialized = false;
+
   // Subscription para token refresh (se mantiene durante toda la vida de la app)
   // ignore: unused_field
   StreamSubscription<String>? _tokenRefreshSubscription;
@@ -361,33 +364,32 @@ class FirebaseService {
   /// Iniciar sesión con Google - IMPLEMENTACIÓN v7.2.0
   Future<User?> signInWithGoogle() async {
     try {
-      // Iniciar autenticación con Google
       AppLogger.firebase('Iniciando autenticación con Google');
       await logEvent('google_login_attempt', {});
 
-      // Obtener instancia y configurar
       final googleSignIn = GoogleSignIn.instance;
 
-      // Inicializar con Web Client ID para obtener idToken con email
-      // En iOS, también necesitamos especificar el clientId del GoogleService-Info.plist
-      await googleSignIn.initialize(
-        hostedDomain: null,
-        serverClientId: OAuthConfig.googleWebClientId,
-        clientId: Platform.isIOS ? OAuthConfig.googleIosClientId : null,
-      );
+      // initialize() must be called exactly once per app lifecycle (v7.x docs)
+      if (!_googleSignInInitialized) {
+        await googleSignIn.initialize(
+          hostedDomain: null,
+          serverClientId: OAuthConfig.googleWebClientId,
+          clientId: Platform.isIOS ? OAuthConfig.googleIosClientId : null,
+        );
+        _googleSignInInitialized = true;
+        AppLogger.debug('GoogleSignIn initialized (once)');
+      }
 
-      // Cerrar sesión previa si existe
-      await googleSignIn.signOut();
+      // Sign out previous session to force account picker
+      try {
+        await googleSignIn.signOut();
+      } catch (e) {
+        AppLogger.debug('signOut before authenticate (ignorable): $e');
+      }
 
-      // Autenticar con scopes necesarios
+      // Authenticate - shows account picker
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate(
-        scopeHint: [
-          'openid',
-          'email',
-          'profile',
-          'https://www.googleapis.com/auth/userinfo.email',
-          'https://www.googleapis.com/auth/userinfo.profile',
-        ],
+        scopeHint: ['email', 'profile'],
       );
 
       // Guardar email de GoogleSignInAccount
@@ -492,8 +494,12 @@ class FirebaseService {
 
       AppLogger.warning('Usuario es null después de autenticación');
       return null;
+    } on GoogleSignInException catch (e, stackTrace) {
+      AppLogger.error('GoogleSignInException: code=${e.code}, description=${e.description}', e, stackTrace);
+      await recordError(e, stackTrace);
+      rethrow;
     } catch (e, stackTrace) {
-      AppLogger.error('Error en login con Google', e, stackTrace);
+      AppLogger.error('Error en login con Google: ${e.runtimeType}: $e', e, stackTrace);
       await recordError(e, stackTrace);
       rethrow;
     }

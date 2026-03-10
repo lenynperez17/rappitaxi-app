@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Color principal de Rappi Team - Naranja corporativo
-  static const Color rappiOrange = Color(0xFFFF6B00);
-  static const Color rappiOrangeDark = Color(0xFFE55100);
-  static const Color rappiOrangeLight = Color(0xFFFF9A4D);
+  // Color principal de Rappi Team - Rojo corporativo
+  static const Color rappiRed = Color(0xFFE31E24);
+  static const Color rappiRedDark = Color(0xFFB91C1C);
+  static const Color rappiRedLight = Color(0xFFFCA5A5);
 
   // Aliases principales
-  static const Color primary = rappiOrange;
+  static const Color primary = rappiRed;
+  // Backward compatibility aliases
+  static const Color rappiOrange = rappiRed;
+  static const Color rappiOrangeDark = rappiRedDark;
+  static const Color rappiOrangeLight = rappiRedLight;
   static const Color rappiBlack = Color(0xFF000000);
   static const Color rappiWhite = Color(0xFFFFFFFF);
   static const Color white = rappiWhite;
 
-  // Aliases para compatibilidad (turquoise → orange)
-  static const Color rappiTurquoise = rappiOrange;
-  static const Color rappiTurquoiseDark = rappiOrangeDark;
-  static const Color rappiTurquoiseLight = rappiOrangeLight;
+  // Aliases para compatibilidad
+  static const Color rappiTurquoise = rappiRed;
+  static const Color rappiTurquoiseDark = rappiRedDark;
+  static const Color rappiTurquoiseLight = rappiRedLight;
 
   // Colores base con mejor contraste
   static const Color black = Color(0xFF1A1A1A);
@@ -43,5 +47,6 @@ class AppColors {
   static const Color textPrimary = Color(0xFF111827);
   static const Color textSecondary = Color(0xFF6B7280);
   static const Color textOnDark = Colors.white;
+  static const Color textOnPrimary = Colors.white;
   static const Color textOnOrange = Colors.white;
 }

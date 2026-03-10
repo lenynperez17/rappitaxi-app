@@ -10,7 +10,7 @@ class MapMarkerUtils {
   static final Map<String, BitmapDescriptor> _iconCache = {};
 
   // Colores corporativos
-  static const Color _rappiOrange = Color(0xFFFF6B00);
+  static const Color _rappiOrange = Color(0xFFE31E24);
   static const Color _googleBlue = Color(0xFF4285F4);
 
   // Tamaños de renderizado (3x para nitidez HD)
@@ -215,7 +215,7 @@ class MapMarkerUtils {
           ),
           child: const Icon(
             Icons.person,
-            color: Color(0xFFFF6B00),
+            color: Color(0xFFE31E24),
             size: 26,
           ),
         ),

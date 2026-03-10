@@ -387,23 +387,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
   
   void _onRideProviderChanged() {
-    if (!mounted) return;
-
-    final rideProvider = Provider.of<RideProvider>(context, listen: false);
-    final currentTrip = rideProvider.currentTrip;
-
-    if (currentTrip != null) {
-      // Navegar al código de verificación cuando el conductor sea asignado
-      if (currentTrip.status == 'accepted' || currentTrip.status == 'driver_arriving') {
-        if (currentTrip.passengerVerificationCode != null) {
-          Navigator.pushNamed(
-            context,
-            '/passenger/verification-code',
-            arguments: currentTrip,
-          );
-        }
-      }
-    }
+    // Verification codes removed - no longer navigating to verification screen
   }
 
   /// Solicitar permisos de ubicación al iniciar la app

@@ -1190,20 +1190,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         return;
       }
 
-      // Generar código de verificación del pasajero
-      String generateVerificationCode() {
-        final random = math.Random();
-        String code = '';
-        for (int i = 0; i < 4; i++) {
-          code += random.nextInt(10).toString();
-        }
-        return code;
-      }
-
-      final passengerCode = generateVerificationCode();
-      final driverCode = generateVerificationCode();
-
-      // ✅ NUEVO: Obtener teléfono del pasajero desde Firestore
+      // ✅ Obtener teléfono del pasajero desde Firestore
       String? passengerPhone;
       try {
         final passengerDoc = await _firestore.collection('users').doc(request.passengerId).get();
@@ -1265,11 +1252,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           'paymentMethod': request.paymentMethod.name,
           'requestedAt': FieldValue.serverTimestamp(),
           'acceptedAt': FieldValue.serverTimestamp(),
-          // Códigos de verificación mutua
-          'passengerVerificationCode': passengerCode,
-          'driverVerificationCode': driverCode,
-          'isPassengerVerified': false,
-          'isDriverVerified': false,
+          // Verification codes removed
           // ✅ CORREGIDO: Info del pasajero con nombre de campo correcto + teléfono
           'vehicleInfo': {
             'passengerName': request.passengerName,

@@ -91,7 +91,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   final TextEditingController _verificationCodeController = TextEditingController();
   
   // Colores del tema
-  static const primaryColor = Color(0xFFFF6B00);
+  static const primaryColor = Color(0xFFE31E24);
   static const accentColor = Color(0xFF1E1E1E);
 
   @override
@@ -909,7 +909,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         if (mounted) {
           _verificationCodeController.clear();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Código verificado correctamente'), backgroundColor: Color(0xFFFF6B00)),
+            const SnackBar(content: Text('Código verificado correctamente'), backgroundColor: Color(0xFFE31E24)),
           );
         }
       } else {

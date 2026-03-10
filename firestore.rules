@@ -155,7 +155,7 @@ service cloud.firestore {
         ])
       );
 
-      allow create: if isAuthenticated() && isPassenger();
+      allow create: if isAuthenticated() && (isPassenger() || isDriver());
 
       allow update: if isAuthenticated() && (
         isOwner(resource.data.passengerId) ||
