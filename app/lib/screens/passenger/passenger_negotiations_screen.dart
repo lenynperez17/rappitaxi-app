@@ -132,12 +132,21 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.currentUser?.id ?? '';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mis Negociaciones'),
-        backgroundColor: ModernTheme.rappiOrange,
-      ),
-      body: Consumer<PriceNegotiationProvider>(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          // Cleanup listeners before popping to prevent black screen
+          _countdownTimer?.cancel();
+          _negotiationProvider?.stopListeningToNegotiations();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Mis Negociaciones'),
+          backgroundColor: ModernTheme.rappiOrange,
+        ),
+        body: Consumer<PriceNegotiationProvider>(
         builder: (context, provider, _) {
           // ✅ NUEVO: Detectar si alguna negociación fue aceptada (por conductor)
           final acceptedNegotiations = provider.activeNegotiations
@@ -185,6 +194,31 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   '/trip-tracking',
                   arguments: {'rideId': rideId},
                 );
+              } else if (mounted) {
+                // rideId was null - retry up to 3 times with delay
+                debugPrint('⚠️ rideId null, intentando retry...');
+                for (int retry = 0; retry < 3; retry++) {
+                  await Future.delayed(const Duration(seconds: 2));
+                  if (!mounted) return;
+                  final retryRideId = await provider.getRideIdForNegotiation(acceptedNeg.id);
+                  if (retryRideId != null && mounted) {
+                    navigator.pushReplacementNamed(
+                      '/trip-tracking',
+                      arguments: {'rideId': retryRideId},
+                    );
+                    return;
+                  }
+                }
+                // All retries failed
+                if (mounted) {
+                  _isNavigatingToTracking = false;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Error al conectar con el conductor. Espera un momento...'),
+                      backgroundColor: ModernTheme.warning,
+                    ),
+                  );
+                }
               }
             });
           }
@@ -211,6 +245,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             },
           );
         },
+      ),
       ),
     );
   }

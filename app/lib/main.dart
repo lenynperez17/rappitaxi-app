@@ -84,8 +84,9 @@ import 'screens/shared/support_screen.dart';
 import 'screens/shared/notifications_screen.dart';
 // import 'screens/shared/live_tracking_map_screen.dart'; // No usado - ruta comentada
 import 'screens/shared/emergency_details_screen.dart';
-import 'screens/passenger/trip_verification_code_screen.dart';
-import 'screens/driver/driver_verification_screen.dart';
+// Verification screens removed - no longer used
+// import 'screens/passenger/trip_verification_code_screen.dart';
+// import 'screens/driver/driver_verification_screen.dart';
 import 'screens/shared/trip_details_screen.dart';
 import 'screens/shared/trip_tracking_screen.dart';
 import 'screens/shared/chat_screen.dart';
@@ -329,9 +330,7 @@ class _ThemedMaterialApp extends StatelessWidget {
         '/passenger/tracking': (context) => TripTrackingScreen(
           rideId: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
         ),
-        '/passenger/verification-code': (context) => TripVerificationCodeScreen(
-          trip: ModalRoute.of(context)!.settings.arguments as TripModel,
-        ),
+        // Verification code screen removed - no longer needed
 
         // Rutas de Conductor
         '/driver/home': (context) => ModernDriverHomeScreen(),
@@ -351,9 +350,7 @@ class _ThemedMaterialApp extends StatelessWidget {
         '/driver/documents': (context) => DocumentsScreen(),
         '/driver/profile': (context) => DriverProfileScreen(),
         '/driver/recharge-credits': (context) => RechargeCreditsScreen(),
-        '/driver/verification': (context) => DriverVerificationScreen(
-          trip: ModalRoute.of(context)!.settings.arguments as TripModel,
-        ),
+        // Driver verification screen removed - no longer needed
         '/driver/active-trip': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           final tripId = args?['tripId'] as String? ?? '';

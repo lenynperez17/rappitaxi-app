@@ -168,31 +168,41 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Solicitudes de Viaje'),
-        backgroundColor: ModernTheme.rappiOrange,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshNegotiations,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _negotiations.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _refreshNegotiations,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _negotiations.length,
-                    itemBuilder: (context, index) {
-                      return _buildNegotiationCard(_negotiations[index]);
-                    },
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          // Cleanup listeners before popping to prevent black screen
+          _countdownTimer?.cancel();
+          _negotiationsSubscription?.cancel();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Solicitudes de Viaje'),
+          backgroundColor: ModernTheme.rappiOrange,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _refreshNegotiations,
+            ),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _negotiations.isEmpty
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _refreshNegotiations,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _negotiations.length,
+                      itemBuilder: (context, index) {
+                        return _buildNegotiationCard(_negotiations[index]);
+                      },
+                    ),
                   ),
-                ),
+      ),
     );
   }
 

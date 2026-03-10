@@ -357,8 +357,8 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
             center: Alignment.center,
             radius: 1.2,
             colors: [
-              const Color(0xFFFF6B00),
-              const Color(0xFFFF8C00),
+              const Color(0xFFE31E24),
+              const Color(0xFFFF4444),
               Colors.white,
             ],
             stops: const [0.0, 0.5, 1.0],
@@ -385,7 +385,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFFFF6B00).withValues(alpha: 0.35),
+                                color: const Color(0xFFE31E24).withValues(alpha: 0.35),
                                 blurRadius: 40,
                                 spreadRadius: 8,
                               ),
@@ -401,7 +401,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                               return const Icon(
                                 Icons.local_taxi,
                                 size: 90,
-                                color: Color(0xFFFF6B00),
+                                color: Color(0xFFE31E24),
                               );
                             },
                           ),
@@ -432,7 +432,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                                   letterSpacing: 2,
                                   shadows: [
                                     Shadow(
-                                      color: const Color(0xFFFF6B00).withValues(alpha: 0.6),
+                                      color: const Color(0xFFE31E24).withValues(alpha: 0.6),
                                       blurRadius: 12,
                                     ),
                                   ],
@@ -449,7 +449,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                                   letterSpacing: 0.5,
                                   shadows: [
                                     Shadow(
-                                      color: const Color(0xFFFF6B00).withValues(alpha: 0.5),
+                                      color: const Color(0xFFE31E24).withValues(alpha: 0.5),
                                       blurRadius: 8,
                                     ),
                                   ],

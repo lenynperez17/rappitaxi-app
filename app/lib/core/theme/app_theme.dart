@@ -3,9 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Colores principales - Tema Rappi Team
-  static const Color primaryColor = Color(0xFFFF6B00); // Verde Rappi Team oficial
+  static const Color primaryColor = Color(0xFFE31E24); // Rojo Rappi Team oficial
   static const Color secondaryColor = Color(0xFF000000); // Negro
-  static const Color accentColor = Color(0xFFFF6B00); // Verde Rappi Team
+  static const Color accentColor = Color(0xFFE31E24); // Rojo Rappi Team
   
   // Colores neutros
   static const Color backgroundColor = Color(0xFFF5F5F5);
@@ -17,13 +17,13 @@ class AppTheme {
   static const Color errorColor = Color(0xFFDC3545);
   static const Color warningColor = Color(0xFFFFC107);
   static const Color successColor = Color(0xFF00AA44);
-  static const Color infoColor = Color(0xFFFF6B00);
+  static const Color infoColor = Color(0xFFE31E24);
   
   // Colores para estado del conductor
   static const Color onlineColor = Color(0xFF00AA44);
   static const Color offlineColor = Color(0xFF666666);
   static const Color busyColor = Color(0xFFFFC107);
-  static const Color inRideColor = Color(0xFFFF6B00);
+  static const Color inRideColor = Color(0xFFE31E24);
   
   // Colores para ganancias
   static const Color earningsColor = Color(0xFF00AA44);

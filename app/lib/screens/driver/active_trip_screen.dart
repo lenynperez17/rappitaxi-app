@@ -1,3 +1,4 @@
+// ignore_for_file: unused_element
 // Pantalla de viaje activo para el conductor
 // Muestra el estado actual del viaje y permite al conductor:
 // - Marcar que llegó al punto de recogida
@@ -217,7 +218,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _tripState = DriverTripState.arrivedAtPickup;
         break;
       case 'waiting_verification':
-        _tripState = DriverTripState.waitingVerification;
+        // Verification removed - treat as in_progress
+        _tripState = DriverTripState.inProgress;
         break;
       case 'in_progress':
         _tripState = DriverTripState.inProgress;
@@ -1562,12 +1564,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         onPressed = _markArrived;
         break;
       case DriverTripState.arrivedAtPickup:
-        buttonText = 'Verificar código del pasajero';
-        buttonIcon = Icons.verified_user;
-        onPressed = _showVerificationDialog;
-        buttonColor = ModernTheme.warning;
+        buttonText = 'Iniciar viaje';
+        buttonIcon = Icons.play_arrow;
+        onPressed = _startTrip;
+        buttonColor = ModernTheme.rappiOrange;
         break;
       case DriverTripState.waitingVerification:
+        // Verification removed - treat same as arrivedAtPickup
         buttonText = 'Iniciar viaje';
         buttonIcon = Icons.play_arrow;
         onPressed = _startTrip;

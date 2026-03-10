@@ -2719,7 +2719,7 @@ class _WalletScreenState extends State<WalletScreen>
         throw Exception(preferenceResult.error ?? 'No se pudo crear la preferencia de pago');
       }
 
-      // Open MercadoPago Checkout Pro (hosted page with proper anti-fraud)
+      // Open MercadoPago Checkout Pro (hosted page with Yape, Plin, cards, etc.)
       if (!mounted) return;
       await Navigator.push(
         context,
@@ -2737,7 +2737,7 @@ class _WalletScreenState extends State<WalletScreen>
               if (status == 'approved') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Recarga exitosa! Tu saldo se actualizará en unos momentos.'),
+                    content: Text('Recarga exitosa! Tu saldo se actualizará en unos momentos.'),
                     backgroundColor: ModernTheme.success,
                     duration: Duration(seconds: 5),
                   ),
@@ -2746,7 +2746,7 @@ class _WalletScreenState extends State<WalletScreen>
               } else if (status == 'pending') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('⏳ Pago en proceso. Tu saldo se actualizará cuando sea confirmado.'),
+                    content: Text('Pago en proceso. Tu saldo se actualizará cuando sea confirmado.'),
                     backgroundColor: ModernTheme.warning,
                     duration: Duration(seconds: 5),
                   ),
@@ -2754,7 +2754,7 @@ class _WalletScreenState extends State<WalletScreen>
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('❌ Pago rechazado. Verifica tu tarjeta e intenta nuevamente.'),
+                    content: Text('Pago rechazado. Verifica tu método de pago e intenta nuevamente.'),
                     backgroundColor: ModernTheme.error,
                     duration: Duration(seconds: 7),
                   ),
@@ -2780,15 +2780,13 @@ class _WalletScreenState extends State<WalletScreen>
       _rechargeAmountController.clear();
       setState(() {});
 
-      // Nota: El webhook de MercadoPago se encargará de actualizar el saldo
-      // cuando el pago sea confirmado. Ver: functions/src/index.ts
+      // The MercadoPago webhook handles wallet balance updates
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Cerrar diálogo de carga si todavía está abierto
 
       if (!mounted) return;
 
-      // Mensaje amigable para el usuario
       String errorMessage = 'No se pudo iniciar la recarga. Intenta nuevamente.';
       final errorStr = e.toString().toLowerCase();
       if (errorStr.contains('network') || errorStr.contains('conexión')) {
@@ -2797,7 +2795,7 @@ class _WalletScreenState extends State<WalletScreen>
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('⚠️ $errorMessage'),
+          content: Text(errorMessage),
           backgroundColor: ModernTheme.error,
           duration: Duration(seconds: 5),
         ),

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart' show GoogleSignInException, GoogleSignInExceptionCode;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:email_validator/email_validator.dart';
 import 'package:crypto/crypto.dart';
@@ -921,23 +922,34 @@ class AuthProvider with ChangeNotifier {
       } else {
         AppLogger.debug('⚠️ AuthProvider - Usuario es null después del sign-in');
       }
-    } catch (e) {
-      AppLogger.debug('❌ AuthProvider - ERROR CAPTURADO:');
-      AppLogger.debug('   Tipo: ${e.runtimeType}');
-      AppLogger.debug('   Mensaje: $e');
+    } on GoogleSignInException catch (e) {
+      AppLogger.debug('❌ GoogleSignInException: code=${e.code}, desc=${e.description}');
 
-      // Manejar errores específicos de Google Sign-In
-      final errorStr = e.toString().toLowerCase();
-      if (errorStr.contains('12501') || errorStr.contains('sign_in_canceled') || errorStr.contains('cancelled')) {
-        _errorMessage = 'Inicio de sesión cancelado. Intenta nuevamente.';
-      } else if (errorStr.contains('12500') || errorStr.contains('sign_in_failed')) {
-        _errorMessage = 'Error de configuración de Google. Contacta soporte.';
-      } else if (errorStr.contains('network') || errorStr.contains('connection')) {
-        _errorMessage = 'Sin conexión a internet. Verifica tu red.';
-      } else {
-        _errorMessage = 'Error al iniciar sesión con Google. Intenta nuevamente.';
+      switch (e.code) {
+        case GoogleSignInExceptionCode.canceled:
+        case GoogleSignInExceptionCode.interrupted:
+          _errorMessage = 'Inicio de sesión cancelado.';
+          break;
+        case GoogleSignInExceptionCode.uiUnavailable:
+          _errorMessage = 'Google Sign-In no disponible en este dispositivo.';
+          break;
+        case GoogleSignInExceptionCode.clientConfigurationError:
+          AppLogger.debug('CONFIG ERROR detail: ${e.description}');
+          _errorMessage = 'Error de configuración de Google. Intenta de nuevo.';
+          break;
+        case GoogleSignInExceptionCode.providerConfigurationError:
+          AppLogger.debug('PROVIDER ERROR detail: ${e.description}');
+          _errorMessage = 'Google Sign-In no disponible. Intenta de nuevo.';
+          break;
+        default:
+          AppLogger.debug('Unknown GSI error: code=${e.code.name} desc=${e.description}');
+          _errorMessage = 'Error con Google Sign-In. Intenta más tarde.';
       }
 
+      await _firebaseService.recordError(e, null);
+    } catch (e) {
+      AppLogger.debug('❌ Error tipo ${e.runtimeType}: $e');
+      _errorMessage = 'Error inesperado. Intenta con otro método de inicio de sesión.';
       await _firebaseService.recordError(e, null);
     }
 

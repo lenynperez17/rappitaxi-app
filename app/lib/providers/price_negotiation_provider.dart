@@ -320,9 +320,24 @@ class PriceNegotiationProvider extends ChangeNotifier {
   // ✅ NUEVO: Obtener el rideId de una negociación aceptada
   Future<String?> getRideIdForNegotiation(String negotiationId) async {
     try {
-      final doc = await _firestore.collection('negotiations').doc(negotiationId).get();
+      final doc = await _firestore.collection('negotiations').doc(negotiationId).get()
+          .timeout(const Duration(seconds: 10), onTimeout: () {
+            throw TimeoutException('Timeout obteniendo rideId para negociación');
+          });
       if (doc.exists) {
-        return doc.data()?['rideId'] as String?;
+        final rideId = doc.data()?['rideId'] as String?;
+        if (rideId != null && rideId.isNotEmpty) return rideId;
+
+        // Fallback: search rides collection by negotiationId
+        debugPrint('⚠️ rideId no encontrado en negociación, buscando en rides...');
+        final ridesQuery = await _firestore.collection('rides')
+            .where('negotiationId', isEqualTo: negotiationId)
+            .limit(1)
+            .get()
+            .timeout(const Duration(seconds: 10));
+        if (ridesQuery.docs.isNotEmpty) {
+          return ridesQuery.docs.first.id;
+        }
       }
       return null;
     } catch (e) {

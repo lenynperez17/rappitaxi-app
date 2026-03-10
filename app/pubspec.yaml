@@ -131,19 +131,20 @@ flutter:
 
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   image_path: "assets/images/logo_rappi_taxi.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#FFFFFF"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#E31E24"
   adaptive_icon_foreground: "assets/images/logo_rappi_taxi.png"
 
 flutter_native_splash:
-  color: "#FF6B00"
+  color: "#E31E24"
   image: assets/images/logo_rappi_taxi.png
   android: true
-  ios: false
+  ios: true
   fullscreen: true
   android_12:
-    color: "#FF6B00"
+    color: "#E31E24"
     image: assets/images/logo_rappi_taxi.png
-    icon_background_color: "#FF6B00"
+    icon_background_color: "#E31E24"
