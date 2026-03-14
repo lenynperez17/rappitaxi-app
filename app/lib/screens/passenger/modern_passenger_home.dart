@@ -1363,43 +1363,10 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     final bool canContinue = _pickupController.text.isNotEmpty &&
                              _destinationController.text.isNotEmpty;
 
-    // ✅ FIX CRÍTICO: Usar WidgetsBinding.addPostFrameCallback para evitar setState durante build
-    // Si ambos campos están llenos Y el teclado está cerrado, iniciar timer
-    if (canContinue && !isKeyboardOpen && !_showContinueButton) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Cancelar timer anterior si existe
-        _buttonDelayTimer?.cancel();
-        // Esperar 300ms después de que el teclado se cierre para mostrar botón
-        _buttonDelayTimer = Timer(Duration(milliseconds: 300), () {
-          if (mounted && canContinue && !isKeyboardOpen) {
-            setState(() {
-              _showContinueButton = true;
-            });
-          }
-        });
-      });
-    } else if (!canContinue || isKeyboardOpen) {
-      // Si los campos no están llenos o el teclado está abierto, ocultar botón
-      if (_showContinueButton) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _buttonDelayTimer?.cancel();
-          if (mounted) {
-            setState(() {
-              _showContinueButton = false;
-            });
-          }
-        });
-      }
-    }
-
     // DraggableScrollableSheet para permitir arrastrar con el dedo
-    // ✅ Tamaños condicionales:
-    // - Seleccionando ubicación: 8% (solo handle visible)
-    // - Con botón "Continuar": 50% (expandido para mostrar botón completo)
-    // - Sin botón "Continuar": 35% (tamaño normal)
     return DraggableScrollableSheet(
       // ✅ Keyboard-aware: expandir sheet cuando el teclado está abierto
-      initialChildSize: isKeyboardOpen ? 0.75 : (_isSelectingLocation ? 0.08 : (_showContinueButton ? 0.55 : 0.45)),
+      initialChildSize: isKeyboardOpen ? 0.75 : (_isSelectingLocation ? 0.08 : 0.50),
       minChildSize: isKeyboardOpen ? 0.65 : (_isSelectingLocation ? 0.08 : 0.30),
       maxChildSize: isKeyboardOpen ? 0.95 : 0.75,
       builder: (BuildContext context, ScrollController scrollController) {
@@ -1423,14 +1390,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                 ),
               ),
 
-              // Contenido con scroll — barra de búsqueda DENTRO del scrollable para evitar overflow
+              // Contenido con scroll
               Expanded(
                 child: SingleChildScrollView(
                   controller: scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ✅ Barra de búsqueda integrada (scrolleable, no fija)
+                      // Search bar
                       AnimatedBuilder(
                         animation: _searchBarAnimation,
                         builder: (context, child) {
@@ -1441,9 +1408,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                         },
                       ),
 
-                      // ✅ Ocultar favoritos y recientes cuando está seleccionando ubicaciones (mapa limpio)
+                      // Hide favorites/recents when selecting location on map
                       if (!_isSelectingLocation) ...[
-                        // Lugares favoritos
                         Padding(
                           padding: EdgeInsets.fromLTRB(20, 12, 20, 12),
                           child: Column(
@@ -1473,7 +1439,6 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
                         Divider(height: 1),
 
-                        // Destinos recientes
                         Padding(
                           padding: EdgeInsets.fromLTRB(20, 12, 20, 12),
                           child: Column(
@@ -1495,85 +1460,78 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                           ),
                         ),
                       ],
-
-                      // ✅ FIX OVERFLOW + DELAY: Botón Continuar DENTRO del scrollable (solo visible después de cerrar teclado)
-                      if (_showContinueButton)
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(20, 16, 20, 20),
-                          child: AnimatedPulseButton(
-                            text: 'Continuar',
-                            icon: Icons.arrow_forward,
-                            onPressed: () async {
-                              if (!mounted) return;
-
-                              // ✅ Resetear estado del botón inmediatamente al presionar
-                              setState(() {
-                                _showContinueButton = false;
-                              });
-                              _buttonDelayTimer?.cancel();
-
-                              // ✅ Capturar ScaffoldMessenger y strings localizados ANTES de cualquier await para evitar warnings
-                              final scaffoldMessenger = ScaffoldMessenger.of(context);
-                              final locationErrorMessage = AppLocalizations.of(context)!.couldNotGetCurrentLocation;
-
-                              // ✅ Si no hay coordenadas de origen, obtener ubicación GPS actual automáticamente
-                              if (_pickupCoordinates == null) {
-                                AppLogger.info('No hay origen seleccionado, obteniendo ubicación GPS actual...');
-                                final currentLocation = await _getCurrentLocation();
-                                if (!mounted) return;
-
-                                if (currentLocation != null) {
-                                  setState(() {
-                                    _pickupCoordinates = currentLocation;
-                                  });
-                                  AppLogger.info('Origen establecido a ubicación GPS: ${currentLocation.latitude}, ${currentLocation.longitude}');
-                                } else {
-                                  AppLogger.warning('No se pudo obtener ubicación GPS');
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(content: Text(locationErrorMessage)),
-                                  );
-                                  return;
-                                }
-                              }
-
-                              // CALCULAR VALORES REALES con coordenadas reales
-                              if (_pickupCoordinates != null && _destinationCoordinates != null) {
-                                final distance = _calculateDistance(_pickupCoordinates!, _destinationCoordinates!);
-                                final time = _estimateTime(distance);
-                                final price = _calculatePrice(distance);
-
-                                // ✅ Verificar mounted antes de setState
-                                if (!mounted) return;
-                                setState(() {
-                                  _calculatedDistance = distance;
-                                  _estimatedTime = time;
-                                  _suggestedPrice = price;
-                                  _offeredPrice = price; // Inicializar precio ofertado con el sugerido
-                                  _isSelectingLocation = false; // ✅ Desactivar modo de selección para mostrar UI normal
-                                });
-
-                                // Dibujar línea de ruta REAL en el mapa (siguiendo calles)
-                                await _updateRoutePolyline();
-                                if (!mounted) return;
-
-                                AppLogger.info('Ruta calculada con coordenadas REALES: $distance km, $time min, ${price.toCurrency()}');
-
-                                // ✅ NUEVO: Activar modo de ajuste de pickup en lugar de ir directo a negociación
-                                _startPickupAdjustment();
-                              } else {
-                                // Si aún no hay destino, mostrar advertencia
-                                AppLogger.warning('Falta seleccionar destino');
-                                scaffoldMessenger.showSnackBar(
-                                  SnackBar(content: Text('Por favor selecciona un destino')),
-                                );
-                              }
-                            },
-                          ),
-                        ),
                     ],
                   ),
                 ),
               ),
+
+              // ✅ FIX: "Continuar" button FIXED at bottom, always visible when fields are filled
+              if (canContinue && !isKeyboardOpen)
+                Container(
+                  padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + MediaQuery.of(context).padding.bottom),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                  child: AnimatedPulseButton(
+                    text: 'Continuar',
+                    icon: Icons.arrow_forward,
+                    onPressed: () async {
+                      if (!mounted) return;
+
+                      final scaffoldMessenger = ScaffoldMessenger.of(context);
+                      final locationErrorMessage = AppLocalizations.of(context)!.couldNotGetCurrentLocation;
+
+                      if (_pickupCoordinates == null) {
+                        AppLogger.info('No hay origen seleccionado, obteniendo ubicación GPS actual...');
+                        final currentLocation = await _getCurrentLocation();
+                        if (!mounted) return;
+
+                        if (currentLocation != null) {
+                          setState(() {
+                            _pickupCoordinates = currentLocation;
+                          });
+                        } else {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(content: Text(locationErrorMessage)),
+                          );
+                          return;
+                        }
+                      }
+
+                      if (_pickupCoordinates != null && _destinationCoordinates != null) {
+                        final distance = _calculateDistance(_pickupCoordinates!, _destinationCoordinates!);
+                        final time = _estimateTime(distance);
+                        final price = _calculatePrice(distance);
+
+                        if (!mounted) return;
+                        setState(() {
+                          _calculatedDistance = distance;
+                          _estimatedTime = time;
+                          _suggestedPrice = price;
+                          _offeredPrice = price;
+                          _isSelectingLocation = false;
+                        });
+
+                        await _updateRoutePolyline();
+                        if (!mounted) return;
+
+                        AppLogger.info('Ruta calculada: $distance km, $time min, ${price.toCurrency()}');
+                        _startPickupAdjustment();
+                      } else {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(content: Text('Por favor selecciona un destino')),
+                        );
+                      }
+                    },
+                  ),
+                ),
             ],
           ),
         );

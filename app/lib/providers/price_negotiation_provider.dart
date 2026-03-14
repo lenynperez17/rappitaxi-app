@@ -1117,6 +1117,20 @@ class PriceNegotiationProvider extends ChangeNotifier {
   Future<void> _broadcastToDrivers(PriceNegotiation negotiation) async {
     try {
       // Guardar negociación en Firestore para que los conductores la vean
+      // Approximate pickup location for drivers (hide exact coords until ride accepted)
+      // Add random offset of ~200-500m to protect passenger's exact location
+      final random = math.Random();
+      final latOffset = (random.nextDouble() - 0.5) * 0.008; // ~400m range
+      final lngOffset = (random.nextDouble() - 0.5) * 0.008;
+      final approxPickupLat = negotiation.pickup.latitude + latOffset;
+      final approxPickupLng = negotiation.pickup.longitude + lngOffset;
+
+      // Extract zone/neighborhood from address (e.g. "Av. Principal 123, Miraflores" -> "Zona Miraflores")
+      final addressParts = negotiation.pickup.address.split(',');
+      final approxAddress = addressParts.length > 1
+          ? 'Zona ${addressParts.last.trim()}'
+          : 'Zona ${negotiation.pickup.address}';
+
       await _firestore
           .collection('negotiations')
           .doc(negotiation.id)
@@ -1126,7 +1140,15 @@ class PriceNegotiationProvider extends ChangeNotifier {
             'passengerName': negotiation.passengerName,
             'passengerPhoto': negotiation.passengerPhoto,
             'passengerRating': negotiation.passengerRating,
+            // Approximate location for drivers (exact location revealed after acceptance)
             'pickup': {
+              'latitude': approxPickupLat,
+              'longitude': approxPickupLng,
+              'address': approxAddress,
+              'reference': null,
+            },
+            // Exact pickup stored separately (only readable after ride accepted)
+            'exactPickup': {
               'latitude': negotiation.pickup.latitude,
               'longitude': negotiation.pickup.longitude,
               'address': negotiation.pickup.address,

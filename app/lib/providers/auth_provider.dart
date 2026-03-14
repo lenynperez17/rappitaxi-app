@@ -1387,7 +1387,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
   
-  /// Verificar código OTP y vincular teléfono a Firebase Auth
+  /// Verify OTP code and sign in / link phone to Firebase Auth
   Future<bool> verifyOTP(String otp) async {
     if (_verificationId == null) {
       _errorMessage = 'No hay verificación pendiente';
@@ -1400,40 +1400,102 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Crear el credential con el OTP
       final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
         smsCode: otp,
       );
 
-      // Verificar si hay usuario autenticado para vincular el teléfono
       final currentUser = FirebaseAuth.instance.currentUser;
+
       if (currentUser != null) {
-        // Verificar si ya tiene el proveedor de teléfono vinculado
+        // User already signed in (e.g. via email) — link phone to account
         final hasPhoneProvider = currentUser.providerData
             .any((provider) => provider.providerId == 'phone');
 
         if (!hasPhoneProvider) {
           try {
-            // Vincular el teléfono a la cuenta existente
             await currentUser.linkWithCredential(credential);
-            AppLogger.info('✅ Teléfono vinculado a Firebase Auth exitosamente');
+            AppLogger.info('✅ Phone linked to existing account');
           } catch (linkError) {
-            // Si falla el link (ej: teléfono ya usado), solo logear pero continuar
-            AppLogger.warning('⚠️ No se pudo vincular teléfono a Auth: $linkError');
+            AppLogger.warning('⚠️ Could not link phone: $linkError');
           }
         }
+
+        // Update phoneVerified in Firestore
+        await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).update({
+          'phoneVerified': true,
+          'phone': _pendingPhoneNumber ?? '',
+        });
+
+        await _loadUserData(currentUser.uid);
+      } else {
+        // No user signed in — sign in with phone credential (creates account if new)
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final user = userCredential.user;
+
+        if (user == null) {
+          throw Exception('No se pudo autenticar con el código SMS');
+        }
+
+        AppLogger.info('✅ Signed in with phone: ${user.uid}');
+
+        // Check if user document exists in Firestore
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+
+        if (!userDoc.exists) {
+          // New user — create Firestore document
+          AppLogger.info('📝 Creating new user document for phone login');
+          final userData = {
+            'fullName': user.displayName ?? 'Usuario',
+            'email': user.email ?? '',
+            'phone': _pendingPhoneNumber ?? user.phoneNumber ?? '',
+            'userType': 'passenger',
+            'profilePhotoUrl': user.photoURL ?? '',
+            'isActive': true,
+            'isVerified': false,
+            'emailVerified': false,
+            'phoneVerified': true,
+            'twoFactorEnabled': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'lastLoginAt': FieldValue.serverTimestamp(),
+            'rating': 5.0,
+            'totalTrips': 0,
+            'balance': 0.0,
+            'currentMode': 'passenger',
+            'activeMode': 'passenger',
+            'availableRoles': ['passenger'],
+            'deviceInfo': {
+              'lastDeviceId': await _getDeviceId(),
+              'trustedDevices': [],
+            },
+          };
+
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set(userData);
+        } else {
+          // Existing user — update login time and phone verified
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+            'phoneVerified': true,
+            'lastLoginAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        await _loadUserData(user.uid);
       }
 
-      // OTP verificado exitosamente
-      AppLogger.info('✅ OTP verificado exitosamente');
       _phoneVerified = true;
       _errorMessage = null;
       _isLoading = false;
       notifyListeners();
-      AppLogger.info('✅ Credenciales guardadas - usuario debe completar perfil antes de login');
       return true;
     } catch (e) {
+      AppLogger.error('❌ OTP verification failed: $e');
       _errorMessage = 'Código inválido';
       _isLoading = false;
       notifyListeners();
