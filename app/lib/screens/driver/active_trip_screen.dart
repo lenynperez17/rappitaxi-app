@@ -19,8 +19,9 @@ import 'package:provider/provider.dart';
 
 import 'package:flutter_animarker/flutter_map_marker_animation.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import 'package:flutter/services.dart';
 import '../../core/config/app_config.dart';
-import '../../core/theme/modern_theme.dart';
+import '../../core/constants/app_colors.dart';
 import '../../models/trip_model.dart';
 import '../../providers/auth_provider.dart';
 import '../shared/rating_dialog.dart';
@@ -80,15 +81,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   bool _isLoading = false;
   bool _isDisposed = false;
   bool _isFollowingDriver = true; // Toggle for camera follow
-  // UI: control de colapso del bottom sheet
-  bool _isPanelExpanded = true;
+
+  // Waiting timer for arrived at pickup state
+  Timer? _waitingTimer;
+  int _waitingSeconds = 0;
 
   // Para verificación de código
   final TextEditingController _codeController = TextEditingController();
 
-  // Animaciones
+  // Animations
   late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -122,10 +124,6 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-
-    _pulseAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
   }
 
   @override
@@ -134,6 +132,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     _tripSubscription?.cancel();
     _positionSubscription?.cancel();
     _locationUpdateTimer?.cancel();
+    _waitingTimer?.cancel();
     _pulseController.dispose();
     _codeController.dispose();
     _mapController?.dispose();
@@ -175,7 +174,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Error de conexión. Reintentando...'),
-              backgroundColor: ModernTheme.warning,
+              backgroundColor: AppColors.warning,
             ),
           );
         }
@@ -429,7 +428,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       _polylines.add(Polyline(
         polylineId: const PolylineId('route'),
         points: routePoints,
-        color: ModernTheme.rappiOrange,
+        color: AppColors.rappiOrange,
         width: 5,
       ));
       if (mounted) setState(() {});
@@ -460,11 +459,34 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     return [origin, destination];
   }
 
+  // ==================== WAITING TIMER ====================
+
+  void _startWaitingTimer() {
+    _waitingSeconds = 0;
+    _waitingTimer?.cancel();
+    _waitingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !_isDisposed &&
+          (_tripState == DriverTripState.arrivedAtPickup ||
+           _tripState == DriverTripState.waitingVerification)) {
+        setState(() {
+          _waitingSeconds++;
+        });
+      }
+    });
+  }
+
+  String _formatWaitingTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
   // ==================== ACCIONES DEL CONDUCTOR ====================
 
   /// Marcar que el conductor llegó al punto de recogida
   Future<void> _markArrived() async {
     setState(() => _isLoading = true);
+    await HapticFeedback.mediumImpact();
 
     try {
       // ✅ FIX: Agregar timeout
@@ -474,6 +496,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       }).timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout marcando llegada');
       });
+
+      // Start waiting timer
+      _startWaitingTimer();
 
       // Enviar notificación al pasajero
       await _sendNotification(
@@ -485,9 +510,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Has marcado tu llegada. El pasajero ha sido notificado.'),
-            backgroundColor: ModernTheme.success,
+          SnackBar(
+            content: const Text('Has llegado. Espera al pasajero y toca "Pasajero a bordo" cuando suba.'),
+            backgroundColor: AppColors.success,
           ),
         );
       }
@@ -496,7 +521,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
-            backgroundColor: ModernTheme.error,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -517,10 +542,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
+                color: AppColors.rappiOrange.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.verified_user, color: ModernTheme.rappiOrange),
+              child: const Icon(Icons.verified_user, color: AppColors.rappiOrange),
             ),
             const SizedBox(width: 12),
             const Text('Verificar Pasajero'),
@@ -552,7 +577,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: ModernTheme.rappiOrange, width: 2),
+                  borderSide: const BorderSide(color: AppColors.rappiOrange, width: 2),
                 ),
               ),
             ),
@@ -572,7 +597,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               _verifyPassengerCode(_codeController.text);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.rappiOrange,
+              backgroundColor: AppColors.rappiOrange,
             ),
             child: const Text('Verificar'),
           ),
@@ -587,7 +612,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('El código debe tener 4 dígitos'),
-          backgroundColor: ModernTheme.warning,
+          backgroundColor: AppColors.warning,
         ),
       );
       return;
@@ -613,7 +638,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('El pasajero aún no tiene código asignado'),
-              backgroundColor: ModernTheme.warning,
+              backgroundColor: AppColors.warning,
             ),
           );
         }
@@ -637,7 +662,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('¡Pasajero verificado correctamente!'),
-              backgroundColor: ModernTheme.success,
+              backgroundColor: AppColors.success,
             ),
           );
 
@@ -649,7 +674,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Código incorrecto. Inténtalo de nuevo.'),
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
           );
         }
@@ -659,7 +684,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error verificando: $e'),
-            backgroundColor: ModernTheme.error,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -679,7 +704,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.qr_code, color: ModernTheme.rappiOrange),
+            Icon(Icons.qr_code, color: AppColors.rappiOrange),
             SizedBox(width: 12),
             Text('Tu Código de Verificación'),
           ],
@@ -695,9 +720,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
               decoration: BoxDecoration(
-                color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
+                color: AppColors.rappiOrange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ModernTheme.rappiOrange, width: 2),
+                border: Border.all(color: AppColors.rappiOrange, width: 2),
               ),
               child: Text(
                 driverCode,
@@ -705,7 +730,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   fontSize: 40,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 12,
-                  color: ModernTheme.rappiOrange,
+                  color: AppColors.rappiOrange,
                 ),
               ),
             ),
@@ -724,7 +749,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.rappiOrange,
+              backgroundColor: AppColors.rappiOrange,
             ),
             child: const Text('Entendido'),
           ),
@@ -736,45 +761,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// Iniciar el viaje (después de verificación mutua)
   Future<void> _startTrip() async {
     setState(() => _isLoading = true);
+    await HapticFeedback.mediumImpact();
+
+    // Stop waiting timer
+    _waitingTimer?.cancel();
+    _waitingTimer = null;
 
     try {
-      // Verificar que ambas partes estén verificadas (con timeout)
-      final tripDoc = await _firestore.collection('rides').doc(widget.tripId).get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout verificando estado del viaje');
-          });
-      final tripData = tripDoc.data();
-
-      final isPassengerVerified = tripData?['isPassengerVerified'] ?? false;
-      final isDriverVerified = tripData?['isDriverVerified'] ?? false;
-
-      if (!isPassengerVerified) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Primero debes verificar el código del pasajero'),
-            backgroundColor: ModernTheme.warning,
-          ),
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      if (!isDriverVerified) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('El pasajero aún no ha verificado tu código'),
-            backgroundColor: ModernTheme.warning,
-          ),
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
-
       // ✅ FIX: Agregar timeout
       await _firestore.collection('rides').doc(widget.tripId).update({
         'status': 'in_progress',
         'startedAt': FieldValue.serverTimestamp(),
-        'verificationCompletedAt': FieldValue.serverTimestamp(),
+        'waitingTimeSeconds': _waitingSeconds,
       }).timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout iniciando viaje');
       });
@@ -789,9 +787,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('¡Viaje iniciado! Dirígete al destino.'),
-            backgroundColor: ModernTheme.success,
+          SnackBar(
+            content: const Text('¡Viaje iniciado! Dirígete al destino.'),
+            backgroundColor: AppColors.success,
           ),
         );
       }
@@ -800,7 +798,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error iniciando viaje: $e'),
-            backgroundColor: ModernTheme.error,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -828,7 +826,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.success,
+              backgroundColor: AppColors.success,
             ),
             child: const Text('Finalizar'),
           ),
@@ -869,7 +867,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error finalizando viaje: $e'),
-            backgroundColor: ModernTheme.error,
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -890,12 +888,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: ModernTheme.success.withValues(alpha: 0.1),
+                color: AppColors.success.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.check_circle,
-                color: ModernTheme.success,
+                color: AppColors.success,
                 size: 60,
               ),
             ),
@@ -913,7 +911,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
-                color: ModernTheme.rappiOrange,
+                color: AppColors.rappiOrange,
               ),
             ),
             const SizedBox(height: 24),
@@ -948,7 +946,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   _showRatingDialog();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: ModernTheme.rappiOrange,
+                  backgroundColor: AppColors.rappiOrange,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -971,7 +969,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: ModernTheme.rappiOrange),
+          Icon(icon, size: 20, color: AppColors.rappiOrange),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1053,7 +1051,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Número de teléfono no disponible'),
-            backgroundColor: ModernTheme.warning,
+            backgroundColor: AppColors.warning,
           ),
         );
       }
@@ -1151,527 +1149,220 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         if (!didPop) _handleBackPressed();
       },
       child: Scaffold(
-      body: Stack(
-        children: [
-          // Mapa con animación de marcador (estilo Uber/DiDi)
-          Animarker(
-            mapId: _mapCompleter.future.then<int>((c) => c.mapId),
-            curve: Curves.easeInOut,
-            duration: const Duration(milliseconds: 1500),
-            useRotation: false, // Rotación manual via heading del GPS
-            markers: _markers,
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _currentLocation ?? const LatLng(-12.0464, -77.0428),
-                zoom: 15,
-              ),
-              onMapCreated: (controller) {
-                _mapController = controller;
-                if (!_mapCompleter.isCompleted) {
-                  _mapCompleter.complete(controller);
-                }
-              },
-              onCameraMoveStarted: () {
-                // User manually moved the map - stop following driver
-                if (_isFollowingDriver) {
-                  setState(() => _isFollowingDriver = false);
-                }
-              },
-              polylines: _polylines,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-            ),
-          ),
-
-          // UI: Card superior con avatar y nombre del pasajero
-          if (_currentTrip != null)
-            SafeArea(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: ModernTheme.getCardShadow(context),
+        body: Stack(
+          children: [
+            // Map with animated marker (Uber/DiDi style)
+            Animarker(
+              mapId: _mapCompleter.future.then<int>((c) => c.mapId),
+              curve: Curves.easeInOut,
+              duration: const Duration(milliseconds: 1500),
+              useRotation: false,
+              markers: _markers,
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: _currentLocation ?? const LatLng(-12.0464, -77.0428),
+                  zoom: 16,
+                  tilt: 45,
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: ModernTheme.getCardShadow(context),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: _handleBackPressed,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: ModernTheme.rappiOrange.withValues(alpha: 0.15),
-                      backgroundImage: _currentTrip?.vehicleInfo?['passengerPhoto'] != null
-                          ? NetworkImage(_currentTrip!.vehicleInfo!['passengerPhoto'])
-                          : null,
-                      child: _currentTrip?.vehicleInfo?['passengerPhoto'] == null
-                          ? const Icon(Icons.person, color: ModernTheme.rappiOrange)
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _currentTrip?.vehicleInfo?['passengerName'] ?? 'Pasajero',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                          ),
-                          Row(
-                            children: [
-                              const Icon(Icons.star, size: 13, color: Colors.amber),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${_currentTrip?.vehicleInfo?['passengerRating']?.toStringAsFixed(1) ?? '5.0'}',
-                                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Call passenger button
-                    IconButton(
-                      icon: const Icon(Icons.call, color: ModernTheme.success),
-                      onPressed: _callPassenger,
-                    ),
-                    // Chat with passenger button
-                    IconButton(
-                      icon: const Icon(Icons.message, color: ModernTheme.primaryBlue),
-                      onPressed: _openPassengerChat,
-                    ),
-                    // Navigate button
-                    IconButton(
-                      icon: const Icon(Icons.navigation, color: ModernTheme.rappiOrange),
-                      onPressed: _openNavigation,
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            // Sin viaje: solo botón back
-            SafeArea(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    shape: BoxShape.circle,
-                    boxShadow: ModernTheme.getCardShadow(context),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: _handleBackPressed,
-                  ),
-                ),
-              ),
-            ),
-
-          // Re-center FAB (shown when user moves the map manually)
-          if (!_isFollowingDriver)
-            Positioned(
-              right: 16,
-              bottom: 320,
-              child: FloatingActionButton.small(
-                heroTag: 'recenter',
-                backgroundColor: Theme.of(context).colorScheme.surface,
-                onPressed: () {
-                  setState(() => _isFollowingDriver = true);
-                  if (_mapController != null && _currentLocation != null) {
-                    _mapController!.animateCamera(
-                      CameraUpdate.newCameraPosition(CameraPosition(
-                        target: _currentLocation!,
-                        zoom: 17.0,
-                        bearing: _currentHeading,
-                        tilt: 45.0,
-                      )),
-                    );
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                  if (!_mapCompleter.isCompleted) {
+                    _mapCompleter.complete(controller);
                   }
                 },
-                child: const Icon(Icons.my_location, color: ModernTheme.rappiOrange),
+                onCameraMoveStarted: () {
+                  if (_isFollowingDriver) {
+                    setState(() => _isFollowingDriver = false);
+                  }
+                },
+                polylines: _polylines,
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                mapToolbarEnabled: false,
+                compassEnabled: true,
+                buildingsEnabled: true,
               ),
             ),
 
-          // Panel inferior
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _buildBottomPanel(),
-          ),
-
-          // Loading overlay
-          if (_isLoading)
-            Container(
-              color: Colors.black45,
-              child: const Center(
-                child: CircularProgressIndicator(color: ModernTheme.rappiOrange),
+            // Top gradient overlay with top bar
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.getSurface(context),
+                      AppColors.getSurface(context),
+                      AppColors.getSurface(context).withValues(alpha: 0.85),
+                      AppColors.getSurface(context).withValues(alpha: 0.0),
+                    ],
+                    stops: const [0.0, 0.4, 0.7, 1.0],
+                  ),
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTopBar(),
+                      if (_tripState == DriverTripState.arrivedAtPickup ||
+                          _tripState == DriverTripState.waitingVerification) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          child: _buildPassengerNotifiedBanner(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
-        ],
-      ),
-    ),
-    );
-  }
 
-  Widget _buildBottomPanel() {
-    // UI: Bottom sheet colapsable con handle interactivo
-    return GestureDetector(
-      onTap: () => setState(() => _isPanelExpanded = !_isPanelExpanded),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-          boxShadow: ModernTheme.getFloatingShadow(context),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle colapsable
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(2),
-              ),
+            // Navigator pill (bottom-left on map)
+            Positioned(
+              left: 16,
+              bottom: 380,
+              child: _buildNavigatorPill(),
             ),
-            const SizedBox(height: 12),
 
-            // Estado del viaje (siempre visible)
-            _buildStatusIndicator(),
-
-            // Contenido colapsable
-            AnimatedCrossFade(
-              duration: const Duration(milliseconds: 300),
-              crossFadeState: _isPanelExpanded
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
-              firstChild: Column(
-                mainAxisSize: MainAxisSize.min,
+            // Floating round buttons (right side)
+            Positioned(
+              right: 16,
+              bottom: 390,
+              child: Column(
                 children: [
-                  const SizedBox(height: 16),
-
-                  // Información de ubicación
-                  _buildLocationInfo(),
-
-                  const SizedBox(height: 20),
-
-                  // Botón de acción principal
-                  _buildMainActionButton(),
-
-                  const SizedBox(height: 12),
-
-                  // Botones secundarios
-                  _buildSecondaryButtons(),
+                  _buildRoundFloatingButton(
+                    icon: Icons.share_location_outlined,
+                    onPressed: _openNavigation,
+                    tooltip: 'Abrir en navegador',
+                  ),
+                  const SizedBox(height: 10),
+                  if (!_isFollowingDriver)
+                    _buildRoundFloatingButton(
+                      icon: Icons.my_location,
+                      onPressed: () {
+                        setState(() => _isFollowingDriver = true);
+                        if (_mapController != null && _currentLocation != null) {
+                          _mapController!.animateCamera(
+                            CameraUpdate.newCameraPosition(CameraPosition(
+                              target: _currentLocation!,
+                              zoom: 17.0,
+                              bearing: _currentHeading,
+                              tilt: 45.0,
+                            )),
+                          );
+                        }
+                      },
+                      tooltip: 'Recentrar mapa',
+                    ),
                 ],
               ),
-              secondChild: const SizedBox(height: 8),
             ),
+
+            // Bottom sheet with passenger info
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildPassengerBottomSheet(),
+            ),
+
+            // Loading overlay
+            if (_isLoading)
+              Container(
+                color: Colors.black45,
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.rappiOrange),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatusIndicator() {
-    String statusText;
-    Color statusColor;
-    IconData statusIcon;
+  // ==================== TOP BAR ====================
 
-    switch (_tripState) {
-      case DriverTripState.goingToPickup:
-        statusText = 'Yendo al punto de recogida';
-        statusColor = ModernTheme.info;
-        statusIcon = Icons.directions_car;
-        break;
-      case DriverTripState.arrivedAtPickup:
-        statusText = 'Has llegado - Esperando pasajero';
-        statusColor = ModernTheme.warning;
-        statusIcon = Icons.place;
-        break;
-      case DriverTripState.waitingVerification:
-        statusText = 'Verificación en proceso';
-        statusColor = ModernTheme.warning;
-        statusIcon = Icons.verified_user;
-        break;
-      case DriverTripState.inProgress:
-        statusText = 'Viaje en curso';
-        statusColor = ModernTheme.rappiOrange;
-        statusIcon = Icons.local_taxi;
-        break;
-      case DriverTripState.arrivedAtDestination:
-        statusText = 'Has llegado al destino';
-        statusColor = ModernTheme.success;
-        statusIcon = Icons.flag;
-        break;
-      case DriverTripState.completed:
-        statusText = 'Viaje completado';
-        statusColor = ModernTheme.success;
-        statusIcon = Icons.check_circle;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: statusColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedBuilder(
-            animation: _pulseAnimation,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _pulseAnimation.value,
-                child: Icon(statusIcon, color: statusColor),
-              );
-            },
-          ),
-          const SizedBox(width: 12),
-          Text(
-            statusText,
-            style: TextStyle(
-              color: statusColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLocationInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: ModernTheme.success,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Recogida',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    Text(
-                      _currentTrip?.pickupAddress ?? 'Cargando...',
-                      style: const TextStyle(fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Container(
-              height: 20,
-              width: 2,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-            ),
-          ),
-          Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: ModernTheme.error,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Destino',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    Text(
-                      _currentTrip?.destinationAddress ?? 'Cargando...',
-                      style: const TextStyle(fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMainActionButton() {
-    String buttonText;
-    IconData buttonIcon;
-    VoidCallback? onPressed;
-    Color buttonColor = ModernTheme.rappiOrange;
-
-    switch (_tripState) {
-      case DriverTripState.goingToPickup:
-        buttonText = 'He llegado al punto de recogida';
-        buttonIcon = Icons.place;
-        onPressed = _markArrived;
-        break;
-      case DriverTripState.arrivedAtPickup:
-        buttonText = 'Iniciar viaje';
-        buttonIcon = Icons.play_arrow;
-        onPressed = _startTrip;
-        buttonColor = ModernTheme.rappiOrange;
-        break;
-      case DriverTripState.waitingVerification:
-        // Verification removed - treat same as arrivedAtPickup
-        buttonText = 'Iniciar viaje';
-        buttonIcon = Icons.play_arrow;
-        onPressed = _startTrip;
-        break;
-      case DriverTripState.inProgress:
-        buttonText = 'Finalizar viaje';
-        buttonIcon = Icons.flag;
-        onPressed = _completeTrip;
-        buttonColor = ModernTheme.success;
-        break;
-      case DriverTripState.arrivedAtDestination:
-        buttonText = 'Confirmar llegada';
-        buttonIcon = Icons.check_circle;
-        onPressed = _completeTrip;
-        buttonColor = ModernTheme.success;
-        break;
-      case DriverTripState.completed:
-        buttonText = 'Viaje completado';
-        buttonIcon = Icons.check_circle;
-        onPressed = null;
-        break;
-    }
-
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(buttonIcon),
-        label: Text(
-          buttonText,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: buttonColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSecondaryButtons() {
+  Widget _buildTopBar() {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _openNavigation,
-                icon: const Icon(Icons.navigation),
-                label: const Text('Navegar'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+        // Row 1: Cancel button on the right
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              // Back button
+              GestureDetector(
+                onTap: _handleBackPressed,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.getSurface(context),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context), size: 20),
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _showCancelConfirmation,
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.getTextPrimary(context),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  // Mostrar diálogo de emergencia o cancelación
-                  _showEmergencyOptions();
-                },
-                icon: const Icon(Icons.warning, color: ModernTheme.error),
-                label: const Text('Emergencia', style: TextStyle(color: ModernTheme.error)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: ModernTheme.error),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-        // Botón para completar viaje manualmente (cuando está en progreso)
-        if (_tripState == DriverTripState.inProgress) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _forceCompleteTrip,
-              icon: const Icon(Icons.check_circle_outline, color: ModernTheme.success),
-              label: const Text(
-                'Completar viaje manualmente',
-                style: TextStyle(color: ModernTheme.success),
-              ),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                side: const BorderSide(color: ModernTheme.success),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+        // Row 2: Waiting timer (only when waiting for passenger)
+        if (_tripState == DriverTripState.arrivedAtPickup ||
+            _tripState == DriverTripState.waitingVerification) ...[
+          Divider(height: 1, color: AppColors.getBorder(context)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Text(
+                  'Tiempo de espera',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
+                const Spacer(),
+                Text(
+                  _formatWaitingTime(_waitingSeconds),
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: _waitingSeconds >= 300
+                        ? AppColors.error
+                        : _waitingSeconds >= 180
+                            ? AppColors.warning
+                            : AppColors.getTextPrimary(context),
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1679,18 +1370,511 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     );
   }
 
+  // ==================== BANNERS ====================
+
+  Widget _buildPassengerNotifiedBanner() {
+    return Text(
+      'El pasajero fue notificado',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w900,
+        color: AppColors.getTextPrimary(context),
+      ),
+    );
+  }
+
+  // ==================== NAVIGATOR PILL ====================
+
+  Widget _buildNavigatorPill() {
+    return GestureDetector(
+      onTap: _openNavigation,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.navigation, color: Colors.white, size: 18),
+            SizedBox(width: 6),
+            Text(
+              'Navegador',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== FLOATING BUTTONS ====================
+
+  Widget _buildRoundFloatingButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    String? tooltip,
+  }) {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 22, color: AppColors.getTextPrimary(context)),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  // ==================== BOTTOM SHEET ====================
+
+  Widget _buildPassengerBottomSheet() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.getBorder(context),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Passenger info row: photo+name+rating | addresses | call+chat buttons
+          _buildPassengerInfoRow(),
+
+          const SizedBox(height: 14),
+          Divider(color: AppColors.getBorder(context), height: 1),
+          const SizedBox(height: 14),
+
+          // Price row
+          _buildPriceRow(),
+
+          const SizedBox(height: 16),
+
+          // Main action button (changes per state)
+          _buildMainActionButton(),
+        ],
+      ),
+    );
+  }
+
+  // ==================== PASSENGER INFO ROW ====================
+
+  Widget _buildPassengerInfoRow() {
+    final passengerName = _currentTrip?.vehicleInfo?['passengerName'] as String? ?? 'Pasajero';
+    final passengerPhoto = _currentTrip?.vehicleInfo?['passengerPhoto'] as String?;
+    final passengerRating = (_currentTrip?.vehicleInfo?['passengerRating'] as num?)?.toDouble() ?? 5.0;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Column: photo + name + rating
+        Column(
+          children: [
+            _buildPassengerAvatar(passengerPhoto),
+            const SizedBox(height: 6),
+            Text(
+              passengerName.split(' ').first,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(context),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.star, color: Colors.amber, size: 14),
+                const SizedBox(width: 2),
+                Text(
+                  passengerRating.toStringAsFixed(1),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.getTextPrimary(context),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(width: 14),
+
+        // Column: addresses + payment badge
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Pickup address (A)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF34A853),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'A',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _currentTrip?.pickupAddress ?? 'Cargando...',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Destination address (B)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4285F4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'B',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _currentTrip?.destinationAddress ?? 'Cargando...',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Payment method badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.ctaGreen.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.ctaGreen, width: 1),
+                ),
+                child: Text(
+                  _currentTrip?.paymentMethod ?? 'Efectivo',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF5A6B00),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+
+        // Column: call + chat buttons
+        Column(
+          children: [
+            _buildActionCircleButton(
+              icon: Icons.phone,
+              color: AppColors.ctaGreen,
+              onPressed: _callPassenger,
+            ),
+            const SizedBox(height: 10),
+            _buildActionCircleButton(
+              icon: Icons.chat_bubble_outline,
+              color: AppColors.ctaGreen,
+              onPressed: _openPassengerChat,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPassengerAvatar(String? photoUrl) {
+    final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
+
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.getBorder(context), width: 2),
+        color: AppColors.getInputFill(context),
+      ),
+      child: ClipOval(
+        child: hasPhoto
+            ? Image.network(
+                photoUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildAvatarFallback(),
+              )
+            : _buildAvatarFallback(),
+      ),
+    );
+  }
+
+  Widget _buildAvatarFallback() {
+    return Container(
+      color: AppColors.rappiOrange.withValues(alpha: 0.1),
+      child: Icon(
+        Icons.person,
+        size: 32,
+        color: AppColors.rappiOrange,
+      ),
+    );
+  }
+
+  Widget _buildActionCircleButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.35),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Icon(icon, size: 24, color: Colors.black87),
+      ),
+    );
+  }
+
+  // ==================== PRICE ROW ====================
+
+  Widget _buildPriceRow() {
+    final fare = _currentTrip?.estimatedFare ?? 0.0;
+    final paymentMethod = _currentTrip?.paymentMethod ?? 'Efectivo';
+    final fareText = fare > 0
+        ? 'S/ ${fare.toStringAsFixed(2)} · $paymentMethod'
+        : 'Precio acordado · $paymentMethod';
+
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.getInputFill(context),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.payments_outlined,
+            size: 22,
+            color: AppColors.getTextSecondary(context),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          fareText,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.getTextPrimary(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==================== ACTION BUTTON ====================
+
+  Widget _buildMainActionButton() {
+    if (_tripState == DriverTripState.inProgress ||
+        _tripState == DriverTripState.arrivedAtDestination) {
+      // State 3: trip in progress -> "Completar viaje"
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _completeTrip,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.success,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            elevation: 0,
+          ),
+          child: const Text(
+            'Completar viaje',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } else if (_tripState == DriverTripState.arrivedAtPickup ||
+               _tripState == DriverTripState.waitingVerification) {
+      // State 2: waiting for passenger -> "Pasajero a bordo" (lime green)
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _startTrip,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.ctaGreen,
+            foregroundColor: Colors.black87,
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
+          child: const Text(
+            'Pasajero a bordo',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } else if (_tripState == DriverTripState.completed) {
+      // State 4: completed
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.success.withValues(alpha: 0.3),
+            foregroundColor: AppColors.success,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            elevation: 0,
+          ),
+          child: const Text(
+            'Viaje completado',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } else {
+      // State 1: going to pickup -> "Ya llegué" (blue)
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _markArrived,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1A73E8),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
+          child: const Text(
+            'Ya llegué',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+  }
+
   /// Forzar completar viaje manualmente (sin depender del GPS)
   Future<void> _forceCompleteTrip() async {
-    // Confirmar con más énfasis que es manual
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber, color: ModernTheme.warning),
-            SizedBox(width: 8),
-            Text('Completar manualmente'),
+            Icon(Icons.warning_amber, color: AppColors.warning),
+            const SizedBox(width: 8),
+            const Text('Completar manualmente'),
           ],
         ),
         content: const Text(
@@ -1705,7 +1889,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.success,
+              backgroundColor: AppColors.success,
             ),
             child: const Text('Sí, completar'),
           ),
@@ -1730,7 +1914,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.phone, color: ModernTheme.error),
+              leading: Icon(Icons.phone, color: AppColors.error),
               title: const Text('Llamar a emergencias (105)'),
               onTap: () async {
                 Navigator.pop(context);
@@ -1741,15 +1925,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.support_agent, color: ModernTheme.warning),
+              leading: Icon(Icons.support_agent, color: AppColors.warning),
               title: const Text('Contactar soporte'),
               onTap: () {
                 Navigator.pop(context);
-                // Abrir chat de soporte
               },
             ),
             ListTile(
-              leading: const Icon(Icons.cancel, color: ModernTheme.error),
+              leading: Icon(Icons.cancel, color: AppColors.error),
               title: const Text('Cancelar viaje'),
               onTap: () {
                 Navigator.pop(context);
@@ -1782,7 +1965,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               await _cancelTrip();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
             child: const Text('Sí, cancelar'),
           ),
@@ -1813,7 +1996,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error cancelando viaje: $e'),
-            backgroundColor: ModernTheme.error,
+            backgroundColor: AppColors.error,
           ),
         );
       }

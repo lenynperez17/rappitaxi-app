@@ -100,6 +100,9 @@ dependencies:
   # Socket.IO para tracking en tiempo real
   socket_io_client: ^3.1.2
 
+  # Animations
+  flutter_animate: ^4.5.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -120,6 +123,7 @@ flutter:
     - assets/animations/
     - assets/fonts/
     - assets/mercadopago_checkout.html
+    - assets/sounds/
     - .env
 
   fonts:
