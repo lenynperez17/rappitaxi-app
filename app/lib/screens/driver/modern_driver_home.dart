@@ -1228,6 +1228,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           throw Exception('La solicitud ya no está disponible');
         }
 
+        // ✅ Use exact pickup location (revealed only after acceptance)
+        final exactPickup = data['exactPickup'] as Map<String, dynamic>?;
+        final pickupLat = exactPickup?['latitude'] ?? request.pickup.latitude;
+        final pickupLng = exactPickup?['longitude'] ?? request.pickup.longitude;
+        final pickupAddress = exactPickup?['address'] ?? request.pickup.address;
+
         // Crear registro de viaje dentro de la transacción
         final rideRef = _firestore.collection('rides').doc();
 
@@ -1236,14 +1242,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           'driverId': _driverId,
           'negotiationId': request.id,
           'pickupLocation': {
-            'latitude': request.pickup.latitude,
-            'longitude': request.pickup.longitude,
+            'latitude': pickupLat,
+            'longitude': pickupLng,
           },
           'destinationLocation': {
             'latitude': request.destination.latitude,
             'longitude': request.destination.longitude,
           },
-          'pickupAddress': request.pickup.address,
+          'pickupAddress': pickupAddress,
           'destinationAddress': request.destination.address,
           'estimatedFare': request.offeredPrice,
           'finalFare': request.offeredPrice,
