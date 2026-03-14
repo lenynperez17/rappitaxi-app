@@ -25,6 +25,9 @@ class RideProvider with ChangeNotifier {
   // Estados del viaje
   TripStatus _tripStatus = TripStatus.none;
   
+  // Driver offers received for current ride request (inDrive negotiation style)
+  final List<Map<String, dynamic>> _driverOffers = [];
+
   // Getters
   TripModel? get currentTrip => _currentTrip;
   List<TripModel> get tripHistory => _tripHistory;
@@ -32,6 +35,7 @@ class RideProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   TripStatus get tripStatus => _tripStatus;
+  List<Map<String, dynamic>> get driverOffers => _driverOffers;
   bool get hasActiveTrip => _currentTrip != null && 
     (_tripStatus == TripStatus.requested || 
      _tripStatus == TripStatus.accepted || 

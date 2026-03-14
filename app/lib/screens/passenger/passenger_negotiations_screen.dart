@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/modern_theme.dart';
+import '../../core/constants/app_colors.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/price_negotiation_model.dart';
@@ -15,9 +15,13 @@ class PassengerNegotiationsScreen extends StatefulWidget {
   State<PassengerNegotiationsScreen> createState() => _PassengerNegotiationsScreenState();
 }
 
-class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScreen> {
+class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScreen>
+    with SingleTickerProviderStateMixin {
   // Timer para actualizar el cronómetro cada segundo
   Timer? _countdownTimer;
+
+  // Animation controller for staggered card entries
+  late AnimationController _listAnimController;
 
   // ✅ CORREGIDO: Guardar referencia al provider para usar en dispose()
   // No se puede usar Provider.of(context) en dispose() porque el context ya no es válido
@@ -27,6 +31,12 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   @override
   void initState() {
     super.initState();
+
+    // Animation controller for staggered list entries
+    _listAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..forward();
 
     // ✅ NUEVO: Iniciar listener en tiempo real para recibir ofertas y cambios de status
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -100,7 +110,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Tu solicitud ha expirado. Puedes crear una nueva.'),
-            backgroundColor: ModernTheme.warning,
+            backgroundColor: AppColors.warning,
             duration: Duration(seconds: 3),
           ),
         );
@@ -119,6 +129,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   void dispose() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
+    _listAnimController.dispose();
 
     // ✅ CORREGIDO: Usar la referencia guardada en lugar de Provider.of(context)
     // Provider.of(context) no funciona en dispose() porque el context ya no es válido
@@ -144,7 +155,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Mis Negociaciones'),
-          backgroundColor: ModernTheme.rappiOrange,
+          backgroundColor: AppColors.rappiOrange,
         ),
         body: Consumer<PriceNegotiationProvider>(
         builder: (context, provider, _) {
@@ -184,7 +195,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                 scaffoldMessenger.showSnackBar(
                   const SnackBar(
                     content: Text('¡Un conductor aceptó tu viaje! Iniciando tracking...'),
-                    backgroundColor: ModernTheme.success,
+                    backgroundColor: AppColors.success,
                     duration: Duration(seconds: 2),
                   ),
                 );
@@ -215,7 +226,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   scaffoldMessenger.showSnackBar(
                     const SnackBar(
                       content: Text('Error al conectar con el conductor. Espera un momento...'),
-                      backgroundColor: ModernTheme.warning,
+                      backgroundColor: AppColors.warning,
                     ),
                   );
                 }
@@ -241,7 +252,22 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             padding: const EdgeInsets.all(16),
             itemCount: myNegotiations.length,
             itemBuilder: (context, index) {
-              return _buildNegotiationCard(myNegotiations[index]);
+              final delay = (index * 0.12).clamp(0.0, 0.6);
+              final end = (delay + 0.5).clamp(0.0, 1.0);
+              final animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+                CurvedAnimation(
+                  parent: _listAnimController,
+                  curve: Interval(delay, end, curve: Curves.easeOutBack),
+                ),
+              );
+              return AnimatedBuilder(
+                animation: animation,
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(40 * (1 - animation.value), 0),
+                  child: Opacity(opacity: animation.value, child: child),
+                ),
+                child: _buildNegotiationCard(myNegotiations[index]),
+              );
             },
           );
         },
@@ -256,9 +282,9 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.inbox_outlined,
+            Icons.hourglass_empty,
             size: 80,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            color: AppColors.getTextSecondary(context),
           ),
           const SizedBox(height: 16),
           Text(
@@ -266,13 +292,13 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: AppColors.getTextSecondary(context),
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'Solicita un viaje para comenzar',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+            style: TextStyle(color: AppColors.getTextSecondary(context)),
           ),
         ],
       ),
@@ -286,15 +312,15 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
         children: [
-          // Header con estado
+          // Header con estado y timer
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _getStatusColor(negotiation.status).withValues(alpha: 0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -325,42 +351,104 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Rutas
-                _buildLocationRow(
-                  icon: Icons.radio_button_checked,
-                  color: ModernTheme.success,
-                  label: 'Origen',
-                  address: negotiation.pickup.address,
+                // Route section with dotted line between origin and destination
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Dots and line column
+                    Column(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: const BoxDecoration(
+                            color: AppColors.success,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        // Dotted line
+                        ...List.generate(3, (_) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Container(
+                            width: 2,
+                            height: 6,
+                            color: AppColors.getTextSecondary(context),
+                          ),
+                        )),
+                        Icon(
+                          Icons.location_on_rounded,
+                          size: 18,
+                          color: AppColors.error,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    // Addresses column
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Origen',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.getTextSecondary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            negotiation.pickup.address,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Destino',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.getTextSecondary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            negotiation.destination.address,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _buildLocationRow(
-                  icon: Icons.location_on,
-                  color: ModernTheme.error,
-                  label: 'Destino',
-                  address: negotiation.destination.address,
-                ),
+
                 const SizedBox(height: 16),
 
-                // Tu precio
+                // Price section with semi-transparent background
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
                         'Tu precio ofrecido:',
-                        style: TextStyle(fontWeight: FontWeight.w500),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                       Text(
                         'S/. ${negotiation.offeredPrice.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 32,
+                        style: const TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: ModernTheme.rappiOrange,
+                          color: AppColors.priceBlack,
                         ),
                       ),
                     ],
@@ -372,12 +460,36 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Ofertas recibidas (${negotiation.driverOffers.length})',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        children: [
+                          const Text(
+                            'Ofertas recibidas',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Green badge with offer count
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.inDriveGreen,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${negotiation.driverOffers.length}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       if (bestOffer != null)
                         Container(
@@ -386,24 +498,24 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: ModernTheme.success.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
+                            color: AppColors.success.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.trending_down,
                                 size: 16,
-                                color: ModernTheme.success,
+                                color: AppColors.success,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 'Mejor: S/. ${bestOffer.acceptedPrice.toStringAsFixed(2)}',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: ModernTheme.success,
+                                  color: AppColors.success,
                                 ),
                               ),
                             ],
@@ -424,17 +536,17 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      color: AppColors.getInputFill(context),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.hourglass_empty, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                        Icon(Icons.hourglass_empty, color: AppColors.getTextSecondary(context)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Esperando ofertas de conductores...',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
+                            style: TextStyle(color: AppColors.getTextSecondary(context)),
                           ),
                         ),
                       ],
@@ -442,19 +554,19 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   ),
                 ],
 
-                // ✅ NUEVO: Botón de cancelar siempre visible
+                // ✅ Botón de cancelar siempre visible
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () => _cancelNegotiation(negotiation.id),
-                    icon: const Icon(Icons.close, color: ModernTheme.error),
+                    icon: const Icon(Icons.close, color: AppColors.error),
                     label: const Text(
                       'Cancelar solicitud',
-                      style: TextStyle(color: ModernTheme.error),
+                      style: TextStyle(color: AppColors.error),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: ModernTheme.error),
+                      side: const BorderSide(color: AppColors.error),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
@@ -484,7 +596,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
             child: const Text('Sí, cancelar'),
           ),
@@ -502,7 +614,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Solicitud cancelada'),
-              backgroundColor: ModernTheme.warning,
+              backgroundColor: AppColors.warning,
             ),
           );
 
@@ -516,7 +628,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error al cancelar: $e'),
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
           );
         }
@@ -527,7 +639,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   Widget _buildOfferCard(DriverOffer offer, String negotiationId) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -537,7 +649,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
               backgroundImage: offer.driverPhoto.isNotEmpty
                   ? NetworkImage(offer.driverPhoto)
                   : null,
-              child: offer.driverPhoto.isEmpty ? const Icon(Icons.person) : null,
+              child: offer.driverPhoto.isEmpty ? const Icon(Icons.person_rounded) : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -553,7 +665,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                   ),
                   Row(
                     children: [
-                      Icon(Icons.star, size: 14, color: Colors.amber[700]),
+                      Icon(Icons.star_rounded, size: 14, color: Colors.amber[700]),
                       const SizedBox(width: 4),
                       Text(
                         offer.driverRating.toStringAsFixed(1),
@@ -564,7 +676,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                         '${offer.completedTrips} viajes',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                          color: AppColors.getTextSecondary(context),
                         ),
                       ),
                     ],
@@ -573,7 +685,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                     '${offer.vehicleModel} • ${offer.vehicleColor}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      color: AppColors.getTextSecondary(context),
                     ),
                   ),
                 ],
@@ -582,38 +694,35 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Precio más grande y prominente (fontSize 32, bold)
                 Text(
-                  'S/.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: ModernTheme.rappiOrange,
-                  ),
-                ),
-                Text(
-                  offer.acceptedPrice.toStringAsFixed(2),
-                  style: TextStyle(
-                    fontSize: 32,
+                  'S/. ${offer.acceptedPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: ModernTheme.rappiOrange,
-                    height: 1.0,
+                    color: AppColors.priceBlack,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 ElevatedButton(
                   onPressed: () => _acceptOffer(negotiationId, offer.driverId),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ModernTheme.success,
+                    backgroundColor: AppColors.ctaGreen,
+                    foregroundColor: AppColors.priceBlack,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 8,
                     ),
                     minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   child: const Text(
                     'Aceptar',
-                    style: TextStyle(fontSize: 13),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -632,18 +741,18 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: ModernTheme.error,
+          color: AppColors.error,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
+        child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.timer_off, size: 16, color: Colors.white),
-            const SizedBox(width: 4),
-            const Text(
+            Icon(Icons.timer_off, size: 16, color: AppColors.white),
+            SizedBox(width: 4),
+            Text(
               'Expirado',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.white,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -655,21 +764,33 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
     final minutes = remaining.inMinutes;
     final seconds = remaining.inSeconds % 60;
 
+    // Color-coded: green when plenty of time, yellow mid, orange low, red critical
+    Color timerColor;
+    if (minutes >= 5) {
+      timerColor = AppColors.success;
+    } else if (minutes >= 3) {
+      timerColor = AppColors.warning;
+    } else if (minutes >= 1) {
+      timerColor = AppColors.rappiOrange;
+    } else {
+      timerColor = AppColors.error;
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: minutes < 2 ? ModernTheme.error : ModernTheme.warning,
+        color: timerColor,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.timer, size: 16, color: Colors.white),
+          const Icon(Icons.timer, size: 16, color: AppColors.white),
           const SizedBox(width: 4),
           Text(
             '$minutes:${seconds.toString().padLeft(2, '0')}',
             style: const TextStyle(
-              color: Colors.white,
+              color: AppColors.white,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -678,57 +799,19 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
     );
   }
 
-  Widget _buildLocationRow({
-    required IconData icon,
-    required Color color,
-    required String label,
-    required String address,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                address,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Color _getStatusColor(NegotiationStatus status) {
     switch (status) {
       case NegotiationStatus.waiting:
-        return ModernTheme.warning;
+        return AppColors.warning;
       case NegotiationStatus.negotiating:
-        return ModernTheme.rappiOrange;
+        return AppColors.rappiOrange;
       case NegotiationStatus.accepted:
-        return ModernTheme.success;
+        return AppColors.success;
       case NegotiationStatus.expired:
       case NegotiationStatus.cancelled:
-        return ModernTheme.error;
+        return AppColors.error;
       default:
-        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+        return AppColors.getTextSecondary(context);
     }
   }
 
@@ -783,7 +866,8 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.success,
+              backgroundColor: AppColors.ctaGreen,
+              foregroundColor: AppColors.priceBlack,
             ),
             child: const Text('Aceptar'),
           ),
@@ -803,7 +887,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           context: context,
           barrierDismissible: false,
           builder: (context) => const Center(
-            child: CircularProgressIndicator(color: ModernTheme.rappiOrange),
+            child: CircularProgressIndicator(color: AppColors.rappiOrange),
           ),
         );
 
@@ -817,7 +901,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('¡Oferta aceptada! Tu conductor está en camino.'),
-              backgroundColor: ModernTheme.success,
+              backgroundColor: AppColors.success,
             ),
           );
 
@@ -831,7 +915,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Error al crear el viaje. Inténtalo de nuevo.'),
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
           );
         }
@@ -843,7 +927,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error al aceptar oferta: $e'),
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
           );
         }
