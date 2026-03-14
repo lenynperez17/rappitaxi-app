@@ -75,7 +75,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   StreamSubscription<Position>? _positionStreamSubscription;
 
   // Follow driver location on map
-  bool _followDriverLocation = true;
+  final bool _followDriverLocation = true;
 
   // Offer acceptance listener
   StreamSubscription<DocumentSnapshot>? _myOfferSubscription;
@@ -2602,9 +2602,13 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                         icon: Icon(Icons.more_vert, color: AppColors.getTextSecondary(context), size: 22),
                         padding: EdgeInsets.zero,
                         onSelected: (value) {
-                          if (value == 'hide') widget.onHide();
-                          else if (value == 'report') widget.onReport();
-                          else if (value == 'map') widget.onSelectOnMap();
+                          if (value == 'hide') {
+                            widget.onHide();
+                          } else if (value == 'report') {
+                            widget.onReport();
+                          } else if (value == 'map') {
+                            widget.onSelectOnMap();
+                          }
                         },
                         itemBuilder: (context) => [
                           PopupMenuItem(value: 'report', child: Row(children: [const Icon(Icons.warning_amber, color: AppColors.rappiOrange, size: 20), const SizedBox(width: 8), Text('Queja')])),
@@ -2799,7 +2803,7 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                       Row(mainAxisSize: MainAxisSize.min, children: [
                         Icon(Icons.star, size: 14, color: Colors.amber[700]),
                         const SizedBox(width: 2),
-                        Text('${request.passengerRating.toStringAsFixed(1)}',
+                        Text(request.passengerRating.toStringAsFixed(1),
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
                       ]),
                       Text(timeLabel, style: TextStyle(fontSize: 11, color: AppColors.rappiOrange, fontWeight: FontWeight.w500)),
