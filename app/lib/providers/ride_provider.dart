@@ -120,6 +120,7 @@ class RideProvider with ChangeNotifier {
 
       // Crear documento del viaje
       final tripData = {
+        'passengerId': userId,
         'userId': userId,
         'pickupLocation': {
           'lat': pickupLocation.latitude,
@@ -588,6 +589,7 @@ class RideProvider with ChangeNotifier {
       final passengerVerificationCode = _generateVerificationCode();
 
       final tripData = {
+        'passengerId': userId,
         'userId': userId,
         'pickupLocation': {
           'lat': pickupLocation.latitude,

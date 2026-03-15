@@ -918,6 +918,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
         rideId = rideRef.id;
 
         transaction.set(rideRef, {
+          'passengerId': negotiation.passengerId,
           'userId': negotiation.passengerId,
           'driverId': driverId,
           'negotiationId': negotiationId,
