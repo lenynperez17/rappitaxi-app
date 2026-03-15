@@ -145,13 +145,15 @@ service cloud.firestore {
     // ═══════════════════════════════════════════════
 
     match /rides/{rideId} {
+      // Support both passengerId and userId fields for backward compatibility
       allow read: if isAuthenticated() && (
         isAdmin() ||
         isOwner(resource.data.passengerId) ||
+        isOwner(resource.data.userId) ||
         isOwner(resource.data.driverId) ||
         (isDriver() && resource.data.status in [
           'searching', 'requested', 'searching_driver',
-          'pending', 'waiting_driver'
+          'pending', 'waiting_driver', 'accepted', 'negotiating'
         ])
       );
 
@@ -159,6 +161,7 @@ service cloud.firestore {
 
       allow update: if isAuthenticated() && (
         isOwner(resource.data.passengerId) ||
+        isOwner(resource.data.userId) ||
         isOwner(resource.data.driverId) ||
         isDriver() ||
         isAdmin()

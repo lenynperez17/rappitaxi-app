@@ -1141,8 +1141,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
         final rideRef = _firestore.collection('rides').doc();
 
-        // Create ride with Rapi Team field names (userId not passengerId)
         transaction.set(rideRef, {
+          'passengerId': request.passengerId,
           'userId': request.passengerId,
           'driverId': _driverId,
           'negotiationId': request.id,
