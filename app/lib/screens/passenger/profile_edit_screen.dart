@@ -422,7 +422,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           child: Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3)),
+              border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

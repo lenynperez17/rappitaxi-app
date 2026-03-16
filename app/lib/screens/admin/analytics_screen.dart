@@ -778,7 +778,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
-        color: ModernTheme.rappiOrange.withOpacity(0.05),
+        color: ModernTheme.rappiOrange.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
         border: Border(
           left: BorderSide(
@@ -792,7 +792,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           Container(
             padding: EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: ModernTheme.rappiOrange.withOpacity(0.1),
+              color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(

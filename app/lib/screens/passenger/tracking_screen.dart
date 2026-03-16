@@ -710,7 +710,7 @@ class _TrackingScreenState extends State<TrackingScreen>
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -935,7 +935,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                         margin: EdgeInsets.only(left: 4, top: 4, bottom: 4),
                         width: 2,
                         height: 20,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                       ),
                       
                       // Destino
@@ -1002,7 +1002,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Row(

@@ -575,11 +575,11 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                   const SizedBox(height: 4),
                   Text(
                     'Comisión plataforma: S/. ${_platformCommission.toStringAsFixed(2)}',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                   Text(
                     'Ganancia conductor: S/. ${_driverEarnings.toStringAsFixed(2)}',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                 ],
               ),
@@ -713,7 +713,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -815,7 +815,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                       border: Border.all(
                         color: isSelected
                             ? ModernTheme.rappiOrange
-                            : Theme.of(context).colorScheme.onSurface.withOpacity(0.15),
+                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15),
                         width: isSelected ? 2 : 1,
                       ),
                     ),
@@ -834,7 +834,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                             border: Border.all(
                               color: isSelected
                                   ? ModernTheme.rappiOrange
-                                  : Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                               width: 2,
                             ),
                           ),
@@ -861,7 +861,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                                 method.description,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                                 ),
                               ),
                             ],
@@ -930,14 +930,14 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         'Comisión plataforma (20%):',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       Text(
                         'S/. ${_platformCommission.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -950,14 +950,14 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         'Ganancia conductor:',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       Text(
                         'S/. ${_driverEarnings.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -1044,7 +1044,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6).withValues(alpha: 0.3),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),

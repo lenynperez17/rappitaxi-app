@@ -405,7 +405,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                     decoration: InputDecoration(
                       hintText: AppLocalizations.of(context)!.searchPlaceHint,
                       hintStyle: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         fontSize: 16,
                       ),
                       border: InputBorder.none,
@@ -689,7 +689,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
               Container(
                 height: 40,
                 width: 1,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.24),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
               ),
               _buildStatItem(
                 icon: Icons.location_on,
@@ -699,7 +699,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
               Container(
                 height: 40,
                 width: 1,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.24),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
               ),
               _buildStatItem(
                 icon: Icons.star,
@@ -740,7 +740,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         Text(
           label,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),
@@ -1059,7 +1059,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                   /// ✅ CORREGIDO: Usar CustomPlaceTextField con autocomplete de Google Places
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                      border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1070,7 +1070,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                           AppLocalizations.of(context)!.addressLabel,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                         SizedBox(height: 4),
@@ -1131,7 +1131,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                           decoration: BoxDecoration(
                             color: selectedIcon == icon
                               ? ModernTheme.rappiOrange.withValues(alpha: 0.2)
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: selectedIcon == icon

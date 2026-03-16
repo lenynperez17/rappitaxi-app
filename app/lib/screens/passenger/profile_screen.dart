@@ -349,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -619,7 +619,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                           ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.26),
+                                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.26),
                                               blurRadius: 20,
                                               offset: Offset(0, 10),
                                             ),
@@ -774,7 +774,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                     ],
                   ),
-                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.15)),
+                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15)),
                   // Stat: Rating
                   Column(
                     children: [
@@ -790,7 +790,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                     ],
                   ),
-                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.15)),
+                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15)),
                   // Stat: Miembro desde
                   Column(
                     children: [
@@ -1231,7 +1231,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: CustomPaint(
                   painter: ActivityChartPainter(
                     animation: _statsController,
-                    textColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                    textColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                   child: Container(),
                 ),
@@ -1583,19 +1583,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         decoration: BoxDecoration(
           color: verified
             ? ModernTheme.success.withValues(alpha: 0.1)
-            : Theme.of(context).colorScheme.onSurface.withOpacity(0.6).withValues(alpha: 0.1),
+            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: verified
               ? ModernTheme.success.withValues(alpha: 0.3)
-              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6).withValues(alpha: 0.3),
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
           ),
         ),
         child: Row(
           children: [
             Icon(
               icon,
-              color: verified ? ModernTheme.success : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: verified ? ModernTheme.success : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
             SizedBox(width: 12),
             Expanded(
@@ -1605,7 +1605,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Text(
                     title,
                     style: TextStyle(
-                      color: verified ? context.primaryText : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                      color: verified ? context.primaryText : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1716,7 +1716,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             decoration: BoxDecoration(
               color: unlocked
                 ? ModernTheme.rappiOrange
-                : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
               shape: BoxShape.circle,
               boxShadow: unlocked ? ModernTheme.getCardShadow(context) : null,
             ),
@@ -1839,7 +1839,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             border: Border.all(
               color: isSelected
                 ? ModernTheme.rappiOrange
-                : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
               width: isSelected ? 2 : 1,
             ),
             // ✅ NUEVO: Sombra cuando está seleccionado
@@ -2140,9 +2140,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Container(
                   padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: ModernTheme.error.withOpacity(0.1),
+                    color: ModernTheme.error.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ModernTheme.error.withOpacity(0.3)),
+                    border: Border.all(color: ModernTheme.error.withValues(alpha: 0.3)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

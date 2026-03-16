@@ -1715,7 +1715,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   children: [
                     CircleAvatar(
                       radius: 30,
-                      backgroundColor: AppColors.rappiOrange.withOpacity(0.2),
+                      backgroundColor: AppColors.rappiOrange.withValues(alpha:0.2),
                       backgroundImage: currentUser?.profilePhotoUrl != null && currentUser!.profilePhotoUrl!.isNotEmpty
                           ? NetworkImage(currentUser.profilePhotoUrl!)
                           : null,
@@ -1903,8 +1903,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
                                 color: _hasEnoughCredits
-                                    ? AppColors.rappiOrange.withOpacity(0.1)
-                                    : ModernTheme.warning.withOpacity(0.1),
+                                    ? AppColors.rappiOrange.withValues(alpha:0.1)
+                                    : ModernTheme.warning.withValues(alpha:0.1),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1933,7 +1933,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 0),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      color: ModernTheme.warning.withOpacity(0.15),
+                      color: ModernTheme.warning.withValues(alpha:0.15),
                       child: InkWell(
                         onTap: () => Navigator.pushNamed(context, '/driver/recharge-credits').then((_) => _checkDriverCredits()),
                         child: Row(children: [
@@ -1954,7 +1954,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 0),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      color: AppColors.rappiOrange.withOpacity(0.1),
+                      color: AppColors.rappiOrange.withValues(alpha:0.1),
                       child: Row(children: [
                         Icon(Icons.info_outline, color: Colors.black87, size: 22),
                         const SizedBox(width: 12),
@@ -1997,7 +1997,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       }
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        color: bannerColor.withOpacity(0.12),
+                        color: bannerColor.withValues(alpha:0.12),
                         child: InkWell(
                           onTap: () => Navigator.pushNamed(context, '/driver/documents'),
                           child: Row(children: [
@@ -2029,11 +2029,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.search, size: 64, color: AppColors.getTextSecondary(context).withOpacity(0.3)),
+                                Icon(Icons.search, size: 64, color: AppColors.getTextSecondary(context).withValues(alpha:0.3)),
                                 const SizedBox(height: 16),
                                 Text('Buscando solicitudes...', style: TextStyle(fontSize: 18, color: AppColors.getTextSecondary(context))),
                                 const SizedBox(height: 8),
-                                Text('Las solicitudes de viaje apareceran aqui', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context).withOpacity(0.6))),
+                                Text('Las solicitudes de viaje apareceran aqui', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context).withValues(alpha:0.6))),
                               ],
                             ),
                           )
@@ -2041,7 +2041,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.power_settings_new, size: 80, color: AppColors.getTextSecondary(context).withOpacity(0.3)),
+                                Icon(Icons.power_settings_new, size: 80, color: AppColors.getTextSecondary(context).withValues(alpha:0.3)),
                                 const SizedBox(height: 16),
                                 Text('Estas fuera de linea', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
                                 const SizedBox(height: 8),
@@ -2069,7 +2069,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   child: ClipRect(
                     child: BackdropFilter(
                       filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-                      child: Container(color: AppColors.getSurface(context).withOpacity(0.55)),
+                      child: Container(color: AppColors.getSurface(context).withValues(alpha:0.55)),
                     ),
                   ),
                 ),
@@ -2117,7 +2117,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       decoration: BoxDecoration(
         color: AppColors.getSurface(context),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 24, offset: const Offset(0, -4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.18), blurRadius: 24, offset: const Offset(0, -4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2230,7 +2230,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.analytics, size: 64, color: AppColors.rappiOrange.withOpacity(0.5)),
+            Icon(Icons.analytics, size: 64, color: AppColors.rappiOrange.withValues(alpha:0.5)),
             const SizedBox(height: 16),
             Text('Desempeno', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
             const SizedBox(height: 24),
