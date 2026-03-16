@@ -1103,7 +1103,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
         return offer;
       }).toList();
 
-      await negotiationRef.update({'driverOffers': updatedOffers});
+      // Check if there are any pending offers left
+      final hasPendingOffers = updatedOffers.any((o) => o['status'] == 'pending');
+      final updateData = <String, dynamic>{'driverOffers': updatedOffers};
+      // Reset to 'waiting' if no pending offers remain (so other drivers can still see it)
+      if (!hasPendingOffers) {
+        updateData['status'] = 'waiting';
+      }
+      await negotiationRef.update(updateData);
 
       // Update local state
       final negIndex = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
