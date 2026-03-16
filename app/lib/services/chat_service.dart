@@ -276,28 +276,31 @@ class ChatService {
 
   /// Obtener stream de mensajes en tiempo real ✅ IMPLEMENTACIÓN CON FIRESTORE
   Stream<List<ChatMessage>> getChatMessages(String rideId) {
-    if (!_chatStreams.containsKey(rideId)) {
-      _chatStreams[rideId] = _firestore
-          .collection(chatsCollection)
-          .doc(rideId)
-          .collection(messagesCollection)
-          .orderBy('timestamp', descending: false)
-          .snapshots()
-          .map((snapshot) {
-        final List<ChatMessage> messages = [];
+    // Always create a fresh stream to avoid stale cached errors
+    _chatStreams[rideId] = _firestore
+        .collection(chatsCollection)
+        .doc(rideId)
+        .collection(messagesCollection)
+        .orderBy('timestamp', descending: false)
+        .snapshots()
+        .map((snapshot) {
+      final List<ChatMessage> messages = [];
 
-        for (final doc in snapshot.docs) {
-          try {
-            final message = ChatMessage.fromFirestoreDoc(doc);
-            messages.add(message);
-          } catch (e) {
-            debugPrint('💬 ChatService: Error parseando mensaje ${doc.id} - $e');
-          }
+      for (final doc in snapshot.docs) {
+        try {
+          final message = ChatMessage.fromFirestoreDoc(doc);
+          messages.add(message);
+        } catch (e) {
+          debugPrint('💬 ChatService: Error parseando mensaje ${doc.id} - $e');
         }
+      }
 
-        return messages;
-      });
-    }
+      return messages;
+    }).handleError((error) {
+      debugPrint('💬 ChatService: Error en stream de mensajes - $error');
+      _chatStreams.remove(rideId);
+      return <ChatMessage>[];
+    });
 
     return _chatStreams[rideId]!;
   }
