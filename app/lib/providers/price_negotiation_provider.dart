@@ -557,6 +557,30 @@ class PriceNegotiationProvider extends ChangeNotifier {
         throw Exception('Usuario no autenticado');
       }
 
+      // Cancel any existing active negotiations first (only ONE per passenger)
+      try {
+        final existingNegotiations = await _firestore
+            .collection('negotiations')
+            .where('passengerId', isEqualTo: user.uid)
+            .where('status', whereIn: ['waiting', 'negotiating'])
+            .get();
+
+        for (final doc in existingNegotiations.docs) {
+          await doc.reference.update({
+            'status': 'cancelled',
+            'cancelledAt': Timestamp.now(),
+            'cancelReason': 'new_negotiation_created',
+          });
+          debugPrint('🗑️ Cancelled previous negotiation: ${doc.id}');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error cancelling previous negotiations: $e');
+      }
+
+      // Clear local state
+      _activeNegotiations.clear();
+      _currentNegotiation = null;
+
       // Obtener datos del usuario desde Firestore
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data() ?? {};
