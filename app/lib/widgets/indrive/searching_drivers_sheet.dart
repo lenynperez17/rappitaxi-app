@@ -166,6 +166,11 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
 
         if (hasOffers) {
           _countdownTimer?.cancel();
+        } else if (_countdownTimer == null || !_countdownTimer!.isActive) {
+          // Restart timer if it was cancelled (e.g. after rejecting an offer)
+          if (_remainingSeconds > 0 && !_showExpiredInline) {
+            _startCountdown();
+          }
         }
 
         if (hasDirectAcceptance) {
