@@ -380,6 +380,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   void _navigateToActiveTrip(String tripId, Map<String, dynamic> tripData) {
     if (!mounted) return;
 
+    // Validate ride status before navigating - skip completed/cancelled rides
+    final status = tripData['status'] as String?;
+    final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
+    if (status == null || terminalStatuses.contains(status)) {
+      AppLogger.info('Skipping navigation to ride $tripId with terminal status: $status');
+      return;
+    }
+
     _activeRideSubscription?.cancel();
 
     final acceptedAt = (tripData['acceptedAt'] as Timestamp?)?.toDate();
@@ -513,7 +521,32 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
-  void _doNavigateToActiveTrip(String tripId, Map<String, dynamic> tripData) {
+  void _doNavigateToActiveTrip(String tripId, Map<String, dynamic> tripData) async {
+    if (!mounted) return;
+
+    // Double-check ride still exists and is active before navigating
+    try {
+      final doc = await _firestore.collection('rides').doc(tripId).get();
+      if (!mounted) return;
+
+      if (!doc.exists) {
+        AppLogger.info('Ride $tripId no longer exists, skipping navigation');
+        _startActiveRideListener();
+        return;
+      }
+
+      final currentStatus = doc.data()?['status'] as String?;
+      final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
+      if (currentStatus == null || terminalStatuses.contains(currentStatus)) {
+        AppLogger.info('Ride $tripId has terminal status ($currentStatus), skipping navigation');
+        _startActiveRideListener();
+        return;
+      }
+    } catch (e) {
+      AppLogger.warning('Error checking ride $tripId existence: $e');
+      // If we can't check, proceed with navigation - the active_trip_screen will handle it
+    }
+
     if (!mounted) return;
 
     final initialTrip = TripModel.fromMap(tripData, tripId);
