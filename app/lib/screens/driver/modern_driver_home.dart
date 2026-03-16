@@ -22,6 +22,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/document_provider.dart';
 import '../../providers/ride_provider.dart';
+import '../../providers/price_negotiation_provider.dart';
 import '../../utils/logger.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../services/sound_service.dart';
@@ -185,12 +186,27 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _startVerificationListener(currentUser.id);
       }
 
-      // Clean up zombie rides before starting listener
+      // Clean up zombie rides before checking
       await _cleanupZombieRides();
       if (!mounted) return;
 
-      // Start active ride listener immediately
-      _startActiveRideListener();
+      // Check for active rides ONE TIME (not a persistent listener)
+      try {
+        final activeRides = await _firestore
+            .collection('rides')
+            .where('driverId', isEqualTo: _driverId)
+            .where('status', whereIn: ['accepted', 'driver_arriving', 'in_progress'])
+            .limit(1)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 5));
+
+        if (activeRides.docs.isNotEmpty && mounted) {
+          final doc = activeRides.docs.first;
+          _showOldTripDialog(doc.id, doc.data(), 0);
+        }
+      } catch (e) {
+        AppLogger.info('No active rides found or server unreachable');
+      }
 
       // Check driver credits (Rapi Team)
       await _checkDriverCredits();
@@ -223,7 +239,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final activeRides = await _firestore
           .collection('rides')
           .where('driverId', isEqualTo: _driverId)
-          .where('status', whereIn: ['accepted', 'arriving', 'arrived'])
+          .where('status', whereIn: ['accepted', 'arriving', 'arrived', 'driver_arriving', 'waiting_verification', 'in_progress'])
           .limit(50)
           .get();
 
@@ -343,62 +359,33 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  // Active ride listener (Rapi Team)
-  Future<void> _startActiveRideListener() async {
+  // One-shot active ride check (Rapi Team) — no persistent listener
+  Future<void> _checkForActiveRidesOnce() async {
     if (_driverId == null) return;
+    if (!mounted) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.isRoleSwitchInProgress) return;
     if (authProvider.currentUser?.currentMode != 'driver') return;
 
-    _activeRideSubscription?.cancel();
-
-    // First check server directly to avoid stale cache
     try {
       final serverCheck = await _firestore
           .collection('rides')
           .where('driverId', isEqualTo: _driverId)
           .where('status', whereIn: ['accepted', 'driver_arriving', 'waiting_verification', 'in_progress'])
           .limit(1)
-          .get(const GetOptions(source: Source.server));
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 5));
 
-      if (serverCheck.docs.isEmpty) {
+      if (serverCheck.docs.isNotEmpty && mounted) {
+        final doc = serverCheck.docs.first;
+        _navigateToActiveTrip(doc.id, doc.data());
+      } else {
         AppLogger.info('No active rides on server for driver');
-        // Clear any cached data by doing a cache-only get and ignoring results
-        return;
       }
     } catch (e) {
-      AppLogger.warning('Server check failed, falling back to listener: $e');
+      AppLogger.warning('Server check failed: $e');
     }
-
-    _activeRideSubscription = _firestore
-        .collection('rides')
-        .where('driverId', isEqualTo: _driverId)
-        .where('status', whereIn: ['accepted', 'driver_arriving', 'waiting_verification', 'in_progress'])
-        .limit(1)
-        .snapshots(includeMetadataChanges: true)
-        .listen(
-      (snapshot) {
-        if (_isDisposed || !mounted) return;
-
-        // Skip cache-only results that might be stale
-        if (snapshot.metadata.isFromCache && snapshot.docs.isNotEmpty) {
-          AppLogger.info('Skipping cached ride data, waiting for server confirmation');
-          return;
-        }
-
-        if (snapshot.docs.isNotEmpty) {
-          final rideDoc = snapshot.docs.first;
-          final rideData = rideDoc.data();
-          final rideId = rideDoc.id;
-
-          _navigateToActiveTrip(rideId, rideData);
-        }
-      },
-      onError: (e) {
-        AppLogger.error('Error in active ride listener: $e');
-      },
-    );
   }
 
   void _navigateToActiveTrip(String tripId, Map<String, dynamic> tripData) {
@@ -535,7 +522,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         ),
       );
 
-      _startActiveRideListener();
+      _checkForActiveRidesOnce();
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
@@ -555,7 +542,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       if (!doc.exists) {
         AppLogger.info('Ride $tripId no longer exists, skipping navigation');
-        _startActiveRideListener();
+        _checkForActiveRidesOnce();
         return;
       }
 
@@ -563,7 +550,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
       if (currentStatus == null || terminalStatuses.contains(currentStatus)) {
         AppLogger.info('Ride $tripId has terminal status ($currentStatus), skipping navigation');
-        _startActiveRideListener();
+        _checkForActiveRidesOnce();
         return;
       }
     } catch (e) {
@@ -586,7 +573,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       ),
     ).then((_) {
       if (mounted) {
-        _startActiveRideListener();
+        _checkForActiveRidesOnce();
       }
     });
   }
@@ -1113,7 +1100,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         request: request,
         onAccept: () {
           Navigator.pop(ctx);
-          _acceptRequest(request);
+          _makeOffer(request, request.offeredPrice);
         },
         onSkip: () {
           Navigator.pop(ctx);
@@ -1141,8 +1128,204 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  /// Send driver's offer to passenger (inDrive flow)
-  void _acceptRequest(PriceNegotiation request, {double? customPrice}) async {
+  /// InDrive-style offer flow: driver makes offer → waits for passenger response
+  void _makeOffer(PriceNegotiation request, double price) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      // Check credits before offering (Rapi Team)
+      final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+      final hasCredits = await walletProvider.hasEnoughCreditsForService();
+
+      if (!hasCredits) {
+        _showNeedCreditsDialog();
+        return;
+      }
+
+      // Use PriceNegotiationProvider to submit the offer
+      final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+      final errorMsg = await negotiationProvider.makeDriverOffer(request.id, price);
+
+      if (!mounted) return;
+
+      if (errorMsg != null) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(errorMsg), backgroundColor: AppColors.error),
+        );
+        return;
+      }
+
+      // Show the offering overlay with blurred background and progress bar
+      _showOfferingOverlay(request, price);
+
+      // Listen for negotiation status changes (passenger accept/reject)
+      _listenForNegotiationResponse(request.id, price);
+
+      // Dismiss request details
+      _countdownTimer?.cancel();
+      setState(() {
+        _showRequestDetails = false;
+        _selectedRequest = null;
+      });
+      _slideController.reverse();
+    } catch (e) {
+      AppLogger.error('Error making offer: $e');
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error al enviar oferta: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  /// Listen for passenger response on the negotiation document
+  void _listenForNegotiationResponse(String negotiationId, double offeredPrice) {
+    _myOfferSubscription?.cancel();
+    _pendingOfferTripId = negotiationId;
+
+    _myOfferSubscription = _firestore
+        .collection('negotiations')
+        .doc(negotiationId)
+        .snapshots()
+        .listen((snapshot) async {
+      if (!mounted || _isDisposed) return;
+
+      if (!snapshot.exists) {
+        // Negotiation deleted — dismiss overlay
+        _dismissOfferingOverlay('La solicitud ya no existe');
+        return;
+      }
+
+      final data = snapshot.data()!;
+      final status = data['status'] as String?;
+      final acceptedDriverId = data['driverId'] as String?;
+      final rideId = data['rideId'] as String?;
+
+      // Passenger accepted THIS driver's offer
+      if (status == 'accepted' && acceptedDriverId == _driverId) {
+        _myOfferSubscription?.cancel();
+        _myOfferSubscription = null;
+        _offerProgressTimer?.cancel();
+
+        setState(() {
+          _pendingOfferTripId = null;
+          _offeringOverlayText = null;
+          _offeringPrice = null;
+          _offeringRequest = null;
+          _offerProgressValue = 1.0;
+        });
+
+        SoundService().play(AppSound.rideAccepted);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Tu oferta fue aceptada! Ve a recoger al pasajero'),
+              backgroundColor: AppColors.success,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Consume credits for this service (Rapi Team)
+        if (rideId != null && rideId.isNotEmpty) {
+          final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+          await walletProvider.consumeCreditsForService(
+            tripId: rideId,
+            negotiationId: negotiationId,
+          );
+          await _checkDriverCredits();
+
+          setState(() {
+            _availableRequests.removeWhere((r) => r.id == negotiationId);
+          });
+
+          await _loadTodayStats();
+
+          if (mounted) {
+            final rideDoc = await _firestore.collection('rides').doc(rideId).get();
+            if (rideDoc.exists) {
+              _doNavigateToActiveTrip(rideId, rideDoc.data()!);
+            }
+          }
+        }
+        return;
+      }
+
+      // Negotiation cancelled or expired
+      if (status == 'cancelled' || status == 'expired') {
+        _dismissOfferingOverlay('La solicitud fue cancelada');
+        return;
+      }
+
+      // Check if my offer was rejected (removed from subcollection or main array)
+      if (status == 'waiting' || status == 'negotiating') {
+        // Check if my offer still exists in the offers subcollection
+        try {
+          final offerDoc = await _firestore
+              .collection('negotiations')
+              .doc(negotiationId)
+              .collection('offers')
+              .doc(_driverId)
+              .get();
+
+          if (!offerDoc.exists && _offeringOverlayText != null) {
+            _dismissOfferingOverlay('El pasajero rechazo tu oferta');
+            return;
+          }
+
+          // Also check offer status in subcollection
+          final offerStatus = offerDoc.data()?['status'] as String?;
+          if (offerStatus == 'rejected' && _offeringOverlayText != null) {
+            _dismissOfferingOverlay('El pasajero rechazo tu oferta');
+            return;
+          }
+        } catch (e) {
+          AppLogger.warning('Error checking offer status: $e');
+        }
+      }
+
+      // If another driver was accepted
+      if (status == 'accepted' && acceptedDriverId != null && acceptedDriverId != _driverId) {
+        _dismissOfferingOverlay('Otro conductor fue aceptado');
+        return;
+      }
+    }, onError: (e) {
+      AppLogger.error('Error in negotiation listener: $e');
+      _dismissOfferingOverlay('Error de conexion');
+    });
+  }
+
+  /// Dismiss the offering overlay and clean up state
+  void _dismissOfferingOverlay(String? message) {
+    _myOfferSubscription?.cancel();
+    _myOfferSubscription = null;
+    _offerProgressTimer?.cancel();
+
+    if (!mounted || _isDisposed) return;
+
+    setState(() {
+      _pendingOfferTripId = null;
+      _offeringOverlayText = null;
+      _offeringPrice = null;
+      _offeringRequest = null;
+      _offerProgressValue = 1.0;
+    });
+
+    if (message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  /// [LEGACY] Direct acceptance — kept for fallback/reference
+  void _acceptRequestLegacy(PriceNegotiation request, {double? customPrice}) async {
     final messenger = ScaffoldMessenger.of(context);
 
     try {
@@ -1338,22 +1521,31 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
       if (elapsed >= totalSeconds) {
         timer.cancel();
-        _removeMyOfferFromFirestore(request.id);
-        _myOfferSubscription?.cancel();
-        _myOfferSubscription = null;
-        setState(() {
-          _offeringOverlayText = null;
-          _offeringPrice = null;
-          _offeringRequest = null;
-          _pendingOfferTripId = null;
-          _offerProgressValue = 1.0;
-        });
+        // Timeout: remove offer from negotiations subcollection
+        _removeMyOfferFromNegotiation(request.id);
+        _dismissOfferingOverlay('Tiempo agotado. El pasajero no respondio.');
         return;
       }
       setState(() {
         _offerProgressValue = 1.0 - (elapsed / totalSeconds);
       });
     });
+  }
+
+  /// Remove driver's offer from the negotiation subcollection on timeout
+  Future<void> _removeMyOfferFromNegotiation(String negotiationId) async {
+    if (_driverId == null) return;
+    try {
+      await _firestore
+          .collection('negotiations')
+          .doc(negotiationId)
+          .collection('offers')
+          .doc(_driverId)
+          .delete();
+      AppLogger.info('Expired offer removed from negotiation $negotiationId');
+    } catch (e) {
+      AppLogger.warning('Error removing expired offer from negotiation: $e');
+    }
   }
 
   Future<void> _removeMyOfferFromFirestore(String tripId) async {
@@ -1521,59 +1713,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       return;
     }
 
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final vehicleInfo = authProvider.currentUser?.vehicleInfo;
-
-      // Read existing offers and remove previous from this driver
-      final rideDoc = await _firestore.collection('rides').doc(request.id).get();
-      final existingOffers = (rideDoc.data()?['driverOffers'] as List<dynamic>? ?? [])
-          .where((o) => (o as Map<String, dynamic>)['driverId'] != _driverId)
-          .toList();
-
-      existingOffers.add({
-        'driverId': _driverId,
-        'driverName': authProvider.currentUser?.fullName ?? 'Conductor',
-        'driverPhoto': authProvider.currentUser?.profilePhotoUrl ?? '',
-        'driverPhone': authProvider.currentUser?.phone ?? '',
-        'driverRating': authProvider.currentUser?.rating ?? 5.0,
-        'vehicleModel': vehicleInfo?['model'] ?? '',
-        'vehiclePlate': vehicleInfo?['plate'] ?? '',
-        'vehicleColor': vehicleInfo?['color'] ?? '',
-        'vehicleBrand': vehicleInfo?['brand'] ?? '',
-        'offeredPrice': price,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-
-      await _firestore.collection('rides').doc(request.id).update({
-        'driverOffers': existingOffers,
-        'status': 'negotiating',
-      });
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Oferta enviada: S/ ${price.toStringAsFixed(2)} - Esperando respuesta...'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-
-      _listenForOfferAcceptance(request.id);
-
-      _countdownTimer?.cancel();
-      setState(() {
-        _showRequestDetails = false;
-        _selectedRequest = null;
-      });
-      _slideController.reverse();
-    } catch (e) {
-      print('Error sending offer: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al enviar oferta'), backgroundColor: AppColors.error),
-      );
-    }
+    // Use the unified offer flow
+    _makeOffer(request, price);
   }
 
   // Counter-offer dialog

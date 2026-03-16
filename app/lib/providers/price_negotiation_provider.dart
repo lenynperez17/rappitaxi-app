@@ -786,47 +786,18 @@ class PriceNegotiationProvider extends ChangeNotifier {
         acceptanceRate: (driverData['acceptanceRate'] as num?)?.toDouble() ?? 100.0,
       );
       
-      if (negotiationIndex != -1) {
-        final updatedOffers = List<DriverOffer>.from(
-          _activeNegotiations[negotiationIndex].driverOffers
-        )..add(offer);
-        
-        _activeNegotiations[negotiationIndex] = 
-            _activeNegotiations[negotiationIndex].copyWith(
-          driverOffers: updatedOffers,
-          status: NegotiationStatus.negotiating,
-        );
-        
-        // Guardar oferta en Firestore (subcollección) con timeout
-        await _firestore
-            .collection('negotiations')
-            .doc(negotiationId)
-            .collection('offers')
-            .doc(user.uid)
-            .set({
-              'driverId': offer.driverId,
-              'driverName': offer.driverName,
-              'driverPhone': offer.driverPhone,
-              'driverPhoto': offer.driverPhoto,
-              'driverRating': offer.driverRating,
-              'vehicleModel': offer.vehicleModel,
-              'vehiclePlate': offer.vehiclePlate,
-              'vehicleColor': offer.vehicleColor,
-              'acceptedPrice': offer.acceptedPrice,
-              'estimatedArrival': offer.estimatedArrival,
-              'offeredAt': offer.offeredAt.toIso8601String(),
-              'status': offer.status.name,
-              'completedTrips': offer.completedTrips,
-              'acceptanceRate': offer.acceptanceRate,
-            }).timeout(const Duration(seconds: 15), onTimeout: () {
-              throw TimeoutException('Timeout guardando oferta');
-            });
+      // ✅ FIX: Write to Firestore ALWAYS, regardless of local state.
+      // The driver's _activeNegotiations may not contain this negotiation
+      // (it lives in _driverVisibleRequests), so the Firestore writes must
+      // happen outside the local-state guard.
 
-        // ✅ IMPORTANTE: También actualizar el documento principal para disparar el listener del pasajero
-        // Agregamos la oferta al array driverOffers del documento para compatibilidad
-        await _firestore.collection('negotiations').doc(negotiationId).update({
-          'status': 'negotiating',
-          'driverOffers': FieldValue.arrayUnion([{
+      // Save offer to Firestore subcollection (with timeout)
+      await _firestore
+          .collection('negotiations')
+          .doc(negotiationId)
+          .collection('offers')
+          .doc(user.uid)
+          .set({
             'driverId': offer.driverId,
             'driverName': offer.driverName,
             'driverPhone': offer.driverPhone,
@@ -840,22 +811,55 @@ class PriceNegotiationProvider extends ChangeNotifier {
             'offeredAt': offer.offeredAt.toIso8601String(),
             'status': offer.status.name,
             'completedTrips': offer.completedTrips,
-            'acceptanceRate': offer.acceptanceRate / 100, // Normalizar a 0-1
-          }]),
-          'lastOfferAt': FieldValue.serverTimestamp(),
-        }).timeout(const Duration(seconds: 15), onTimeout: () {
-          throw TimeoutException('Timeout actualizando negociación');
-        });
-        
+            'acceptanceRate': offer.acceptanceRate,
+          }).timeout(const Duration(seconds: 15), onTimeout: () {
+            throw TimeoutException('Timeout guardando oferta');
+          });
+
+      // ✅ IMPORTANT: Update the main document to trigger the passenger's listener.
+      // Add the offer to the driverOffers array on the document.
+      await _firestore.collection('negotiations').doc(negotiationId).update({
+        'status': 'negotiating',
+        'driverOffers': FieldValue.arrayUnion([{
+          'driverId': offer.driverId,
+          'driverName': offer.driverName,
+          'driverPhone': offer.driverPhone,
+          'driverPhoto': offer.driverPhoto,
+          'driverRating': offer.driverRating,
+          'vehicleModel': offer.vehicleModel,
+          'vehiclePlate': offer.vehiclePlate,
+          'vehicleColor': offer.vehicleColor,
+          'acceptedPrice': offer.acceptedPrice,
+          'estimatedArrival': offer.estimatedArrival,
+          'offeredAt': offer.offeredAt.toIso8601String(),
+          'status': offer.status.name,
+          'completedTrips': offer.completedTrips,
+          'acceptanceRate': offer.acceptanceRate,
+        }]),
+        'lastOfferAt': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 15), onTimeout: () {
+        throw TimeoutException('Timeout actualizando negociación');
+      });
+
+      // Update local state if negotiation exists in _activeNegotiations
+      if (negotiationIndex != -1) {
+        final updatedOffers = List<DriverOffer>.from(
+          _activeNegotiations[negotiationIndex].driverOffers
+        )..add(offer);
+
+        _activeNegotiations[negotiationIndex] =
+            _activeNegotiations[negotiationIndex].copyWith(
+          driverOffers: updatedOffers,
+          status: NegotiationStatus.negotiating,
+        );
+
         if (_currentNegotiation?.id == negotiationId) {
           _currentNegotiation = _activeNegotiations[negotiationIndex];
         }
-
-        notifyListeners();
-        return null; // ✅ Éxito
       }
 
-      return null; // Negociación no encontrada localmente pero no es error
+      notifyListeners();
+      return null; // ✅ Success
     } catch (e) {
       debugPrint('Error haciendo oferta: $e');
       return 'Error al enviar oferta: $e';
@@ -1218,6 +1222,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
             'createdAt': Timestamp.fromDate(negotiation.createdAt),
             'expiresAt': Timestamp.fromDate(negotiation.expiresAt),
             'status': negotiation.status.name,
+            'driverOffers': [], // Initialize empty array so arrayUnion works cleanly
             'driverId': null,
             'paymentMethod': negotiation.paymentMethod.name,
             'notes': negotiation.notes,
