@@ -3,7 +3,7 @@
 class CreditConstants {
   // ✅ Mínimo de créditos para operar como conductor
   // Unificado con el mínimo de MercadoPago para evitar inconsistencias
-  static const double minServiceCredits = 10.0;
+  static const double minServiceCredits = 5.0;
 
   // ✅ Costo por servicio aceptado (se descuenta al aceptar un viaje)
   static const double defaultServiceFee = 1.0;
