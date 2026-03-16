@@ -420,6 +420,28 @@ service cloud.firestore {
       }
     }
 
+    // Chats collection (used by ChatService)
+    match /chats/{chatId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // User presence (online/offline status for chat)
+    match /userPresence/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isOwner(userId);
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+
     // Legacy chat_messages (flat collection)
     match /chat_messages/{messageId} {
       allow read: if isAuthenticated() && (
