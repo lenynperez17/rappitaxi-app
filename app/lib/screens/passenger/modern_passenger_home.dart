@@ -1384,6 +1384,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           notes: null,
         );
         AppLogger.info('✅ Negociación creada exitosamente');
+        // Start listening for real-time driver offers on this negotiation
+        negotiationProvider.startListeningToMyNegotiations();
       } catch (e) {
         AppLogger.error('❌ Error creando negociación: $e');
         if (!mounted) return;
@@ -1705,9 +1707,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                     return Transform.translate(
                       offset: Offset(0, 400 * (1 - _bottomSheetAnimation.value)),
                       child: _isWaitingForDriver
-                          ? Consumer<RideProvider>(
-                              builder: (context, rp, child) {
-                                final hasOffers = false;
+                          ? Consumer2<RideProvider, PriceNegotiationProvider>(
+                              builder: (context, rp, negotiationProvider, child) {
+                                final driverOffers = negotiationProvider.currentNegotiation?.driverOffers
+                                    .where((o) => o.status == models.OfferStatus.pending)
+                                    .toList() ?? [];
+                                final hasOffers = driverOffers.isNotEmpty;
                                 return Align(
                                   alignment: hasOffers ? Alignment.topCenter : Alignment.bottomCenter,
                                   child: child!,
@@ -3585,40 +3590,87 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   Future<void> _acceptDriverOffer(Map<String, dynamic> offer, RideProvider rideProvider) async {
-    // Accept the driver's offer and navigate to tracking
-    const success = true;
+    final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+    final negotiation = negotiationProvider.currentNegotiation;
+    final driverId = offer['driverId'] as String? ?? '';
 
-    if (success && mounted) {
-      setState(() {
-        _isWaitingForDriver = false;
-      });
+    if (negotiation == null || driverId.isEmpty) {
+      AppLogger.error('Cannot accept offer: no active negotiation or missing driverId');
+      return;
+    }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Viaje aceptado'),
-          backgroundColor: Colors.green,
-        ),
-      );
+    try {
+      final rideId = await negotiationProvider.acceptDriverOffer(negotiation.id, driverId);
 
-      Navigator.pushNamed(
-        context,
-        '/passenger/tracking',
-        arguments: rideProvider.currentTrip?.id ?? '',
-      );
+      if (rideId != null && mounted) {
+        setState(() {
+          _isWaitingForDriver = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Viaje aceptado'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        Navigator.pushNamed(
+          context,
+          '/passenger/tracking',
+          arguments: rideId,
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al aceptar la oferta. Intenta de nuevo.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      AppLogger.error('Error accepting driver offer: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _rejectDriverOffer(Map<String, dynamic> offer, RideProvider rideProvider) async {
-    // Reject the offer
-    const success = true;
+    final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+    final negotiation = negotiationProvider.currentNegotiation;
+    final driverId = offer['driverId'] as String? ?? '';
 
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Oferta rechazada'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    if (negotiation == null || driverId.isEmpty) {
+      AppLogger.error('Cannot reject offer: no active negotiation or missing driverId');
+      return;
+    }
+
+    try {
+      await negotiationProvider.rejectDriverOffer(negotiation.id, driverId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Oferta rechazada'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      AppLogger.error('Error rejecting driver offer: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al rechazar oferta: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -3693,6 +3745,24 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
     _isCancelling = true;
 
+    // Stop listening for negotiation updates
+    final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+    negotiationProvider.stopPassengerListeners();
+
+    // Cancel the negotiation in Firestore if there is an active one
+    final currentNegotiation = negotiationProvider.currentNegotiation;
+    if (currentNegotiation != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('negotiations')
+            .doc(currentNegotiation.id)
+            .update({'status': 'cancelled'});
+        AppLogger.info('🗑️ Negotiation ${currentNegotiation.id} cancelled in Firestore');
+      } catch (e) {
+        AppLogger.error('Error cancelling negotiation: $e');
+      }
+    }
+
     final rideProvider = Provider.of<RideProvider>(context, listen: false);
     final cancelled = await rideProvider.cancelRide();
     AppLogger.info('🗑️ cancelRide result: $cancelled');
@@ -3709,7 +3779,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('Búsqueda cancelada'),
         backgroundColor: Colors.orange,
         duration: Duration(seconds: 2),

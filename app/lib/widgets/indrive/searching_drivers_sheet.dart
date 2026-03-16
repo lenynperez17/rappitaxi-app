@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../providers/ride_provider.dart';
+import '../../providers/price_negotiation_provider.dart';
+import '../../models/price_negotiation_model.dart';
 import 'driver_offer_card.dart';
 import '../../services/sound_service.dart';
 
@@ -133,9 +135,29 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<RideProvider>(
-      builder: (context, rideProvider, _) {
-        final offers = rideProvider.driverOffers;
+    return Consumer2<RideProvider, PriceNegotiationProvider>(
+      builder: (context, rideProvider, negotiationProvider, _) {
+        // Read offers from PriceNegotiationProvider (real-time Firestore listener)
+        final driverOfferObjects = negotiationProvider.currentNegotiation?.driverOffers
+            .where((o) => o.status == OfferStatus.pending)
+            .toList() ?? [];
+        // Convert DriverOffer objects to Map<String, dynamic> for widget compatibility
+        final offers = driverOfferObjects.map((o) => <String, dynamic>{
+          'driverId': o.driverId,
+          'driverName': o.driverName,
+          'driverPhone': o.driverPhone,
+          'driverPhoto': o.driverPhoto,
+          'driverRating': o.driverRating,
+          'vehicleModel': o.vehicleModel,
+          'vehiclePlate': o.vehiclePlate,
+          'vehicleColor': o.vehicleColor,
+          'offeredPrice': o.acceptedPrice,
+          'acceptedPrice': o.acceptedPrice,
+          'estimatedArrival': o.estimatedArrival,
+          'completedTrips': o.completedTrips,
+          'acceptanceRate': o.acceptanceRate,
+          'status': o.status.name,
+        }).toList();
         final hasOffers = offers.isNotEmpty;
         final currentTrip = rideProvider.currentTrip;
         final hasDirectAcceptance = currentTrip?.status == 'accepted' &&
