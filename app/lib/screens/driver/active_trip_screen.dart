@@ -193,17 +193,53 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         .listen((snapshot) {
       if (_isDisposed || !mounted) return;
 
-      if (snapshot.exists) {
-        setState(() {
-          _currentTrip = TripModel.fromJson({
-            'id': snapshot.id,
-            ...snapshot.data()!,
-          });
-          _updateTripState();
-          _updateMapMarkers();
-        });
+      if (!snapshot.exists) {
+        // Ride document was deleted from Firestore
+        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} no longer exists in Firestore');
+        _handleRideGone();
+        return;
       }
+
+      final data = snapshot.data()!;
+      final status = data['status'] as String?;
+
+      // Check if ride was cancelled or has a terminal status
+      if (status == 'cancelled' || status == 'cancelled_by_passenger' || status == 'cancelled_by_driver') {
+        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} was cancelled (status=$status)');
+        _handleRideGone();
+        return;
+      }
+
+      setState(() {
+        _currentTrip = TripModel.fromJson({
+          'id': snapshot.id,
+          ...data,
+        });
+        _updateTripState();
+        _updateMapMarkers();
+      });
     });
+  }
+
+  /// Handle when the ride document is deleted or cancelled
+  void _handleRideGone() {
+    if (_isDisposed || !mounted) return;
+
+    // Cancel all subscriptions to avoid further updates
+    _tripSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _locationUpdateTimer?.cancel();
+    _waitingTimer?.cancel();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('El viaje fue cancelado o ya no existe'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    Navigator.of(context).pop();
   }
 
   void _updateTripState() {
