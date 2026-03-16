@@ -1200,7 +1200,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       final data = snapshot.data()!;
       final status = data['status'] as String?;
-      final acceptedDriverId = data['driverId'] as String?;
+      // FIX: acceptDriverOffer() writes 'acceptedDriverId', not 'driverId'
+      final acceptedDriverId = data['acceptedDriverId'] as String? ?? data['driverId'] as String?;
       final rideId = data['rideId'] as String?;
 
       // Passenger accepted THIS driver's offer
@@ -1312,6 +1313,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         ),
       );
     }
+
+    // Safety net: check for active rides shortly after dismissal.
+    // If the passenger accepted right before the overlay timed out,
+    // this catches the ride and navigates the driver to it.
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && !_isDisposed) {
+        _checkForActiveRidesOnce();
+      }
+    });
   }
 
   /// [LEGACY] Direct acceptance — kept for fallback/reference
@@ -1501,8 +1511,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       _offeringRequest = request;
       _offerProgressValue = 1.0;
     });
-    const totalSeconds = 60;
+
+    // Use negotiation expiry time instead of a fixed 60-second timeout.
+    // The listener (_listenForNegotiationResponse) handles acceptance/rejection/expiry.
+    final now = DateTime.now();
+    final totalSeconds = request.expiresAt.difference(now).inSeconds.clamp(30, 600);
     int elapsed = 0;
+
     _offerProgressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       elapsed++;
       if (!mounted || _pendingOfferTripId != request.id) {
@@ -1511,9 +1526,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
       if (elapsed >= totalSeconds) {
         timer.cancel();
-        // Timeout: remove offer from negotiations subcollection
+        // Negotiation expired: clean up offer and dismiss overlay
         _removeMyOfferFromNegotiation(request.id);
-        _dismissOfferingOverlay('Tiempo agotado. El pasajero no respondio.');
+        _dismissOfferingOverlay('Tiempo agotado. La solicitud expiro.');
         return;
       }
       setState(() {
@@ -2390,6 +2405,24 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          // Cancel offer button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  _removeMyOfferFromNegotiation(req.id);
+                  _dismissOfferingOverlay('Oferta cancelada');
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text('Cancelar oferta', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
             ),
           ),
           // Progress bar
