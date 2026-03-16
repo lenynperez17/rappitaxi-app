@@ -49,11 +49,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
         .where('passengerId', isEqualTo: user.uid)
         .snapshots()
         .listen((snapshot) async {
-      // ✅ FIX: Incluir 'accepted' para que el pasajero detecte cuando un conductor acepta su viaje
-      // Sin esto, la negociación desaparece de la lista al ser aceptada y el pasajero nunca navega
+      // Only process waiting/negotiating negotiations (not old accepted ones)
+      // For accepted status, only include if it matches currentNegotiation (recent acceptance)
       final activeDocs = snapshot.docs.where((doc) {
         final status = doc.data()['status'] as String? ?? '';
-        return status == 'waiting' || status == 'negotiating' || status == 'accepted';
+        final docId = doc.data()['id'] ?? doc.id;
+        if (status == 'waiting' || status == 'negotiating') return true;
+        if (status == 'accepted' && _currentNegotiation?.id == docId) return true;
+        return false;
       }).toList();
 
       debugPrint('📥 Recibidas ${snapshot.docs.length} negociaciones totales, ${activeDocs.length} activas del pasajero');
@@ -148,6 +151,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
         // Actualizar currentNegotiation si corresponde
         if (_currentNegotiation?.id == negotiationId) {
           _currentNegotiation = negotiation;
+        }
+
+        // If no currentNegotiation set, use the most recent waiting/negotiating one
+        if (_currentNegotiation == null &&
+            (negotiation.status == NegotiationStatus.waiting ||
+             negotiation.status == NegotiationStatus.negotiating)) {
+          _currentNegotiation = negotiation;
+          debugPrint('📌 Auto-set currentNegotiation to: $negotiationId (${negotiation.status.name})');
         }
       }
 
