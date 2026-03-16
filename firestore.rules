@@ -41,7 +41,9 @@ service cloud.firestore {
       return userExists() && (
         getUserData().userType == 'driver' ||
         getUserData().userType == 'dual' ||
-        getUserData().role == 'driver'
+        getUserData().role == 'driver' ||
+        getUserData().currentMode == 'driver' ||
+        ('availableRoles' in getUserData() && 'driver' in getUserData().availableRoles)
       );
     }
 
@@ -49,7 +51,9 @@ service cloud.firestore {
       return userExists() && (
         getUserData().userType == 'passenger' ||
         getUserData().userType == 'dual' ||
-        getUserData().role == 'passenger'
+        getUserData().role == 'passenger' ||
+        getUserData().currentMode == 'passenger' ||
+        ('availableRoles' in getUserData() && 'passenger' in getUserData().availableRoles)
       );
     }
 
