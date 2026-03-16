@@ -1,18 +1,15 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import '../../core/constants/app_colors.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:flutter_animarker/flutter_map_marker_animation.dart';
-import 'dart:async';
-import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:share_plus/share_plus.dart';
-import '../../core/theme/modern_theme.dart';
-import '../../core/extensions/theme_extensions.dart';
+import 'dart:async';
+import 'dart:math' as math;
 import '../../widgets/animated/modern_animated_widgets.dart';
 import '../shared/chat_screen.dart';
-import '../../utils/logger.dart';
-import '../../utils/map_marker_utils.dart';
+import '../shared/rating_dialog.dart';
+import '../../services/sound_service.dart';
 
 class TrackingScreen extends StatefulWidget {
   final String tripId;
@@ -24,7 +21,14 @@ class TrackingScreen extends StatefulWidget {
   final String pickupAddress;
   final String destinationAddress;
   final double tripPrice;
-  
+  // New parameters for real-time sync
+  final String? driverId;
+  final String? driverPhone;
+  final double? pickupLat;
+  final double? pickupLng;
+  final double? destinationLat;
+  final double? destinationLng;
+
   const TrackingScreen({
     super.key,
     required this.tripId,
@@ -36,117 +40,252 @@ class TrackingScreen extends StatefulWidget {
     required this.pickupAddress,
     required this.destinationAddress,
     required this.tripPrice,
+    this.driverId,
+    this.driverPhone,
+    this.pickupLat,
+    this.pickupLng,
+    this.destinationLat,
+    this.destinationLng,
   });
-  
+
   @override
   _TrackingScreenState createState() => _TrackingScreenState();
 }
 
 class _TrackingScreenState extends State<TrackingScreen>
     with TickerProviderStateMixin {
-  // Completer para Animarker
-  final Completer<GoogleMapController> _mapCompleter = Completer<GoogleMapController>();
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
-  // Iconos modernos
-  BitmapDescriptor? _carIcon;
-  BitmapDescriptor? _passengerIcon;
-  BitmapDescriptor? _destinationIcon;
-
-  // Animaciones
+  // Animations
   late AnimationController _bottomSheetController;
   late AnimationController _pulseController;
   late AnimationController _etaController;
 
-  // Estado del viaje
+  // Trip state - synced with Firestore
   String _tripStatus = 'arriving'; // arriving, arrived, ontrip, completed
   int _minutesRemaining = 5;
   double _distanceRemaining = 2.5;
 
-  // Posiciones reales del viaje
-  LatLng _driverPosition = LatLng(-12.0851, -76.9770);
-  LatLng _passengerPosition = LatLng(-12.0951, -76.9870);
-  LatLng _destinationPosition = LatLng(-12.1051, -77.0070);
+  // Positions - initialized from parameters or defaults
+  late LatLng _driverPosition;
+  late LatLng _passengerPosition;
+  late LatLng _destinationPosition;
 
-  // ✅ StreamSubscriptions para tracking en tiempo real
-  StreamSubscription<DocumentSnapshot>? _rideSubscription;
-  StreamSubscription<DocumentSnapshot>? _locationSubscription;
+  // Firestore subscription for real-time sync
+  StreamSubscription<DocumentSnapshot>? _tripSubscription;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Driver ID para obtener ubicación
-  String? _driverId;
+  Timer? _etaTimer;
+  bool _mapInitialized = false;
+  bool _isCompleting = false;
 
-  // Teléfono del conductor para llamadas
-  String? _driverPhone;
-  
   @override
   void initState() {
     super.initState();
 
+    debugPrint('TrackingScreen.initState()');
+    debugPrint('   tripId: ${widget.tripId}');
+    debugPrint('   driverName: ${widget.driverName}');
+    debugPrint('   driverPhoto: ${widget.driverPhoto}');
+    debugPrint('   vehicleInfo: ${widget.vehicleInfo}');
+    debugPrint('   driverRating: ${widget.driverRating}');
+    debugPrint('   driverId: ${widget.driverId}');
+    debugPrint('   driverPhone: ${widget.driverPhone}');
+    debugPrint('   tripPrice: ${widget.tripPrice}');
+
+    // Initialize positions from parameters or defaults
+    _passengerPosition = LatLng(
+      widget.pickupLat ?? -12.0951,
+      widget.pickupLng ?? -76.9870,
+    );
+    _destinationPosition = LatLng(
+      widget.destinationLat ?? -12.1051,
+      widget.destinationLng ?? -77.0070,
+    );
+    _driverPosition = _passengerPosition;
+
     _bottomSheetController = AnimationController(
-      duration: Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 500),
       vsync: this,
     )..forward();
 
     _pulseController = AnimationController(
-      duration: Duration(seconds: 2),
+      duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat();
 
     _etaController = AnimationController(
-      duration: Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     )..repeat(reverse: true);
 
-    _setupMap();
-    // Cargar icono 3D del vehículo
-    _loadCarIcon();
-    // ✅ Reemplazar _startTracking() con tracking en tiempo real
-    _setupRealTimeTracking();
+    // Start Firestore sync
+    _listenToTripChanges();
   }
 
-  /// Cargar iconos modernos para el mapa y recrear marcadores
-  Future<void> _loadCarIcon() async {
-    try {
-      _carIcon = await MapMarkerUtils.getCarTopViewIcon();
-      _passengerIcon = await MapMarkerUtils.getPassengerIcon();
-      _destinationIcon = await MapMarkerUtils.getDestinationIcon();
-      if (mounted) {
-        _markers.clear();
-        _setupMap();
-        setState(() {});
-      }
-    } catch (e) {
-      AppLogger.warning('⚠️ Error cargando iconos de mapa: $e');
-    }
-  }
-  
   @override
   void dispose() {
-    // ✅ Liberar MapController para evitar ImageReader buffer warnings
+    _tripSubscription?.cancel();
+
+    // Release MapController to avoid ImageReader buffer warnings
     _mapController?.dispose();
     _mapController = null;
-
-    // ✅ Cancelar subscripciones de Firestore
-    _rideSubscription?.cancel();
-    _locationSubscription?.cancel();
 
     _bottomSheetController.dispose();
     _pulseController.dispose();
     _etaController.dispose();
+    _etaTimer?.cancel();
     super.dispose();
   }
-  
-  void _setupMap() {
-    // Configurar marcadores - usar iconos modernos
+
+  /// Listen to real-time trip changes from Firestore
+  void _listenToTripChanges() {
+    _tripSubscription = _firestore
+        .collection('rides')
+        .doc(widget.tripId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+
+      if (!snapshot.exists) {
+        debugPrint('TrackingScreen: Trip does not exist, exiting...');
+        Navigator.of(context).pop();
+        return;
+      }
+
+      final data = snapshot.data()!;
+      final status = data['status'] as String? ?? 'accepted';
+      final driverLoc = data['driverLocation'] as GeoPoint?;
+
+      setState(() {
+        // Map Firestore status to local state
+        _tripStatus = _mapFirestoreStatus(status);
+
+        // Update driver location if available
+        if (driverLoc != null) {
+          _driverPosition = LatLng(driverLoc.latitude, driverLoc.longitude);
+          _updateDriverMarker();
+          _updateRoute();
+        }
+
+        // Calculate distance and estimated time
+        if (driverLoc != null) {
+          _distanceRemaining = _calculateDistanceKm(
+            _driverPosition,
+            _tripStatus == 'ontrip' ? _destinationPosition : _passengerPosition,
+          );
+          _minutesRemaining = (_distanceRemaining * 2).ceil();
+        }
+      });
+
+      // Show notification if driver arrived
+      if (status == 'arrived' || status == 'driver_arrived') {
+        _showArrivedNotification();
+      }
+
+      // If trip completed, show rating dialog
+      if (status == 'completed' && !_isCompleting) {
+        _showRatingDialog();
+      }
+    }, onError: (error) {
+      debugPrint('TrackingScreen: Error listening to trip: $error');
+    });
+  }
+
+  /// Map Firestore status to local UI state
+  String _mapFirestoreStatus(String status) {
+    switch (status) {
+      case 'accepted':
+      case 'driver_arriving':
+        return 'arriving';
+      case 'arrived':
+      case 'driver_arrived':
+        return 'arrived';
+      case 'in_progress':
+        return 'ontrip';
+      case 'completed':
+        return 'completed';
+      case 'cancelled':
+        return 'cancelled';
+      default:
+        return 'arriving';
+    }
+  }
+
+  /// Update driver marker on the map
+  void _updateDriverMarker() {
+    _markers.removeWhere((m) => m.markerId.value == 'driver');
     _markers.add(
       Marker(
-        markerId: MarkerId('driver'),
+        markerId: const MarkerId('driver'),
         position: _driverPosition,
-        icon: _carIcon ?? BitmapDescriptor.defaultMarker,
-        anchor: Offset(0.5, 0.5),
-        flat: true,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(
+          title: widget.driverName,
+          snippet: widget.vehicleInfo,
+        ),
+      ),
+    );
+
+    // Center map if controller is available
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngBounds(_getBounds(), 100),
+    );
+  }
+
+  /// Update route on the map
+  void _updateRoute() {
+    _polylines.clear();
+
+    List<LatLng> routePoints;
+
+    if (_tripStatus == 'ontrip') {
+      // During trip: driver -> destination
+      routePoints = [_driverPosition, _destinationPosition];
+    } else {
+      // Waiting for driver: always show trip route (pickup -> destination)
+      routePoints = [_passengerPosition, _destinationPosition];
+    }
+
+    debugPrint('Polyline: ${routePoints.first} -> ${routePoints.last}');
+
+    _polylines.add(
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: routePoints,
+        color: Colors.blue,
+        width: 5,
+      ),
+    );
+  }
+
+  /// Calculate distance in kilometers between two points
+  double _calculateDistanceKm(LatLng pos1, LatLng pos2) {
+    const double earthRadius = 6371; // km
+    final double dLat = _toRadians(pos2.latitude - pos1.latitude);
+    final double dLon = _toRadians(pos2.longitude - pos1.longitude);
+
+    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRadians(pos1.latitude)) *
+            math.cos(_toRadians(pos2.latitude)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  double _toRadians(double degrees) => degrees * math.pi / 180;
+
+  void _setupMap() {
+    // Setup initial markers
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('driver'),
+        position: _driverPosition,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         infoWindow: InfoWindow(
           title: widget.driverName,
           snippet: widget.vehicleInfo,
@@ -156,256 +295,64 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     _markers.add(
       Marker(
-        markerId: MarkerId('passenger'),
+        markerId: const MarkerId('passenger'),
         position: _passengerPosition,
-        icon: _passengerIcon ?? BitmapDescriptor.defaultMarker,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
         infoWindow: InfoWindow(
-          title: 'Tu ubicación',
+          title: 'Tu ubicacion',
           snippet: widget.pickupAddress,
         ),
       ),
     );
 
-    if (_tripStatus == 'ontrip') {
-      _markers.add(
-        Marker(
-          markerId: MarkerId('destination'),
-          position: _destinationPosition,
-          icon: _destinationIcon ?? BitmapDescriptor.defaultMarker,
-          infoWindow: InfoWindow(
-            title: 'Destino',
-            snippet: widget.destinationAddress,
-          ),
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('destination'),
+        position: _destinationPosition,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(
+          title: 'Destino',
+          snippet: widget.destinationAddress,
         ),
-      );
-    }
-    
-    // Configurar ruta
-    _polylines.add(
-      Polyline(
-        polylineId: PolylineId('route'),
-        points: [_driverPosition, _passengerPosition],
-        color: ModernTheme.rappiOrange,
-        width: 4,
-        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
       ),
     );
-  }
-  
-  /// ✅ TRACKING EN TIEMPO REAL CON FIRESTORE
-  void _setupRealTimeTracking() {
-    final firestore = FirebaseFirestore.instance;
 
-    try {
-      // 1. LISTENER DEL VIAJE (estado, ETA, distancia, driverId)
-      _rideSubscription = firestore
-          .collection('rides')
-          .doc(widget.tripId)
-          .snapshots()
-          .listen(
-        (snapshot) {
-          if (!mounted || !snapshot.exists) {
-            AppLogger.warning('⚠️ Viaje no encontrado o widget desmontado: ${widget.tripId}');
-            return;
-          }
-
-          try {
-            final data = snapshot.data()!;
-
-            // Obtener posiciones desde Firestore
-            if (data['pickup'] != null) {
-              _passengerPosition = LatLng(
-                (data['pickup']['lat'] ?? _passengerPosition.latitude).toDouble(),
-                (data['pickup']['lng'] ?? _passengerPosition.longitude).toDouble(),
-              );
-            }
-
-            if (data['destination'] != null) {
-              _destinationPosition = LatLng(
-                (data['destination']['lat'] ?? _destinationPosition.latitude).toDouble(),
-                (data['destination']['lng'] ?? _destinationPosition.longitude).toDouble(),
-              );
-            }
-
-            setState(() {
-              _tripStatus = data['status'] ?? 'arriving';
-              _minutesRemaining = data['estimatedTimeMinutes'] ?? 5;
-              _distanceRemaining = (data['distanceRemainingKm'] ?? 2.5).toDouble();
-              _driverId = data['driverId'];
-
-              // Si estado cambió a 'arrived', mostrar notificación
-              if (_tripStatus == 'arrived') {
-                _showArrivedNotification();
-              } else if (_tripStatus == 'completed') {
-                _showCompletedNotification();
-              }
-
-              // Actualizar polilínea según estado
-              _updatePolyline();
-            });
-
-            // 2. LISTENER DE UBICACIÓN DEL CONDUCTOR (solo si tenemos driverId)
-            if (_driverId != null && _locationSubscription == null) {
-              _setupDriverLocationTracking(_driverId!);
-              // Obtener teléfono del conductor
-              _fetchDriverPhone(_driverId!);
-            }
-          } catch (e) {
-            AppLogger.error('❌ Error al procesar datos del viaje: $e');
-          }
-        },
-        onError: (error) {
-          AppLogger.error('❌ Error en stream del viaje: $error');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error al rastrear viaje'),
-                backgroundColor: ModernTheme.error,
-              ),
-            );
-          }
-        },
-      );
-    } catch (e) {
-      AppLogger.error('❌ Error al configurar tracking: $e');
-    }
+    // Setup initial route
+    _updateRoute();
   }
 
-  /// ✅ LISTENER DE UBICACIÓN DEL CONDUCTOR EN TIEMPO REAL
-  /// Lee de la colección 'rides' donde el conductor escribe su ubicación
-  void _setupDriverLocationTracking(String driverId) {
-    final firestore = FirebaseFirestore.instance;
-
-    _locationSubscription = firestore
-        .collection('rides')
-        .doc(widget.tripId)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        if (!mounted || !snapshot.exists) return;
-
-        try {
-          final data = snapshot.data()!;
-          final driverLocation = data['driverLocation'] as Map<String, dynamic>?;
-          if (driverLocation == null) return;
-
-          // Verificar que la ubicación no sea demasiado antigua (> 30 segundos)
-          final timestamp = driverLocation['timestamp'] as Timestamp?;
-          if (timestamp != null) {
-            final age = DateTime.now().difference(timestamp.toDate());
-            if (age.inSeconds > 30) {
-              AppLogger.warning('⚠️ Ubicación del conductor desactualizada: ${age.inSeconds}s');
-            }
-          }
-
-          final newPosition = LatLng(
-            (driverLocation['latitude'] as num).toDouble(),
-            (driverLocation['longitude'] as num).toDouble(),
-          );
-
-          // Calcular heading: usar el del GPS o calcular por posiciones
-          double heading = (driverLocation['heading'] ?? 0.0).toDouble();
-          if (heading == 0.0 && _driverPosition != const LatLng(0, 0)) {
-            // Fallback: calcular bearing entre posición anterior y nueva
-            final dLat = newPosition.latitude - _driverPosition.latitude;
-            final dLng = newPosition.longitude - _driverPosition.longitude;
-            if (dLat.abs() > 0.00001 || dLng.abs() > 0.00001) {
-              final y = math.sin(dLng * math.pi / 180) * math.cos(newPosition.latitude * math.pi / 180);
-              final x = math.cos(_driverPosition.latitude * math.pi / 180) * math.sin(newPosition.latitude * math.pi / 180) -
-                  math.sin(_driverPosition.latitude * math.pi / 180) * math.cos(newPosition.latitude * math.pi / 180) * math.cos(dLng * math.pi / 180);
-              heading = (math.atan2(y, x) * 180 / math.pi + 360) % 360;
-            }
-          }
-
-          setState(() {
-            _driverPosition = newPosition;
-
-            // Actualizar marcador del conductor con icono moderno
-            _markers.removeWhere((m) => m.markerId.value == 'driver');
-            _markers.add(
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: _driverPosition,
-                icon: _carIcon ?? BitmapDescriptor.defaultMarker,
-                rotation: heading,
-                anchor: const Offset(0.5, 0.5),
-                flat: true,
-                infoWindow: InfoWindow(
-                  title: widget.driverName,
-                  snippet: widget.vehicleInfo,
-                ),
-              ),
-            );
-
-            // Actualizar polilínea
-            _updatePolyline();
-
-            // Centrar cámara en la ruta
-            _centerMapOnRoute();
-          });
-        } catch (e) {
-          AppLogger.error('❌ Error al procesar ubicación del conductor: $e');
-        }
-      },
-      onError: (error) {
-        AppLogger.error('❌ Error en stream de ubicación: $error');
+  /// Show rating dialog when trip finishes
+  void _showRatingDialog() {
+    _isCompleting = true;
+    RatingDialog.show(
+      context: context,
+      driverName: widget.driverName,
+      driverPhoto: widget.driverPhoto,
+      tripId: widget.tripId,
+      onSubmit: (rating, comment, tags) {
+        debugPrint('Rating submitted: $rating stars, tags: $tags');
+        Navigator.of(context).popUntil((route) => route.isFirst);
       },
     );
   }
 
-  /// ✅ ACTUALIZAR POLILÍNEA SEGÚN ESTADO DEL VIAJE
-  void _updatePolyline() {
-    _polylines.clear();
-
-    List<LatLng> points;
-    if (_tripStatus == 'arriving' || _tripStatus == 'arrived') {
-      // Ruta: conductor → pasajero
-      points = [_driverPosition, _passengerPosition];
-    } else {
-      // Ruta: posición actual → destino
-      points = [_driverPosition, _destinationPosition];
-    }
-
-    _polylines.add(
-      Polyline(
-        polylineId: PolylineId('route'),
-        points: points,
-        color: ModernTheme.rappiOrange,
-        width: 5,
-        patterns: _tripStatus == 'arriving' || _tripStatus == 'arrived'
-            ? [PatternItem.dash(20), PatternItem.gap(10)]
-            : [],
-      ),
+  LatLngBounds _getBounds() {
+    double minLat = math.min(
+      _driverPosition.latitude,
+      math.min(_passengerPosition.latitude, _destinationPosition.latitude),
     );
-  }
-
-  /// ✅ CENTRAR MAPA EN LA RUTA (con manejo de errores mejorado)
-  void _centerMapOnRoute() {
-    // ✅ FIX: Verificar que el controller y widget estén disponibles
-    if (_mapController == null || !mounted) return;
-
-    try {
-      final bounds = _calculateBounds();
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 100),
-      );
-    } catch (e) {
-      // No mostrar error al usuario, solo log (no es crítico)
-      AppLogger.error('❌ Error al centrar mapa: $e');
-    }
-  }
-
-  /// ✅ CALCULAR BOUNDS PARA CENTRAR MAPA
-  LatLngBounds _calculateBounds() {
-    List<LatLng> positions = [_driverPosition, _passengerPosition];
-    if (_tripStatus != 'arriving' && _tripStatus != 'arrived') {
-      positions.add(_destinationPosition);
-    }
-
-    double minLat = positions.map((p) => p.latitude).reduce(math.min);
-    double maxLat = positions.map((p) => p.latitude).reduce(math.max);
-    double minLng = positions.map((p) => p.longitude).reduce(math.min);
-    double maxLng = positions.map((p) => p.longitude).reduce(math.max);
+    double maxLat = math.max(
+      _driverPosition.latitude,
+      math.max(_passengerPosition.latitude, _destinationPosition.latitude),
+    );
+    double minLng = math.min(
+      _driverPosition.longitude,
+      math.min(_passengerPosition.longitude, _destinationPosition.longitude),
+    );
+    double maxLng = math.max(
+      _driverPosition.longitude,
+      math.max(_passengerPosition.longitude, _destinationPosition.longitude),
+    );
 
     return LatLngBounds(
       southwest: LatLng(minLat, minLng),
@@ -413,137 +360,72 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  /// ✅ NOTIFICACIÓN DE CONDUCTOR LLEGADO
   void _showArrivedNotification() {
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
+    SoundService().play(AppSound.driverArrived);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.directions_car_rounded, color: AppColors.white),
+            SizedBox(width: 12),
+            Text('Tu conductor ha llegado'),
+          ],
+        ),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: ModernTheme.success, size: 28),
-            SizedBox(width: 12),
-            Text('¡El conductor ha llegado!'),
-          ],
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: AppColors.white,
+          onPressed: () {},
         ),
-        content: Text(
-          'Tu conductor está esperándote en el punto de recogida. Verifica la placa del vehículo antes de abordar.',
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.success,
-            ),
-            child: Text('Entendido'),
-          ),
-        ],
       ),
     );
-  }
-
-  /// ✅ NOTIFICACIÓN DE VIAJE COMPLETADO
-  void _showCompletedNotification() {
-    if (!mounted) return;
-
-    // Navegar a pantalla de calificación
-    Navigator.pushReplacementNamed(
-      context,
-      '/trip-completed',
-      arguments: widget.tripId,
-    );
-  }
-  
-  /// ✅ Calcular distancia entre dos puntos (útil para validaciones)
-  double _calculateDistance(LatLng pos1, LatLng pos2) {
-    return math.sqrt(
-      math.pow(pos1.latitude - pos2.latitude, 2) +
-      math.pow(pos1.longitude - pos2.longitude, 2),
-    );
-  }
-
-  /// ✅ Calcular bounds que incluyan conductor, pasajero y destino
-  LatLngBounds _getBounds() {
-    final positions = [_driverPosition, _passengerPosition, _destinationPosition];
-
-    double minLat = positions.map((p) => p.latitude).reduce(math.min);
-    double maxLat = positions.map((p) => p.latitude).reduce(math.max);
-    double minLng = positions.map((p) => p.longitude).reduce(math.min);
-    double maxLng = positions.map((p) => p.longitude).reduce(math.max);
-
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
-  }
-
-  /// Maneja el intento de salir de la pantalla (botón atrás o flecha)
-  Future<void> _handleBackPressed() async {
-    // Si el viaje ya terminó o fue cancelado, permitir salir
-    if (_tripStatus == 'completed' || _tripStatus == 'cancelled') {
-      if (mounted) Navigator.pop(context);
-      return;
-    }
-
-    // Viaje activo: mostrar diálogo de confirmación
-    _cancelTrip();
   }
 
   @override
   Widget build(BuildContext context) {
-    final canLeave = _tripStatus == 'completed' || _tripStatus == 'cancelled';
-    return PopScope(
-      canPop: canLeave,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) _handleBackPressed();
-      },
-      child: Scaffold(
-        body: Stack(
+    // Initialize map only once when context is available
+    if (!_mapInitialized) {
+      _setupMap();
+      _mapInitialized = true;
+    }
+
+    return Scaffold(
+      body: Stack(
         children: [
-          // Mapa con tracking animado (estilo Uber/DiDi)
-          Animarker(
-            mapId: _mapCompleter.future.then<int>((c) => c.mapId),
-            curve: Curves.easeInOut,
-            duration: const Duration(milliseconds: 1500),
-            useRotation: false, // Rotación manual via heading del GPS
-            markers: _markers,
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _driverPosition,
-                zoom: 15,
-              ),
-              onMapCreated: (controller) {
-                _mapController = controller;
-                if (!_mapCompleter.isCompleted) {
-                  _mapCompleter.complete(controller);
-                }
-                // Centrar en los marcadores
-                Future.delayed(Duration(milliseconds: 500), () {
-                  _mapController?.animateCamera(
-                    CameraUpdate.newLatLngBounds(_getBounds(), 100),
-                  );
-                });
-              },
-              polylines: _polylines,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              // ✅ OPTIMIZACIONES: Reducir carga de renderizado y eliminar ImageReader warnings
-              liteModeEnabled: false,  // Modo normal pero optimizado
-              buildingsEnabled: false, // Deshabilitar edificios 3D
-              indoorViewEnabled: false, // Deshabilitar vista interior
-              trafficEnabled: false,   // Tráfico deshabilitado por defecto
-              minMaxZoomPreference: MinMaxZoomPreference(10, 20), // Limitar zoom
+          // Map with tracking
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _driverPosition,
+              zoom: 15,
             ),
+            onMapCreated: (controller) {
+              _mapController = controller;
+              // Center on markers
+              Future.delayed(const Duration(milliseconds: 500), () {
+                _mapController?.animateCamera(
+                  CameraUpdate.newLatLngBounds(_getBounds(), 100),
+                );
+              });
+            },
+            onTap: (_) => FocusScope.of(context).unfocus(),
+            markers: _markers,
+            polylines: _polylines,
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            liteModeEnabled: false,
+            buildingsEnabled: false,
+            indoorViewEnabled: false,
+            trafficEnabled: false,
+            minMaxZoomPreference: const MinMaxZoomPreference(10, 20),
           ),
-          
-          // Indicador de posición del conductor con pulso
+
+          // Driver position pulse indicator
           if (_tripStatus == 'arriving' || _tripStatus == 'ontrip')
             Positioned(
               top: MediaQuery.of(context).size.height * 0.4,
@@ -556,7 +438,7 @@ class _TrackingScreenState extends State<TrackingScreen>
                     height: 60 + (20 * _pulseController.value),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: ModernTheme.rappiOrange.withValues(alpha: 
+                      color: AppColors.rappiOrange.withValues(alpha:
                         0.3 * (1 - _pulseController.value),
                       ),
                     ),
@@ -564,22 +446,22 @@ class _TrackingScreenState extends State<TrackingScreen>
                 },
               ),
             ),
-          
-          // Header con información del viaje
+
+          // Header with trip info
           SafeArea(
             child: Container(
-              margin: EdgeInsets.all(16),
-              padding: EdgeInsets.all(16),
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
+                color: AppColors.getSurface(context),
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: ModernTheme.getFloatingShadow(context),
+                boxShadow: AppColors.getCardShadow(),
               ),
               child: Row(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back),
-                    onPressed: _handleBackPressed,
+                    onPressed: () => Navigator.pop(context),
                   ),
                   Expanded(
                     child: Column(
@@ -587,30 +469,30 @@ class _TrackingScreenState extends State<TrackingScreen>
                       children: [
                         Text(
                           _getStatusText(),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         AnimatedBuilder(
                           animation: _etaController,
                           builder: (context, child) {
                             return Transform.scale(
                               scale: 1 + (0.1 * _etaController.value),
                               child: Container(
-                                padding: EdgeInsets.symmetric(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  '$_minutesRemaining min • $_distanceRemaining km',
-                                  style: TextStyle(
-                                    color: ModernTheme.rappiOrange,
+                                  '$_minutesRemaining min • ${_distanceRemaining.toStringAsFixed(1)} km',
+                                  style: const TextStyle(
+                                    color: AppColors.rappiOrange,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -622,74 +504,30 @@ class _TrackingScreenState extends State<TrackingScreen>
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.share_location),
+                    icon: const Icon(Icons.share_location),
                     onPressed: _shareLocation,
                   ),
                 ],
               ),
             ),
           ),
-          
-          // Bottom sheet minimizable con info del conductor (DraggableScrollableSheet)
-          DraggableScrollableSheet(
-            initialChildSize: 0.32,
-            minChildSize: 0.12,
-            maxChildSize: 0.75,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-                  boxShadow: ModernTheme.getFloatingShadow(context),
-                ),
-                child: SingleChildScrollView(
-                  controller: scrollController,
+
+          // Bottom sheet with driver info
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedBuilder(
+              animation: _bottomSheetController,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(0, 300 * (1 - _bottomSheetController.value)),
                   child: _buildDriverInfoSheet(),
-                ),
-              );
-            },
-          ),
-
-          // FAB de llamada al conductor
-          Positioned(
-            left: 16,
-            bottom: 200,
-            child: FloatingActionButton(
-              heroTag: 'fab_call',
-              mini: false,
-              backgroundColor: ModernTheme.success,
-              onPressed: _callDriver,
-              child: Icon(Icons.phone, color: Colors.white),
-            ),
-          ),
-
-          // FAB de chat con el conductor
-          Positioned(
-            left: 80,
-            bottom: 200,
-            child: FloatingActionButton(
-              heroTag: 'fab_chat',
-              mini: false,
-              backgroundColor: ModernTheme.info,
-              onPressed: _openChat,
-              child: Icon(Icons.chat, color: Colors.white),
-            ),
-          ),
-
-          // FAB de emergencia SOS
-          Positioned(
-            right: 16,
-            bottom: 200,
-            child: FloatingActionButton(
-              heroTag: 'fab_sos',
-              mini: false,
-              backgroundColor: ModernTheme.error,
-              onPressed: _showEmergencyOptions,
-              child: Icon(Icons.warning_rounded, color: Colors.white),
+                );
+              },
             ),
           ),
         ],
-      ),
       ),
     );
   }
@@ -697,45 +535,45 @@ class _TrackingScreenState extends State<TrackingScreen>
   Widget _buildDriverInfoSheet() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-        boxShadow: ModernTheme.getFloatingShadow(context),
+        color: AppColors.getSurface(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        boxShadow: AppColors.getCardShadow(),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Handle
           Container(
-            margin: EdgeInsets.only(top: 12),
+            margin: const EdgeInsets.only(top: 12),
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+              color: AppColors.getBorder(context),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
-          // Estado del viaje
+
+          // Trip status
           if (_tripStatus == 'arrived')
             Container(
-              margin: EdgeInsets.all(16),
-              padding: EdgeInsets.all(12),
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: ModernTheme.success.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: ModernTheme.success.withValues(alpha: 0.3),
+                  color: AppColors.success.withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: ModernTheme.success),
-                  SizedBox(width: 12),
-                  Expanded(
+                  const Icon(Icons.check_circle, color: AppColors.success),
+                  const SizedBox(width: 12),
+                  const Expanded(
                     child: Text(
-                      'Tu conductor te está esperando',
+                      'El conductor te esta esperando',
                       style: TextStyle(
-                        color: ModernTheme.success,
+                        color: AppColors.success,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -744,73 +582,75 @@ class _TrackingScreenState extends State<TrackingScreen>
                     onPressed: () {
                       setState(() => _tripStatus = 'ontrip');
                     },
-                    child: Text('Iniciar viaje'),
+                    child: const Text('Iniciar viaje'),
                   ),
                 ],
               ),
             ),
-          
-          // Información del conductor
+
+          // Driver info
           Padding(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: [
                 Row(
                   children: [
-                    // Foto del conductor
+                    // Driver photo
                     Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: ModernTheme.rappiOrange,
+                          color: AppColors.rappiOrange,
                           width: 2,
                         ),
                       ),
                       child: CircleAvatar(
                         radius: 35,
-                        backgroundImage: (widget.driverPhoto.isNotEmpty && widget.driverPhoto.startsWith('http'))
-                            ? NetworkImage(widget.driverPhoto)
-                            : null,
+                        backgroundImage: NetworkImage(widget.driverPhoto),
                       ),
                     ),
-                    SizedBox(width: 16),
-                    
-                    // Datos del conductor
+                    const SizedBox(width: 16),
+
+                    // Driver data
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Text(
-                                widget.driverName,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                              Flexible(
+                                child: Text(
+                                  widget.driverName,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Container(
-                                padding: EdgeInsets.symmetric(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.amber.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      Icons.star,
+                                    const Icon(
+                                      Icons.star_rounded,
                                       size: 14,
                                       color: Colors.amber,
                                     ),
-                                    SizedBox(width: 2),
+                                    const SizedBox(width: 2),
                                     Text(
                                       widget.driverRating.toString(),
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -820,93 +660,94 @@ class _TrackingScreenState extends State<TrackingScreen>
                               ),
                             ],
                           ),
-                          SizedBox(height: 4),
+                          const SizedBox(height: 4),
                           Text(
                             widget.vehicleInfo,
                             style: TextStyle(
-                              color: context.secondaryText,
+                              color: AppColors.getTextSecondary(context),
                             ),
-                          ),
-                          SizedBox(height: 4),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: context.surfaceColor,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'ABC-123',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ],
                       ),
                     ),
-                    
-                    // Botones de acción
+
+                    // Action buttons (call, chat, emergency)
                     Column(
                       children: [
+                        // Call button
                         Container(
                           decoration: BoxDecoration(
-                            color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
+                            color: AppColors.rappiOrange.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.call,
-                              color: ModernTheme.rappiOrange,
+                              color: AppColors.rappiOrange,
                             ),
                             onPressed: _callDriver,
                           ),
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
+                        // Chat button
                         Container(
                           decoration: BoxDecoration(
-                            color: ModernTheme.primaryBlue.withValues(alpha: 0.1),
+                            color: AppColors.rappiOrangeDark.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.message,
-                              color: ModernTheme.primaryBlue,
+                              color: AppColors.rappiOrangeDark,
                             ),
                             onPressed: _openChat,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Emergency button
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.warning_rounded,
+                              color: AppColors.error,
+                            ),
+                            onPressed: _showEmergencyOptions,
                           ),
                         ),
                       ],
                     ),
                   ],
                 ),
-                
-                SizedBox(height: 20),
-                
-                // Detalles del viaje
+
+                const SizedBox(height: 20),
+
+                // Trip details
                 Container(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: context.surfaceColor,
-                    borderRadius: BorderRadius.circular(16),
+                    color: AppColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Column(
                     children: [
-                      // Origen
+                      // Origin
                       Row(
                         children: [
                           Container(
                             width: 10,
                             height: 10,
-                            decoration: BoxDecoration(
-                              color: ModernTheme.success,
+                            decoration: const BoxDecoration(
+                              color: AppColors.success,
                               shape: BoxShape.circle,
                             ),
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -915,13 +756,13 @@ class _TrackingScreenState extends State<TrackingScreen>
                                   'Recogida',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: context.secondaryText,
+                                    color: AppColors.getTextSecondary(context),
                                   ),
                                 ),
                                 Text(
                                   widget.pickupAddress,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
@@ -929,27 +770,27 @@ class _TrackingScreenState extends State<TrackingScreen>
                           ),
                         ],
                       ),
-                      
-                      // Línea conectora
+
+                      // Connector line
                       Container(
-                        margin: EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                        margin: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
                         width: 2,
                         height: 20,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                        color: AppColors.getBorder(context),
                       ),
-                      
-                      // Destino
+
+                      // Destination
                       Row(
                         children: [
                           Container(
                             width: 10,
                             height: 10,
-                            decoration: BoxDecoration(
-                              color: ModernTheme.error,
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
                               shape: BoxShape.circle,
                             ),
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -958,13 +799,13 @@ class _TrackingScreenState extends State<TrackingScreen>
                                   'Destino',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: context.secondaryText,
+                                    color: AppColors.getTextSecondary(context),
                                   ),
                                 ),
                                 Text(
                                   widget.destinationAddress,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
@@ -972,52 +813,52 @@ class _TrackingScreenState extends State<TrackingScreen>
                           ),
                         ],
                       ),
-                      
-                      Divider(height: 24),
-                      
-                      // Precio y método de pago
+
+                      const Divider(height: 24),
+
+                      // Price and payment method
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
-                              Icon(
-                                Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
-                                color: ModernTheme.rappiOrange,
+                              const Icon(
+                                Icons.account_balance_wallet,
+                                color: AppColors.rappiOrange,
                                 size: 20,
                               ),
                               Text(
-                                'S/. ${widget.tripPrice.toStringAsFixed(2)}',
-                                style: TextStyle(
+                                'S/ ${widget.tripPrice.toStringAsFixed(2)}',
+                                style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
-                                  color: ModernTheme.rappiOrange,
+                                  color: AppColors.rappiOrange,
                                 ),
                               ),
                             ],
                           ),
                           Container(
-                            padding: EdgeInsets.symmetric(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 12,
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12),
+                              color: AppColors.getInputFill(context),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
                               children: [
                                 Icon(
                                   Icons.money,
                                   size: 16,
-                                  color: context.secondaryText,
+                                  color: AppColors.getTextSecondary(context),
                                 ),
-                                SizedBox(width: 4),
+                                const SizedBox(width: 4),
                                 Text(
                                   'Efectivo',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: context.secondaryText,
+                                    color: AppColors.getTextSecondary(context),
                                   ),
                                 ),
                               ],
@@ -1028,14 +869,14 @@ class _TrackingScreenState extends State<TrackingScreen>
                     ],
                   ),
                 ),
-                
+
                 if (_tripStatus == 'ontrip') ...[
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   AnimatedPulseButton(
-                    text: 'Finalizar Viaje',
+                    text: 'Finalizar viaje',
                     icon: Icons.check_circle,
                     onPressed: _completeTrip,
-                    color: ModernTheme.success,
+                    color: AppColors.success,
                   ),
                 ],
               ],
@@ -1049,98 +890,68 @@ class _TrackingScreenState extends State<TrackingScreen>
   String _getStatusText() {
     switch (_tripStatus) {
       case 'arriving':
-        return 'Tu conductor está en camino';
+        return 'Conductor en camino';
       case 'arrived':
-        return 'Tu conductor ha llegado';
+        return 'El conductor ha llegado';
       case 'ontrip':
-        return 'En viaje hacia tu destino';
+        return 'En camino al destino';
       case 'completed':
         return 'Viaje completado';
       default:
         return '';
     }
   }
-  
-  // Obtener teléfono del conductor desde Firestore
-  Future<void> _fetchDriverPhone(String driverId) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(driverId)
-          .get();
 
-      if (doc.exists && mounted) {
-        setState(() {
-          _driverPhone = doc.data()?['phone'] ?? doc.data()?['phoneNumber'];
-        });
-      }
-    } catch (e) {
-      AppLogger.error('Error al obtener teléfono del conductor: $e');
-    }
+  void _shareLocation() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Compartiendo ubicacion en vivo'),
+        backgroundColor: AppColors.info,
+      ),
+    );
   }
 
-  // Compartir ubicación en tiempo real
-  Future<void> _shareLocation() async {
-    try {
-      final lat = _driverPosition.latitude;
-      final lng = _driverPosition.longitude;
-      final mapsUrl = 'https://www.google.com/maps?q=$lat,$lng';
-      final message = 'Mi conductor está en camino. '
-          'Puedes seguir su ubicación aquí: $mapsUrl\n\n'
-          'Conductor: ${widget.driverName}\n'
-          'Vehículo: ${widget.vehicleInfo}';
-
-      await Share.share(message, subject: 'Ubicación de mi viaje - Rappi Team');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al compartir ubicación'),
-            backgroundColor: ModernTheme.error,
-          ),
-        );
-      }
-    }
-  }
-
-  // Llamar al conductor
+  /// Call driver with url_launcher
   Future<void> _callDriver() async {
-    if (_driverPhone == null || _driverPhone!.isEmpty) {
+    if (widget.driverPhone == null || widget.driverPhone!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Número de teléfono no disponible'),
-          backgroundColor: ModernTheme.warning,
+        const SnackBar(
+          content: Text('Telefono no disponible'),
+          backgroundColor: AppColors.warning,
         ),
       );
       return;
     }
 
-    final uri = Uri.parse('tel:$_driverPhone');
+    final Uri phoneUri = Uri(scheme: 'tel', path: widget.driverPhone);
+
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Text('No se puede realizar la llamada'),
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
           );
         }
       }
     } catch (e) {
+      debugPrint('Error calling driver: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al iniciar llamada'),
-            backgroundColor: ModernTheme.error,
+          const SnackBar(
+            content: Text('No se puede realizar la llamada'),
+            backgroundColor: AppColors.error,
           ),
         );
       }
     }
   }
-  
+
+  /// Open chat with driver
   void _openChat() {
     Navigator.push(
       context,
@@ -1148,62 +959,62 @@ class _TrackingScreenState extends State<TrackingScreen>
         builder: (context) => ChatScreen(
           otherUserName: widget.driverName,
           otherUserRole: 'driver',
-          otherUserId: _driverId,
+          otherUserId: widget.driverId,
           rideId: widget.tripId,
         ),
       ),
     );
   }
-  
+
   void _showEmergencyOptions() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          color: AppColors.getSurface(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Opciones de Emergencia',
+            const Text(
+              'Opciones de emergencia',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: ModernTheme.error,
+                color: AppColors.error,
               ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ListTile(
-              leading: Icon(Icons.call, color: ModernTheme.error),
-              title: Text('Llamar al 911'),
+              leading: const Icon(Icons.call, color: AppColors.error),
+              title: const Text('Llamar al 911'),
               onTap: () {
                 Navigator.pop(context);
-                // Llamar emergencia
+                // Call emergency
               },
             ),
             ListTile(
-              leading: Icon(Icons.share_location, color: ModernTheme.warning),
-              title: Text('Compartir ubicación con contactos'),
+              leading: const Icon(Icons.share_location, color: AppColors.warning),
+              title: const Text('Compartir ubicacion con contactos'),
               onTap: () {
                 Navigator.pop(context);
-                // Compartir ubicación
+                // Share location
               },
             ),
             ListTile(
-              leading: Icon(Icons.report, color: Colors.orange),
-              title: Text('Reportar problema'),
+              leading: const Icon(Icons.report, color: Colors.orange),
+              title: const Text('Reportar un problema'),
               onTap: () {
                 Navigator.pop(context);
-                // Reportar
+                // Report
               },
             ),
             ListTile(
-              leading: Icon(Icons.cancel, color: context.secondaryText),
-              title: Text('Cancelar viaje'),
+              leading: Icon(Icons.cancel, color: AppColors.getTextSecondary(context)),
+              title: const Text('Cancelar viaje'),
               onTap: () {
                 Navigator.pop(context);
                 _cancelTrip();
@@ -1214,7 +1025,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       ),
     );
   }
-  
+
   void _cancelTrip() {
     showDialog(
       context: context,
@@ -1222,10 +1033,8 @@ class _TrackingScreenState extends State<TrackingScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: const Text('Cancelar Viaje'),
-        content: const Text(
-          '¿Estás seguro de que deseas cancelar el viaje?',
-        ),
+        title: const Text('Cancelar viaje'),
+        content: const Text('Estas seguro que deseas cancelar el viaje?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1234,43 +1043,68 @@ class _TrackingScreenState extends State<TrackingScreen>
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              // Cancelar viaje en Firebase
+
               try {
-                await FirebaseFirestore.instance
-                    .collection('rides')
-                    .doc(widget.tripId)
-                    .update({
+                // Update status in Firestore
+                await _firestore.collection('rides').doc(widget.tripId).update({
                   'status': 'cancelled',
                   'cancelledAt': FieldValue.serverTimestamp(),
                   'cancelledBy': 'passenger',
                 });
+
+                if (mounted) {
+                  // Cancel Firestore listener before navigating to prevent double-pop
+                  _tripSubscription?.cancel();
+                  _tripSubscription = null;
+                  Navigator.pop(context);
+                }
               } catch (e) {
-                AppLogger.error('Error cancelando viaje en Firebase: $e');
-              }
-              if (mounted) {
-                setState(() => _tripStatus = 'cancelled');
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Viaje cancelado'),
-                    backgroundColor: ModernTheme.warning,
-                  ),
-                );
+                debugPrint('Error cancelling trip: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al cancelar: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
             ),
-            child: const Text('Sí, cancelar'),
+            child: const Text('Si, cancelar'),
           ),
         ],
       ),
     );
   }
-  
-  void _completeTrip() {
-    setState(() => _tripStatus = 'completed');
-    Navigator.pop(context);
-    // Mostrar dialog de calificación
+
+  /// Complete trip and update Firestore
+  Future<void> _completeTrip() async {
+    if (_isCompleting) return;
+    _isCompleting = true;
+
+    try {
+      // Update status in Firestore
+      await _firestore.collection('rides').doc(widget.tripId).update({
+        'status': 'completed',
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+
+      debugPrint('Trip completed in Firestore');
+    } catch (e) {
+      _isCompleting = false;
+      debugPrint('Error completing trip: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al completar viaje: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
