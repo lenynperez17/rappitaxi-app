@@ -327,10 +327,18 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     final rideProvider = context.read<RideProvider>();
     final authProvider = context.read<AuthProvider>();
     final userId = authProvider.currentUser?.id;
-    if (userId != null && !rideProvider.hasActiveTrip) {
-      // TODO: implement loadActiveTrip;
-      if (!mounted) return;
+    if (userId == null) return;
 
+    // Clean up expired negotiations first
+    try {
+      final negotiationProvider = context.read<PriceNegotiationProvider>();
+      await negotiationProvider.cleanupExpiredNegotiations();
+    } catch (e) {
+      debugPrint('Error cleaning up negotiations: $e');
+    }
+
+    if (!rideProvider.hasActiveTrip) {
+      if (!mounted) return;
       final trip = rideProvider.currentTrip;
       if (trip != null && (trip.status == 'requested' || trip.status == 'accepted')) {
         setState(() {
@@ -344,6 +352,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
         debugPrint('🔄 Restored UI for active ride: ${trip.id} status=${trip.status}');
       }
+    }
+
+    // Ensure waiting state is clean on fresh start
+    if (!_isWaitingForDriver) {
+      setState(() {
+        _isSearchingDriver = false;
+        _showDriverOffers = false;
+      });
     }
   }
 
