@@ -853,26 +853,33 @@ class PriceNegotiationProvider extends ChangeNotifier {
             throw TimeoutException('Timeout guardando oferta');
           });
 
-      // ✅ IMPORTANT: Update the main document to trigger the passenger's listener.
-      // Add the offer to the driverOffers array on the document.
+      // ✅ IMPORTANT: Replace any existing offer from same driver (not append)
+      // Read current offers, remove old ones from this driver, add new one
+      final negotiationDoc = await _firestore.collection('negotiations').doc(negotiationId).get();
+      final List<dynamic> existingOffers = negotiationDoc.data()?['driverOffers'] ?? [];
+      // Remove previous offers from same driver
+      final filteredOffers = existingOffers.where((o) => o['driverId'] != offer.driverId).toList();
+      // Add new offer
+      filteredOffers.add({
+        'driverId': offer.driverId,
+        'driverName': offer.driverName,
+        'driverPhone': offer.driverPhone,
+        'driverPhoto': offer.driverPhoto,
+        'driverRating': offer.driverRating,
+        'vehicleModel': offer.vehicleModel,
+        'vehiclePlate': offer.vehiclePlate,
+        'vehicleColor': offer.vehicleColor,
+        'acceptedPrice': offer.acceptedPrice,
+        'estimatedArrival': offer.estimatedArrival,
+        'offeredAt': offer.offeredAt.toIso8601String(),
+        'status': offer.status.name,
+        'completedTrips': offer.completedTrips,
+        'acceptanceRate': offer.acceptanceRate,
+      });
+
       await _firestore.collection('negotiations').doc(negotiationId).update({
         'status': 'negotiating',
-        'driverOffers': FieldValue.arrayUnion([{
-          'driverId': offer.driverId,
-          'driverName': offer.driverName,
-          'driverPhone': offer.driverPhone,
-          'driverPhoto': offer.driverPhoto,
-          'driverRating': offer.driverRating,
-          'vehicleModel': offer.vehicleModel,
-          'vehiclePlate': offer.vehiclePlate,
-          'vehicleColor': offer.vehicleColor,
-          'acceptedPrice': offer.acceptedPrice,
-          'estimatedArrival': offer.estimatedArrival,
-          'offeredAt': offer.offeredAt.toIso8601String(),
-          'status': offer.status.name,
-          'completedTrips': offer.completedTrips,
-          'acceptanceRate': offer.acceptanceRate,
-        }]),
+        'driverOffers': filteredOffers,
         'lastOfferAt': FieldValue.serverTimestamp(),
       }).timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout actualizando negociación');
