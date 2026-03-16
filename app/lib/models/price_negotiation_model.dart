@@ -261,11 +261,19 @@ class DriverOffer {
       vehicleColor: map['vehicleColor'] ?? '',
       acceptedPrice: (map['acceptedPrice'] ?? 0.0).toDouble(),
       estimatedArrival: map['estimatedArrival'] ?? 0,
-      offeredAt: (map['offeredAt'] as dynamic)?.toDate() ?? DateTime.now(),
+      offeredAt: _parseOfferDateTime(map['offeredAt']),
       status: _offerStatusFromString(map['status'] ?? 'pending'),
       completedTrips: map['completedTrips'] ?? 0,
       acceptanceRate: (map['acceptanceRate'] ?? 0.0).toDouble(),
     );
+  }
+
+  static DateTime _parseOfferDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    try { return value.toDate(); } catch (_) {}
+    return DateTime.now();
   }
 
   // Convertir a Map
