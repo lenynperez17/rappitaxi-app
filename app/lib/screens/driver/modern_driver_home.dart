@@ -1005,7 +1005,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // Load from 'negotiations' collection (Rapi Team InDrive-style)
       final requestsSnapshot = await _firestore
           .collection('negotiations')
-          .where('status', isEqualTo: 'waiting')
+          .where('status', whereIn: ['waiting', 'negotiating'])
           .limit(50)
           .get();
 
