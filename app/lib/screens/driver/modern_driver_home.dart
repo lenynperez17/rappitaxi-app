@@ -1024,15 +1024,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       if (!mounted) return;
 
+      AppLogger.info('Loaded ${loadedRequests.length} active negotiations from Firestore');
+
       setState(() {
-        // Keep rides from the listener, only update negotiations
-        final ridesFromListener = _availableRequests.where((r) => r.id.startsWith('rides/')).toList();
-        _availableRequests = [...loadedRequests, ...ridesFromListener];
+        _availableRequests = loadedRequests;
         _updateMapMarkers();
       });
 
       _requestsTimer?.cancel();
-      _requestsTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _requestsTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         if (_isDisposed || !mounted) {
           timer.cancel();
           return;
