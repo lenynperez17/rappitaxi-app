@@ -344,7 +344,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   // Active ride listener (Rapi Team)
-  void _startActiveRideListener() {
+  Future<void> _startActiveRideListener() async {
     if (_driverId == null) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -353,15 +353,39 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     _activeRideSubscription?.cancel();
 
+    // First check server directly to avoid stale cache
+    try {
+      final serverCheck = await _firestore
+          .collection('rides')
+          .where('driverId', isEqualTo: _driverId)
+          .where('status', whereIn: ['accepted', 'driver_arriving', 'waiting_verification', 'in_progress'])
+          .limit(1)
+          .get(const GetOptions(source: Source.server));
+
+      if (serverCheck.docs.isEmpty) {
+        AppLogger.info('No active rides on server for driver');
+        // Clear any cached data by doing a cache-only get and ignoring results
+        return;
+      }
+    } catch (e) {
+      AppLogger.warning('Server check failed, falling back to listener: $e');
+    }
+
     _activeRideSubscription = _firestore
         .collection('rides')
         .where('driverId', isEqualTo: _driverId)
         .where('status', whereIn: ['accepted', 'driver_arriving', 'waiting_verification', 'in_progress'])
         .limit(1)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .listen(
       (snapshot) {
         if (_isDisposed || !mounted) return;
+
+        // Skip cache-only results that might be stale
+        if (snapshot.metadata.isFromCache && snapshot.docs.isNotEmpty) {
+          AppLogger.info('Skipping cached ride data, waiting for server confirmation');
+          return;
+        }
 
         if (snapshot.docs.isNotEmpty) {
           final rideDoc = snapshot.docs.first;
