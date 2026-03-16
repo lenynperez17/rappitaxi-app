@@ -1279,4 +1279,41 @@ class PriceNegotiationProvider extends ChangeNotifier {
     double distanceKm = _calculateHaversineDistance(point1, point2);
     return (distanceKm / 30 * 60).round();
   }
+
+  /// Clean up expired or stale negotiations for the current user
+  Future<void> cleanupExpiredNegotiations() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final snapshot = await _firestore
+          .collection('negotiations')
+          .where('passengerId', isEqualTo: user.uid)
+          .where('status', whereIn: ['waiting', 'negotiating'])
+          .get();
+
+      final now = DateTime.now();
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        DateTime? expiresAt;
+        final raw = data['expiresAt'];
+        if (raw is Timestamp) {
+          expiresAt = raw.toDate();
+        } else if (raw is String) {
+          expiresAt = DateTime.tryParse(raw);
+        }
+
+        if (expiresAt != null && now.isAfter(expiresAt)) {
+          await doc.reference.update({'status': 'expired'});
+          debugPrint('Cleaned up expired negotiation: ${doc.id}');
+        }
+      }
+
+      _activeNegotiations.clear();
+      _currentNegotiation = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error cleaning up negotiations: $e');
+    }
+  }
 }
