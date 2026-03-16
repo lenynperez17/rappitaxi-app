@@ -149,8 +149,10 @@ class PriceNegotiationProvider extends ChangeNotifier {
         }
 
         // Actualizar currentNegotiation si corresponde
+        debugPrint('🔍 Checking: currentNeg=${_currentNegotiation?.id}, docId=$negotiationId, match=${_currentNegotiation?.id == negotiationId}, offers=${driverOffers.length}');
         if (_currentNegotiation?.id == negotiationId) {
           _currentNegotiation = negotiation;
+          debugPrint('✅ Updated currentNegotiation with ${driverOffers.length} offers');
         }
 
         // If no currentNegotiation set, use the most recent waiting/negotiating one
