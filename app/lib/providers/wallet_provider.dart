@@ -817,7 +817,7 @@ class WalletProvider extends ChangeNotifier {
 
       return {
         'serviceFee': (settingsDoc.data()?['serviceFee'] ?? 1.0).toDouble(),
-        'minServiceCredits': (settingsDoc.data()?['minServiceCredits'] ?? 10.0).toDouble(),
+        'minServiceCredits': (settingsDoc.data()?['minServiceCredits'] ?? CreditConstants.minServiceCredits).toDouble(),
         'bonusCreditsOnFirstRecharge': (settingsDoc.data()?['bonusCreditsOnFirstRecharge'] ?? 5.0).toDouble(),
         'creditPackages': settingsDoc.data()?['creditPackages'] ?? [],
       };
@@ -825,7 +825,7 @@ class WalletProvider extends ChangeNotifier {
       AppLogger.warning('⏱️ Timeout obteniendo config, usando valores por defecto');
       return {
         'serviceFee': 1.0,
-        'minServiceCredits': 10.0,
+        'minServiceCredits': CreditConstants.minServiceCredits,
         'bonusCreditsOnFirstRecharge': 5.0,
         'creditPackages': [],
       };
@@ -833,7 +833,7 @@ class WalletProvider extends ChangeNotifier {
       AppLogger.error('Error obteniendo config de créditos', e);
       return {
         'serviceFee': 1.0,
-        'minServiceCredits': 10.0,
+        'minServiceCredits': CreditConstants.minServiceCredits,
         'bonusCreditsOnFirstRecharge': 5.0,
         'creditPackages': [],
       };
