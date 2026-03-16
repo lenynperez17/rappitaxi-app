@@ -1040,6 +1040,56 @@ class PriceNegotiationProvider extends ChangeNotifier {
     }
   }
 
+  /// Reject a driver's offer by updating its status in the driverOffers array
+  Future<void> rejectDriverOffer(String negotiationId, String driverId) async {
+    try {
+      final negotiationRef = _firestore.collection('negotiations').doc(negotiationId);
+      final doc = await negotiationRef.get();
+
+      if (!doc.exists) {
+        debugPrint('⚠️ Negotiation $negotiationId not found for rejection');
+        return;
+      }
+
+      final data = doc.data()!;
+      final List<dynamic> offersData = data['driverOffers'] ?? [];
+
+      // Update the specific driver's offer status to 'rejected'
+      final updatedOffers = offersData.map((offer) {
+        if (offer['driverId'] == driverId) {
+          return {...Map<String, dynamic>.from(offer), 'status': 'rejected'};
+        }
+        return offer;
+      }).toList();
+
+      await negotiationRef.update({'driverOffers': updatedOffers});
+
+      // Update local state
+      final negIndex = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
+      if (negIndex != -1) {
+        final negotiation = _activeNegotiations[negIndex];
+        final updatedLocalOffers = negotiation.driverOffers.map((o) {
+          if (o.driverId == driverId) {
+            return o.copyWith(status: OfferStatus.rejected);
+          }
+          return o;
+        }).toList();
+
+        _activeNegotiations[negIndex] = negotiation.copyWith(driverOffers: updatedLocalOffers);
+
+        if (_currentNegotiation?.id == negotiationId) {
+          _currentNegotiation = _activeNegotiations[negIndex];
+        }
+      }
+
+      notifyListeners();
+      debugPrint('✅ Oferta del conductor $driverId rechazada en negociación $negotiationId');
+    } catch (e) {
+      debugPrint('❌ Error rejecting driver offer: $e');
+      rethrow;
+    }
+  }
+
   /// Generar código de verificación de 4 dígitos
   String _generateVerificationCode() {
     final random = math.Random();
