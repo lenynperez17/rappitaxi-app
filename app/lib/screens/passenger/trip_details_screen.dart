@@ -448,7 +448,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -579,7 +579,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                           Text(
                             'ID: ${_tripDetail!.id}',
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                              color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
                           ),
@@ -628,7 +628,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   Widget _buildStatItem(String value, String label, IconData icon) {
     return Column(
       children: [
-        Icon(icon, color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7), size: 16),
+        Icon(icon, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7), size: 16),
         SizedBox(height: 4),
         Text(
           value,
@@ -640,7 +640,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         Text(
           label,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),
@@ -788,7 +788,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                             size: 16,
                             color: index < _tripDetail!.driver.rating.floor()
                                 ? Colors.amber
-                                : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                           );
                         }),
                       ),
@@ -952,7 +952,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                       Container(
                         width: 2,
                         height: 40,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                       ),
                   ],
                 ),
@@ -1003,7 +1003,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                   size: 24,
                   color: index < _tripDetail!.rating!
                       ? Colors.amber
-                      : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                 );
               }),
             ),
@@ -1150,7 +1150,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
       case TripEventType.paymentProcessed:
         return Colors.indigo;
       default:
-        return Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
     }
   }
   
@@ -1697,7 +1697,7 @@ class _ReportDialogState extends State<_ReportDialog> {
             SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3)),
+                border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: DropdownButtonFormField<String>(
@@ -1757,7 +1757,7 @@ class _ReportDialogState extends State<_ReportDialog> {
                 },
           style: ElevatedButton.styleFrom(
             backgroundColor: ModernTheme.warning,
-            disabledBackgroundColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+            disabledBackgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
           ),
           child: Text('Enviar reporte'),
         ),

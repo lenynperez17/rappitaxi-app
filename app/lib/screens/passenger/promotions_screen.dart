@@ -318,7 +318,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
               controller: _tabController,
               indicatorColor: Theme.of(context).colorScheme.onPrimary,
               labelColor: Theme.of(context).colorScheme.onPrimary,
-              unselectedLabelColor: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+              unselectedLabelColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
               tabs: [
                 Tab(text: 'Activas (${_activePromotions.length})'),
                 Tab(text: 'Usadas (${_usedPromotions.length})'),
@@ -358,7 +358,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: Offset(0, 5),
           ),
@@ -374,7 +374,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                 prefixIcon: Icon(Icons.local_offer, color: ModernTheme.rappiOrange),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3)),
+                  borderSide: BorderSide(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -550,7 +550,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                       Text(
                         '${_loyaltyData['nextRewardPoints']} pts',
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                          color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                           fontSize: 14,
                         ),
                       ),
@@ -566,7 +566,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                   Text(
                     'Te faltan ${_loyaltyData['nextRewardPoints'] - _loyaltyData['currentPoints']} puntos para tu próxima recompensa',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                       fontSize: 12,
                     ),
                   ),
@@ -580,7 +580,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _buildLoyaltyStat('Viajes', '${_loyaltyData['totalTrips']}'),
-                  Container(width: 1, height: 30, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.24)),
+                  Container(width: 1, height: 30, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24)),
                   _buildLoyaltyStat('Ahorrado', CurrencyFormatter.formatCurrency((_loyaltyData['savedAmount'] as num).toDouble())),
                 ],
               ),
@@ -605,7 +605,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         Text(
           label,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),
@@ -625,7 +625,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         borderRadius: BorderRadius.circular(20),
         boxShadow: ModernTheme.getCardShadow(context),
         border: Border.all(
-          color: isActive ? promotion.color.withValues(alpha: 0.3) : Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+          color: isActive ? promotion.color.withValues(alpha: 0.3) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
           width: isActive ? 2 : 1,
         ),
       ),
@@ -641,7 +641,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                 gradient: LinearGradient(
                   colors: isActive 
                     ? [promotion.color, promotion.color.withValues(alpha: 0.7)]
-                    : [Theme.of(context).colorScheme.onSurface.withOpacity(0.6), Theme.of(context).colorScheme.onSurface.withOpacity(0.4)],
+                    : [Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -777,7 +777,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                             size: 16,
                             color: isActive 
                               ? (promotion.daysRemaining <= 3 ? ModernTheme.warning : context.secondaryText)
-                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                           SizedBox(width: 4),
                           Text(
@@ -789,7 +789,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                             style: TextStyle(
                               color: isActive
                                 ? (promotion.daysRemaining <= 3 ? ModernTheme.warning : context.secondaryText)
-                                : Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                               fontSize: 12,
                             ),
                           ),
@@ -915,7 +915,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
           Icon(
             icon,
             size: 80,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
           ),
           SizedBox(height: 16),
           Text(
@@ -1093,7 +1093,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                     height: 4,
                     margin: EdgeInsets.only(bottom: 20),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1292,7 +1292,7 @@ class LoyaltyProgramScreen extends StatelessWidget {
                   Text(
                     '${loyaltyData['currentPoints']} puntos acumulados',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                       fontSize: 16,
                     ),
                   ),

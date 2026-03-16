@@ -396,7 +396,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: isSelected ? ModernTheme.rappiOrange : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+          color: isSelected ? ModernTheme.rappiOrange : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
         ),
       ),
     );
@@ -507,7 +507,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen>
                                 Container(
                                   width: 2,
                                   height: 30,
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                                 ),
                                 Container(
                                   width: 8,
@@ -744,7 +744,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),

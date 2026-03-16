@@ -293,7 +293,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
       case CardType.discover:
         return ModernTheme.primaryBlue;
       default:
-        return Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
     }
   }
   
@@ -330,7 +330,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
           bottom: TabBar(
             indicatorColor: Theme.of(context).colorScheme.onPrimary,
             labelColor: Theme.of(context).colorScheme.onPrimary,
-            unselectedLabelColor: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            unselectedLabelColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
             tabs: [
               Tab(text: AppLocalizations.of(context)!.paymentMethodsTab),
               Tab(text: AppLocalizations.of(context)!.historyTab),
@@ -478,7 +478,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                   Text(
                     AppLocalizations.of(context)!.rappiWallet,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                      color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                       fontSize: 14,
                     ),
                   ),
@@ -634,7 +634,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                               Text(
                                 AppLocalizations.of(context)!.cardHolder,
                                 style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                                   fontSize: 10,
                                 ),
                               ),
@@ -653,7 +653,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                               Text(
                                 AppLocalizations.of(context)!.expiresLabel,
                                 style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+                                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
                                   fontSize: 10,
                                 ),
                               ),
@@ -679,7 +679,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
               top: 8,
               right: 8,
               child: IconButton(
-                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.54), size: 20),
+                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.54), size: 20),
                 onPressed: () => _deletePaymentMethod(method),
               ),
             ),
@@ -918,7 +918,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
   Widget _buildSummaryItem(String label, String value, IconData icon) {
     return Column(
       children: [
-        Icon(icon, color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7), size: 24),
+        Icon(icon, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7), size: 24),
         SizedBox(height: 8),
         Text(
           value,
@@ -931,7 +931,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         Text(
           label,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7),
+            color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),
@@ -1060,7 +1060,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
       case CardType.discover:
         return [ModernTheme.primaryBlue, ModernTheme.primaryBlue.withValues(alpha: 0.7)];
       default:
-        return [Theme.of(context).colorScheme.onSurface.withOpacity(0.6), Theme.of(context).colorScheme.onSurface.withOpacity(0.4)];
+        return [Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)];
     }
   }
   
@@ -1499,7 +1499,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                 height: 4,
                 margin: EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1776,7 +1776,7 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
                 height: 4,
                 margin: EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -2026,7 +2026,7 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
       case CardType.discover:
         return ModernTheme.primaryBlue;
       default:
-        return Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+        return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
     }
   }
 }

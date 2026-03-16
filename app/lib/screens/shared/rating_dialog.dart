@@ -260,7 +260,7 @@ class _RatingDialogState extends State<RatingDialog>
                               top: 8,
                               right: 8,
                               child: IconButton(
-                                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.7)),
+                                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)),
                                 onPressed: () => Navigator.of(context).pop(),
                               ),
                             ),
@@ -327,7 +327,7 @@ class _RatingDialogState extends State<RatingDialog>
                                   hintText: 'Cuéntanos más sobre tu experiencia (opcional)',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: context.secondaryText.withOpacity(0.3)),
+                                    borderSide: BorderSide(color: context.secondaryText.withValues(alpha: 0.3)),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -425,7 +425,7 @@ class _RatingDialogState extends State<RatingDialog>
                             size: 48,
                             color: index < _rating
                                 ? ModernTheme.warning
-                                : context.secondaryText.withOpacity(0.4),
+                                : context.secondaryText.withValues(alpha: 0.4),
                           ),
                         ),
                       );
@@ -477,7 +477,7 @@ class _RatingDialogState extends State<RatingDialog>
                     border: Border.all(
                       color: isSelected
                         ? ModernTheme.rappiOrange
-                        : context.secondaryText.withOpacity(0.3),
+                        : context.secondaryText.withValues(alpha: 0.3),
                       width: isSelected ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(20),

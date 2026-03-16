@@ -318,13 +318,13 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
           Text(
             '${stats['total']} ${AppLocalizations.of(context)!.totalLabel}',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.8),
+              color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
               fontSize: 14,
             ),
           ),
           SizedBox(height: 16),
           // Separador
-          Divider(color: Theme.of(context).colorScheme.onPrimary.withOpacity(0.3), height: 1),
+          Divider(color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.3), height: 1),
           SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -367,7 +367,7 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
                           Container(
                             height: 20,
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.24),
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
@@ -449,7 +449,7 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: isSelected ? ModernTheme.rappiOrange : Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+          color: isSelected ? ModernTheme.rappiOrange : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
         ),
       ),
     );
@@ -717,7 +717,7 @@ class RatingDetailsModal extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),

@@ -343,9 +343,9 @@ class _CommunicationScreenState extends State<CommunicationScreen>
       },
       child: Container(
         decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withOpacity(0.1),
+          color: ModernTheme.rappiOrange.withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ModernTheme.rappiOrange.withOpacity(0.3)),
+          border: Border.all(color: ModernTheme.rappiOrange.withValues(alpha:0.3)),
         ),
         child: Center(
           child: Text(
@@ -1110,7 +1110,7 @@ class _CommunicationScreenState extends State<CommunicationScreen>
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundColor: ModernTheme.rappiOrange.withOpacity(0.2),
+              backgroundColor: ModernTheme.rappiOrange.withValues(alpha:0.2),
               child: Text(
                 (_passengerInfo['name'] as String).isNotEmpty
                     ? (_passengerInfo['name'] as String)[0].toUpperCase()

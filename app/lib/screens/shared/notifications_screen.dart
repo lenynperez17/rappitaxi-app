@@ -101,7 +101,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.notifications_off, size: 64, color: context.secondaryText.withOpacity(0.4)),
+                  Icon(Icons.notifications_off, size: 64, color: context.secondaryText.withValues(alpha: 0.4)),
                   const SizedBox(height: 16),
                   Text(
                     'No tienes notificaciones',
@@ -253,7 +253,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         decoration: BoxDecoration(
           color: isRead
               ? Theme.of(context).colorScheme.surface
-              : ModernTheme.info.withOpacity(0.06),
+              : ModernTheme.info.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
           // Borde izquierdo naranja para no leídas
           border: isRead
@@ -266,7 +266,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -359,7 +359,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return CircleAvatar(
       radius: 20,
-      backgroundColor: isRead ? iconColor.withOpacity(0.15) : iconColor,
+      backgroundColor: isRead ? iconColor.withValues(alpha: 0.15) : iconColor,
       child: Icon(
         iconData,
         color: isRead ? iconColor : Theme.of(context).colorScheme.onPrimary,
