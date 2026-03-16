@@ -1260,30 +1260,20 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         return;
       }
 
-      // Check if my offer was rejected (removed from subcollection or main array)
+      // Check if my offer was rejected in the driverOffers array
       if (status == 'waiting' || status == 'negotiating') {
-        // Check if my offer still exists in the offers subcollection
-        try {
-          final offerDoc = await _firestore
-              .collection('negotiations')
-              .doc(negotiationId)
-              .collection('offers')
-              .doc(_driverId)
-              .get();
+        final List<dynamic> driverOffers = data['driverOffers'] ?? [];
+        final myOffer = driverOffers.where((o) => o['driverId'] == _driverId).toList();
 
-          if (!offerDoc.exists && _offeringOverlayText != null) {
-            _dismissOfferingOverlay('El pasajero rechazo tu oferta');
-            return;
-          }
+        if (myOffer.isEmpty && _offeringOverlayText != null) {
+          // My offer was removed from the array
+          _dismissOfferingOverlay('El pasajero rechazó tu oferta');
+          return;
+        }
 
-          // Also check offer status in subcollection
-          final offerStatus = offerDoc.data()?['status'] as String?;
-          if (offerStatus == 'rejected' && _offeringOverlayText != null) {
-            _dismissOfferingOverlay('El pasajero rechazo tu oferta');
-            return;
-          }
-        } catch (e) {
-          AppLogger.warning('Error checking offer status: $e');
+        if (myOffer.isNotEmpty && myOffer.first['status'] == 'rejected' && _offeringOverlayText != null) {
+          _dismissOfferingOverlay('El pasajero rechazó tu oferta');
+          return;
         }
       }
 
