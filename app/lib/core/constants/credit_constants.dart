@@ -2,8 +2,9 @@
 /// Estas constantes se usan en toda la app para mantener consistencia
 class CreditConstants {
   // ✅ Mínimo de créditos para operar como conductor
-  // Unificado con el mínimo de MercadoPago para evitar inconsistencias
-  static const double minServiceCredits = 5.0;
+  // El conductor puede aceptar viajes mientras tenga saldo >= costo del servicio
+  // El mínimo de recarga (S/. 10) es diferente — es restricción de MercadoPago
+  static const double minServiceCredits = 1.0;
 
   // ✅ Costo por servicio aceptado (se descuenta al aceptar un viaje)
   static const double defaultServiceFee = 1.0;
