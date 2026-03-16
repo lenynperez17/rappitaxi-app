@@ -1263,7 +1263,6 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       });
       AppLogger.info('🔍 Estado de búsqueda activado');
 
-      final rideProvider = Provider.of<RideProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.currentUser;
 
@@ -1320,7 +1319,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       }
       AppLogger.info('✅ Destino: ${destinationLocation.latitude}, ${destinationLocation.longitude}');
 
-      AppLogger.info('🚕 Creando solicitud de viaje...');
+      AppLogger.info('🚕 Creando negociación InDrive...');
 
       if (!mounted) return;
       setState(() {
@@ -1329,17 +1328,48 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       });
       AppLogger.info('📺 Mostrando pantalla de espera de conductor');
 
-      final rideCreated = await rideProvider.requestRide(
-        pickupLocation: currentLocation,
-        destinationLocation: destinationLocation,
-        pickupAddress: _pickupController.text.isEmpty ? 'Mi ubicación' : _pickupController.text,
-        destinationAddress: _destinationController.text,
-        userId: user.id,
-        paymentMethod: _selectedPaymentMethod,
+      // Use PriceNegotiationProvider to create in 'negotiations' collection
+      // This is what drivers poll for (not 'rides')
+      final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+
+      final pickup = models.LocationPoint(
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        address: _pickupController.text.isEmpty ? 'Mi ubicación' : _pickupController.text,
+        reference: null,
       );
 
-      if (!rideCreated) {
-        AppLogger.error('❌ requestRide retornó false: ${rideProvider.errorMessage}');
+      final destination = models.LocationPoint(
+        latitude: destinationLocation.latitude,
+        longitude: destinationLocation.longitude,
+        address: _destinationController.text,
+        reference: null,
+      );
+
+      // Map payment method string to enum
+      models.PaymentMethod paymentMethodEnum;
+      switch (_selectedPaymentMethod) {
+        case 'card':
+          paymentMethodEnum = models.PaymentMethod.card;
+          break;
+        case 'wallet':
+          paymentMethodEnum = models.PaymentMethod.wallet;
+          break;
+        default:
+          paymentMethodEnum = models.PaymentMethod.cash;
+      }
+
+      try {
+        await negotiationProvider.createNegotiation(
+          pickup: pickup,
+          destination: destination,
+          offeredPrice: _offeredPrice,
+          paymentMethod: paymentMethodEnum,
+          notes: null,
+        );
+        AppLogger.info('✅ Negociación creada exitosamente');
+      } catch (e) {
+        AppLogger.error('❌ Error creando negociación: $e');
         if (!mounted) return;
         setState(() {
           _isWaitingForDriver = false;
@@ -1348,17 +1378,16 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(rideProvider.errorMessage ?? 'No se pudo crear el viaje'),
+            content: Text('Error al crear solicitud: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
         );
         return;
       }
-      AppLogger.info('✅ Solicitud de viaje creada exitosamente');
 
-      _currentRideId = rideProvider.currentTrip?.id;
-      AppLogger.info('📝 Ride ID guardado: $_currentRideId');
+      _currentRideId = null;
+      AppLogger.info('📝 Negociación creada, esperando ofertas de conductores');
 
     } catch (e) {
       AppLogger.error('❌ Error en _startNegotiation: $e');
