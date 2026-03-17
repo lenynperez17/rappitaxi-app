@@ -813,8 +813,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
         driverPhoto: user.photoURL ?? driverData['photoUrl'] ?? '',
         driverRating: (driverData['rating'] as num?)?.toDouble() ?? 5.0,
         vehicleModel: await _getDriverVehicleModel(),
-        vehiclePlate: vehicleData['plate'] ?? 'XXX-000',
-        vehicleColor: vehicleData['color'] ?? 'Color no especificado',
+        vehiclePlate: vehicleData['plate'] ?? '',
+        vehicleColor: vehicleData['color'] ?? '',
         acceptedPrice: acceptedPrice,
         estimatedArrival: estimatedArrival,
         offeredAt: DateTime.now(),
@@ -1198,7 +1198,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
   Future<String> _getDriverVehicleModel() async {
     try {
       final user = _auth.currentUser;
-      if (user == null) return 'Vehículo no especificado';
+      if (user == null) return '';
       
       final driverDoc = await _firestore.collection('drivers').doc(user.uid).get();
       final vehicleData = driverDoc.data()?['vehicle'] ?? {};
@@ -1211,11 +1211,11 @@ class PriceNegotiationProvider extends ChangeNotifier {
         return '$marca $modelo ${anio.isNotEmpty ? anio : ''}'.trim();
       }
       
-      return 'Vehículo no especificado';
+      return '';
       
     } catch (e) {
       debugPrint('Error obteniendo modelo de vehículo: $e');
-      return 'Vehículo no especificado';
+      return '';
     }
   }
   
