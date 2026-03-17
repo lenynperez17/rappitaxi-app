@@ -570,7 +570,13 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             arguments: currentTrip.id,
           ).then((_) {
             if (mounted) {
-              _isInTrackingScreen = false;
+              setState(() {
+                _isInTrackingScreen = false;
+                _isSearchingDriver = false;
+                _isWaitingForDriver = false;
+                _showDriverOffers = false;
+                _currentRideId = null;
+              });
             }
           });
         }
@@ -583,7 +589,13 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             arguments: currentTrip.id,
           ).then((_) {
             if (mounted) {
-              _isInTrackingScreen = false;
+              setState(() {
+                _isInTrackingScreen = false;
+                _isSearchingDriver = false;
+                _isWaitingForDriver = false;
+                _showDriverOffers = false;
+                _currentRideId = null;
+              });
             }
           });
         }
