@@ -618,10 +618,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
       }
     } else {
-      if ((_isWaitingForDriver || _isInTrackingScreen) && !rideProvider.isLoading) {
+      // Only reset if waiting for driver, NOT if in tracking screen.
+      // The tracking screen handles its own lifecycle and will reset
+      // _isInTrackingScreen when it pops via .then() callback.
+      if (_isWaitingForDriver && !_isInTrackingScreen && !rideProvider.isLoading) {
         debugPrint('🔴 RESETTING STATE: no trip, isLoading=false, _isWaitingForDriver=$_isWaitingForDriver');
         setState(() {
-          _isInTrackingScreen = false;
           _isWaitingForDriver = false;
           _isSearchingDriver = false;
           _showDriverOffers = false;

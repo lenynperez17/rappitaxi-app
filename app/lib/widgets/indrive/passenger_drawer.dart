@@ -32,6 +32,10 @@ class PassengerDrawer extends StatelessWidget {
             RappiTeamDrawerHeader(
               userType: 'passenger',
               userName: userName,
+              onProfileTap: () {
+                Navigator.pop(context); // Close drawer first
+                Navigator.pushNamed(context, '/passenger/profile');
+              },
             ),
             Expanded(
               child: ListView(

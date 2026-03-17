@@ -210,6 +210,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         return;
       }
 
+      // Check if ride was completed externally (e.g., by passenger or admin)
+      final wasCompleted = _tripState == DriverTripState.completed;
+
       setState(() {
         _currentTrip = TripModel.fromJson({
           'id': snapshot.id,
@@ -218,6 +221,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _updateTripState();
         _updateMapMarkers();
       });
+
+      // If trip just transitioned to completed and we didn't trigger it locally,
+      // show the completed dialog so the driver isn't stuck
+      if (!wasCompleted && _tripState == DriverTripState.completed) {
+        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} completed externally, showing dialog');
+        final finalFare = _currentTrip?.estimatedFare ?? 0.0;
+        _showTripCompletedDialog(finalFare);
+      }
     });
   }
 

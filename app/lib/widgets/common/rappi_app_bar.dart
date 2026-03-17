@@ -87,11 +87,13 @@ class RappiAppBar extends StatelessWidget implements PreferredSizeWidget {
 class RappiTeamDrawerHeader extends StatelessWidget {
   final String userType;
   final String userName;
+  final VoidCallback? onProfileTap;
 
   const RappiTeamDrawerHeader({
     super.key,
     required this.userType,
     required this.userName,
+    this.onProfileTap,
   });
 
   @override
@@ -165,38 +167,57 @@ class RappiTeamDrawerHeader extends StatelessWidget {
                 ],
               ),
               Spacer(),
-              // Info del usuario
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.2),
-                    child: Icon(
-                      _getUserIcon(userType),
-                      color: Theme.of(context).colorScheme.onPrimary,
+              // Info del usuario (tappable like Plus App)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onProfileTap,
+                  borderRadius: BorderRadius.circular(12),
+                  splashColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.15),
+                  highlightColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.08),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.2),
+                          child: Icon(
+                            _getUserIcon(userType),
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                _getUserTypeLabel(userType),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right,
+                          color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
+                          size: 24,
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        userName,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        _getUserTypeLabel(userType),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ],
           ),
