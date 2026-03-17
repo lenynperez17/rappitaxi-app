@@ -175,10 +175,12 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         });
       } else {
         final ride = await FirebaseService().getRideById(widget.rideId);
+        debugPrint('🔄 TRACKING INIT: rideId=${widget.rideId}, ride=${ride != null}, status=${ride?.status}');
         if (mounted) {
           setState(() {
             _currentRide = ride;
             _updateStatus();
+            debugPrint('🔄 TRACKING INIT: statusKey=$_currentStatusKey');
           });
         }
       }
@@ -203,10 +205,12 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
   void _listenToRideUpdates() {
     FirebaseService().listenToRideUpdates(widget.rideId, (ride) {
+      debugPrint('🔄 TRACKING: ride update - status=${ride.status}, driverId=${ride.driverId}');
       if (mounted) {
         setState(() {
           _currentRide = ride;
           _updateStatus();
+          debugPrint('🔄 TRACKING: statusKey=$_currentStatusKey');
           _setupMapMarkers();
         });
 

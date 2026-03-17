@@ -15,6 +15,12 @@ export class TripNotificationHandler {
     console.log(`🚗 Procesando nuevo viaje: ${tripId}`);
 
     try {
+      // Skip rides that already have a driver assigned (created by acceptDriverOffer)
+      if (tripData.driverId && tripData.status === 'accepted') {
+        console.log(`✅ Viaje ${tripId} ya tiene conductor asignado (${tripData.driverId}), saltando notificación`);
+        return;
+      }
+
       // Obtener información del pasajero
       const passengerDoc = await this.db.collection('users').doc(tripData.passengerId).get();
       const passengerData = passengerDoc.data();
