@@ -206,6 +206,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       if (mounted) {
         setState(() {
           _currentRide = ride;
+          _updateStatus();
           _setupMapMarkers();
         });
 

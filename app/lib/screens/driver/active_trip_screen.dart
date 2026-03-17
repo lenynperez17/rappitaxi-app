@@ -1081,7 +1081,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   // ==================== COMUNICACIÓN CON PASAJERO ====================
 
   Future<void> _callPassenger() async {
-    final phone = _currentTrip?.vehicleInfo?['passengerPhone'] as String?;
+    final phone = _currentTrip?.passengerInfo?['passengerPhone'] as String?;
     if (phone == null || phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
