@@ -1038,11 +1038,13 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     final driverName = vehicleInfo?['driverName'] ?? 'Conductor';
     final driverPhoto = vehicleInfo?['driverPhoto'] as String?;
     final driverRating = (vehicleInfo?['driverRating'] as num?)?.toDouble() ?? 5.0;
-    final plate = vehicleInfo?['licensePlate'] ?? vehicleInfo?['plate'] ?? '';
-    final brand = vehicleInfo?['brand'] ?? '';
-    final model = vehicleInfo?['model'] ?? '';
-    final color = vehicleInfo?['color'] ?? '';
-    final vehicleDisplay = '$color $brand $model'.trim();
+    final plate = vehicleInfo?['vehiclePlate'] ?? vehicleInfo?['licensePlate'] ?? vehicleInfo?['plate'] ?? '';
+    final vehicleModel = vehicleInfo?['vehicleModel'] ?? '';
+    final vehicleColor = vehicleInfo?['vehicleColor'] ?? vehicleInfo?['color'] ?? '';
+    // vehicleModel already contains "brand model year", so combine with color
+    final vehicleDisplay = vehicleColor.isNotEmpty
+        ? '$vehicleColor $vehicleModel'.trim()
+        : vehicleModel.toString().trim();
     final tripPrice = _currentRide?.finalFare ?? _currentRide?.estimatedFare ?? 0.0;
     final paymentMethod = vehicleInfo?['paymentMethod'] as String? ?? 'cash';
     // isArrived: driver has physically arrived at the pickup point
@@ -1268,6 +1270,39 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             ),
                             const SizedBox(height: 6),
                             Text(driverName.split(' ').first, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+                            // Vehicle description (e.g., "Rojo Toyota Corolla 2020")
+                            if (vehicleDisplay.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  vehicleDisplay,
+                                  style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            // License plate badge
+                            if (plate.toString().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.getInputFill(context),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: AppColors.getBorder(context)),
+                                  ),
+                                  child: Text(
+                                    plate.toString().toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 2.0,
+                                      color: AppColors.getTextPrimary(context),
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                         const Spacer(),
@@ -1735,9 +1770,11 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
   // ── Security Sheet (inDrive-style) ──
   void _showSecuritySheet(BuildContext context, bool isEs, String driverName, String? driverPhoto, double driverRating, Map<String, dynamic>? vehicleInfo) {
-    final brand = vehicleInfo?['brand'] ?? '';
-    final model = vehicleInfo?['model'] ?? '';
-    final vehicleDisplay = '$brand $model'.trim();
+    final secVehicleModel = vehicleInfo?['vehicleModel'] ?? '';
+    final secVehicleColor = vehicleInfo?['vehicleColor'] ?? vehicleInfo?['color'] ?? '';
+    final vehicleDisplay = secVehicleColor.toString().isNotEmpty
+        ? '$secVehicleColor $secVehicleModel'.trim()
+        : secVehicleModel.toString().trim();
 
     showModalBottomSheet(
       context: context,
