@@ -1270,39 +1270,6 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             ),
                             const SizedBox(height: 6),
                             Text(driverName.split(' ').first, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
-                            // Vehicle description (e.g., "Rojo Toyota Corolla 2020")
-                            if (vehicleDisplay.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  vehicleDisplay,
-                                  style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context)),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            // License plate badge
-                            if (plate.toString().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.getInputFill(context),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: AppColors.getBorder(context)),
-                                  ),
-                                  child: Text(
-                                    plate.toString().toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 2.0,
-                                      color: AppColors.getTextPrimary(context),
-                                    ),
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         const Spacer(),

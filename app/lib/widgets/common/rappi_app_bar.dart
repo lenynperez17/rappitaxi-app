@@ -98,129 +98,130 @@ class RappiTeamDrawerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
     return Container(
-      height: 200,
+      height: 200 + topPadding,
       decoration: BoxDecoration(
         gradient: ModernTheme.primaryGradient,
       ),
-      child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Logo principal
-              Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: Theme.of(context).colorScheme.surface,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    padding: EdgeInsets.all(8),
-                    child: Image.asset(
-                      'assets/images/logo_rappi_taxi.png',
-                      width: 44,
-                      height: 44,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        // Fallback al ícono si la imagen no carga
-                        return Icon(
-                          Icons.local_taxi,
-                          color: ModernTheme.rappiOrange,
-                          size: 30,
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(width: 15),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'RAPPI TEAM',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      Text(
-                        'Tu viaje, tu precio',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
-                          fontSize: 12,
-                        ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, topPadding + 20, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Logo principal
+            Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Theme.of(context).colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        spreadRadius: 2,
                       ),
                     ],
                   ),
-                ],
-              ),
-              Spacer(),
-              // Info del usuario (tappable like Plus App)
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: onProfileTap,
-                  borderRadius: BorderRadius.circular(12),
-                  splashColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.15),
-                  highlightColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.08),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.2),
-                          child: Icon(
-                            _getUserIcon(userType),
-                            color: Theme.of(context).colorScheme.onPrimary,
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                userName,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                _getUserTypeLabel(userType),
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          Icons.chevron_right,
-                          color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
-                          size: 24,
-                        ),
-                      ],
+                  padding: EdgeInsets.all(8),
+                  child: Image.asset(
+                    'assets/images/logo_rappi_taxi.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Fallback icon if image fails to load
+                      return Icon(
+                        Icons.local_taxi,
+                        color: ModernTheme.rappiOrange,
+                        size: 30,
+                      );
+                    },
+                  ),
+                ),
+                SizedBox(width: 15),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RAPPI TEAM',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
                     ),
+                    Text(
+                      'Tu viaje, tu precio',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Spacer(),
+            // User info - tappable to navigate to profile (inDrive style)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onProfileTap,
+                borderRadius: BorderRadius.circular(12),
+                splashColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.15),
+                highlightColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.08),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.2),
+                        child: Icon(
+                          _getUserIcon(userType),
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              userName,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              _getUserTypeLabel(userType),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
+                        size: 24,
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
