@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:widget_to_marker/widget_to_marker.dart';
@@ -548,4 +550,72 @@ class _PinTailPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ── Reference Point Dot Icons (small circles for map, like Plus App) ──
+
+/// Small gray circle for inactive reference points
+Future<BitmapDescriptor> getReferencePointIcon() async {
+  return _buildDotIcon(
+    'ref_dot', 22.0,
+    borderColor: const Color(0xFFBBBBBB),
+    fillColor: const Color(0xFF999999),
+  );
+}
+
+/// Small green circle for active/selected reference points
+Future<BitmapDescriptor> getReferencePointActiveIcon() async {
+  return _buildDotIcon(
+    'ref_dot_active', 28.0,
+    borderColor: const Color(0xFF4CAF50),
+    fillColor: const Color(0xFF4CAF50),
+  );
+}
+
+final Map<String, BitmapDescriptor> _dotIconCache = {};
+
+Future<BitmapDescriptor> _buildDotIcon(
+  String key, double size, {
+  required Color borderColor,
+  required Color fillColor,
+}) async {
+  if (_dotIconCache.containsKey(key)) return _dotIconCache[key]!;
+
+  final double pixelRatio = 3.0;
+  final double canvasSize = size * pixelRatio;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, canvasSize, canvasSize));
+
+  final center = Offset(canvasSize / 2, canvasSize / 2);
+
+  // White fill background
+  canvas.drawCircle(
+    center,
+    canvasSize / 2 - 1,
+    Paint()..color = Colors.white..style = PaintingStyle.fill,
+  );
+
+  // Colored border
+  canvas.drawCircle(
+    center,
+    canvasSize / 2 - 1,
+    Paint()..color = borderColor..style = PaintingStyle.stroke..strokeWidth = 2 * pixelRatio,
+  );
+
+  // Inner colored dot
+  canvas.drawCircle(
+    center,
+    canvasSize / 4,
+    Paint()..color = fillColor..style = PaintingStyle.fill,
+  );
+
+  final picture = recorder.endRecording();
+  final image = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
+  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  final bytes = byteData!.buffer.asUint8List();
+
+  final icon = BitmapDescriptor.bytes(bytes, width: size, height: size);
+  _dotIconCache[key] = icon;
+  return icon;
 }

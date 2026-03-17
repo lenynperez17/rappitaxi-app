@@ -751,8 +751,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   Future<void> _addReferencePointDots(LatLng center) async {
-    _refDotIcon = await MapMarkerUtils.getOriginIcon();
-    _refDotActiveIcon = await MapMarkerUtils.getDestinationIcon();
+    _refDotIcon = await getReferencePointIcon();
+    _refDotActiveIcon = await getReferencePointActiveIcon();
     _markers.removeWhere((m) => m.markerId.value.startsWith('ref_dot'));
     _refDotPositions.clear();
     _activeRefDotIndex = -1;
