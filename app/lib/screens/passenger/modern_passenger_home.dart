@@ -145,7 +145,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   bool _isEditingOrigin = false; // true cuando el usuario quiere editar el campo de origen
   bool _isCameraMoving = false; // true while user is dragging the map
   bool _wasInPriceNegotiation = false; // true when editing route from price sheet
-  final DraggableScrollableController _sheetController = DraggableScrollableController();
+  DraggableScrollableController _sheetController = DraggableScrollableController();
+  String _lastSheetKey = '';
 
   // Inline search results (inDrive style)
   List<PlacePrediction> _destinationSearchResults = [];
@@ -1664,8 +1665,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                 child: Row(
                   children: [
                     _buildInDriveMenuButton(),
-                    const Spacer(),
-                    _buildInDriveNotificationButton(),
+                    const SizedBox(width: 10),
+                    Expanded(child: _buildPickupAddressBar()),
                   ],
                 ),
               ),
@@ -1970,6 +1971,67 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     );
   }
 
+  Widget _buildPickupAddressBar() {
+    final address = _pickupController.text.isNotEmpty
+        ? _pickupController.text
+        : 'Obteniendo ubicación...';
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isSelectingLocation = true;
+          _isEditingOrigin = true;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.getSurface(context),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Punto de recogida',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    address,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.getTextPrimary(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: AppColors.getTextSecondary(context), size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRouteAddressCard() {
     final pickupText = _pickupController.text.isNotEmpty
         ? _pickupController.text
@@ -2169,27 +2231,6 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                         ),
                         style: TextStyle(fontSize: 15),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.my_location, color: AppColors.rappiOrange, size: 22),
-                      constraints: BoxConstraints(),
-                      padding: EdgeInsets.only(left: 8),
-                      onPressed: () async {
-                        _pickupController.text = 'Obteniendo ubicación...';
-                        final currentLocation = await _getCurrentLocation();
-                        if (currentLocation != null && mounted) {
-                          final address = await _reverseGeocode(currentLocation);
-                          if (!mounted) return;
-                          setState(() {
-                            _pickupCoordinates = currentLocation;
-                            _pickupController.text = address ?? 'Mi ubicación actual';
-                            _isEditingOrigin = false;
-                          });
-                          _addMarkerAndZoom(currentLocation, 'pickup_marker', true);
-                        } else if (mounted) {
-                          setState(() => _pickupController.text = '');
-                        }
-                      },
                     ),
                   ],
                 )
@@ -2687,9 +2728,16 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
         return false;
       },
-      child: DraggableScrollableSheet(
-      key: ValueKey('dest_sheet_${_isSelectingLocation}_$_wasInPriceNegotiation'),
-      controller: _sheetController.isAttached ? null : _sheetController,
+      child: Builder(
+        builder: (context) {
+          final sheetKey = 'dest_sheet_${_isSelectingLocation}_$_wasInPriceNegotiation';
+          if (sheetKey != _lastSheetKey) {
+            _lastSheetKey = sheetKey;
+            _sheetController = DraggableScrollableController();
+          }
+          return DraggableScrollableSheet(
+            key: ValueKey(sheetKey),
+            controller: _sheetController,
       initialChildSize: sheetInitial,
       minChildSize: 0.12,
       maxChildSize: 0.95,
@@ -2831,7 +2879,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           ),
         );
       },
-    ),
+    );
+        },
+      ),
     );
   }
 
