@@ -34,6 +34,7 @@ import '../../services/location_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Para verificar solicitudes de conductor pendientes
 import 'package:share_plus/share_plus.dart'; // Para compartir la app
 import 'passenger_negotiations_screen.dart'; // Pantalla de negociaciones
+import '../shared/map_picker_screen.dart'; // Map picker for selecting locations
 
 // Enum para tipos de servicio disponibles (Estilo inDrive)
 enum ServiceType {
@@ -2232,6 +2233,41 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                         style: TextStyle(fontSize: 15),
                       ),
                     ),
+                    GestureDetector(
+                      onTap: () async {
+                        final result = await Navigator.push<Map<String, dynamic>>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MapPickerScreen(
+                              initialLocation: _pickupCoordinates,
+                              title: 'Seleccionar origen',
+                            ),
+                          ),
+                        );
+                        if (result != null && mounted) {
+                          final coords = LatLng(
+                            result['coordinates']['lat'] as double,
+                            result['coordinates']['lng'] as double,
+                          );
+                          final address = result['location'] as String?;
+                          setState(() {
+                            _pickupCoordinates = coords;
+                            _pickupController.text = address ?? 'Mi ubicación';
+                            _isEditingOrigin = false;
+                          });
+                          await _addMarkerAndZoom(coords, 'pickup_marker', true);
+                        }
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.map_outlined, color: Colors.green, size: 20),
+                      ),
+                    ),
                   ],
                 )
               : Row(
@@ -2331,8 +2367,43 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                 ),
               ),
               GestureDetector(
-                onTap: () {
-                  // Could open map picker
+                onTap: () async {
+                  final result = await Navigator.push<Map<String, dynamic>>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MapPickerScreen(
+                        initialLocation: _destinationCoordinates,
+                        title: 'Seleccionar destino',
+                      ),
+                    ),
+                  );
+                  if (result != null && mounted) {
+                    final coords = LatLng(
+                      result['coordinates']['lat'] as double,
+                      result['coordinates']['lng'] as double,
+                    );
+                    final address = result['location'] as String?;
+                    setState(() {
+                      _destinationCoordinates = coords;
+                      _inlineDestinationController.text = address ?? '';
+                      _destinationController.text = address ?? '';
+                    });
+                    await _addMarkerAndZoom(coords, 'destination_marker', false);
+                    if (_pickupCoordinates != null && _destinationCoordinates != null) {
+                      if (!_markers.any((m) => m.markerId.value == 'pickup_marker')) {
+                        await _addMarkerAndZoom(_pickupCoordinates!, 'pickup_marker', true);
+                      }
+                      await _updateRoutePolyline();
+                      if (!mounted) return;
+                      setState(() {
+                        _isSelectingLocation = false;
+                        _showPriceNegotiation = true;
+                        _markers.removeWhere((m) => m.markerId.value.startsWith('ref_dot'));
+                        _markers.removeWhere((m) => m.markerId.value.startsWith('sim_driver_'));
+                      });
+                      await _zoomToShowBothLocations();
+                    }
+                  }
                 },
                 child: Container(
                   width: 36,
@@ -2341,7 +2412,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                     color: Colors.blue.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.my_location, color: Colors.blue, size: 20),
+                  child: Icon(Icons.map_outlined, color: Colors.blue, size: 20),
                 ),
               ),
             ],
@@ -2712,7 +2783,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   Widget _buildDestinationSheet() {
     final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     final double sheetInitial = _isSelectingLocation
-        ? 0.92
+        ? 0.75
         : 0.68;
     return NotificationListener<DraggableScrollableNotification>(
       onNotification: (notification) {
@@ -2740,9 +2811,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             controller: _sheetController,
       initialChildSize: sheetInitial,
       minChildSize: 0.12,
-      maxChildSize: 0.95,
+      maxChildSize: 0.85,
       snap: true,
-      snapSizes: const [0.12, 0.68, 0.95],
+      snapSizes: const [0.12, 0.68, 0.85],
       builder: (BuildContext context, ScrollController scrollController) {
         return Container(
           decoration: BoxDecoration(
@@ -4310,6 +4381,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
@@ -4454,6 +4526,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -4544,7 +4617,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     bool needsHelper = _freightNeedsHelper;
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
       builder: (context) => Container(
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
         decoration: BoxDecoration(color: AppColors.getSurface(context), borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -4604,7 +4677,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     TimeOfDay? selectedTime = _intercityDepartureTime;
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
       builder: (context) => Container(
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
         decoration: BoxDecoration(color: AppColors.getSurface(context), borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

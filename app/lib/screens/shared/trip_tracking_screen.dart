@@ -1103,7 +1103,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           DraggableScrollableSheet(
             initialChildSize: isArrived ? 0.72 : (isInProgress ? 0.60 : 0.62),
             minChildSize: 0.25,
-            maxChildSize: 0.92,
+            maxChildSize: 0.85,
             builder: (ctx, scrollController) => Container(
               decoration: BoxDecoration(
                 color: AppColors.getSurface(context),
