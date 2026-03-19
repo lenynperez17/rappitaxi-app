@@ -503,7 +503,7 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
       }
 
       _currentLocation = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high, // ignore: deprecated_member_use
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
     } catch (e) {
       AppLogger.error('Error obteniendo ubicación', e);

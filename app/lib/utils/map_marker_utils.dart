@@ -22,6 +22,59 @@ class MapMarkerUtils {
   static const Size _smallLogical = Size(40, 40);
   static const Size _smallImage = Size(120, 120);
 
+  // ==================== REFERENCE DOTS ====================
+
+  /// Gray reference dot for map picker — small neutral circle
+  static Future<BitmapDescriptor> getReferencePointIcon() async {
+    return _buildDotIcon(
+      'ref_dot', 22.0,
+      borderColor: const Color(0xFFBBBBBB),
+      fillColor: const Color(0xFF999999),
+    );
+  }
+
+  /// Draws a white circle with colored border and colored center dot.
+  static Future<BitmapDescriptor> _buildDotIcon(
+    String key,
+    double size, {
+    required Color borderColor,
+    required Color fillColor,
+  }) async {
+    if (_iconCache.containsKey(key)) return _iconCache[key]!;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+    final outerRadius = size / 2.5;
+    final innerRadius = size / 7;
+
+    // White filled circle
+    canvas.drawCircle(
+      center, outerRadius,
+      Paint()..color = const Color(0xFFFFFFFF)..style = PaintingStyle.fill,
+    );
+
+    // Colored border
+    canvas.drawCircle(
+      center, outerRadius,
+      Paint()..color = borderColor..style = PaintingStyle.stroke..strokeWidth = 2,
+    );
+
+    // Colored inner dot
+    canvas.drawCircle(
+      center, innerRadius,
+      Paint()..color = fillColor..style = PaintingStyle.fill,
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    final icon = BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+
+    _iconCache[key] = icon;
+    return icon;
+  }
+
   // ==================== CONDUCTOR ====================
 
   /// Auto vista aérea en burbuja blanca con glow verde
