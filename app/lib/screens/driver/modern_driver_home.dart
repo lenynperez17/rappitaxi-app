@@ -586,6 +586,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   void _showDriverMenu() {
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1095,7 +1096,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       builder: (ctx) => _RequestDetailBottomSheet(
         request: request,
         onAccept: () {
@@ -2954,9 +2959,9 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.92,
+      initialChildSize: 0.75,
       minChildSize: 0.5,
-      maxChildSize: 0.95,
+      maxChildSize: 0.85,
       builder: (ctx, scrollController) => Container(
         decoration: BoxDecoration(
           color: AppColors.getSurface(context),
