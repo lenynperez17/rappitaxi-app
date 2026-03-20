@@ -392,7 +392,9 @@ class _ThemedMaterialApp extends StatelessWidget {
           emergencyId: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
         ),
         '/shared/upgrade-to-driver': (context) => UpgradeToDriverScreen(),
-        '/upgrade-to-driver': (context) => UpgradeToDriverScreen(), // Alias corto
+        '/upgrade-to-driver': (context) => UpgradeToDriverScreen(),
+        '/driver/register': (context) => UpgradeToDriverScreen(),
+        '/driver/register/pending': (context) => UpgradeToDriverScreen(),
         '/maintenance': (context) => MaintenanceScreen(), // ✅ NUEVO: Pantalla de mantenimiento
         '/map-picker': (context) => MapPickerScreen(),
         '/change-phone-number': (context) => ChangePhoneNumberScreen(
