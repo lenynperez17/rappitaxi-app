@@ -2237,4 +2237,7 @@ export { createManualRecharge, emitirComprobante, consultarEstadoSunat, emitirNo
 export { approveDriver, approveDriverDocument, rejectDriverDocument } from './handlers/DriverVerificationHandlers';
 export { onWalletRechargeCredited } from './triggers/onWalletRechargeCredited';
 export { createManualRide } from './handlers/ManualRideHandlers';
+export { driverHeartbeatCheck } from './triggers/driverHeartbeatCheck';
+export { cancelRideByAdmin } from './handlers/AdminRideHandlers';
+export { suspendUser, reactivateUser, sendPasswordResetForUser } from './handlers/AdminUserHandlers';
 
