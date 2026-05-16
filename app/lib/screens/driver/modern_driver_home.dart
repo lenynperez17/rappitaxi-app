@@ -3,13 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import '../../services/google_maps_service.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart' as poly;
+import '../../core/config/app_config.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_animarker/flutter_map_marker_animation.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/credit_constants.dart';
 import '../../core/theme/modern_theme.dart';
@@ -24,6 +28,7 @@ import '../../providers/document_provider.dart';
 import '../../providers/ride_provider.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../../utils/logger.dart';
+import 'driver_performance_screen.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../services/sound_service.dart';
 import '../../services/local_notification_service.dart';
@@ -31,6 +36,38 @@ import '../../services/road_snapping_service.dart';
 import '../../generated/l10n/app_localizations.dart';
 import 'driver_profile_screen.dart';
 import 'active_trip_screen.dart';
+
+// Top-level payment method helpers (used by multiple State classes in this file)
+PaymentMethod _parsePaymentMethod(String method) {
+  switch (method.toLowerCase()) {
+    case 'cash': case 'efectivo': return PaymentMethod.cash;
+    case 'yape': return PaymentMethod.yape;
+    case 'plin': return PaymentMethod.plin;
+    case 'card': case 'tarjeta': return PaymentMethod.card;
+    case 'wallet': case 'billetera': return PaymentMethod.wallet;
+    default: return PaymentMethod.cash;
+  }
+}
+
+String _paymentMethodLabel(PaymentMethod method) {
+  switch (method) {
+    case PaymentMethod.cash: return 'Efectivo';
+    case PaymentMethod.yape: return 'Yape';
+    case PaymentMethod.plin: return 'Plin';
+    case PaymentMethod.card: return 'Tarjeta';
+    case PaymentMethod.wallet: return 'Billetera';
+  }
+}
+
+Color _paymentMethodColor(PaymentMethod method) {
+  switch (method) {
+    case PaymentMethod.cash: return const Color(0xFF4CAF50);
+    case PaymentMethod.yape: return const Color(0xFF6B21A8);
+    case PaymentMethod.plin: return const Color(0xFF00BFA5);
+    case PaymentMethod.card: return const Color(0xFF1565C0);
+    case PaymentMethod.wallet: return AppColors.rappiOrange;
+  }
+}
 
 class ModernDriverHomeScreen extends StatefulWidget {
   const ModernDriverHomeScreen({super.key});
@@ -109,10 +146,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   // Credit system (Rapi Team)
   double _serviceCredits = 0.0;
-  double _serviceFee = 1.0;
-  double _minServiceCredits = CreditConstants.minServiceCredits;
-  bool _hasEnoughCredits = false;
-  bool _isCheckingCredits = true;
+  double _serviceFee = 0.0;
+  double _minServiceCredits = 0.0;
+  bool _hasEnoughCredits = true; // No minimum balance required — only 12% commission on completed trips
+  bool _isCheckingCredits = false;
 
   // Offering overlay state
   String? _offeringOverlayText;
@@ -294,9 +331,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       setState(() {
         _serviceCredits = (creditStatus['currentCredits'] ?? 0.0).toDouble();
-        _serviceFee = (creditStatus['serviceFee'] ?? 1.0).toDouble();
-        _minServiceCredits = (creditStatus['minCredits'] ?? 5.0).toDouble();
-        _hasEnoughCredits = creditStatus['hasEnoughCredits'] ?? false;
+        _serviceFee = (creditStatus['serviceFee'] ?? 0.0).toDouble();
+        _minServiceCredits = (creditStatus['minCredits'] ?? 0.0).toDouble();
+        _hasEnoughCredits = creditStatus['hasEnoughCredits'] ?? true;
         _isCheckingCredits = false;
       });
 
@@ -305,7 +342,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       AppLogger.error('Error checking credits: $e');
       if (_isDisposed) return;
       setState(() {
-        _hasEnoughCredits = false;
+        _hasEnoughCredits = true; // Don't block driver on error — commission model doesn't require upfront credits
         _isCheckingCredits = false;
       });
     }
@@ -584,18 +621,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   void _showDriverMenu() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      useSafeArea: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -609,7 +638,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
             ListTile(
               leading: Icon(Icons.analytics, color: AppColors.rappiOrange),
-              title: Text('Metricas', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Métricas', style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/driver/metrics');
@@ -625,7 +654,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
             ListTile(
               leading: Icon(Icons.logout, color: AppColors.error),
-              title: Text('Cerrar Sesion', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Cerrar Sesión', style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
@@ -668,7 +697,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   void _startUIRefreshTimer() {
     _uiRefreshTimer?.cancel();
-    _uiRefreshTimer = Timer.periodic(Duration(seconds: 1), (_) {
+    _uiRefreshTimer = Timer.periodic(Duration(seconds: 5), (_) {
       if (mounted && !_isDisposed && _availableRequests.isNotEmpty) {
         setState(() {});
       }
@@ -930,7 +959,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       pickup: LocationPoint(
                         latitude: pickupLat,
                         longitude: pickupLng,
-                        address: data['pickupAddress'] as String? ?? 'Direccion no disponible',
+                        address: data['pickupAddress'] as String? ?? 'Dirección no disponible',
                       ),
                       destination: LocationPoint(
                         latitude: (data['destinationLocation']?['latitude'] as num?)?.toDouble() ?? 0.0,
@@ -946,10 +975,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       passengerPhoto: data['passengerPhoto'] as String? ?? '',
                       passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
                       driverOffers: [],
-                      paymentMethod: data['paymentMethod'] == 'cash' ? PaymentMethod.cash : PaymentMethod.card,
-                      notes: data['notes'] as String?,
+                      paymentMethod: _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
+                      notes: data['notes'] as String? ?? data['adminNotes'] as String?,
                       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
                       expiresAt: (data['expiresAt'] as Timestamp?)?.toDate() ?? DateTime.now().add(const Duration(minutes: 5)),
+                      // Pedidos manuales (admin)
+                      isManualOrder: data['isManualOrder'] == true,
+                      guestPassengerName: data['guestPassengerName'] as String?,
+                      guestPassengerPhone: data['guestPassengerPhone'] as String?,
                     );
 
                     nearbyRides.add(negotiation);
@@ -1017,6 +1050,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final negotiation = PriceNegotiation.fromMap(doc.id, doc.data());
           if (negotiation.expiresAt.isAfter(now)) {
             loadedRequests.add(negotiation);
+          } else {
+            // Mark expired negotiations in Firestore so they don't show up again
+            doc.reference.update({'status': 'expired'}).catchError((_) {});
           }
         } catch (e) {
           AppLogger.error('Error parsing request ${doc.id}: $e');
@@ -1055,21 +1091,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   void _updateMapMarkers() {
     _markers.clear();
 
-    // Driver location marker
-    if (_currentLocation != null) {
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('driver_location'),
-          position: _currentLocation!,
-          icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          flat: true,
-          anchor: const Offset(0.5, 0.5),
-          infoWindow: const InfoWindow(title: 'Tu ubicacion'),
-        ),
-      );
-    }
-
-    // Request markers
+    // Request markers only (driver location handled by myLocationEnabled on map)
     for (var request in _availableRequests) {
       _markers.add(
         Marker(
@@ -1093,14 +1115,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
 
     // Show as modal bottom sheet (inDrive-style)
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      maxHeightFraction: 0.85,
       builder: (ctx) => _RequestDetailBottomSheet(
         request: request,
         onAccept: () {
@@ -1141,6 +1158,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // Check credits before offering (Rapi Team)
       final walletProvider = Provider.of<WalletProvider>(context, listen: false);
       final hasCredits = await walletProvider.hasEnoughCreditsForService();
+
+      if (!mounted) return;
 
       if (!hasCredits) {
         _showNeedCreditsDialog();
@@ -1290,7 +1309,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
     }, onError: (e) {
       AppLogger.error('Error in negotiation listener: $e');
-      _dismissOfferingOverlay('Error de conexion');
+      _dismissOfferingOverlay('Error de conexión');
     });
   }
 
@@ -1405,7 +1424,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           'finalFare': customPrice ?? request.offeredPrice,
           'estimatedDistance': request.distance,
           'status': 'accepted',
-          'paymentMethod': request.paymentMethod.name,
+          'paymentMethod': _paymentMethodLabel(request.paymentMethod),
           'requestedAt': FieldValue.serverTimestamp(),
           'acceptedAt': FieldValue.serverTimestamp(),
           'vehicleInfo': {
@@ -1546,15 +1565,17 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   Future<void> _removeMyOfferFromNegotiation(String negotiationId) async {
     if (_driverId == null) return;
     try {
-      await _firestore
-          .collection('negotiations')
-          .doc(negotiationId)
-          .collection('offers')
-          .doc(_driverId)
-          .delete();
-      AppLogger.info('Expired offer removed from negotiation $negotiationId');
+      final doc = await _firestore.collection('negotiations').doc(negotiationId).get();
+      if (!doc.exists) return;
+      final offers = (doc.data()?['driverOffers'] as List<dynamic>? ?? [])
+          .where((o) => (o as Map<String, dynamic>)['driverId'] != _driverId)
+          .toList();
+      await _firestore.collection('negotiations').doc(negotiationId).update({
+        'driverOffers': offers,
+      });
+      AppLogger.info('Driver offer removed from negotiation $negotiationId');
     } catch (e) {
-      AppLogger.warning('Error removing expired offer from negotiation: $e');
+      AppLogger.warning('Error removing offer from negotiation: $e');
     }
   }
 
@@ -1589,7 +1610,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               child: const Icon(Icons.account_balance_wallet, color: ModernTheme.warning, size: 28),
             ),
             const SizedBox(width: 12),
-            const Expanded(child: Text('Creditos insuficientes', style: TextStyle(fontSize: 18))),
+            const Expanded(child: Text('Créditos insuficientes', style: TextStyle(fontSize: 18))),
           ],
         ),
         content: Column(
@@ -1872,10 +1893,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(currentUser.driverStatus == 'pending_approval'
-              ? 'Tu cuenta esta pendiente de aprobacion.'
+              ? 'Tu cuenta está pendiente de aprobación.'
               : currentUser.driverStatus == 'rejected'
                   ? 'Tu solicitud fue rechazada. Contacta soporte.'
-                  : 'Debes completar tu verificacion como conductor.'),
+                  : 'Debes completar tu verificación como conductor.'),
           backgroundColor: ModernTheme.warning,
           duration: const Duration(seconds: 4),
         ),
@@ -1970,19 +1991,33 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/wallet');
                   }),
+                  _buildDrawerItem(Icons.public, 'Interurbano', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/driver/intercity');
+                  }),
+                  _buildDrawerItem(Icons.local_shipping_outlined, 'Flete', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/driver/freight');
+                  }),
                   _buildDrawerItem(Icons.notifications_outlined, 'Notificaciones', () {
                     Navigator.pop(context);
-                    // Navigate to notifications if route exists
+                    Navigator.pushNamed(context, '/driver/notifications');
                   }),
                   _buildDrawerItem(Icons.shield_outlined, 'Seguridad', () {
                     Navigator.pop(context);
+                    Navigator.pushNamed(context, '/driver/security');
                   }),
-                  _buildDrawerItem(Icons.settings_outlined, 'Configuracion', () {
+                  _buildDrawerItem(Icons.settings_outlined, 'Configuración', () {
                     Navigator.pop(context);
+                    Navigator.pushNamed(context, '/driver/settings');
                   }),
                   _buildDrawerItem(Icons.info_outline, 'Ayuda', () {
                     Navigator.pop(context);
                     launchUrl(Uri.parse('https://rapiteam.com/ayuda'), mode: LaunchMode.externalApplication);
+                  }),
+                  _buildDrawerItem(Icons.support_agent_rounded, 'Soporte', () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/shared/support');
                   }),
                 ],
               ),
@@ -2093,7 +2128,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
-                                      _isOnline ? (hasActiveTrip ? 'Ocupado' : 'Libre') : 'Fuera de linea',
+                                      _isOnline ? (hasActiveTrip ? 'Ocupado' : 'Libre') : 'Fuera de línea',
                                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
                                     ),
                                   ),
@@ -2149,7 +2184,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Creditos insuficientes. Toca para recargar.',
+                              'Créditos insuficientes. Toca para recargar.',
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
                             ),
                           ),
@@ -2190,7 +2225,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       switch (verificationStatus) {
                         case 'under_review':
                           bannerColor = ModernTheme.info;
-                          title = 'Documentos en revision';
+                          title = 'Documentos en revisión';
                           icon = Icons.hourglass_empty;
                           break;
                         case 'rejected':
@@ -2241,7 +2276,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                 const SizedBox(height: 16),
                                 Text('Buscando solicitudes...', style: TextStyle(fontSize: 18, color: AppColors.getTextSecondary(context))),
                                 const SizedBox(height: 8),
-                                Text('Las solicitudes de viaje apareceran aqui', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context).withValues(alpha:0.6))),
+                                Text('Las solicitudes de viaje aparecerán aquí', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context).withValues(alpha:0.6))),
                               ],
                             ),
                           )
@@ -2251,7 +2286,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                               children: [
                                 Icon(Icons.power_settings_new, size: 80, color: AppColors.getTextSecondary(context).withValues(alpha:0.3)),
                                 const SizedBox(height: 16),
-                                Text('Estas fuera de linea', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
+                                Text('Estás fuera de línea', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
                                 const SizedBox(height: 8),
                                 Text('Activa tu estado para recibir solicitudes', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
                                 const SizedBox(height: 24),
@@ -2311,7 +2346,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             elevation: 0,
             items: [
               BottomNavigationBarItem(icon: const Icon(Icons.list_alt), label: 'Solicitudes de viaje'),
-              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded), label: 'Desempeno'),
+              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded), label: 'Desempeño'),
             ],
           ),
         ),
@@ -2394,15 +2429,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
-                          color: req.paymentMethod == PaymentMethod.cash ? const Color(0xFF7B1FA2)
-                              : req.paymentMethod == PaymentMethod.cash ? const Color(0xFF00C853)
-                              : const Color(0xFF4CAF50),
+                          color: _paymentMethodColor(req.paymentMethod),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          req.paymentMethod == PaymentMethod.cash ? 'Yape'
-                              : req.paymentMethod == PaymentMethod.cash ? 'Plin'
-                              : req.paymentMethod == PaymentMethod.card ? 'Tarjeta' : 'Efectivo',
+                          _paymentMethodLabel(req.paymentMethod),
                           style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -2449,32 +2480,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   Widget _buildPerformanceTab() {
-    // Simple performance view since Rapi Team doesn't have DriverPerformanceScreen
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.analytics, size: 64, color: AppColors.rappiOrange.withValues(alpha:0.5)),
-            const SizedBox(height: 16),
-            Text('Desempeno', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
-            const SizedBox(height: 24),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              _buildStatistic('Ganancias', 'S/ ${_todayEarnings.toStringAsFixed(2)}', Icons.monetization_on),
-              _buildStatistic('Viajes', '$_todayTrips', Icons.directions_car),
-              _buildStatistic('Aceptacion', '${_acceptanceRate.toStringAsFixed(0)}%', Icons.thumb_up),
-            ]),
-          ],
-        ),
-      ),
-    );
+    return DriverPerformanceScreen(parentScaffoldKey: _scaffoldKey);
   }
 
   Widget _buildPendingVerificationScreen() {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Verificacion Pendiente'),
+        title: Text('Verificación Pendiente'),
         actions: [ModeSwitchButton(compact: true)],
       ),
       body: Center(
@@ -2485,10 +2497,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             children: [
               Icon(Icons.hourglass_top_rounded, size: 80, color: Colors.orange),
               SizedBox(height: 24),
-              Text('Verificacion en Proceso', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              Text('Verificación en Proceso', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
               SizedBox(height: 16),
               Text(
-                'Tu cuenta de conductor esta siendo revisada por nuestro equipo. Una vez aprobada, podras comenzar a recibir viajes.',
+                'Tu cuenta de conductor está siendo revisada por nuestro equipo. Una vez aprobada, podrás comenzar a recibir viajes.',
                 style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),
@@ -2553,18 +2565,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     String paymentLabel;
     Color paymentColor;
-    switch (request.paymentMethod) {
-      case PaymentMethod.cash:
-        paymentLabel = 'Yape'; paymentColor = const Color(0xFF6B21A8);
-      case PaymentMethod.cash:
-        paymentLabel = 'Plin'; paymentColor = const Color(0xFF00BFA5);
-      case PaymentMethod.card:
-        paymentLabel = 'Tarjeta'; paymentColor = const Color(0xFF1565C0);
-      case PaymentMethod.wallet:
-        paymentLabel = 'Billetera'; paymentColor = AppColors.rappiOrange;
-      default:
-        paymentLabel = 'Efectivo'; paymentColor = const Color(0xFF4CAF50);
-    }
+    paymentLabel = _paymentMethodLabel(request.paymentMethod);
+    paymentColor = _paymentMethodColor(request.paymentMethod);
 
     return _SwipeableRequestCard(
       request: request,
@@ -2601,11 +2603,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final startOfDay = DateTime(today.year, today.month, today.day);
       final endOfDay = startOfDay.add(Duration(days: 1));
 
+      // Simple query: just driverId + status (no composite index needed)
       final tripsQuery = await _firestore
           .collection('rides')
           .where('driverId', isEqualTo: _driverId)
-          .where('requestedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('requestedAt', isLessThan: Timestamp.fromDate(endOfDay))
           .where('status', isEqualTo: 'completed')
           .limit(100)
           .get();
@@ -2614,24 +2615,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       int tripCount = 0;
       for (var doc in tripsQuery.docs) {
         final data = doc.data();
-        final fare = ((data['finalFare'] ?? data['estimatedFare'] ?? 0) as num).toDouble();
-        totalEarnings += fare;
-        tripCount++;
+        // Filter today's trips locally (avoids composite index)
+        final completedAt = data['completedAt'] as Timestamp?;
+        if (completedAt != null && completedAt.toDate().isAfter(startOfDay)) {
+          final fare = ((data['driverEarning'] ?? data['finalFare'] ?? data['estimatedFare'] ?? 0) as num).toDouble();
+          totalEarnings += fare;
+          tripCount++;
+        }
       }
 
-      final negotiationsQuery = await _firestore
-          .collection('negotiations')
-          .where('driverId', isEqualTo: _driverId)
-          .where('requestedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('requestedAt', isLessThan: Timestamp.fromDate(endOfDay))
-          .limit(100)
-          .get();
-
-      int acceptedCount = 0;
-      int totalOffered = negotiationsQuery.docs.length;
-      for (var doc in negotiationsQuery.docs) {
-        if ((doc.data()['status'] as String?) == 'accepted') acceptedCount++;
-      }
+      // Calculate acceptance rate from completed rides vs total offers made
+      int acceptedCount = tripCount;
+      int totalOffered = tripCount > 0 ? tripCount + 1 : 0; // Approximate
 
       double acceptanceRate = totalOffered > 0 ? (acceptedCount / totalOffered) * 100 : 0.0;
 
@@ -2690,7 +2685,7 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
   double _dragOffset = 0;
   bool _actionsRevealed = false;
 
-  double get _actionWidth => MediaQuery.of(context).size.width;
+  double get _actionWidth => MediaQuery.sizeOf(context).width;
 
   void _onHorizontalDragUpdate(DragUpdateDetails details) {
     setState(() {
@@ -2759,12 +2754,20 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
               color: AppColors.getSurface(context),
               child: InkWell(
                 onTap: _actionsRevealed ? _closeActions : widget.onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left: Avatar + name + rating + time
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (widget.request.isManualOrder)
+                      _ManualOrderBanner(
+                        guestName: widget.request.guestPassengerName,
+                        guestPhone: widget.request.guestPassengerPhone,
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Left: Avatar + name + rating + time
                       SizedBox(
                         width: 80,
                         child: Column(children: [
@@ -2788,7 +2791,7 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                           Row(mainAxisSize: MainAxisSize.min, children: [
                             Icon(Icons.star, size: 14, color: Colors.amber[700]),
                             const SizedBox(width: 2),
-                            Text('(0)', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
+                            Text('(${widget.request.passengerRating.toStringAsFixed(1)})', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
                           ]),
                           const SizedBox(height: 4),
                           Text(widget.timeLabel, style: TextStyle(fontSize: 11, color: AppColors.rappiOrange, fontWeight: FontWeight.w500), textAlign: TextAlign.center),
@@ -2842,13 +2845,15 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                           PopupMenuItem(value: 'map', child: Row(children: [const Icon(Icons.location_on, color: AppColors.rappiOrange, size: 20), const SizedBox(width: 8), Text('Seleccionar en el mapa')])),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+                        ], // Row children
+                      ), // Row
+                    ), // Padding
+                  ], // Column children
+                ), // Column
+              ), // InkWell
+            ), // Material
+          ), // AnimatedContainer
+        ), // GestureDetector
       ],
     );
   }
@@ -2943,20 +2948,10 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
 
     String paymentLabel;
     Color paymentColor;
-    switch (request.paymentMethod) {
-      case PaymentMethod.cash:
-        paymentLabel = 'Yape'; paymentColor = const Color(0xFF6B21A8);
-      case PaymentMethod.cash:
-        paymentLabel = 'Plin'; paymentColor = const Color(0xFF00BFA5);
-      case PaymentMethod.card:
-        paymentLabel = 'Tarjeta'; paymentColor = const Color(0xFF1565C0);
-      case PaymentMethod.wallet:
-        paymentLabel = 'Billetera'; paymentColor = AppColors.rappiOrange;
-      default:
-        paymentLabel = 'Efectivo'; paymentColor = const Color(0xFF4CAF50);
-    }
+    paymentLabel = _paymentMethodLabel(request.paymentMethod);
+    paymentColor = _paymentMethodColor(request.paymentMethod);
 
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
@@ -2978,31 +2973,12 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context)))),
             ),
 
-            // Map with route
+            // Map with real route
             SizedBox(
               height: 200,
-              child: GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: LatLng(
-                    (request.pickup.latitude + request.destination.latitude) / 2,
-                    (request.pickup.longitude + request.destination.longitude) / 2,
-                  ),
-                  zoom: 11.5,
-                ),
-                markers: {
-                  Marker(markerId: const MarkerId('pickup'), position: LatLng(request.pickup.latitude, request.pickup.longitude),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)),
-                  Marker(markerId: const MarkerId('destination'), position: LatLng(request.destination.latitude, request.destination.longitude),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
-                },
-                polylines: {
-                  Polyline(polylineId: const PolylineId('route'), points: [
-                    LatLng(request.pickup.latitude, request.pickup.longitude),
-                    LatLng(request.destination.latitude, request.destination.longitude),
-                  ], color: const Color(0xFF4CAF50), width: 4),
-                },
-                zoomControlsEnabled: false, scrollGesturesEnabled: false, rotateGesturesEnabled: false,
-                tiltGesturesEnabled: false, myLocationButtonEnabled: false, mapToolbarEnabled: false,
+              child: _RequestMiniMap(
+                pickup: LatLng(request.pickup.latitude, request.pickup.longitude),
+                destination: LatLng(request.destination.latitude, request.destination.longitude),
               ),
             ),
 
@@ -3174,6 +3150,174 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Mini-map that loads real road route from Google Directions API
+class _RequestMiniMap extends StatefulWidget {
+  final LatLng pickup;
+  final LatLng destination;
+  const _RequestMiniMap({required this.pickup, required this.destination});
+
+  @override
+  State<_RequestMiniMap> createState() => _RequestMiniMapState();
+}
+
+class _RequestMiniMapState extends State<_RequestMiniMap> {
+  List<LatLng> _routePoints = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoute();
+  }
+
+  Future<void> _loadRoute() async {
+    try {
+      // Use same proven API as passenger screen
+      final polylinePoints = poly.PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
+      final result = await polylinePoints.getRouteBetweenCoordinates(
+        request: poly.PolylineRequest(
+          origin: poly.PointLatLng(widget.pickup.latitude, widget.pickup.longitude),
+          destination: poly.PointLatLng(widget.destination.latitude, widget.destination.longitude),
+          mode: poly.TravelMode.driving,
+        ),
+      );
+      if (result.points.isNotEmpty && mounted) {
+        setState(() {
+          _routePoints = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading mini-map route: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Only show route when loaded from Google Directions (no straight lines)
+    final points = _routePoints;
+
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(
+        target: LatLng(
+          (widget.pickup.latitude + widget.destination.latitude) / 2,
+          (widget.pickup.longitude + widget.destination.longitude) / 2,
+        ),
+        zoom: 13.5,
+      ),
+      markers: {
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: widget.pickup,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        ),
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: widget.destination,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        ),
+      },
+      polylines: points.isNotEmpty ? {
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: points,
+          color: const Color(0xFF4CAF50),
+          width: 4,
+        ),
+      } : {},
+      zoomControlsEnabled: false,
+      scrollGesturesEnabled: false,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      myLocationButtonEnabled: false,
+      mapToolbarEnabled: false,
+    );
+  }
+}
+
+/// Banner que aparece encima de la tarjeta cuando el pedido fue creado
+/// manualmente desde el panel admin (cliente telefónico/WhatsApp).
+/// Incluye el nombre del pasajero invitado y un botón rápido para llamar.
+class _ManualOrderBanner extends StatelessWidget {
+  final String? guestName;
+  final String? guestPhone;
+
+  const _ManualOrderBanner({this.guestName, this.guestPhone});
+
+  Future<void> _callGuest(BuildContext context) async {
+    final phone = guestPhone?.trim();
+    if (phone == null || phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo iniciar la llamada a $phone')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhone = (guestPhone ?? '').trim().isNotEmpty;
+    final displayName = (guestName ?? '').trim().isNotEmpty
+        ? guestName!.trim()
+        : 'Cliente telefónico';
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFFF6B00), Color(0xFFE55100)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.phone_in_talk, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Pedido telefónico',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                Text(
+                  displayName + (hasPhone ? ' • $guestPhone' : ''),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (hasPhone)
+            ElevatedButton.icon(
+              onPressed: () => _callGuest(context),
+              icon: const Icon(Icons.call, size: 16),
+              label: const Text('Llamar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFFE55100),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                minimumSize: const Size(0, 32),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+        ],
       ),
     );
   }

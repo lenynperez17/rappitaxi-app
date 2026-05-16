@@ -26,6 +26,7 @@ import { MercadoPagoService } from './services/MercadoPagoService';
 admin.initializeApp();
 
 const db = admin.firestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 // ✅ CORRECCIÓN: Lazy initialization para evitar timeout durante deploy
 let notificationService: NotificationService | null = null;
@@ -1418,7 +1419,31 @@ export const sendPushNotification = onRequest({ cors: true, invoker: 'public' },
       return;
     }
 
-    // Construir mensaje de notificación
+    // Select channel and sound based on notification type
+    const type = (data?.type as string | undefined);
+    const channelMap: Record<string, { channelId: string; sound: string }> = {
+      ride: { channelId: 'rappi_rides', sound: 'ride_request' },
+      rideRequest: { channelId: 'rappi_rides', sound: 'ride_request' },
+      tripRequest: { channelId: 'rappi_rides', sound: 'ride_request' },
+      tripAccepted: { channelId: 'rappi_rides', sound: 'ride_request' },
+      tripStarted: { channelId: 'rappi_rides', sound: 'ride_request' },
+      driverArrived: { channelId: 'rappi_rides', sound: 'driver_arrived' },
+      payment: { channelId: 'rappi_payments', sound: 'trip_completed' },
+      paymentSuccess: { channelId: 'rappi_payments', sound: 'trip_completed' },
+      paymentFailed: { channelId: 'rappi_payments', sound: 'trip_completed' },
+      tripCompleted: { channelId: 'rappi_payments', sound: 'trip_completed' },
+      emergency: { channelId: 'rappi_emergency', sound: 'emergency_alert' },
+      securityAlert: { channelId: 'rappi_emergency', sound: 'emergency_alert' },
+      sos: { channelId: 'rappi_emergency', sound: 'emergency_alert' },
+      chat: { channelId: 'rappi_chat', sound: 'chat_message' },
+      chatMessage: { channelId: 'rappi_chat', sound: 'chat_message' },
+      message: { channelId: 'rappi_chat', sound: 'chat_message' },
+      promotion: { channelId: 'rappi_promotions', sound: 'ride_accepted' },
+    };
+    const { channelId, sound } = channelMap[type || ''] || { channelId: 'rappi_general', sound: 'ride_accepted' };
+    const isEmergency = channelId === 'rappi_emergency';
+
+    // Construir mensaje de notificación con sonido personalizado y vibración de 5 segundos
     const message: admin.messaging.Message = {
       token: fcmToken,
       notification: {
@@ -1430,17 +1455,27 @@ export const sendPushNotification = onRequest({ cors: true, invoker: 'public' },
       android: {
         priority: 'high',
         notification: {
-          channelId: 'default',
-          sound: 'default',
-          priority: 'high',
-        },
+          channelId,
+          sound,
+          priority: 'max',
+          vibrateTimingsMillis: [0, 1000, 500, 1000, 500, 1000, 500, 1000],
+          defaultVibrateTimings: false,
+          visibility: 'public',
+        } as any,
+        ttl: 3600000,
       },
       apns: {
+        headers: {
+          'apns-priority': '10',
+        },
         payload: {
           aps: {
-            sound: 'default',
+            sound: isEmergency
+              ? ({ critical: 1, name: `${sound}.wav`, volume: 1.0 } as any)
+              : ({ name: `${sound}.wav`, volume: 1.0 } as any),
             badge: 1,
-          },
+            'interruption-level': isEmergency ? 'critical' : 'time-sensitive',
+          } as any,
         },
       },
     };
@@ -2194,4 +2229,12 @@ export const onUserDeleted = auth.user().onDelete(async (user: auth.UserRecord) 
     });
   }
 });
+
+// ============================================================================
+// RECARGAS Y FACTURACION (Admin Panel)
+// ============================================================================
+export { createManualRecharge, emitirComprobante, consultarEstadoSunat, emitirNotaCredito } from './handlers/RechargeHandlers';
+export { approveDriver, approveDriverDocument, rejectDriverDocument } from './handlers/DriverVerificationHandlers';
+export { onWalletRechargeCredited } from './triggers/onWalletRechargeCredited';
+export { createManualRide } from './handlers/ManualRideHandlers';
 

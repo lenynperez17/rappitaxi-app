@@ -27,6 +27,11 @@ class PriceNegotiation {
   final double? discountAmount;
   final double? discountPercentage;
 
+  // Pedidos manuales creados por el admin (cliente telefónico/WhatsApp)
+  final bool isManualOrder;
+  final String? guestPassengerName;
+  final String? guestPassengerPhone;
+
   PriceNegotiation({
     required this.id,
     required this.passengerId,
@@ -52,6 +57,10 @@ class PriceNegotiation {
     this.appliedPromotionCode,
     this.discountAmount,
     this.discountPercentage,
+    // Pedidos manuales (admin)
+    this.isManualOrder = false,
+    this.guestPassengerName,
+    this.guestPassengerPhone,
   });
 
   // Factory para crear desde Map (Firestore)
@@ -84,6 +93,10 @@ class PriceNegotiation {
       appliedPromotionCode: map['appliedPromotionCode'],
       discountAmount: map['discountAmount']?.toDouble(),
       discountPercentage: map['discountPercentage']?.toDouble(),
+      // Pedidos manuales (admin)
+      isManualOrder: map['isManualOrder'] == true,
+      guestPassengerName: map['guestPassengerName'],
+      guestPassengerPhone: map['guestPassengerPhone'],
     );
   }
 
@@ -141,10 +154,17 @@ class PriceNegotiation {
   static PaymentMethod _paymentMethodFromString(String method) {
     switch (method.toLowerCase()) {
       case 'cash':
+      case 'efectivo':
         return PaymentMethod.cash;
+      case 'yape':
+        return PaymentMethod.yape;
+      case 'plin':
+        return PaymentMethod.plin;
       case 'card':
+      case 'tarjeta':
         return PaymentMethod.card;
       case 'wallet':
+      case 'billetera':
         return PaymentMethod.wallet;
       default:
         return PaymentMethod.cash;
@@ -390,6 +410,8 @@ enum OfferStatus {
 // Métodos de pago
 enum PaymentMethod {
   cash,
+  yape,
+  plin,
   card,
   wallet,
 }

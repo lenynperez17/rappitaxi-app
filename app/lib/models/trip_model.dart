@@ -52,6 +52,19 @@ class TripModel {
   @Deprecated('Usar isPassengerVerified e isDriverVerified en su lugar')
   final bool isVerificationCodeUsed;
 
+  // ✅ PEDIDOS MANUALES (creados desde panel admin para clientes sin app)
+  /// Nombre del cliente que llamó por teléfono/WhatsApp (cuando no tiene cuenta).
+  /// Cuando esta propiedad está presente, [userId] suele ser placeholder admin.
+  final String? guestPassengerName;
+  /// Teléfono del cliente para que el conductor pueda llamarlo.
+  final String? guestPassengerPhone;
+  /// Marca true si el ride fue creado manualmente por un admin.
+  final bool isManualOrder;
+  /// uid del admin que creó el pedido (audit trail).
+  final String? createdByAdmin;
+  /// Notas adicionales del admin (referencias, observaciones).
+  final String? adminNotes;
+
   TripModel({
     required this.id,
     required this.userId,
@@ -96,6 +109,12 @@ class TripModel {
     // Campos deprecados
     this.verificationCode,
     this.isVerificationCodeUsed = false,
+    // Pedidos manuales
+    this.guestPassengerName,
+    this.guestPassengerPhone,
+    this.isManualOrder = false,
+    this.createdByAdmin,
+    this.adminNotes,
   });
 
   /// Crear desde Map con ID separado (para Firestore donde el ID está en el documento)
@@ -167,6 +186,12 @@ class TripModel {
       // Campos deprecados (compatibilidad)
       verificationCode: json['verificationCode'],
       isVerificationCodeUsed: json['isVerificationCodeUsed'] ?? false,
+      // Pedidos manuales (creados desde panel admin)
+      guestPassengerName: json['guestPassengerName'],
+      guestPassengerPhone: json['guestPassengerPhone'],
+      isManualOrder: json['isManualOrder'] ?? false,
+      createdByAdmin: json['createdByAdmin'],
+      adminNotes: json['adminNotes'],
     );
   }
 
@@ -237,6 +262,12 @@ class TripModel {
       'verificationCode': verificationCode,
       // ignore: deprecated_member_use_from_same_package
       'isVerificationCodeUsed': isVerificationCodeUsed,
+      // Pedidos manuales
+      if (guestPassengerName != null) 'guestPassengerName': guestPassengerName,
+      if (guestPassengerPhone != null) 'guestPassengerPhone': guestPassengerPhone,
+      if (isManualOrder) 'isManualOrder': true,
+      if (createdByAdmin != null) 'createdByAdmin': createdByAdmin,
+      if (adminNotes != null) 'adminNotes': adminNotes,
     };
   }
 
