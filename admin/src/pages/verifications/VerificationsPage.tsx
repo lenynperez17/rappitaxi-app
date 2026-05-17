@@ -4,18 +4,19 @@ import { collection, query, where, orderBy, getDocs, limit } from 'firebase/fire
 import { db } from '../../config/firebase'
 import { ShieldCheck, Loader2, Search, Car, CheckCircle2, Clock, XCircle } from 'lucide-react'
 import type { DriverForVerification, DriverApprovalStatus } from '../../types/driverDocument'
+import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 
 const STATUS_FILTERS: Array<{ value: 'pending_approval' | 'all' | DriverApprovalStatus; label: string }> = [
+  { value: 'all', label: 'Todos' },
   { value: 'pending_approval', label: 'Pendientes' },
   { value: 'approved', label: 'Aprobados' },
   { value: 'rejected', label: 'Rechazados' },
-  { value: 'all', label: 'Todos' },
 ]
 
 export function VerificationsPage() {
   const [drivers, setDrivers] = useState<DriverForVerification[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'pending_approval' | 'all' | DriverApprovalStatus>('pending_approval')
+  const [filter, setFilter] = useState<'pending_approval' | 'all' | DriverApprovalStatus>('all')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -153,15 +154,19 @@ export function VerificationsPage() {
 function DriverRow({ driver }: { driver: DriverForVerification }) {
   const date = driver.createdAt?.toDate?.() ?? new Date()
   const vehicle = driver.vehicleInfo
+  const fullName = driver.fullName || driver.name || 'Sin nombre'
   return (
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-3">
-        <p className="font-medium text-gray-900 truncate max-w-[200px]">
-          {driver.fullName || driver.name || 'Sin nombre'}
-        </p>
-        {driver.driverProfile?.documentNumber && (
-          <p className="text-xs text-gray-500">DNI: {driver.driverProfile.documentNumber}</p>
-        )}
+        <div className="flex items-center gap-2">
+          <Avatar src={pickPhotoUrl(driver)} name={fullName} size="sm" />
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900 truncate max-w-[160px]">{fullName}</p>
+            {driver.driverProfile?.documentNumber && (
+              <p className="text-xs text-gray-500">DNI: {driver.driverProfile.documentNumber}</p>
+            )}
+          </div>
+        </div>
       </td>
       <td className="px-4 py-3">
         <p className="text-xs text-gray-700 truncate max-w-[200px]">{driver.email || '—'}</p>

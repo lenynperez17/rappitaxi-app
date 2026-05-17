@@ -20,13 +20,13 @@ import {
   Phone,
   Mail,
   Shield,
-  User as UserIcon,
   Power,
   KeyRound,
   AlertCircle,
   CheckCircle2,
   Copy,
 } from 'lucide-react'
+import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 
 type Tab = 'info' | 'rides' | 'recharges' | 'wallet' | 'documents'
 
@@ -152,13 +152,7 @@ export function UserDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-              {user.profilePhotoUrl ? (
-                <img src={user.profilePhotoUrl} alt={fullName} className="w-full h-full object-cover" />
-              ) : (
-                <UserIcon className="w-7 h-7 text-gray-400" />
-              )}
-            </div>
+            <Avatar src={pickPhotoUrl(user)} name={fullName} size="xl" />
             <div>
               <h1 className="text-xl font-bold text-gray-900">{fullName}</h1>
               <div className="mt-1 flex items-center gap-2 flex-wrap text-sm text-gray-600">

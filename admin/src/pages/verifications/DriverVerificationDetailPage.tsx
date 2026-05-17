@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
+import { doc, getDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../../config/firebase'
 import {
   ArrowLeft, Loader2, CheckCircle2, XCircle, FileText, Image as ImageIcon,
-  ExternalLink, ShieldCheck, AlertCircle, Phone, Mail, Car,
+  ExternalLink, ShieldCheck, AlertCircle, Phone, Mail, Car, Archive,
+  Info,
 } from 'lucide-react'
 import {
   EXPECTED_DOCUMENTS,
+  LEGACY_KEY_MAP,
   type DriverForVerification,
   type DriverDocument,
+  type DocumentSource,
 } from '../../types/driverDocument'
+import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 
 interface DocsMap {
   [docId: string]: DriverDocument
@@ -33,24 +37,100 @@ export function DriverVerificationDetailPage() {
 
   const load = async () => {
     setLoading(true)
+    setFeedback(null)
     try {
-      // Load user
+      // 1. Cargar usuario
       const userSnap = await getDoc(doc(db, 'users', driverId!))
-      if (userSnap.exists()) {
-        setDriver({ id: userSnap.id, ...(userSnap.data() as any) })
+      const userData: any = userSnap.exists() ? userSnap.data() : null
+      if (userData) {
+        setDriver({ id: userSnap.id, ...userData })
       }
 
-      // Load all documents under drivers/{driverId}/documents/
-      const docsSnap = await getDocs(collection(db, 'drivers', driverId!, 'documents'))
+      // 2. Combinar documentos desde 3 fuentes
       const map: DocsMap = {}
-      docsSnap.docs.forEach((d) => {
-        map[d.id] = { id: d.id, ...(d.data() as any) } as DriverDocument
-      })
+
+      // 2a. Fuente preferida: subcolección drivers/{uid}/documents/
+      try {
+        const subcolSnap = await getDocs(collection(db, 'drivers', driverId!, 'documents'))
+        subcolSnap.docs.forEach((d) => {
+          map[d.id] = {
+            id: d.id,
+            ...(d.data() as any),
+            source: 'subcollection',
+          } as DriverDocument
+        })
+      } catch (err) {
+        console.warn('No se pudo leer subcollection drivers/documents:', err)
+      }
+
+      // 2b. Fallback: users.documents field (formato registro inicial)
+      const legacyUserDocs = userData?.documents
+      if (legacyUserDocs && typeof legacyUserDocs === 'object') {
+        addLegacySources(map, legacyUserDocs, 'legacy_user_field')
+      }
+
+      // 2c. Fallback: collection driver_applications
+      try {
+        const appsSnap = await getDocs(
+          query(collection(db, 'driver_applications'), where('userId', '==', driverId!)),
+        )
+        if (!appsSnap.empty) {
+          const appData = appsSnap.docs[0]!.data() as any
+          const appDocs = appData.documents ?? appData
+          if (appDocs && typeof appDocs === 'object') {
+            addLegacySources(map, appDocs, 'driver_applications')
+          }
+        }
+      } catch (err) {
+        console.warn('No se pudo leer driver_applications:', err)
+      }
+
       setDocs(map)
     } catch (err) {
       console.error('Load detail error:', err)
+      setFeedback({ kind: 'err', msg: 'Error al cargar la información del conductor' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * Add legacy document urls into the docs map, mapping each legacy
+   * field name to its canonical DocumentId. Skips fields already filled
+   * from a higher-priority source.
+   */
+  function addLegacySources(
+    map: DocsMap,
+    rawDocs: Record<string, any>,
+    source: DocumentSource,
+  ) {
+    for (const [key, value] of Object.entries(rawDocs)) {
+      // Soporta dos shapes: { licenseUrl: "https..." } o { license: { fileUrl: "https..." } }
+      let fileUrl: string | null = null
+      if (typeof value === 'string') {
+        fileUrl = value
+      } else if (value && typeof value === 'object' && typeof value.fileUrl === 'string') {
+        fileUrl = value.fileUrl
+      } else if (value && typeof value === 'object' && typeof value.url === 'string') {
+        fileUrl = value.url
+      }
+      if (!fileUrl) continue
+
+      const canonicalId = LEGACY_KEY_MAP[key] ?? (LEGACY_KEY_MAP[key.toLowerCase()] as string | undefined) ?? null
+      if (!canonicalId) continue
+      // Don't overwrite a higher-priority source
+      if (map[canonicalId]?.source === 'subcollection') continue
+
+      const meta = EXPECTED_DOCUMENTS.find((e) => e.id === canonicalId)
+      map[canonicalId] = {
+        id: canonicalId,
+        name: meta?.name ?? canonicalId,
+        description: meta?.description,
+        isRequired: meta?.isRequired ?? false,
+        status: 'pending',
+        fileUrl,
+        source,
+      } as DriverDocument
     }
   }
 
@@ -92,8 +172,18 @@ export function DriverVerificationDetailPage() {
     setActing(true)
     setFeedback(null)
     try {
-      const fn = httpsCallable<{ driverId: string; docId: string }, { ok: boolean }>(functions, 'approveDriverDocument')
-      await fn({ driverId, docId })
+      // For legacy docs, pass the fileUrl so the Cloud Function can
+      // materialize the entry into the canonical subcollection.
+      const existing = docs[docId]
+      const payload: { driverId: string; docId: string; fileUrl?: string } = {
+        driverId,
+        docId,
+      }
+      if (existing?.source && existing.source !== 'subcollection' && existing.fileUrl) {
+        payload.fileUrl = existing.fileUrl
+      }
+      const fn = httpsCallable<typeof payload, { ok: boolean }>(functions, 'approveDriverDocument')
+      await fn(payload)
       setFeedback({ kind: 'ok', msg: 'Documento aprobado' })
       await load()
     } catch (err: any) {
@@ -110,8 +200,17 @@ export function DriverVerificationDetailPage() {
     setActing(true)
     setFeedback(null)
     try {
-      const fn = httpsCallable<{ driverId: string; docId: string; reason: string }, { ok: boolean }>(functions, 'rejectDriverDocument')
-      await fn({ driverId, docId, reason: reason.trim() })
+      const existing = docs[docId]
+      const payload: { driverId: string; docId: string; reason: string; fileUrl?: string } = {
+        driverId,
+        docId,
+        reason: reason.trim(),
+      }
+      if (existing?.source && existing.source !== 'subcollection' && existing.fileUrl) {
+        payload.fileUrl = existing.fileUrl
+      }
+      const fn = httpsCallable<typeof payload, { ok: boolean }>(functions, 'rejectDriverDocument')
+      await fn(payload)
       setFeedback({ kind: 'ok', msg: 'Documento rechazado. Conductor notificado.' })
       await load()
     } catch (err: any) {
@@ -153,22 +252,25 @@ export function DriverVerificationDetailPage() {
       {/* Cabecera */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{driver.fullName || driver.name || 'Sin nombre'}</h1>
-            <div className="mt-2 space-y-1 text-sm text-gray-600">
-              {driver.email && <p className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {driver.email}</p>}
-              {(driver.phone || driver.phoneNumber) && (
-                <p className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {driver.phone || driver.phoneNumber}</p>
-              )}
-              {driver.driverProfile?.documentNumber && (
-                <p className="text-xs text-gray-500">DNI: {driver.driverProfile.documentNumber}</p>
-              )}
-              {driver.vehicleInfo?.make && (
-                <p className="flex items-center gap-1 text-xs text-gray-500">
-                  <Car className="w-3.5 h-3.5" />
-                  {driver.vehicleInfo.make} {driver.vehicleInfo.model} {driver.vehicleInfo.year} · placa {driver.vehicleInfo.plate}
-                </p>
-              )}
+          <div className="flex items-start gap-4">
+            <Avatar src={pickPhotoUrl(driver)} name={driver.fullName || driver.name} size="xl" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{driver.fullName || driver.name || 'Sin nombre'}</h1>
+              <div className="mt-2 space-y-1 text-sm text-gray-600">
+                {driver.email && <p className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {driver.email}</p>}
+                {(driver.phone || driver.phoneNumber) && (
+                  <p className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {driver.phone || driver.phoneNumber}</p>
+                )}
+                {driver.driverProfile?.documentNumber && (
+                  <p className="text-xs text-gray-500">DNI: {driver.driverProfile.documentNumber}</p>
+                )}
+                {driver.vehicleInfo?.make && (
+                  <p className="flex items-center gap-1 text-xs text-gray-500">
+                    <Car className="w-3.5 h-3.5" />
+                    {driver.vehicleInfo.make} {driver.vehicleInfo.model} {driver.vehicleInfo.year} · placa {driver.vehicleInfo.plate}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           <div className="text-right">
@@ -197,9 +299,19 @@ export function DriverVerificationDetailPage() {
 
       {/* Documents grid */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <FileText className="w-4 h-4" /> Documentos del conductor ({Object.values(docs).filter((d) => d.status === 'approved').length}/{EXPECTED_DOCUMENTS.length})
+        <h2 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+          <FileText className="w-4 h-4" /> Documentos del conductor ({Object.values(docs).filter((d) => d.status === 'approved').length}/{EXPECTED_DOCUMENTS.length} aprobados)
         </h2>
+        {(() => {
+          const legacyCount = Object.values(docs).filter((d) => d.source && d.source !== 'subcollection').length
+          if (legacyCount === 0) return null
+          return (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mb-4 flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 flex-shrink-0" />
+              {legacyCount} documento{legacyCount === 1 ? '' : 's'} fueron subido{legacyCount === 1 ? '' : 's'} en el registro inicial (legacy). Al aprobarlos se migran automáticamente al sistema actual.
+            </p>
+          )
+        })()}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {EXPECTED_DOCUMENTS.map((expected) => {
             const d = docs[expected.id]
@@ -273,10 +385,12 @@ function DocumentCard({
   }
   const cfg = statusStyles[status] ?? statusStyles.missing
 
+  const isLegacy = !!doc?.source && doc.source !== 'subcollection'
+
   return (
     <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <p className="font-medium text-gray-900 text-sm">
             {expected.name}
             {expected.isRequired ? (
@@ -287,7 +401,14 @@ function DocumentCard({
           </p>
           <p className="text-xs text-gray-500 mt-0.5">{expected.description}</p>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${cfg.bg}`}>{cfg.label}</span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${cfg.bg}`}>{cfg.label}</span>
+          {isLegacy && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-1">
+              <Archive className="w-2.5 h-2.5" /> legacy
+            </span>
+          )}
+        </div>
       </div>
 
       {hasFile ? (

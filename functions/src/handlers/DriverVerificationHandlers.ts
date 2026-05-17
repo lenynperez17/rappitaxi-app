@@ -120,14 +120,18 @@ export const approveDriver = onCall({ cors: true }, async (request) => {
 
 /**
  * Aprueba un documento individual del conductor.
- * (El admin puede aprobar uno por uno; cuando todos los requeridos estén
- * approved, puede llamar a approveDriver.)
+ *
+ * Soporta documentos LEGACY: si el cliente envía `fileUrl` (porque el
+ * doc venía de `users.documents` o `driver_applications` y todavía no
+ * estaba en la subcolección `drivers/{uid}/documents/`), el handler lo
+ * materializa allí con set+merge. De esta manera la subcolección queda
+ * como fuente canónica única tras la aprobación.
  */
 export const approveDriverDocument = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesion')
   await ensureAdmin(request.auth.uid)
 
-  const { driverId, docId } = request.data ?? {}
+  const { driverId, docId, fileUrl } = request.data ?? {}
   if (!driverId || !docId) {
     throw new HttpsError('invalid-argument', 'driverId y docId requeridos')
   }
@@ -136,29 +140,49 @@ export const approveDriverDocument = onCall({ cors: true }, async (request) => {
     .collection('drivers').doc(driverId)
     .collection('documents').doc(docId)
   const docSnap = await docRef.get()
-  if (!docSnap.exists) {
+
+  // If the subcollection entry doesn't exist yet, require fileUrl from the client
+  // (sourced from the legacy users.documents or driver_applications).
+  if (!docSnap.exists && (!fileUrl || typeof fileUrl !== 'string')) {
     throw new HttpsError('not-found', 'Documento no encontrado o no subido')
   }
 
-  await docRef.update({
+  const baseUpdate: Record<string, any> = {
     status: 'approved',
     rejectionReason: admin.firestore.FieldValue.delete(),
     approvedAt: admin.firestore.FieldValue.serverTimestamp(),
     approvedBy: request.auth.uid,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  })
+  }
+  // Add canonical metadata when materializing a legacy doc for the first time
+  if (!docSnap.exists) {
+    baseUpdate.fileUrl = fileUrl
+    baseUpdate.uploadDate = admin.firestore.FieldValue.serverTimestamp()
+    baseUpdate.name = DOC_NAMES_ES[docId] ?? docId
+    baseUpdate.migratedFromLegacy = true
+  } else if (fileUrl && typeof fileUrl === 'string') {
+    // If the doc existed but came from a different shape, ensure fileUrl is set
+    const existing = docSnap.data() ?? {}
+    if (!existing.fileUrl) baseUpdate.fileUrl = fileUrl
+  }
+
+  await docRef.set(baseUpdate, { merge: true })
 
   return { ok: true, docId }
 })
 
 /**
  * Rechaza un documento. Envía push notif al conductor con el motivo.
+ *
+ * Soporta documentos LEGACY igual que approveDriverDocument: si el doc
+ * aún no está en la subcolección, lo materializa con set+merge para
+ * preservar el rechazo de forma persistente.
  */
 export const rejectDriverDocument = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Debes iniciar sesion')
   await ensureAdmin(request.auth.uid)
 
-  const { driverId, docId, reason } = request.data ?? {}
+  const { driverId, docId, reason, fileUrl } = request.data ?? {}
   if (!driverId || !docId || !reason || typeof reason !== 'string') {
     throw new HttpsError('invalid-argument', 'driverId, docId y reason requeridos')
   }
@@ -167,17 +191,26 @@ export const rejectDriverDocument = onCall({ cors: true }, async (request) => {
     .collection('drivers').doc(driverId)
     .collection('documents').doc(docId)
   const docSnap = await docRef.get()
-  if (!docSnap.exists) {
+
+  if (!docSnap.exists && (!fileUrl || typeof fileUrl !== 'string')) {
     throw new HttpsError('not-found', 'Documento no encontrado')
   }
 
-  await docRef.update({
+  const baseUpdate: Record<string, any> = {
     status: 'rejected',
     rejectionReason: reason.trim().slice(0, 500),
     rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
     rejectedBy: request.auth.uid,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  })
+  }
+  if (!docSnap.exists) {
+    baseUpdate.fileUrl = fileUrl
+    baseUpdate.uploadDate = admin.firestore.FieldValue.serverTimestamp()
+    baseUpdate.name = DOC_NAMES_ES[docId] ?? docId
+    baseUpdate.migratedFromLegacy = true
+  }
+
+  await docRef.set(baseUpdate, { merge: true })
 
   // Send push notif al conductor
   try {
