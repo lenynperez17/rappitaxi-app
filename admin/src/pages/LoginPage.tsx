@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Zap, Eye, EyeOff, AlertCircle, Loader2, X, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2, X, CheckCircle2 } from 'lucide-react'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../config/firebase'
 import { useAuth } from '../hooks/useAuth'
@@ -44,8 +44,8 @@ export function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#E31E24] shadow-lg shadow-red-500/30 mb-4">
-            <Zap className="w-9 h-9 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl shadow-lg shadow-red-500/30 mb-4 overflow-hidden bg-white">
+            <img src="/icon-192.png" alt="Rapi Team" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-white">Rapi Team</h1>
           <p className="text-gray-400 text-sm mt-1">Panel de Administracion</p>

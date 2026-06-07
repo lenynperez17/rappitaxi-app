@@ -15,7 +15,6 @@ import {
   FileMinus,
   ShieldCheck,
   X,
-  Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -63,8 +62,8 @@ export function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) 
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-700/50 flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-[#E31E24] flex items-center justify-center flex-shrink-0">
-          <Zap className="w-5 h-5 text-white" />
+        <div className="w-9 h-9 rounded-lg overflow-hidden bg-white flex items-center justify-center flex-shrink-0">
+          <img src="/icon-192.png" alt="Rapi Team" className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
