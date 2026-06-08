@@ -2074,7 +2074,14 @@ export const deleteOrphanedUser = onRequest({ cors: true, invoker: 'public' }, a
  * Usa beforeUserDeleted para limpiar datos ANTES de que el usuario sea eliminado,
  * garantizando que no queden datos huérfanos.
  */
-export const onUserDeleted = auth.user().onDelete(async (user: auth.UserRecord) => {
+// DEPRECADO 1st gen — reemplazado por `deleteMyAccount` callable 2nd gen
+// (ver functions/src/handlers/AccountDeletionHandler.ts). El trigger 1st
+// gen requiere App Engine siempre activo (~$2.26/mes mínimo). Lo dejamos
+// comentado por 1 release como rollback y luego se borra. TODO(2026-07):
+// borrar este export y el body completo del handler.
+// @ts-expect-error: deprecated handler kept for one-release rollback safety
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _onUserDeleted_DEPRECATED = auth.user().onDelete(async (user: auth.UserRecord) => {
   const uid = user.uid;
   const email = user.email || 'sin email';
 
@@ -2240,4 +2247,7 @@ export { createManualRide } from './handlers/ManualRideHandlers';
 export { driverHeartbeatCheck } from './triggers/driverHeartbeatCheck';
 export { cancelRideByAdmin } from './handlers/AdminRideHandlers';
 export { suspendUser, reactivateUser, sendPasswordResetForUser } from './handlers/AdminUserHandlers';
+export { deleteMyAccount } from './handlers/AccountDeletionHandler';
+export { sendVerificationCode, verifyCode } from './handlers/PhoneVerificationHandler';
+export { directionsProxy, placesAutocompleteProxy, placeDetailsProxy } from './mapsProxy';
 

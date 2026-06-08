@@ -543,9 +543,15 @@ class FirebaseService {
           throw Exception('Apple Sign In: No se recibió token de identidad');
         }
 
+        // ROOT CAUSE fix (de App-Plus v2.0.75+84): el credential de Firebase
+        // necesita `accessToken: appleCredential.authorizationCode` además del
+        // `idToken` y `rawNonce` — sin esto Firebase responde
+        // `invalid_credential` y Apple rechaza el review. El authorizationCode
+        // viene del payload que firma Apple junto al identityToken.
         final oauthCredential = OAuthProvider("apple.com").credential(
           idToken: appleCredential.identityToken,
           rawNonce: rawNonce,
+          accessToken: appleCredential.authorizationCode,
         );
         userCredential = await auth.signInWithCredential(oauthCredential);
       }
@@ -884,10 +890,24 @@ class FirebaseService {
     try {
       final doc = await firestore.collection('drivers').doc(driverId).get();
       if (doc.exists && doc.data()?['currentLocation'] != null) {
-        final location = doc.data()!['currentLocation'];
-        final lat = (location['latitude'] as num?)?.toDouble();
-        final lng = (location['longitude'] as num?)?.toDouble();
-        final heading = (location['heading'] as num?)?.toDouble() ?? 0.0;
+        final currentLocation = doc.data()!['currentLocation'];
+        double? lat;
+        double? lng;
+        double heading = 0.0;
+
+        if (currentLocation is GeoPoint) {
+          // GeoPoint format
+          lat = currentLocation.latitude;
+          lng = currentLocation.longitude;
+          // Heading stored at top level of driver document
+          heading = (doc.data()!['heading'] as num?)?.toDouble() ?? 0.0;
+        } else if (currentLocation is Map) {
+          // Map format: {latitude, longitude, heading}
+          lat = (currentLocation['latitude'] as num?)?.toDouble();
+          lng = (currentLocation['longitude'] as num?)?.toDouble();
+          heading = (currentLocation['heading'] as num?)?.toDouble() ?? 0.0;
+        }
+
         if (lat != null && lng != null) {
           return {'lat': lat, 'lng': lng, 'heading': heading};
         }

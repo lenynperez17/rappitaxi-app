@@ -1446,12 +1446,37 @@ class AuthProvider with ChangeNotifier {
             .get();
 
         if (!userDoc.exists) {
-          // New user — create Firestore document
+          // Check if there's an existing user with this phone number
+          final phoneNumber = _pendingPhoneNumber ?? user.phoneNumber?.replaceAll('+51', '') ?? '';
+          final existingUsers = await FirebaseFirestore.instance
+              .collection('users')
+              .where('phone', isEqualTo: phoneNumber)
+              .limit(1)
+              .get();
+
+          if (existingUsers.docs.isNotEmpty) {
+            // Found existing user with same phone — don't create duplicate
+            AppLogger.info('📱 Found existing user with phone $phoneNumber, signing out new account');
+            final existingDoc = existingUsers.docs.first;
+            // Update existing user's phoneVerified
+            await FirebaseFirestore.instance.collection('users').doc(existingDoc.id).update({
+              'phoneVerified': true,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+            // Sign out from the new account — user should sign in with their original method
+            await FirebaseAuth.instance.signOut();
+            _errorMessage = 'Ya tienes una cuenta con este número. Inicia sesión con ${existingDoc.data()['email'] ?? 'tu email'} o con Google.';
+            _isLoading = false;
+            notifyListeners();
+            return false;
+          }
+
+          // Truly new user — create Firestore document
           AppLogger.info('📝 Creating new user document for phone login');
           final userData = {
             'fullName': user.displayName ?? 'Usuario',
             'email': user.email ?? '',
-            'phone': _pendingPhoneNumber ?? user.phoneNumber ?? '',
+            'phone': phoneNumber,
             'userType': 'passenger',
             'profilePhotoUrl': user.photoURL ?? '',
             'isActive': true,
@@ -1590,8 +1615,10 @@ class AuthProvider with ChangeNotifier {
         'to': newMode,
       });
 
-      // ✅ Pequeño delay para permitir que listeners del rol anterior se detengan
-      await Future.delayed(const Duration(milliseconds: 100));
+      // PERF: removido `Future.delayed(100ms)` que aplazaba la respuesta UI.
+      // El optimistic update siguiente garantiza que la UI no muestre estado
+      // inconsistente; los listeners del rol anterior se desuscriben por su
+      // cuenta cuando el provider notifica cambio de modo.
 
       // ✅ FIX: Actualizar estado local PRIMERO para UI instantánea (optimistic update)
       _currentUser = _currentUser!.copyWith(currentMode: newMode);

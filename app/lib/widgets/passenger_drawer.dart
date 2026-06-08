@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../core/constants/app_colors.dart';
 import '../core/widgets/mode_switch_button.dart';
 import '../providers/auth_provider.dart';
@@ -380,12 +381,18 @@ class PassengerDrawer extends StatelessWidget {
             child: Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/login',
-                (route) => false,
-              );
+            onPressed: () async {
+              // capture-before-pop: context del dialog se desmonta al cerrar
+              final rootNav = Navigator.of(context, rootNavigator: true);
+              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              Navigator.pop(context); // cierra dialog
+              try {
+                await FirebaseAuth.instance.signOut();
+              } catch (_) {/* best-effort */}
+              try {
+                await authProvider.logout();
+              } catch (_) {/* best-effort */}
+              rootNav.pushNamedAndRemoveUntil('/login', (route) => false);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,

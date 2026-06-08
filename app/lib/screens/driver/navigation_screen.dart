@@ -1,93 +1,149 @@
-// ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
+// ignore_for_file: deprecated_member_use, unused_field, unused_element, unreachable_switch_default, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
-import '../../core/theme/modern_theme.dart';
-import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
+import '../../core/constants/app_colors.dart';
+import '../../core/utils/logger.dart';
+import '../../generated/l10n/app_localizations.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import '../../services/maps_service.dart';
+import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
+
+// API Key de Google Maps para Directions API
+const String _googleMapsApiKey = 'AIzaSyB0lGTYq7wjOUEzPYIbxsTPp_COdhEk5Hc';
+
+// Color verde-lima estilo inDrive para botones/badges de accion principal
+const Color _inDriveLime = Color(0xFFC8E636);
 
 class NavigationScreen extends StatefulWidget {
   final Map<String, dynamic>? tripData;
-  
+
   const NavigationScreen({super.key, this.tripData});
-  
+
   @override
   _NavigationScreenState createState() => _NavigationScreenState();
 }
 
-class _NavigationScreenState extends State<NavigationScreen> 
+class _NavigationScreenState extends State<NavigationScreen>
     with TickerProviderStateMixin {
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  
+
+  // Iconos personalizados para los marcadores
+  BitmapDescriptor? _carIcon;
+  BitmapDescriptor? _personIcon;
+  BitmapDescriptor? _destinationIcon;
+
   // Animation controllers
   late AnimationController _pulseController;
   late AnimationController _slideController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _slideAnimation;
-  
+
   // Navigation state
   bool _isNavigating = false;
   final bool _showInstructions = true;
-  String _currentInstruction = 'Calculando ruta...';
+  String _currentInstruction = '';
   String _nextInstruction = '';
   double _distanceToNext = 0;
   int _estimatedTime = 0;
   double _totalDistance = 0;
   int _totalTime = 0;
-  
-  // Current location - initialized from tripData or defaults
-  late LatLng _currentLocation;
-  late LatLng _destination;
-  Timer? _locationTimer;
-  double _currentBearing = 0.0; // Dynamic bearing for camera and marker rotation
-  LatLng? _previousLocation; // For calculating bearing between points
+  bool _isRouteInitialized = false;
 
-  // ✅ Flag para prevenir operaciones después de dispose
+  // Ubicación GPS real
+  LatLng _currentLocation = LatLng(-12.0851, -76.9770);
+  LatLng _destination = LatLng(-12.0951, -76.9870);
+  LatLng? _pickupLocation;
+  LatLng? _finalDestination;
+  Timer? _locationTimer;
+  StreamSubscription<Position>? _positionStream;
+
+  // Firebase
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _tripId;
+  StreamSubscription<DocumentSnapshot>? _tripSubscription;
+
+  // Flag para evitar multiples llamadas a la API de rutas
+  bool _isFetchingRoute = false;
+
+  // Flag para saber si tenemos ubicación GPS real
+  bool _hasRealGpsLocation = false;
+
+  // Flag para prevenir operaciones despues de dispose
   bool _isDisposed = false;
 
-  // ✅ Iconos 3D personalizados para markers
-  BitmapDescriptor? _carIcon;
-  BitmapDescriptor? _passengerIcon;
-  BitmapDescriptor? _destinationIcon;
+  // FLUJO DEL VIAJE: Estados (estilo inDrive - SIN verificación PIN)
+  bool _isNavigatingToPickup = true;
+  bool _hasArrivedAtPickup = false;
+  bool _isWaitingForPassenger = false;
+  bool _isTripInProgress = false;
+  bool _isNearFinalDestination = false;
+
+  // Datos del viaje para mostrar
+  String _pickupAddress = 'Punto de recogida';
+  String _destinationAddress = 'Destino';
+  String _passengerName = 'Pasajero';
+  String _passengerPhoto = '';
+  double _passengerRating = 5.0;
+  int _passengerTripCount = 0;
+  double _fare = 0.0;
+  String _paymentMethod = 'Efectivo';
+
+  /// Format raw payment method value to user-friendly Spanish label
+  String _formatPaymentLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'cash':
+      case 'efectivo':
+        return 'Efectivo';
+      case 'yape':
+        return 'Yape';
+      case 'plin':
+        return 'Plin';
+      case 'card':
+      case 'tarjeta':
+        return 'Tarjeta';
+      case 'wallet':
+      case 'billetera':
+        return 'Billetera';
+      default:
+        return 'Efectivo';
+    }
+  }
+  String _passengerPhone = '';
+  String _passengerId = '';
+
+  // TEMPORIZADOR DE ESPERA
+  Timer? _waitingTimer;
+  int _waitingSeconds = 0;
+  DateTime? _arrivalTime;
 
   // Route instructions
   List<RouteInstruction> _instructions = [];
   int _currentInstructionIndex = 0;
-  
+
   @override
   void initState() {
     super.initState();
-
-    // Extract real coordinates from tripData if available
-    final data = widget.tripData;
-    if (data != null) {
-      final pickupLat = data['pickupLat'] as double?;
-      final pickupLng = data['pickupLng'] as double?;
-      final destLat = data['destLat'] as double?;
-      final destLng = data['destLng'] as double?;
-      _currentLocation = LatLng(pickupLat ?? -12.0464, pickupLng ?? -77.0428);
-      _destination = LatLng(destLat ?? -12.0464, destLng ?? -77.0428);
-    } else {
-      // Fallback to Lima center
-      _currentLocation = LatLng(-12.0464, -77.0428);
-      _destination = LatLng(-12.0464, -77.0428);
-    }
 
     _pulseController = AnimationController(
       duration: Duration(seconds: 2),
       vsync: this,
     )..repeat();
-    
+
     _slideController = AnimationController(
       duration: Duration(milliseconds: 500),
       vsync: this,
     );
-    
+
     _pulseAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -95,120 +151,557 @@ class _NavigationScreenState extends State<NavigationScreen>
       parent: _pulseController,
       curve: Curves.easeInOut,
     ));
-    
+
     _slideAnimation = CurvedAnimation(
       parent: _slideController,
       curve: Curves.easeInOut,
     );
-    
+
     _slideController.forward();
-    _loadCustomIcons();
-    _initializeRoute();
+
+    _loadCustomMarkerIcons();
+    _initializeTripData();
+    _initializeGPS();
+
+    // Auto-iniciar navegacion con un pequeño delay para que el mapa cargue
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted && !_isDisposed) {
+        _startNavigation();
+      }
+    });
   }
 
-  // ✅ Cargar iconos modernos desde MapMarkerUtils
-  Future<void> _loadCustomIcons() async {
+  Future<void> _loadCustomMarkerIcons() async {
     try {
       _carIcon = await MapMarkerUtils.getCarTopViewIcon();
-      _passengerIcon = await MapMarkerUtils.getPassengerIcon();
+      _personIcon = await MapMarkerUtils.getPassengerWaitingIcon();
       _destinationIcon = await MapMarkerUtils.getDestinationIcon();
-
-      if (mounted && !_isDisposed) {
-        setState(() {});
-        _drawRoute(); // Redibujar con iconos nuevos
-      }
+      debugPrint('Iconos personalizados cargados correctamente (MapMarkerUtils)');
+      if (mounted) setState(() {});
     } catch (e) {
-      print('Error cargando iconos 3D: $e');
+      debugPrint('Error cargando iconos personalizados: $e');
     }
   }
 
-  // ✅ Convertir asset PNG a BitmapDescriptor con tamaño personalizado
-  Future<BitmapDescriptor> _getBitmapFromAsset(String path, int width) async {
-    final ByteData data = await rootBundle.load(path);
-    final ui.Codec codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: width,
-    );
-    final ui.FrameInfo fi = await codec.getNextFrame();
-    final ByteData? byteData = await fi.image.toByteData(format: ui.ImageByteFormat.png);
+  void _initializeTripData() {
+    debugPrint('INICIALIZANDO TRIP DATA: ${widget.tripData}');
+    if (widget.tripData != null) {
+      final data = widget.tripData!;
+      _tripId = data['id'] ?? data['tripId'];
+      debugPrint('_tripId asignado: $_tripId');
 
-    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+      // Intentar con pickupLat/pickupLng (formato de modern_driver_home)
+      final pickupLat = data['pickupLat'];
+      final pickupLng = data['pickupLng'];
+      if (pickupLat != null && pickupLng != null) {
+        _pickupLocation = LatLng(
+          (pickupLat is double) ? pickupLat : (pickupLat as num).toDouble(),
+          (pickupLng is double) ? pickupLng : (pickupLng as num).toDouble(),
+        );
+        debugPrint('Pickup desde pickupLat/pickupLng: $_pickupLocation');
+      }
+
+      // Fallback con 'pickupLocation', 'origin' o 'pickup'
+      if (_pickupLocation == null) {
+        final originData = data['pickupLocation'] ?? data['origin'] ?? data['pickup'];
+        if (originData != null) {
+          if (originData is GeoPoint) {
+            _pickupLocation = LatLng(originData.latitude, originData.longitude);
+          } else if (originData is Map) {
+            final lat = originData['latitude'] ?? originData['lat'];
+            final lng = originData['longitude'] ?? originData['lng'];
+            if (lat != null && lng != null) {
+              _pickupLocation = LatLng(lat.toDouble(), lng.toDouble());
+            }
+          }
+        }
+        debugPrint('Pickup desde pickupLocation/origin/pickup: $_pickupLocation');
+      }
+
+      // Intentar con destinationLat/destinationLng
+      final destLat = data['destinationLat'];
+      final destLng = data['destinationLng'];
+      if (destLat != null && destLng != null) {
+        _finalDestination = LatLng(
+          (destLat is double) ? destLat : (destLat as num).toDouble(),
+          (destLng is double) ? destLng : (destLng as num).toDouble(),
+        );
+        debugPrint('Destino desde destinationLat/destinationLng: $_finalDestination');
+      }
+
+      // Fallback con 'destinationLocation'
+      if (_finalDestination == null) {
+        final destinationData = data['destinationLocation'] ?? data['destination'] ?? data['dropoff'];
+        if (destinationData != null) {
+          if (destinationData is GeoPoint) {
+            _finalDestination = LatLng(destinationData.latitude, destinationData.longitude);
+          } else if (destinationData is Map) {
+            final lat = destinationData['latitude'] ?? destinationData['lat'];
+            final lng = destinationData['longitude'] ?? destinationData['lng'];
+            if (lat != null && lng != null) {
+              _finalDestination = LatLng(lat.toDouble(), lng.toDouble());
+            }
+          }
+        }
+        debugPrint('Destino desde destinationLocation/destination: $_finalDestination');
+      }
+
+      // Set destination based on current ride status
+      final rideStatus = data['status'] as String? ?? '';
+      if (rideStatus == 'in_progress') {
+        // Trip already started — navigate to final destination
+        _destination = _finalDestination ?? _pickupLocation ?? _destination;
+        _isNavigatingToPickup = false;
+        _isTripInProgress = true;
+        _hasArrivedAtPickup = true;
+      } else if (_pickupLocation != null) {
+        // Still in pickup phase — navigate to pickup
+        _destination = _pickupLocation!;
+      }
+
+      // Leer datos del viaje y del pasajero
+      _pickupAddress = data['pickupAddress'] as String? ??
+                       data['originAddress'] as String? ??
+                       'Punto de recogida';
+      _destinationAddress = data['destinationAddress'] as String? ?? 'Destino';
+      _passengerName = data['passengerName'] as String? ?? 'Pasajero';
+      _passengerPhoto = data['passengerPhoto'] as String? ?? '';
+      _passengerRating = (data['passengerRating'] ?? 5.0).toDouble();
+      _passengerTripCount = (data['passengerTripCount'] ?? 0).toInt();
+      _fare = (data['fare'] ?? data['acceptedFare'] ?? 0.0).toDouble();
+      _paymentMethod = _formatPaymentLabel(data['paymentMethod'] as String? ?? 'cash');
+      _passengerPhone = data['passengerPhone'] as String? ?? '';
+      _passengerId = data['passengerId'] as String? ?? data['userId'] as String? ?? '';
+
+      debugPrint('RESUMEN - Pickup: $_pickupLocation ($_pickupAddress), Destino final: $_finalDestination ($_destinationAddress), Pasajero: $_passengerName');
+
+      if (_tripId != null) {
+        _listenToTripChanges();
+      }
+    }
   }
-  
+
+  void _listenToTripChanges() {
+    _tripSubscription?.cancel();
+    _tripSubscription = _firestore
+        .collection('rides')
+        .doc(_tripId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted || _isDisposed) return;
+
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>;
+        final status = data['status'] as String?;
+
+        debugPrint('Status del viaje: $status');
+
+        if (status == 'in_progress' && !_isTripInProgress) {
+          setState(() {
+            _isWaitingForPassenger = false;
+            _isTripInProgress = true;
+            _isNavigatingToPickup = false;
+            _hasArrivedAtPickup = true;
+            if (_finalDestination != null) {
+              _destination = _finalDestination!;
+              debugPrint('Destino actualizado al destino final: $_destination');
+            }
+          });
+          _waitingTimer?.cancel();
+          _isRouteInitialized = false;
+          _initializeRoute(AppLocalizations.of(context)!);
+        }
+
+        // Handle cancellation by passenger
+        if (status == 'cancelled' || status == 'expired') {
+          debugPrint('Ride cancelled/expired by passenger. Returning to home.');
+          _tripSubscription?.cancel();
+          _tripSubscription = null;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('El pasajero canceló el viaje'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            Navigator.of(context).pop();
+          }
+        }
+      } else {
+        // Ride document was deleted
+        debugPrint('Ride document deleted. Returning to home.');
+        _tripSubscription?.cancel();
+        _tripSubscription = null;
+        if (mounted) Navigator.of(context).pop();
+      }
+    });
+  }
+
+  Future<void> _initializeGPS() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          Logger.warning('Permisos de ubicación denegados');
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        Logger.warning('Permisos de ubicación denegados permanentemente');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+
+      if (mounted && !_isDisposed) {
+        final isFirstGpsLocation = !_hasRealGpsLocation;
+
+        setState(() {
+          _currentLocation = LatLng(position.latitude, position.longitude);
+          _hasRealGpsLocation = true;
+        });
+        _updateLocationMarker();
+
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(_currentLocation),
+        );
+
+        if (isFirstGpsLocation) {
+          debugPrint('Primera ubicación GPS real obtenida, FORZANDO cálculo de ruta...');
+          _isFetchingRoute = false;
+          _isRouteInitialized = false;
+          _initializeRoute(AppLocalizations.of(context)!);
+        }
+      }
+    } catch (e) {
+      Logger.error('Error inicializando GPS', e);
+    }
+  }
+
   @override
   void dispose() {
-    // ✅ Marcar como disposed ANTES de cancelar recursos
     _isDisposed = true;
 
     _pulseController.dispose();
     _slideController.dispose();
     _locationTimer?.cancel();
     _locationTimer = null;
+    _positionStream?.cancel();
+    _positionStream = null;
+    _waitingTimer?.cancel();
+    _waitingTimer = null;
+    _tripSubscription?.cancel();
+    _tripSubscription = null;
     _mapController?.dispose();
     super.dispose();
   }
-  
-  void _initializeRoute() {
-    // Simulate route instructions
+
+  void _initializeRoute(AppLocalizations l10n) {
+    if (_isRouteInitialized) return;
+    _isRouteInitialized = true;
+
+    final distanceToDestination = Geolocator.distanceBetween(
+      _currentLocation.latitude,
+      _currentLocation.longitude,
+      _destination.latitude,
+      _destination.longitude,
+    );
+
+    final estimatedMinutes = (distanceToDestination / 1000) / 30 * 60;
+
+    String instructionText;
+    String arrivalText;
+    if (!_isTripInProgress && _pickupLocation != null) {
+      instructionText = 'Recoge a $_passengerName';
+      arrivalText = 'Llegando: $_pickupAddress';
+    } else {
+      instructionText = 'Lleva al pasajero al destino';
+      arrivalText = 'Llegando: $_destinationAddress';
+    }
+
     _instructions = [
       RouteInstruction(
-        instruction: 'Dirígete hacia el norte por Av. Principal',
-        distance: 250,
-        duration: 60,
-        turnIcon: Icons.arrow_upward,
-        position: LatLng(-12.0851, -76.9770),
+        instruction: instructionText,
+        distance: distanceToDestination,
+        duration: estimatedMinutes.round(),
+        turnIcon: Icons.navigation,
+        position: _currentLocation,
       ),
       RouteInstruction(
-        instruction: 'Gira a la derecha en Calle 2',
-        distance: 500,
-        duration: 120,
-        turnIcon: Icons.turn_right,
-        position: LatLng(-12.0861, -76.9780),
-      ),
-      RouteInstruction(
-        instruction: 'Continúa recto por 800 metros',
-        distance: 800,
-        duration: 180,
-        turnIcon: Icons.straight,
-        position: LatLng(-12.0881, -76.9800),
-      ),
-      RouteInstruction(
-        instruction: 'Gira a la izquierda en Av. Secundaria',
-        distance: 400,
-        duration: 90,
-        turnIcon: Icons.turn_left,
-        position: LatLng(-12.0901, -76.9820),
-      ),
-      RouteInstruction(
-        instruction: 'En la rotonda, toma la segunda salida',
-        distance: 200,
-        duration: 45,
-        turnIcon: Icons.rotate_right,
-        position: LatLng(-12.0921, -76.9840),
-      ),
-      RouteInstruction(
-        instruction: 'Tu destino está a la derecha',
-        distance: 50,
-        duration: 15,
+        instruction: arrivalText,
+        distance: 50.0,
+        duration: 1,
         turnIcon: Icons.location_on,
-        position: LatLng(-12.0941, -76.9860),
+        position: _destination,
       ),
     ];
-    
-    _totalDistance = _instructions.fold(0, (sum, inst) => sum + inst.distance);
-    _totalTime = _instructions.fold(0, (sum, inst) => sum + inst.duration);
-    
-    _updateCurrentInstruction();
-    _drawRoute();
+
+    _totalDistance = distanceToDestination;
+    _totalTime = estimatedMinutes.round();
+
+    // Draw immediate placeholder route (straight line) so something is visible right away
+    final placeholderOrigin = (_isTripInProgress && _pickupLocation != null)
+        ? _pickupLocation!
+        : _currentLocation;
+    setState(() {
+      _polylines.clear();
+      _polylines.add(Polyline(
+        polylineId: const PolylineId('route'),
+        points: [placeholderOrigin, _destination],
+        color: AppColors.rappiOrange,
+        width: 6,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+      ));
+    });
+
+    _updateCurrentInstruction(l10n);
+    _fetchRealRoute(l10n);
   }
-  
-  void _updateCurrentInstruction() {
+
+  Future<void> _fetchRealRoute(AppLocalizations l10n) async {
+    if (_isFetchingRoute) return;
+
+    if (!_hasRealGpsLocation) {
+      debugPrint('Esperando ubicación GPS real antes de calcular ruta...');
+      // Retry after GPS is available
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && !_isDisposed) _fetchRealRoute(l10n);
+      });
+      return;
+    }
+
+    _isFetchingRoute = true;
+
+    // Safety timeout: reset flag after 10s in case API hangs
+    Future.delayed(const Duration(seconds: 10), () {
+      if (_isFetchingRoute) {
+        debugPrint('_isFetchingRoute timeout — resetting flag');
+        _isFetchingRoute = false;
+      }
+    });
+
+    try {
+      // During in_progress, route is pickup→destination (fixed trip route)
+      // During pickup phase, route is driver→pickup
+      final routeOrigin = (_isTripInProgress && _pickupLocation != null)
+          ? _pickupLocation!
+          : _currentLocation;
+
+      debugPrint('Obteniendo ruta vía mapsProxy (OSRM→Mapbox→Google)...');
+      debugPrint('Origen: ${routeOrigin.latitude}, ${routeOrigin.longitude} (${_isTripInProgress ? "pickup" : "GPS"})');
+      debugPrint('Destino: ${_destination.latitude}, ${_destination.longitude}');
+
+      // Usa MapsService que invoca el callable `directionsProxy`. El backend
+      // cae primero a OSRM (gratis), luego Mapbox (free tier), y solo en último
+      // recurso a Google Directions. Ahorra ~$150-250/mes en escala vs llamar
+      // directo a Google con la API key expuesta en el cliente.
+      final route = await MapsService().getDirections(
+        origin: LatLng(routeOrigin.latitude, routeOrigin.longitude),
+        destination: LatLng(_destination.latitude, _destination.longitude),
+        mode: 'driving',
+      );
+
+      if (!mounted || _isDisposed) return;
+
+      if (route != null && route.points.isNotEmpty) {
+        final List<LatLng> polylineCoordinates = route.points;
+        debugPrint('Ruta obtenida (${route.provider}): ${polylineCoordinates.length} puntos · ${route.distanceKm.toStringAsFixed(2)}km · ${route.durationMinutes}min');
+
+        setState(() {
+          _polylines.clear();
+          _polylines.add(
+            Polyline(
+              polylineId: PolylineId('route'),
+              points: polylineCoordinates,
+              color: AppColors.rappiOrange,
+              width: 6,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+              patterns: [],
+            ),
+          );
+        });
+
+        debugPrint('Polyline agregada con ${_polylines.length} polylines, puntos: ${polylineCoordinates.length}');
+
+        _addRouteMarkers(l10n);
+
+        // Fit camera to show entire route
+        if (polylineCoordinates.length > 1 && _mapController != null) {
+          double minLat = polylineCoordinates.first.latitude;
+          double maxLat = polylineCoordinates.first.latitude;
+          double minLng = polylineCoordinates.first.longitude;
+          double maxLng = polylineCoordinates.first.longitude;
+          for (final p in polylineCoordinates) {
+            if (p.latitude < minLat) minLat = p.latitude;
+            if (p.latitude > maxLat) maxLat = p.latitude;
+            if (p.longitude < minLng) minLng = p.longitude;
+            if (p.longitude > maxLng) maxLng = p.longitude;
+          }
+          _mapController!.animateCamera(
+            CameraUpdate.newLatLngBounds(
+              LatLngBounds(
+                southwest: LatLng(minLat, minLng),
+                northeast: LatLng(maxLat, maxLng),
+              ),
+              80,
+            ),
+          );
+        }
+
+        debugPrint('Ruta real dibujada exitosamente');
+      } else {
+        debugPrint('mapsProxy no devolvió ruta (todos los proveedores fallaron). Usando fallback.');
+        _drawSimpleFallbackRoute(l10n);
+      }
+    } catch (e) {
+      Logger.error('Error obteniendo ruta real de Google Directions', e);
+      debugPrint('Error: $e');
+      if (mounted && !_isDisposed) {
+        _drawSimpleFallbackRoute(l10n);
+      }
+    } finally {
+      _isFetchingRoute = false;
+    }
+  }
+
+  String _stripHtmlTags(String htmlString) {
+    return htmlString.replaceAll(RegExp(r'<[^>]*>'), '');
+  }
+
+  double _parseDistanceString(String distanceStr) {
+    try {
+      final cleanStr = distanceStr.toLowerCase().replaceAll(',', '.');
+      if (cleanStr.contains('km')) {
+        final value = double.tryParse(cleanStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+        return value * 1000;
+      } else {
+        return double.tryParse(cleanStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+      }
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  int _parseDurationString(String durationStr) {
+    try {
+      final cleanStr = durationStr.toLowerCase();
+      if (cleanStr.contains('hour') || cleanStr.contains('hr')) {
+        final hours = int.tryParse(cleanStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        return hours * 60;
+      } else {
+        return int.tryParse(cleanStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      }
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  IconData _getIconFromInstruction(String instruction) {
+    final lower = instruction.toLowerCase();
+
+    if (lower.contains('izquierda') || lower.contains('left')) {
+      if (lower.contains('ligera') || lower.contains('slight')) {
+        return Icons.turn_slight_left;
+      } else if (lower.contains('pronunciada') || lower.contains('sharp')) {
+        return Icons.turn_sharp_left;
+      }
+      return Icons.turn_left;
+    }
+
+    if (lower.contains('derecha') || lower.contains('right')) {
+      if (lower.contains('ligera') || lower.contains('slight')) {
+        return Icons.turn_slight_right;
+      } else if (lower.contains('pronunciada') || lower.contains('sharp')) {
+        return Icons.turn_sharp_right;
+      }
+      return Icons.turn_right;
+    }
+
+    if (lower.contains('rotonda') || lower.contains('roundabout')) {
+      return Icons.roundabout_left;
+    }
+
+    if (lower.contains('retorno') || lower.contains('u-turn')) {
+      return Icons.u_turn_left;
+    }
+
+    if (lower.contains('incorpor') || lower.contains('merge')) {
+      return Icons.merge;
+    }
+
+    if (lower.contains('rampa') || lower.contains('ramp')) {
+      return Icons.ramp_right;
+    }
+
+    if (lower.contains('destino') || lower.contains('destination') || lower.contains('llegada')) {
+      return Icons.location_on;
+    }
+
+    return Icons.straight;
+  }
+
+  void _addRouteMarkers(AppLocalizations l10n) {
+    _markers.removeWhere((m) =>
+        m.markerId.value == 'origin' ||
+        m.markerId.value == 'destination' ||
+        m.markerId.value == 'pickup');
+
+    _markers.add(
+      Marker(
+        markerId: MarkerId('origin'),
+        position: _pickupLocation ?? _currentLocation,
+        icon: _personIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(title: _pickupAddress),
+      ),
+    );
+
+    _markers.add(
+      Marker(
+        markerId: MarkerId('destination'),
+        position: _finalDestination ?? _destination,
+        icon: _destinationIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(title: _destinationAddress),
+      ),
+    );
+  }
+
+  void _drawSimpleFallbackRoute(AppLocalizations l10n) {
+    debugPrint('Dibujando ruta fallback (linea recta)');
+
+    final fallbackOrigin = (_isTripInProgress && _pickupLocation != null)
+        ? _pickupLocation!
+        : _currentLocation;
+    setState(() {
+      _polylines.clear();
+      _polylines.add(
+        Polyline(
+          polylineId: PolylineId('route'),
+          points: [fallbackOrigin, _destination],
+          color: AppColors.rappiOrange,
+          width: 6,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      );
+    });
+
+    _addRouteMarkers(l10n);
+  }
+
+  void _updateCurrentInstruction(AppLocalizations l10n) {
     if (_currentInstructionIndex < _instructions.length) {
       final current = _instructions[_currentInstructionIndex];
       _currentInstruction = current.instruction;
       _distanceToNext = current.distance.toDouble();
       _estimatedTime = current.duration;
-      
+
       if (_currentInstructionIndex + 1 < _instructions.length) {
         _nextInstruction = _instructions[_currentInstructionIndex + 1].instruction;
       } else {
@@ -216,189 +709,646 @@ class _NavigationScreenState extends State<NavigationScreen>
       }
     }
   }
-  
-  void _drawRoute() {
-    // Create route polyline
-    List<LatLng> routePoints = _instructions.map((inst) => inst.position).toList();
-    routePoints.add(_destination);
 
-    _polylines.clear();
-    _polylines.add(
-      Polyline(
-        polylineId: PolylineId('route'),
-        points: routePoints,
-        color: ModernTheme.rappiOrange,
-        width: 6,
-        patterns: [],
-      ),
-    );
-
-    _markers.clear();
-
-    // ✅ Marker del carro (conductor) - Icono moderno
-    _markers.add(
-      Marker(
-        markerId: MarkerId('car'),
-        position: _currentLocation,
-        icon: _carIcon ?? BitmapDescriptor.defaultMarker,
-        infoWindow: InfoWindow(title: 'Tu ubicación'),
-        anchor: Offset(0.5, 0.5),
-        zIndex: 3,
-      ),
-    );
-
-    // ✅ Marker del pasajero - Icono moderno
-    if (_instructions.isNotEmpty) {
-      _markers.add(
-        Marker(
-          markerId: MarkerId('passenger'),
-          position: _instructions.first.position,
-          icon: _passengerIcon ?? BitmapDescriptor.defaultMarker,
-          infoWindow: InfoWindow(title: 'Pasajero'),
-          zIndex: 2,
-        ),
-      );
-    }
-
-    // ✅ Marker del destino - Icono moderno
-    _markers.add(
-      Marker(
-        markerId: MarkerId('destination'),
-        position: _destination,
-        icon: _destinationIcon ?? BitmapDescriptor.defaultMarker,
-        infoWindow: InfoWindow(title: 'Destino'),
-        zIndex: 1,
-      ),
-    );
-
-    setState(() {});
-  }
-  
   void _startNavigation() {
     setState(() {
       _isNavigating = true;
     });
-    
-    // Simulate location updates
-    _locationTimer = Timer.periodic(Duration(seconds: 2), (timer) {
-      // ✅ TRIPLE VERIFICACIÓN para prevenir simulación después de dispose
-      if (_isDisposed) {
-        timer.cancel();
-        return;
-      }
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
 
-      _simulateMovement();
-    });
+    _startRealTimeLocationTracking();
   }
-  
-  void _simulateMovement() {
-    // ✅ Verificar mounted antes de setState
+
+  Future<void> _startRealTimeLocationTracking() async {
+    try {
+      const locationSettings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+
+      _positionStream = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (Position position) {
+          if (_isDisposed || !mounted) return;
+
+          final isFirstGpsLocation = !_hasRealGpsLocation;
+
+          setState(() {
+            _currentLocation = LatLng(position.latitude, position.longitude);
+            _hasRealGpsLocation = true;
+          });
+
+          _updateLocationMarker();
+          _updateDriverLocationInFirebase(position);
+          _checkNavigationProgress();
+
+          _mapController?.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(
+                target: _currentLocation,
+                zoom: 15.5,
+                tilt: 45,
+                bearing: position.heading,
+              ),
+            ),
+          );
+
+          if (isFirstGpsLocation) {
+            debugPrint('Primera ubicación GPS real (stream), FORZANDO cálculo de ruta...');
+            _isFetchingRoute = false;
+            _isRouteInitialized = false;
+            _initializeRoute(AppLocalizations.of(context)!);
+          }
+        },
+        onError: (error) {
+          Logger.error('Error en stream de ubicación', error);
+        },
+      );
+    } catch (e) {
+      Logger.error('Error iniciando tracking de ubicación', e);
+    }
+  }
+
+  Future<void> _updateDriverLocationInFirebase(Position position) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+
+      await _firestore.collection('drivers').doc(userId).update({
+        'currentLocation': GeoPoint(position.latitude, position.longitude),
+        'lastLocationUpdate': FieldValue.serverTimestamp(),
+        'heading': position.heading,
+        'speed': position.speed,
+      });
+
+      if (_tripId != null) {
+        await _firestore.collection('rides').doc(_tripId).update({
+          'driverLocation': GeoPoint(position.latitude, position.longitude),
+          'driverHeading': position.heading,
+          'lastDriverUpdate': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      Logger.error('Error actualizando ubicación en Firebase', e);
+    }
+  }
+
+  void _checkNavigationProgress() {
     if (!mounted || _isDisposed) return;
 
+    final l10n = AppLocalizations.of(context)!;
+
+    final distanceToDestination = Geolocator.distanceBetween(
+      _currentLocation.latitude,
+      _currentLocation.longitude,
+      _destination.latitude,
+      _destination.longitude,
+    );
+
+    setState(() {
+      _distanceToNext = distanceToDestination;
+      // Unified ETA formula: 30 km/h average city speed
+      _estimatedTime = ((distanceToDestination / 1000) / 30 * 60).round();
+      _totalTime = _estimatedTime;
+
+      if (_isTripInProgress && _finalDestination != null) {
+        final distanceToFinal = Geolocator.distanceBetween(
+          _currentLocation.latitude,
+          _currentLocation.longitude,
+          _finalDestination!.latitude,
+          _finalDestination!.longitude,
+        );
+        _isNearFinalDestination = distanceToFinal < 100;
+      }
+    });
+
+    if (distanceToDestination < 50) {
+      if (_isNavigatingToPickup) {
+        _arriveAtPickup(l10n);
+      } else {
+        _arriveAtDestination(l10n);
+      }
+    }
+
     if (_currentInstructionIndex < _instructions.length - 1) {
-      setState(() {
-        _distanceToNext -= 50; // Reduce 50 meters
-        _estimatedTime = math.max(0, _estimatedTime - 2);
-        
-        if (_distanceToNext <= 50) {
+      final nextInstruction = _instructions[_currentInstructionIndex];
+      final distanceToNextPoint = Geolocator.distanceBetween(
+        _currentLocation.latitude,
+        _currentLocation.longitude,
+        nextInstruction.position.latitude,
+        nextInstruction.position.longitude,
+      );
+
+      if (distanceToNextPoint < 30) {
+        setState(() {
           _currentInstructionIndex++;
-          _updateCurrentInstruction();
-          
-          // Voice instruction simulation
-          _showVoiceNotification();
-        }
-        
-        // Update current location marker
-        _currentLocation = _instructions[_currentInstructionIndex].position;
-        _updateLocationMarker();
-      });
-    } else {
-      _arriveAtDestination();
+          _updateCurrentInstruction(l10n);
+        });
+        _showVoiceNotification();
+      }
     }
   }
-  
-  void _updateLocationMarker() {
-    // Calculate bearing from previous location
-    if (_previousLocation != null) {
-      final lat1 = _previousLocation!.latitude * math.pi / 180;
-      final lat2 = _currentLocation.latitude * math.pi / 180;
-      final dLng = (_currentLocation.longitude - _previousLocation!.longitude) * math.pi / 180;
-      final y = math.sin(dLng) * math.cos(lat2);
-      final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
-      _currentBearing = (math.atan2(y, x) * 180 / math.pi + 360) % 360;
-    }
-    _previousLocation = _currentLocation;
 
-    _markers.removeWhere((marker) => marker.markerId.value == 'car');
+  void _updateLocationMarker() {
+    _markers.removeWhere((marker) => marker.markerId.value == 'current');
     _markers.add(
       Marker(
-        markerId: MarkerId('car'),
+        markerId: MarkerId('current'),
         position: _currentLocation,
-        icon: _carIcon ?? BitmapDescriptor.defaultMarker,
+        icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
         anchor: Offset(0.5, 0.5),
         flat: true,
-        rotation: _currentBearing,
-        zIndex: 3,
+        // rotation not needed here — camera bearing follows GPS heading
+        infoWindow: InfoWindow(title: 'Tu ubicación'),
       ),
     );
-
-    // Camera follows car with dynamic bearing (like Google Maps Navigation)
-    _mapController?.animateCamera(
-      CameraUpdate.newCameraPosition(CameraPosition(
-        target: _currentLocation,
-        zoom: 17.5,
-        bearing: _currentBearing,
-        tilt: 45.0,
-      )),
-    );
   }
-  
+
   void _showVoiceNotification() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            Icon(Icons.volume_up, color: Theme.of(context).colorScheme.surface),
+            Icon(Icons.volume_up, color: Colors.white),
             SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _currentInstruction,
-                style: TextStyle(color: Theme.of(context).colorScheme.surface),
-              ),
-            ),
+            Expanded(child: Text(_currentInstruction)),
           ],
         ),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: AppColors.getTextPrimary(context),
         duration: Duration(seconds: 3),
       ),
     );
   }
-  
-  void _arriveAtDestination() {
+
+  void _arriveAtPickup(AppLocalizations l10n) {
+    _positionStream?.cancel();
+    _positionStream = null;
     _locationTimer?.cancel();
+
     setState(() {
       _isNavigating = false;
-      _currentInstruction = '¡Has llegado a tu destino!';
+      _currentInstruction = '¡Has llegado al punto de recogida!';
     });
-    
-    _showArrivalDialog();
+
+    _updatePickupArrival();
+    _showPickupArrivalDialog(l10n);
   }
-  
-  void _showArrivalDialog() {
+
+  Future<void> _updatePickupArrival() async {
+    if (_tripId == null) return;
+
+    try {
+      await _firestore.collection('rides').doc(_tripId).update({
+        'status': 'arrived',
+        'driverArrivedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      Logger.error('Error actualizando llegada al punto de recogida', e);
+    }
+  }
+
+  void _arriveAtDestination(AppLocalizations l10n) {
+    _positionStream?.cancel();
+    _positionStream = null;
+    _locationTimer?.cancel();
+
+    setState(() {
+      _isNavigating = false;
+      _currentInstruction = 'Has llegado al destino';
+    });
+
+    _updateTripArrival();
+    _showArrivalDialog(l10n);
+  }
+
+  Future<void> _updateTripArrival() async {
+    if (_tripId == null) return;
+
+    try {
+      await _firestore.collection('rides').doc(_tripId).update({
+        'status': 'arrived',
+        'arrivedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      Logger.error('Error actualizando llegada del viaje', e);
+    }
+  }
+
+  void _startWaitingTimer() {
+    _arrivalTime = DateTime.now();
+    _waitingSeconds = 0;
+
+    _waitingTimer?.cancel();
+
+    _waitingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && !_isDisposed && _hasArrivedAtPickup) {
+        setState(() {
+          _waitingSeconds++;
+        });
+      }
+    });
+  }
+
+  String _formatWaitingTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _onDriverArrivedAtPickup() async {
+    debugPrint('BOTON LLEGUE PRESIONADO - tripId: $_tripId');
+    if (_tripId == null) {
+      debugPrint('ERROR: _tripId es NULL, no se puede continuar');
+      return;
+    }
+
+    await HapticFeedback.mediumImpact();
+
+    try {
+      await _firestore.collection('rides').doc(_tripId).update({
+        'status': 'arrived',
+        'driverArrivedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        _hasArrivedAtPickup = true;
+        _isWaitingForPassenger = true;
+        _isNavigating = false;
+      });
+
+      _startWaitingTimer();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Has llegado. Espera al pasajero y toca "Comenzo el viaje" cuando suba.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      Logger.error('Error marcando llegada', e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al marcar llegada'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _startTrip() async {
+    if (_tripId == null) return;
+
+    try {
+      _waitingTimer?.cancel();
+      _waitingTimer = null;
+
+      await _firestore.collection('rides').doc(_tripId).update({
+        'status': 'in_progress',
+        'startedAt': FieldValue.serverTimestamp(),
+        'waitingTimeSeconds': _waitingSeconds,
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        _isWaitingForPassenger = false;
+        _isTripInProgress = true;
+        _isNavigatingToPickup = false;
+        if (_finalDestination != null) {
+          _destination = _finalDestination!;
+          debugPrint('Destino actualizado al destino final: $_destination');
+        }
+      });
+
+      _isRouteInitialized = false;
+      _initializeRoute(AppLocalizations.of(context)!);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('¡Viaje iniciado! Dirigete al destino.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      Logger.error('Error iniciando viaje', e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al iniciar viaje'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _completeTrip() async {
+    if (_tripId == null) return;
+
+    try {
+      await _firestore.collection('rides').doc(_tripId).update({
+        'status': 'completed',
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      _showRatingDialog();
+    } catch (e) {
+      Logger.error('Error completando viaje', e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al completar viaje'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  void _showRatingDialog() {
+    int rating = 5;
+    String selectedTag = '';
+
+    final positiveTags = ['Amable', 'Puntual', 'Respetuoso', 'Buen trato'];
+    final negativeTags = ['Impuntual', 'Grosero', 'Ubicación incorrecta', 'Cancelador'];
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final tags = rating >= 4 ? positiveTags : negativeTags;
+          final ratingMessages = {
+            5: 'Excelente',
+            4: 'Muy bien',
+            3: 'Regular',
+            2: 'Malo',
+            1: 'Muy malo',
+          };
+
+          final ratingColors = {
+            5: AppColors.success,
+            4: AppColors.rappiOrange,
+            3: AppColors.warning,
+            2: Colors.orange,
+            1: AppColors.error,
+          };
+
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(28),
+            ),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header with passenger photo
+                    Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.topCenter,
+                      children: [
+                        Container(
+                          height: 70,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [AppColors.rappiOrange, AppColors.rappiOrange.withValues(alpha: 0.7)],
+                            ),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                          ),
+                        ),
+                        Positioned(
+                          top: 24,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: CircleAvatar(
+                              radius: 36,
+                              backgroundColor: AppColors.rappiOrange.withValues(alpha: 0.1),
+                              backgroundImage: _passengerPhoto.isNotEmpty
+                                  ? NetworkImage(_passengerPhoto)
+                                  : null,
+                              child: _passengerPhoto.isEmpty
+                                  ? const Icon(Icons.person, size: 36, color: AppColors.rappiOrange)
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 44),
+
+                    // Passenger name
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        _passengerName,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      '¿Como fue tu experiencia?',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.getTextPrimary(context),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Stars
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(5, (index) {
+                        return GestureDetector(
+                          onTap: () {
+                            setDialogState(() {
+                              rating = index + 1;
+                              selectedTag = '';
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              index < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                              color: index < rating ? Colors.amber : Colors.grey.shade300,
+                              size: 44,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Rating message
+                    Text(
+                      ratingMessages[rating] ?? '',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: ratingColors[rating] ?? AppColors.getTextPrimary(context),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Tags
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.center,
+                        children: tags.map((tag) {
+                          final isSelected = selectedTag == tag;
+                          return GestureDetector(
+                            onTap: () => setDialogState(() {
+                              selectedTag = isSelected ? '' : tag;
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.rappiOrange.withValues(alpha: 0.1)
+                                    : AppColors.getInputFill(context),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.rappiOrange : AppColors.getBorder(context),
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                tag,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isSelected ? AppColors.rappiOrange : AppColors.getTextSecondary(context),
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Action buttons
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                                Navigator.of(context).pop();
+                              },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  side: BorderSide(color: AppColors.getBorder(context)),
+                                ),
+                              ),
+                              child: Text(
+                                'Omitir',
+                                style: TextStyle(color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: AppColors.primaryGradient,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () async {
+                                    final dialogNav = Navigator.of(dialogContext);
+                                    final mainNav = Navigator.of(context);
+
+                                    if (_tripId != null) {
+                                      await _firestore.collection('rides').doc(_tripId).update({
+                                        'driverRating': rating,
+                                        'driverRatedAt': FieldValue.serverTimestamp(),
+                                        if (selectedTag.isNotEmpty) 'driverRatingTag': selectedTag,
+                                      });
+                                    }
+                                    if (!mounted) return;
+                                    dialogNav.pop();
+                                    if (mounted) mainNav.pop();
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                    child: Center(
+                                      child: Text(
+                                        'Enviar',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showArrivalDialog(AppLocalizations l10n) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
         title: Row(
           children: [
-            Icon(Icons.check_circle, color: ModernTheme.success, size: 32),
+            Icon(Icons.check_circle, color: AppColors.success, size: 32),
             SizedBox(width: 12),
             Text('¡Llegaste!'),
           ],
@@ -407,11 +1357,11 @@ class _NavigationScreenState extends State<NavigationScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Has llegado a tu destino exitosamente.'),
+            Text('Has llegado exitosamente al destino'),
             SizedBox(height: 16),
             Row(
               children: [
-                Icon(Icons.route, size: 20, color: context.secondaryText),
+                Icon(Icons.route, size: 20, color: AppColors.getTextSecondary(dialogContext)),
                 SizedBox(width: 8),
                 Text('${(_totalDistance / 1000).toStringAsFixed(1)} km'),
               ],
@@ -419,9 +1369,9 @@ class _NavigationScreenState extends State<NavigationScreen>
             SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.timer, size: 20, color: context.secondaryText),
+                Icon(Icons.timer, size: 20, color: AppColors.getTextSecondary(dialogContext)),
                 SizedBox(width: 8),
-                Text('${(_totalTime / 60).round()} min'),
+                Text('$_totalTime min'),
               ],
             ),
           ],
@@ -429,7 +1379,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
               Navigator.of(context).pop();
             },
             child: Text('Finalizar'),
@@ -438,54 +1388,139 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
   }
-  
-  /// Maneja el intento de salir de la navegación
-  void _handleBackPressed() {
+
+  void _showPickupArrivalDialog(AppLocalizations l10n) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Salir de la navegación'),
-        content: const Text('¿Deseas salir de la navegación? El viaje seguirá activo.'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.location_on, color: AppColors.success, size: 32),
+            SizedBox(width: 12),
+            Expanded(child: Text('¡Llegaste al punto de recogida!')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Has llegado al punto de recogida. Espera al pasajero para iniciar el viaje.'),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.person, size: 20, color: AppColors.getTextSecondary(dialogContext)),
+                SizedBox(width: 8),
+                Expanded(child: Text(_passengerName)),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.place, size: 20, color: AppColors.getTextSecondary(dialogContext)),
+                SizedBox(width: 8),
+                Expanded(child: Text(_pickupAddress, maxLines: 2, overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
             onPressed: () {
-              Navigator.pop(dialogContext);
-              Navigator.pop(context);
+              Navigator.of(dialogContext).pop();
+              _transitionToWaitingForPassenger();
             },
-            child: const Text('Sí, salir'),
+            child: Text('Continuar', style: TextStyle(color: AppColors.rappiOrange)),
           ),
         ],
       ),
     );
   }
 
+  void _transitionToWaitingForPassenger() {
+    setState(() {
+      _hasArrivedAtPickup = true;
+      _isWaitingForPassenger = true;
+      _isNavigating = false;
+    });
+
+    _startWaitingTimer();
+  }
+
+  // Llamar al pasajero por telefono
+  Future<void> _callPassenger() async {
+    if (_passengerPhone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Número de teléfono no disponible'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.parse('tel:$_passengerPhone');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      Logger.error('Error llamando al pasajero', e);
+    }
+  }
+
+  // Abrir chat con el pasajero
+  void _openChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          otherUserName: _passengerName,
+          otherUserRole: 'passenger',
+          otherUserId: _passengerId,
+          rideId: _tripId ?? '',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) _handleBackPressed();
-      },
-      child: Scaffold(
+    final l10n = AppLocalizations.of(context)!;
+
+    if (!_isRouteInitialized) {
+      _currentInstruction = 'Calculando ruta...';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _initializeRoute(l10n);
+        }
+      });
+    }
+
+    return Scaffold(
       body: Stack(
         children: [
-          // Map
+          // ---- Mapa ----
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _currentLocation,
-              zoom: 17.5,
+              zoom: 16,
               tilt: 45,
-              bearing: _currentBearing,
+              bearing: 90,
             ),
             onMapCreated: (controller) {
               _mapController = controller;
               _applyMapStyle();
+              // If route wasn't fetched yet (timing issue), retry now that map is ready
+              if (_polylines.isEmpty && _hasRealGpsLocation) {
+                _isFetchingRoute = false;
+                _fetchRealRoute(AppLocalizations.of(context)!);
+              }
             },
+            onTap: (_) => FocusScope.of(context).unfocus(),
             markers: _markers,
             polylines: _polylines,
             myLocationEnabled: false,
@@ -496,167 +1531,92 @@ class _NavigationScreenState extends State<NavigationScreen>
             buildingsEnabled: true,
             trafficEnabled: true,
           ),
-          
-          // Top navigation bar
-          SafeArea(
-            child: AnimatedBuilder(
-              animation: _slideAnimation,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, -100 * (1 - _slideAnimation.value)),
-                  child: _buildNavigationBar(),
-                );
-              },
-            ),
-          ),
-          
-          // Bottom instruction panel
-          if (_showInstructions)
+
+          // ---- ETA flotante sobre el mapa (pantalla 1: yendo al pasajero) ----
+          if (!_hasArrivedAtPickup)
             Positioned(
+              top: MediaQuery.of(context).padding.top + 50,
               left: 0,
               right: 0,
-              bottom: 0,
-              child: AnimatedBuilder(
-                animation: _slideAnimation,
-                builder: (context, child) {
-                  return Transform.translate(
-                    offset: Offset(0, 200 * (1 - _slideAnimation.value)),
-                    child: _buildInstructionPanel(),
-                  );
-                },
+              child: Center(child: _buildEtaBadge()),
+            ),
+
+          // ---- Top gradient overlay + top bar + banner ----
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white,
+                    Colors.white,
+                    Colors.white.withValues(alpha:0.85),
+                    Colors.white.withValues(alpha:0.0),
+                  ],
+                  stops: [0.0, 0.4, 0.7, 1.0],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildTopBar(l10n),
+                    if (_isWaitingForPassenger) ...[
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        child: _buildPassengerNotifiedBanner(),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          
-          // Floating action buttons
+          ),
+
+          // ---- Boton Navegador (pill) abajo-izquierda del mapa ----
+          Positioned(
+            left: 16,
+            bottom: 380,
+            child: _buildNavigatorPill(),
+          ),
+
+          // ---- Botones flotantes derechos (compartir ruta, escudo seguridad) ----
           Positioned(
             right: 16,
-            bottom: _showInstructions ? 280 : 100,
+            bottom: 390,
             child: Column(
               children: [
-                _buildFloatingButton(
-                  Icons.my_location,
-                  () => _recenterMap(),
+                _buildRoundFloatingButton(
+                  icon: Icons.share_location_outlined,
+                  onPressed: _openGoogleMapsNavigation,
+                  tooltip: 'Abrir en navegador',
                 ),
-                SizedBox(height: 12),
-                _buildFloatingButton(
-                  Icons.layers,
-                  () => _toggleMapType(),
-                ),
-                SizedBox(height: 12),
-                _buildFloatingButton(
-                  Icons.volume_up,
-                  () => _toggleVoice(),
+                SizedBox(height: 10),
+                _buildRoundFloatingButton(
+                  icon: Icons.shield_outlined,
+                  onPressed: () {},
+                  tooltip: 'Seguridad',
                 ),
               ],
             ),
           ),
-          
-          // Back button
+
+          // ---- Bottom sheet con info del pasajero ----
           Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
-            left: 16,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                shape: BoxShape.circle,
-                boxShadow: ModernTheme.getCardShadow(context),
-              ),
-              child: IconButton(
-                icon: Icon(Icons.arrow_back, color: context.primaryText),
-                onPressed: _handleBackPressed,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-    );
-  }
-  
-  Widget _buildNavigationBar() {
-    // UI: top bar semi-transparente con instrucciones turn-by-turn
-    return Container(
-      margin: EdgeInsets.all(16),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ModernTheme.rappiOrange.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: ModernTheme.getFloatingShadow(context),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Current instruction
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _currentInstructionIndex < _instructions.length
-                      ? _instructions[_currentInstructionIndex].turnIcon
-                      : Icons.location_on,
-                  color: Theme.of(context).colorScheme.surface,
-                  size: 28,
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _currentInstruction,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.surface,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          '${_distanceToNext.round()} m',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
-                            fontSize: 16,
-                          ),
-                        ),
-                        SizedBox(width: 16),
-                        Text(
-                          '$_estimatedTime seg',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          
-          // Progress bar
-          Container(
-            margin: EdgeInsets.only(top: 12),
-            height: 4,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: AnimatedBuilder(
-              animation: _pulseAnimation,
+              animation: _slideAnimation,
               builder: (context, child) {
-                return LinearProgressIndicator(
-                  value: (_currentInstructionIndex + 1) / _instructions.length,
-                  backgroundColor: Colors.transparent,
-                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.surface),
+                return Transform.translate(
+                  offset: Offset(0, 300 * (1 - _slideAnimation.value)),
+                  child: _buildPassengerBottomSheet(l10n),
                 );
               },
             ),
@@ -665,241 +1625,667 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
   }
-  
-  Widget _buildInstructionPanel() {
-    // UI: Mini-card de destino en la parte inferior (compacta)
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: ModernTheme.getFloatingShadow(context),
-      ),
-      padding: EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: context.secondaryText.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          SizedBox(height: 16),
-          
-          // Trip info
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildInfoItem(
-                Icons.route,
-                '${(_totalDistance / 1000).toStringAsFixed(1)} km',
-                'Distancia total',
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: context.secondaryText.withValues(alpha: 0.3),
-              ),
-              _buildInfoItem(
-                Icons.timer,
-                '${(_totalTime / 60).round()} min',
-                'Tiempo estimado',
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: context.secondaryText.withValues(alpha: 0.3),
-              ),
-              _buildInfoItem(
-                Icons.speed,
-                '45 km/h',
-                'Velocidad',
-              ),
-            ],
-          ),
-          SizedBox(height: 20),
-          
-          // Next instruction preview
-          if (_nextInstruction.isNotEmpty)
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.surfaceColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.subdirectory_arrow_right, 
-                    color: context.secondaryText),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Luego:',
-                          style: TextStyle(
-                            color: context.secondaryText,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          _nextInstruction,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          SizedBox(height: 20),
-          
-          // Action buttons
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isNavigating ? null : _startNavigation,
-                  icon: Icon(_isNavigating ? Icons.pause : Icons.play_arrow),
-                  label: Text(_isNavigating ? 'Navegando...' : 'Iniciar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ModernTheme.rappiOrange,
-                    foregroundColor: Theme.of(context).colorScheme.surface,
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: _cancelNavigation,
-                icon: Icon(Icons.close),
-                label: Text('Cancelar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ModernTheme.error,
-                  foregroundColor: Theme.of(context).colorScheme.surface,
-                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
+
+  // ETA badge grande estilo inDrive (circulo amarillo con tiempo + icono auto)
+  Widget _buildEtaBadge() {
+    // _totalTime is already in minutes
+    final etaText = _totalTime > 0
+        ? '$_totalTime min'
+        : '< 1 min';
+
+    return Text(
+      etaText,
+      style: TextStyle(
+        color: Colors.black87,
+        fontSize: 52,
+        fontWeight: FontWeight.w900,
+        letterSpacing: -1,
+        height: 1.0,
+        shadows: [
+          Shadow(color: Colors.white, blurRadius: 12),
+          Shadow(color: Colors.white, blurRadius: 24),
         ],
       ),
     );
   }
-  
-  Widget _buildInfoItem(IconData icon, String value, String label) {
+
+  // Banner "El pasajero fue notificado" — texto grande sobre gradient blanco
+  Widget _buildPassengerNotifiedBanner() {
+    return Text(
+      'El pasajero fue notificado',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w900,
+        color: Colors.black87,
+      ),
+    );
+  }
+
+  // Barra superior: cancelar (siempre), + timer de espera si esta esperando
+  Widget _buildTopBar(AppLocalizations l10n) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: ModernTheme.rappiOrange, size: 24),
-        SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: context.primaryText,
+        // Fila 1: Cancelar a la derecha
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Spacer(),
+              GestureDetector(
+                onTap: () => _cancelNavigation(l10n),
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
+        // Divider
+        if (_isWaitingForPassenger)
+          Divider(height: 1, color: AppColors.getBorder(context)),
+        // Fila 2: Tiempo de espera (solo en estado esperando)
+        if (_isWaitingForPassenger)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Text(
+                  'Tiempo de espera',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  _formatWaitingTime(_waitingSeconds),
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: _waitingSeconds >= 300
+                        ? AppColors.error
+                        : _waitingSeconds >= 180
+                            ? Colors.orange
+                            : Colors.black,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Si no está esperando, solo Cancelar sin timer (pantalla 1 y 3)
+        if (!_isWaitingForPassenger)
+          SizedBox.shrink(),
+      ],
+    );
+  }
+
+  // Pill "Navegador" abajo-izquierda estilo inDrive
+  Widget _buildNavigatorPill() {
+    return GestureDetector(
+      onTap: _openGoogleMapsNavigation,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha:0.25),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.navigation, color: Colors.white, size: 18),
+            SizedBox(width: 6),
+            Text(
+              'Navegador',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Botón flotante redondo (compartir ruta, seguridad)
+  Widget _buildRoundFloatingButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    String? tooltip,
+  }) {
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha:0.15),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 22, color: AppColors.getTextPrimary(context)),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  // Bottom sheet con info del pasajero estilo inDrive
+  Widget _buildPassengerBottomSheet(AppLocalizations l10n) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha:0.18),
+            blurRadius: 20,
+            offset: Offset(0, -4),
+          ),
+        ],
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.getBorder(context),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          SizedBox(height: 16),
+
+          // Fila principal: foto+nombre+rating | direcciones | botones
+          _buildPassengerInfoRow(),
+
+          SizedBox(height: 14),
+          Divider(color: AppColors.getBorder(context), height: 1),
+          SizedBox(height: 14),
+
+          // Fila precio
+          _buildPriceRow(),
+
+          SizedBox(height: 16),
+
+          // Botón de acción principal (cambia según estado)
+          _buildActionButton(l10n),
+        ],
+      ),
+    );
+  }
+
+  // Fila de información del pasajero
+  Widget _buildPassengerInfoRow() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Columna: foto + nombre + rating
+        Column(
+          children: [
+            _buildPassengerAvatar(),
+            SizedBox(height: 6),
+            Text(
+              _passengerName.split(' ').first,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(context),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.star, color: Colors.amber, size: 14),
+                SizedBox(width: 2),
+                Text(
+                  _passengerRating.toStringAsFixed(2),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.getTextPrimary(context),
+                  ),
+                ),
+                if (_passengerTripCount > 0) ...[
+                  Text(
+                    ' ($_passengerTripCount)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+        SizedBox(width: 14),
+
+        // Columna: direcciones + badge de pago
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Dirección de recogida (A)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF34A853),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        'A',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _pickupAddress,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 10),
+              // Dirección destino (B)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF4285F4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        'B',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _destinationAddress,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.getTextPrimary(context),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              // Badge de metodo de pago
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _inDriveLime.withValues(alpha:0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _inDriveLime, width: 1),
+                ),
+                child: Text(
+                  _paymentMethod,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF5A6B00),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(width: 10),
+
+        // Columna: botones llamar + chat
+        Column(
+          children: [
+            _buildActionCircleButton(
+              icon: Icons.phone,
+              color: _inDriveLime,
+              onPressed: _callPassenger,
+            ),
+            SizedBox(height: 10),
+            _buildActionCircleButton(
+              icon: Icons.chat_bubble_outline,
+              color: _inDriveLime,
+              onPressed: _openChat,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPassengerAvatar() {
+    final hasPhoto = _passengerPhoto.isNotEmpty;
+
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.getBorder(context), width: 2),
+        color: AppColors.getInputFill(context),
+      ),
+      child: ClipOval(
+        child: hasPhoto
+            ? Image.network(
+                _passengerPhoto,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildAvatarFallback(),
+              )
+            : _buildAvatarFallback(),
+      ),
+    );
+  }
+
+  Widget _buildAvatarFallback() {
+    return Container(
+      color: AppColors.rappiOrange.withValues(alpha:0.1),
+      child: Icon(
+        Icons.person,
+        size: 32,
+        color: AppColors.rappiOrange,
+      ),
+    );
+  }
+
+  Widget _buildActionCircleButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha:0.35),
+              blurRadius: 8,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Icon(icon, size: 24, color: Colors.black87),
+      ),
+    );
+  }
+
+  // Fila de precio
+  Widget _buildPriceRow() {
+    final fareText = _fare > 0
+        ? 'S/ ${_fare.toStringAsFixed(2)} · $_paymentMethod'
+        : 'Precio acordado · $_paymentMethod';
+
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.getInputFill(context),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.payments_outlined,
+            size: 22,
+            color: AppColors.getTextSecondary(context),
+          ),
+        ),
+        SizedBox(width: 12),
         Text(
-          label,
+          fareText,
           style: TextStyle(
-            fontSize: 12,
-            color: context.secondaryText,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.getTextPrimary(context),
           ),
         ),
       ],
     );
   }
-  
-  Widget _buildFloatingButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        shape: BoxShape.circle,
-        boxShadow: ModernTheme.getCardShadow(context),
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: ModernTheme.rappiOrange),
-        onPressed: onPressed,
-      ),
+
+  // Botón de acción principal (cambia según estado)
+  Widget _buildActionButton(AppLocalizations l10n) {
+    if (_isTripInProgress) {
+      // Estado 3: viaje en curso -> "Completar viaje"
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _completeTrip,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.success,
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            elevation: 0,
+          ),
+          child: Text(
+            'Completar viaje',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } else if (_isWaitingForPassenger) {
+      // Estado 2: esperando pasajero -> "Comenzó el viaje" (verde-lima)
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _startTrip,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _inDriveLime,
+            foregroundColor: Colors.black87,
+            padding: EdgeInsets.symmetric(vertical: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
+          child: Text(
+            'Comenzó el viaje',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } else {
+      // Estado 1: yendo al pasajero -> "Ya llegué" (azul)
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _onDriverArrivedAtPickup,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Color(0xFF1A73E8),
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(vertical: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 0,
+          ),
+          child: Text(
+            'Ya llegué',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+  }
+
+  // Panel de espera del pasajero (se mantiene como metodo para _buildInstructionPanel)
+  Widget _buildWaitingForPassengerPanel(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            color: _waitingSeconds >= 300
+                ? AppColors.error.withValues(alpha:0.1)
+                : _waitingSeconds >= 180
+                    ? Colors.orange.withValues(alpha:0.1)
+                    : AppColors.success.withValues(alpha:0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _waitingSeconds >= 300
+                  ? AppColors.error
+                  : _waitingSeconds >= 180
+                      ? Colors.orange
+                      : AppColors.success,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.timer,
+                color: _waitingSeconds >= 300
+                    ? AppColors.error
+                    : _waitingSeconds >= 180
+                        ? Colors.orange
+                        : AppColors.success,
+                size: 24,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Tiempo de espera: ',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+              Text(
+                _formatWaitingTime(_waitingSeconds),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'monospace',
+                  color: _waitingSeconds >= 300
+                      ? AppColors.error
+                      : _waitingSeconds >= 180
+                          ? Colors.orange
+                          : AppColors.getTextPrimary(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
-  
+
   void _recenterMap() {
     _mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: _currentLocation,
-          zoom: 17.5,
+          zoom: 16,
           tilt: 45,
-          bearing: _currentBearing,
+          bearing: 90,
         ),
       ),
     );
   }
-  
-  void _toggleMapType() {
-    // Toggle between normal and satellite view
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Cambiar tipo de mapa'),
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
-  
-  void _toggleVoice() {
-    // Toggle voice instructions
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Instrucciones de voz activadas'),
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
-  
-  void _cancelNavigation() {
+
+  void _cancelNavigation(AppLocalizations l10n) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text('Cancelar navegación'),
-        content: Text('¿Estás seguro de que deseas cancelar la navegación?'),
+        content: const Text('¿Estás seguro de que deseas cancelar la navegación?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('No'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('No'),
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context);
             },
             style: TextButton.styleFrom(
-              foregroundColor: ModernTheme.error,
+              foregroundColor: AppColors.error,
             ),
-            child: Text('Sí, cancelar'),
+            child: const Text('Sí, cancelar'),
           ),
         ],
       ),
     );
   }
-  
+
   void _applyMapStyle() {
-    // Apply custom map style
     const String mapStyle = '''
     [
       {
@@ -911,6 +2297,36 @@ class _NavigationScreenState extends State<NavigationScreen>
     ''';
     _mapController?.setMapStyle(mapStyle);
   }
+
+  Future<void> _openGoogleMapsNavigation() async {
+    final lat = _destination.latitude;
+    final lng = _destination.longitude;
+
+    final googleMapsUrl = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
+    final fallbackUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving');
+
+    try {
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl);
+      } else {
+        await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      Logger.error('Error abriendo Google Maps', e);
+      try {
+        await launchUrl(fallbackUrl, mode: LaunchMode.externalApplication);
+      } catch (e2) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('No se pudo abrir Google Maps'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    }
+  }
 }
 
 class RouteInstruction {
@@ -919,7 +2335,7 @@ class RouteInstruction {
   final int duration;
   final IconData turnIcon;
   final LatLng position;
-  
+
   RouteInstruction({
     required this.instruction,
     required this.distance,

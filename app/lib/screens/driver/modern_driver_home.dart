@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, library_private_types_in_public_api, unused_import, unreachable_switch_case
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../services/google_maps_service.dart';
@@ -655,9 +656,20 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ListTile(
               leading: Icon(Icons.logout, color: AppColors.error),
               title: Text('Cerrar Sesión', style: TextStyle(color: AppColors.getTextPrimary(context))),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              onTap: () async {
+                // capture-before-pop: el context del drawer se desmonta al
+                // cerrar el sheet, así que capturamos las referencias ANTES
+                // del pop para evitar el bug "Verificando..." colgado.
+                final rootNav = Navigator.of(context, rootNavigator: true);
+                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                Navigator.pop(context); // cierra el drawer
+                try {
+                  await FirebaseAuth.instance.signOut();
+                } catch (_) {/* best-effort */}
+                try {
+                  await authProvider.logout();
+                } catch (_) {/* best-effort */}
+                rootNav.pushNamedAndRemoveUntil('/login', (route) => false);
               },
             ),
           ],

@@ -15,6 +15,8 @@ import '../../providers/auth_provider.dart';
 import '../../utils/logger.dart';
 import '../../providers/locale_provider.dart'; // ✅ NUEVO: Para cambio de idioma
 import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Textos localizados
+import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../services/account_deletion_service.dart';
 import '../auth/email_verification_screen.dart'; // Verificación de email nativa de Firebase
 // import '../../providers/ride_provider.dart'; // Se usará para estadísticas reales
 
@@ -332,68 +334,50 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _pickImage() async {
     try {
       // Mostrar diálogo para elegir fuente
-      final source = await showModalBottomSheet<ImageSource>(
+      final source = await showResponsiveBottomSheet<ImageSource>(
         context: context,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 12),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  AppLocalizations.of(context)!.changeProfilePhoto,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ListTile(
-                  leading: const Icon(Icons.camera_alt, color: ModernTheme.rappiOrange),
-                  title: Text(AppLocalizations.of(context)!.takePhoto),
-                  onTap: () => Navigator.pop(context, ImageSource.camera),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_library, color: ModernTheme.rappiOrange),
-                  title: Text(AppLocalizations.of(context)!.chooseFromGallery),
-                  onTap: () => Navigator.pop(context, ImageSource.gallery),
-                ),
-                if (_imageFile != null)
-                  ListTile(
-                    leading: const Icon(Icons.delete, color: ModernTheme.error),
-                    title: Text(AppLocalizations.of(context)!.deletePhoto),
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() {
-                        _imageFile = null;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(AppLocalizations.of(context)!.profilePhotoDeleted),
-                          backgroundColor: ModernTheme.info,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
-                  ),
-                const SizedBox(height: 12),
-              ],
+        builder: (context) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Text(
+              AppLocalizations.of(context)!.changeProfilePhoto,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: ModernTheme.rappiOrange),
+              title: Text(AppLocalizations.of(context)!.takePhoto),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: ModernTheme.rappiOrange),
+              title: Text(AppLocalizations.of(context)!.chooseFromGallery),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            if (_imageFile != null)
+              ListTile(
+                leading: const Icon(Icons.delete, color: ModernTheme.error),
+                title: Text(AppLocalizations.of(context)!.deletePhoto),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _imageFile = null;
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(AppLocalizations.of(context)!.profilePhotoDeleted),
+                      backgroundColor: ModernTheme.info,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+            const SizedBox(height: 12),
+          ],
         ),
       );
 
@@ -2104,142 +2088,177 @@ class _ProfileScreenState extends State<ProfileScreen>
   /// ✅ IMPLEMENTADO: Diálogo de confirmación para eliminar cuenta
   /// Requiere re-autenticación por seguridad (requisito de Firebase)
   void _showDeleteAccountDialog() {
-    final passwordController = TextEditingController();
-    bool obscurePassword = true;
-
+    // Dialog 1: explicar consecuencias
     showDialog(
       context: context,
-      barrierDismissible: false, // No cerrar al tocar afuera
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: ModernTheme.error, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                AppLocalizations.of(context)!.deleteAccountTitle,
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.warning_amber_rounded, color: ModernTheme.error, size: 28),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  AppLocalizations.of(context)!.deleteAccountTitle,
-                  style: TextStyle(fontSize: 18),
+              Text(
+                AppLocalizations.of(context)!.deleteAccountConfirmation,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ModernTheme.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ModernTheme.error.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '⚠️ Esta acción es PERMANENTE',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: ModernTheme.error,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Se eliminarán:\n'
+                      '• Tu perfil y datos personales\n'
+                      '• Historial de viajes\n'
+                      '• Lugares favoritos\n'
+                      '• Métodos de pago guardados\n'
+                      '• Fotos y documentos',
+                      style: TextStyle(fontSize: 12, color: context.secondaryText),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          content: SingleChildScrollView(
-            child: Column(
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _confirmDeleteWithKeyword();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
+            child: Text('Continuar', style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dialog 2: pedir keyword ELIMINAR para confirmar y luego invocar la
+  /// Cloud Function `deleteMyAccount` (no pide password — soporta OAuth).
+  void _confirmDeleteWithKeyword() {
+    final controller = TextEditingController();
+    const keyword = 'ELIMINAR';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (innerCtx, setLocal) {
+          final valid = controller.text.trim().toUpperCase() == keyword;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Confirmación final'),
+            content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  AppLocalizations.of(context)!.deleteAccountConfirmation,
-                  style: TextStyle(fontSize: 14),
+                  'Escribe "$keyword" para eliminar tu cuenta permanentemente. Esta acción no se puede deshacer.',
+                  style: const TextStyle(fontSize: 13),
                 ),
-                SizedBox(height: 16),
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: ModernTheme.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ModernTheme.error.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '⚠️ Esta acción es PERMANENTE',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ModernTheme.error,
-                          fontSize: 13,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Se eliminarán:\n'
-                        '• Tu perfil y datos personales\n'
-                        '• Historial de viajes\n'
-                        '• Lugares favoritos\n'
-                        '• Métodos de pago guardados\n'
-                        '• Fotos y documentos',
-                        style: TextStyle(fontSize: 12, color: context.secondaryText),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 20),
-                Text(
-                  'Confirma tu contraseña para continuar:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                SizedBox(height: 8),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: passwordController,
-                  obscureText: obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: 'Ingresa tu contraseña',
-                    prefixIcon: Icon(Icons.lock_outline, size: 20),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        obscurePassword ? Icons.visibility_off : Icons.visibility,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          obscurePassword = !obscurePassword;
-                        });
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  controller: controller,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: keyword,
+                    border: OutlineInputBorder(),
                   ),
+                  onChanged: (_) => setLocal(() {}),
                 ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                passwordController.dispose();
-                Navigator.pop(context);
-              },
-              child: Text(AppLocalizations.of(context)!.cancel),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final password = passwordController.text.trim();
-
-                if (password.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Por favor ingresa tu contraseña'),
-                      backgroundColor: ModernTheme.error,
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(context);
-                passwordController.dispose();
-
-                // Ejecutar eliminación
-                await _deleteAccount(password);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ModernTheme.error,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(AppLocalizations.of(context)!.cancel),
               ),
-              child: Text(AppLocalizations.of(context)!.delete),
-            ),
-          ],
-        ),
+              ElevatedButton(
+                onPressed: valid ? () { Navigator.pop(ctx); _executeAccountDeletion(); } : null,
+                style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
+                child: Text(AppLocalizations.of(context)!.delete, style: const TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  /// Invoca la callable `deleteMyAccount` server-side (cleanup completo +
+  /// borrado de Auth user) y redirige a login al terminar.
+  Future<void> _executeAccountDeletion() async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await AccountDeletionService.deleteCurrentUserAccount();
+      try {
+        await Provider.of<AuthProvider>(context, listen: false).logout();
+      } catch (_) {/* el server ya borró el user; ignore */}
+      if (!mounted) return;
+      navigator.pop(); // cierra spinner
+      navigator.pushNamedAndRemoveUntil('/login', (_) => false);
+    } on AccountDeletionException catch (e) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('No se pudo eliminar la cuenta: ${e.message}'),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Error inesperado al eliminar la cuenta'),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
+    }
   }
 
   /// ✅ IMPLEMENTADO: Eliminar cuenta completa con Firebase

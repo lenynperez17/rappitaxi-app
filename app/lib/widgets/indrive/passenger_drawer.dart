@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/constants/app_colors.dart';
-import '../../generated/l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/rappi_app_bar.dart';
 import '../../screens/shared/settings_screen.dart';
@@ -20,9 +19,8 @@ class PassengerDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final authProvider = context.watch<AuthProvider>();
-    final userName = authProvider.currentUser?.fullName ?? 'Pasajero';
+    final userName = authProvider.currentUser?.fullName.split(' ').first ?? 'Pasajero';
 
     return Drawer(
       child: Container(
@@ -33,7 +31,7 @@ class PassengerDrawer extends StatelessWidget {
               userType: 'passenger',
               userName: userName,
               onProfileTap: () {
-                Navigator.pop(context); // Close drawer first
+                Navigator.pop(context);
                 Navigator.pushNamed(context, '/passenger/profile');
               },
             ),
@@ -43,7 +41,7 @@ class PassengerDrawer extends StatelessWidget {
                 children: [
                   _DrawerItem(
                     icon: Icons.history_rounded,
-                    title: l10n.tripHistory,
+                    title: 'Historial de viajes',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.pushNamed(context, '/passenger/trip-history');
@@ -51,7 +49,7 @@ class PassengerDrawer extends StatelessWidget {
                   ),
                   _DrawerItem(
                     icon: Icons.favorite_rounded,
-                    title: l10n.favoritePlaces,
+                    title: 'Lugares favoritos',
                     onTap: () async {
                       Navigator.pop(context);
                       final result = await Navigator.pushNamed(context, '/passenger/favorites');
@@ -86,7 +84,7 @@ class PassengerDrawer extends StatelessWidget {
                   ),
                   _DrawerItem(
                     icon: Icons.settings_rounded,
-                    title: l10n.settings,
+                    title: 'Configuración',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen()));
@@ -95,14 +93,18 @@ class PassengerDrawer extends StatelessWidget {
                   const Divider(),
                   _DrawerItem(
                     icon: Icons.logout_rounded,
-                    title: l10n.logout,
+                    title: 'Cerrar sesión',
                     color: AppColors.error,
                     onTap: () async {
-                      Navigator.pop(context);
+                      // capture-before-pop: capturamos las referencias ANTES
+                      // del pop porque el context del drawer se desmonta y
+                      // los pushNamedAndRemoveUntil posteriores fallarían
+                      // silenciosamente con context "deactivated".
+                      final rootNav = Navigator.of(context, rootNavigator: true);
                       final auth = Provider.of<AuthProvider>(context, listen: false);
+                      Navigator.pop(context); // cierra drawer
                       await auth.logout();
-                      if (!context.mounted) return;
-                      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                      rootNav.pushNamedAndRemoveUntil('/login', (route) => false);
                     },
                   ),
                 ],
@@ -123,7 +125,7 @@ class PassengerDrawer extends StatelessWidget {
       'iOS: https://apps.apple.com/app/rapiteam',
       subject: 'Rappi Team - Tu app de transporte',
     );
-    AppLogger.info('Usuario compartio la app');
+    AppLogger.info('Usuario compartió la app');
   }
 }
 

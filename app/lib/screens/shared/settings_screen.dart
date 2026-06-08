@@ -1,777 +1,463 @@
-// ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter
+// ignore_for_file: deprecated_member_use
+// Pantalla de Configuración - Estilo InDriver (Simplificado)
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // ✅ NUEVO: Para usar PreferencesProvider
-import '../../core/theme/modern_theme.dart';
-import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
-import '../../providers/preferences_provider.dart'; // ✅ NUEVO: Provider de preferencias
-import '../../providers/auth_provider.dart'; // ✅ NUEVO: Provider de autenticación para cambio de contraseña
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/constants/app_colors.dart';
+import '../../providers/preferences_provider.dart';
+import '../../providers/locale_provider.dart';
+import '../../providers/auth_provider.dart' as app_auth;
+import '../../services/account_deletion_service.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final String? userType; // 'passenger', 'driver', 'admin'
-  
+  final String? userType;
+
   const SettingsScreen({super.key, this.userType});
-  
+
   @override
-  // ignore: library_private_types_in_public_api
-  _SettingsScreenState createState() => _SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-
-  // ✅ NUEVO: Control de double-trigger para dark mode
-  bool _isDarkModeChanging = false;
-  DateTime? _lastDarkModeChange;
-
-  // General settings
-  bool _notificationsEnabled = true;
-  bool _locationServices = true;
-  bool _darkMode = false;
-  bool _darkModeEnabled = false; // ✅ NUEVO: Estado local para el switch de modo oscuro
+    with SingleTickerProviderStateMixin {
   String _language = 'es';
-  String _currency = 'PEN';
-  
-  // Privacy settings
-  bool _shareLocation = true;
-  bool _shareTrips = false;
-  bool _analytics = true;
-  bool _crashReports = true;
-  
-  // Notification settings
-  bool _pushNotifications = true;
-  bool _emailNotifications = true;
-  bool _smsNotifications = false;
-  bool _tripUpdates = true;
-  bool _promotions = true;
-  bool _newsUpdates = false;
-  
-  // Security settings
-  bool _biometricAuth = false;
-  bool _twoFactorAuth = false;
-  int _autoLockTime = 5; // minutes
-  
-  // App settings
-  bool _autoUpdate = true;
-  bool _offlineMaps = false;
-  String _mapStyle = 'standard';
-  bool _soundEffects = true;
-  bool _hapticFeedback = true;
-  
-  // Data settings
-  bool _syncOnWiFiOnly = false;
-  bool _compressImages = true;
-  String _cacheSize = '150 MB';
-  
+
+  late final AnimationController _contentController;
+
   @override
   void initState() {
     super.initState();
 
-    // ✅ NUEVO: Inicializar modo oscuro desde el provider
+    _contentController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..forward();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final prefsProvider = Provider.of<PreferencesProvider>(context, listen: false);
       setState(() {
-        _darkModeEnabled = context.read<PreferencesProvider>().darkMode;
+        _language = prefsProvider.language;
       });
     });
-
-    _fadeController = AnimationController(
-      duration: Duration(milliseconds: 600),
-      vsync: this,
-    );
-
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeIn,
-    );
-
-    _fadeController.forward();
   }
-  
+
   @override
   void dispose() {
-    _fadeController.dispose();
+    _contentController.dispose();
     super.dispose();
   }
-  
+
+  /// Helper para animacion staggered de secciones
+  Widget _animatedSection(Widget child, int index) {
+    final double start = (index * 0.12).clamp(0.0, 0.8);
+    final double end = (start + 0.4).clamp(0.0, 1.0);
+    final animation = CurvedAnimation(
+      parent: _contentController,
+      curve: Interval(start, end, curve: Curves.easeOutCubic),
+    );
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, 30 * (1 - animation.value)),
+        child: Opacity(opacity: animation.value, child: child),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: AppColors.getBackground(context),
       appBar: AppBar(
-        backgroundColor: ModernTheme.rappiOrange,
+        backgroundColor: AppColors.rappiOrange,
         elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Text(
           'Configuración',
           style: TextStyle(
-            color: context.onPrimaryText,
+            color: AppColors.white,
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.restore, color: context.onPrimaryText),
-            onPressed: _resetToDefaults,
-          ),
-        ],
       ),
-      body: AnimatedBuilder(
-        animation: _fadeAnimation,
-        builder: (context, child) {
-          return Opacity(
-            opacity: _fadeAnimation.value,
-            child: SingleChildScrollView(
-              child: Column(
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 20),
+
+            // Seccion: General (index 0)
+            _animatedSection(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // General section
-                  _buildSection(
-                    'General',
-                    Icons.settings,
-                    ModernTheme.primaryBlue,
-                    [
-                      _buildLanguageTile(),
-                      _buildCurrencyTile(),
-                      // ✅ Dark Mode sin Consumer para evitar double-trigger
-                      _buildDarkModeTile(),
-                      _buildSwitchTile(
-                        'Servicios de Ubicación',
-                        'Permitir acceso a tu ubicación',
-                        Icons.location_on,
-                        _locationServices,
-                        (value) => setState(() => _locationServices = value),
+                  _buildSectionHeader(context, 'GENERAL'),
+                  _buildCard([
+                    _buildLanguageTile(context),
+                    _buildDivider(context),
+                    Consumer<PreferencesProvider>(
+                      builder: (ctx, prefs, _) => _buildSwitchTile(
+                        context: ctx,
+                        icon: Icons.dark_mode_outlined,
+                        title: 'Modo Oscuro',
+                        value: prefs.darkMode,
+                        onChanged: (v) => prefs.setDarkMode(v),
                       ),
-                    ],
-                  ),
-                  
-                  // Notifications section
-                  _buildSection(
-                    'Notificaciones',
-                    Icons.notifications,
-                    ModernTheme.warning,
-                    [
-                      _buildSwitchTile(
-                        'Notificaciones Push',
-                        'Recibir notificaciones en tu dispositivo',
-                        Icons.notifications_active,
-                        _pushNotifications,
-                        (value) => setState(() => _pushNotifications = value),
-                      ),
-                      _buildSwitchTile(
-                        'Notificaciones por Email',
-                        'Recibir emails informativos',
-                        Icons.email,
-                        _emailNotifications,
-                        (value) => setState(() => _emailNotifications = value),
-                      ),
-                      _buildSwitchTile(
-                        'Mensajes SMS',
-                        'Recibir mensajes de texto',
-                        Icons.sms,
-                        _smsNotifications,
-                        (value) => setState(() => _smsNotifications = value),
-                      ),
-                      Divider(),
-                      _buildSwitchTile(
-                        'Actualizaciones de Viaje',
-                        'Estados del viaje y conductor',
-                        Icons.directions_car,
-                        _tripUpdates,
-                        (value) => setState(() => _tripUpdates = value),
-                      ),
-                      _buildSwitchTile(
-                        'Promociones',
-                        'Ofertas y descuentos especiales',
-                        Icons.local_offer,
-                        _promotions,
-                        (value) => setState(() => _promotions = value),
-                      ),
-                      _buildSwitchTile(
-                        'Noticias y Actualizaciones',
-                        'Novedades de la plataforma',
-                        Icons.newspaper,
-                        _newsUpdates,
-                        (value) => setState(() => _newsUpdates = value),
-                      ),
-                    ],
-                  ),
-                  
-                  // Privacy section
-                  _buildSection(
-                    'Privacidad',
-                    Icons.privacy_tip,
-                    ModernTheme.warning,
-                    [
-                      _buildSwitchTile(
-                        'Compartir Ubicación',
-                        'Compartir ubicación durante viajes',
-                        Icons.share_location,
-                        _shareLocation,
-                        (value) => setState(() => _shareLocation = value),
-                      ),
-                      _buildSwitchTile(
-                        'Compartir Viajes',
-                        'Permitir que otros vean tus viajes',
-                        Icons.share,
-                        _shareTrips,
-                        (value) => setState(() => _shareTrips = value),
-                      ),
-                      _buildSwitchTile(
-                        'Análisis de Uso',
-                        'Ayudar a mejorar la app',
-                        Icons.analytics,
-                        _analytics,
-                        (value) => setState(() => _analytics = value),
-                      ),
-                      _buildSwitchTile(
-                        'Reportes de Errores',
-                        'Enviar reportes automáticos',
-                        Icons.bug_report,
-                        _crashReports,
-                        (value) => setState(() => _crashReports = value),
-                      ),
-                      Divider(),
-                      _buildActionTile(
-                        'Ver Política de Privacidad',
-                        'Consulta cómo manejamos tus datos',
-                        Icons.policy,
-                        _showPrivacyPolicy,
-                      ),
-                      _buildActionTile(
-                        'Descargar Mis Datos',
-                        'Obtener copia de tu información',
-                        Icons.download,
-                        _downloadData,
-                      ),
-                    ],
-                  ),
-                  
-                  // Security section
-                  _buildSection(
-                    'Seguridad',
-                    Icons.security,
-                    ModernTheme.error,
-                    [
-                      _buildSwitchTile(
-                        'Autenticación Biométrica',
-                        'Usar huella dactilar o Face ID',
-                        Icons.fingerprint,
-                        _biometricAuth,
-                        (value) => setState(() => _biometricAuth = value),
-                      ),
-                      _buildSwitchTile(
-                        'Autenticación de Dos Factores',
-                        'Seguridad adicional para tu cuenta',
-                        Icons.security,
-                        _twoFactorAuth,
-                        (value) => setState(() => _twoFactorAuth = value),
-                      ),
-                      _buildAutoLockTile(),
-                      Divider(),
-                      _buildActionTile(
-                        'Cambiar Contraseña',
-                        'Actualizar tu contraseña',
-                        Icons.lock,
-                        _changePassword,
-                      ),
-                      _buildActionTile(
-                        'Dispositivos Conectados',
-                        'Ver sesiones activas',
-                        Icons.devices,
-                        _showConnectedDevices,
-                      ),
-                    ],
-                  ),
-                  
-                  // App preferences
-                  _buildSection(
-                    'Preferencias de la App',
-                    Icons.tune,
-                    ModernTheme.rappiOrange,
-                    [
-                      _buildSwitchTile(
-                        'Actualización Automática',
-                        'Descargar actualizaciones automáticamente',
-                        Icons.system_update,
-                        _autoUpdate,
-                        (value) => setState(() => _autoUpdate = value),
-                      ),
-                      _buildSwitchTile(
-                        'Mapas Sin Conexión',
-                        'Descargar mapas para uso offline',
-                        Icons.map,
-                        _offlineMaps,
-                        (value) => setState(() => _offlineMaps = value),
-                      ),
-                      _buildMapStyleTile(),
-                      _buildSwitchTile(
-                        'Efectos de Sonido',
-                        'Reproducir sonidos en la app',
-                        Icons.volume_up,
-                        _soundEffects,
-                        (value) => setState(() => _soundEffects = value),
-                      ),
-                      _buildSwitchTile(
-                        'Vibración',
-                        'Retroalimentación háptica',
-                        Icons.vibration,
-                        _hapticFeedback,
-                        (value) => setState(() => _hapticFeedback = value),
-                      ),
-                    ],
-                  ),
-                  
-                  // Data & Storage
-                  _buildSection(
-                    'Datos y Almacenamiento',
-                    Icons.storage,
-                    ModernTheme.info,
-                    [
-                      _buildSwitchTile(
-                        'Sincronizar Solo con Wi-Fi',
-                        'Ahorrar datos móviles',
-                        Icons.wifi,
-                        _syncOnWiFiOnly,
-                        (value) => setState(() => _syncOnWiFiOnly = value),
-                      ),
-                      _buildSwitchTile(
-                        'Comprimir Imágenes',
-                        'Reducir calidad para ahorrar espacio',
-                        Icons.compress,
-                        _compressImages,
-                        (value) => setState(() => _compressImages = value),
-                      ),
-                      _buildInfoTile(
-                        'Tamaño de Caché',
-                        _cacheSize,
-                        Icons.folder,
-                      ),
-                      Divider(),
-                      _buildActionTile(
-                        'Limpiar Caché',
-                        'Liberar espacio de almacenamiento',
-                        Icons.cleaning_services,
-                        _clearCache,
-                      ),
-                      _buildActionTile(
-                        'Gestionar Almacenamiento',
-                        'Ver uso detallado del espacio',
-                        Icons.pie_chart,
-                        _manageStorage,
-                      ),
-                    ],
-                  ),
-                  
-                  // Support & About
-                  _buildSection(
-                    'Soporte y Acerca de',
-                    Icons.help,
-                    ModernTheme.primaryBlue,
-                    [
-                      _buildActionTile(
-                        'Centro de Ayuda',
-                        'Preguntas frecuentes y tutoriales',
-                        Icons.help_center,
-                        _openHelpCenter,
-                      ),
-                      _buildActionTile(
-                        'Contactar Soporte',
-                        'Obtener ayuda personalizada',
-                        Icons.support_agent,
-                        _contactSupport,
-                      ),
-                      _buildActionTile(
-                        'Reportar Problema',
-                        'Informar errores o sugerencias',
-                        Icons.report,
-                        _reportIssue,
-                      ),
-                      Divider(),
-                      _buildActionTile(
-                        'Acerca de la App',
-                        'Versión e información legal',
-                        Icons.info,
-                        _showAbout,
-                      ),
-                      _buildActionTile(
-                        'Calificar la App',
-                        'Ayúdanos con tu opinión',
-                        Icons.star_rate,
-                        _rateApp,
-                      ),
-                    ],
-                  ),
-                  
-                  // Account management
-                  _buildSection(
-                    'Gestión de Cuenta',
-                    Icons.account_circle,
-                    ModernTheme.accentGray,
-                    [
-                      _buildActionTile(
-                        'Cerrar Sesión',
-                        'Salir de tu cuenta',
-                        Icons.logout,
-                        _logout,
-                        color: ModernTheme.warning,
-                      ),
-                      _buildActionTile(
-                        'Eliminar Cuenta',
-                        'Borrar permanentemente tu cuenta',
-                        Icons.delete_forever,
-                        _deleteAccount,
-                        color: ModernTheme.error,
-                      ),
-                    ],
-                  ),
-                  
-                  SizedBox(height: 32),
-                  
-                  // App version
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Rappi Team v1.0.0 (Build 100)',
-                      style: TextStyle(
-                        color: context.secondaryText,
-                        fontSize: 12,
-                      ),
-                      textAlign: TextAlign.center,
                     ),
-                  ),
-                  
-                  SizedBox(height: 32),
+                  ], context),
                 ],
               ),
+              0,
             ),
-          );
-        },
-      ),
-    );
-  }
-  
-  Widget _buildSection(String title, IconData icon, Color color, List<Widget> children) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
-          child: Row(
-            children: [
-              // Icono circular 40x40
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+
+            SizedBox(height: 16),
+
+            // Seccion: Notificaciones (index 1)
+            _animatedSection(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(context, 'NOTIFICACIONES'),
+                  _buildCard([
+                    Consumer<PreferencesProvider>(
+                      builder: (ctx, prefs, _) => _buildSwitchTile(
+                        context: ctx,
+                        icon: Icons.notifications_outlined,
+                        title: 'Notificaciones push',
+                        value: prefs.pushNotifications,
+                        onChanged: (v) => prefs.setPushNotifications(v),
+                      ),
+                    ),
+                  ], context),
+                ],
+              ),
+              1,
+            ),
+
+            SizedBox(height: 16),
+
+            // Seccion: Privacidad (index 2)
+            _animatedSection(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(context, 'PRIVACIDAD'),
+                  _buildCard([
+                    Consumer<PreferencesProvider>(
+                      builder: (ctx, prefs, _) => _buildLocationTile(ctx, prefs),
+                    ),
+                  ], context),
+                ],
+              ),
+              2,
+            ),
+
+            SizedBox(height: 16),
+
+            // Seccion: Soporte (index 3)
+            _animatedSection(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(context, 'SOPORTE'),
+                  _buildCard([
+                    _buildActionTile(
+                      context: context,
+                      icon: Icons.help_outline,
+                      title: 'Centro de Ayuda',
+                      onTap: _openHelpCenter,
+                    ),
+                    _buildDivider(context),
+                    _buildActionTile(
+                      context: context,
+                      icon: Icons.support_agent_outlined,
+                      title: 'Contactar Soporte',
+                      onTap: _contactSupport,
+                    ),
+                    _buildDivider(context),
+                    _buildActionTile(
+                      context: context,
+                      icon: Icons.info_outline,
+                      title: 'Acerca de la App',
+                      onTap: _showAbout,
+                    ),
+                    _buildDivider(context),
+                    _buildActionTile(
+                      context: context,
+                      icon: Icons.star_outline,
+                      title: 'Calificar la App',
+                      onTap: _rateApp,
+                    ),
+                  ], context),
+                ],
+              ),
+              3,
+            ),
+
+            SizedBox(height: 16),
+
+            // Seccion: Cuenta (index 4)
+            _animatedSection(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(context, 'CUENTA'),
+                  _buildCard([
+                    _buildActionTile(
+                      context: context,
+                      icon: Icons.delete_outline,
+                      title: 'Eliminar Cuenta',
+                      iconColor: AppColors.error,
+                      textColor: AppColors.error,
+                      onTap: _deleteAccount,
+                    ),
+                  ], context),
+                ],
+              ),
+              4,
+            ),
+
+            SizedBox(height: 32),
+
+            // Version (index 5)
+            _animatedSection(
+              Center(
+                child: Text(
+                  'Rappi Team v1.0.0',
+                  style: TextStyle(
+                    color: AppColors.getTextSecondary(context),
+                    fontSize: 12,
+                  ),
                 ),
-                child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(width: 12),
-              Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: context.secondaryText,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(children: children),
-        ),
-      ],
-    );
-  }
-  
-  // ✅ CORREGIDO: Dark Mode con throttle para prevenir double-trigger
-  Widget _buildDarkModeTile() {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.dark_mode, color: ModernTheme.rappiOrange, size: 20),
-      ),
-      title: Text(
-        'Modo Oscuro',
-        style: TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        'Cambiar apariencia de la app',
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Switch.adaptive(
-        value: _darkModeEnabled,
-        onChanged: _isDarkModeChanging ? null : (bool newValue) {
-          // ✅ SOLUCION DEFINITIVA: onChanged = null mientras se procesa para desactivar el switch completamente
-          print('🌙 Switch tocado con valor: $newValue');
+              5,
+            ),
 
-          // Establecer flag INMEDIATAMENTE de forma SÍNCRONA antes de cualquier operación
-          setState(() {
-            _isDarkModeChanging = true;
-            _darkModeEnabled = newValue;
-          });
-          print('🚫 Switch BLOQUEADO - procesando cambio...');
-
-          // Actualizar provider (sin await para no bloquear UI)
-          context.read<PreferencesProvider>().setDarkMode(newValue).then((_) {
-            print('✅ Cambio completado');
-            // Liberar flag después de completar
-            Future.delayed(Duration(milliseconds: 300), () {
-              if (mounted) {
-                setState(() {
-                  _isDarkModeChanging = false;
-                });
-                print('🔓 Switch DESBLOQUEADO');
-              }
-            });
-          });
-        },
-        activeColor: ModernTheme.rappiOrange,
+            SizedBox(height: 32),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSwitchTile(String title, String subtitle, IconData icon, bool value, Function(bool) onChanged) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: ModernTheme.rappiOrange, size: 20),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Switch.adaptive(
-        value: value,
-        onChanged: onChanged,
-        activeColor: ModernTheme.rappiOrange,
-      ),
-    );
-  }
-  
-  Widget _buildActionTile(String title, String subtitle, IconData icon, VoidCallback onTap, {Color? color}) {
-    final tileColor = color ?? ModernTheme.primaryBlue;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: tileColor.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: tileColor, size: 20),
-      ),
-      title: Text(
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: Text(
         title,
         style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppColors.getTextSecondary(context),
+          letterSpacing: 1.2,
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.secondaryText),
-      onTap: onTap,
-    );
-  }
-  
-  Widget _buildInfoTile(String title, String value, IconData icon) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: context.secondaryText.withValues(alpha: 0.1),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: context.secondaryText, size: 20),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      trailing: Text(
-        value,
-        style: TextStyle(
-          color: context.secondaryText,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildLanguageTile() {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.language, color: ModernTheme.rappiOrange, size: 20),
-      ),
-      title: const Text(
-        'Idioma',
-        style: TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        _language == 'es' ? 'Español' : 'English',
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.secondaryText),
-      onTap: _showLanguageDialog,
     );
   }
 
-  Widget _buildCurrencyTile() {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.account_balance_wallet, color: ModernTheme.rappiOrange, size: 20),
+  Widget _buildCard(List<Widget> children, BuildContext context) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.isDark(context)
+                ? Colors.black.withValues(alpha: 0.3)
+                : Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
-      title: const Text(
-        'Moneda',
-        style: TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        'Soles (S/) - Moneda de Perú',
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.secondaryText),
-      onTap: _showCurrencyDialog,
+      child: Column(children: children),
     );
   }
 
-  Widget _buildAutoLockTile() {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.error.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.lock_clock, color: ModernTheme.error, size: 20),
-      ),
-      title: Text(
-        'Bloqueo Automático',
-        style: TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        'Bloquear después de $_autoLockTime minutos',
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildDivider(BuildContext context) {
+    return Divider(height: 1, indent: 60, color: AppColors.getDivider(context));
+  }
+
+  Widget _buildSwitchTile({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
         children: [
-          IconButton(
-            icon: Icon(Icons.remove, size: 20),
-            onPressed: () {
-              if (_autoLockTime > 1) {
-                setState(() => _autoLockTime--);
-              }
-            },
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.rappiOrange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: AppColors.rappiOrange, size: 20),
           ),
-          Text('$_autoLockTime'),
-          IconButton(
-            icon: Icon(Icons.add, size: 20),
-            onPressed: () {
-              setState(() => _autoLockTime++);
-            },
+          SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppColors.rappiOrange,
           ),
         ],
       ),
     );
   }
-  
-  Widget _buildMapStyleTile() {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ModernTheme.rappiOrange.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
+
+  Widget _buildActionTile({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? iconColor,
+    Color? textColor,
+  }) {
+    final color = iconColor ?? AppColors.rappiOrange;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: textColor ?? AppColors.getTextPrimary(context),
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.getIcon(context)),
+          ],
         ),
-        child: const Icon(Icons.map, color: ModernTheme.rappiOrange, size: 20),
       ),
-      title: const Text(
-        'Estilo de Mapa',
-        style: TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        _getMapStyleText(),
-        style: TextStyle(fontSize: 12, color: context.secondaryText),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.secondaryText),
-      onTap: _showMapStyleDialog,
     );
   }
-  
-  String _getMapStyleText() {
-    switch (_mapStyle) {
-      case 'standard':
-        return 'Estándar';
-      case 'satellite':
-        return 'Satélite';
-      case 'terrain':
-        return 'Terreno';
-      case 'hybrid':
-        return 'Híbrido';
-      default:
-        return 'Estándar';
-    }
+
+  Widget _buildLanguageTile(BuildContext context) {
+    return InkWell(
+      onTap: _showLanguageDialog,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.language, color: AppColors.rappiOrange, size: 20),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Idioma',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.getTextPrimary(context),
+                ),
+              ),
+            ),
+            Text(
+              _language == 'es' ? 'Español' : 'English',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.getTextSecondary(context),
+              ),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: AppColors.getIcon(context)),
+          ],
+        ),
+      ),
+    );
   }
-  
+
+  Widget _buildLocationTile(BuildContext context, PreferencesProvider prefs) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.rappiOrange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.location_on_outlined, color: AppColors.rappiOrange, size: 20),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              'Compartir Ubicación',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+          ),
+          Switch(
+            value: prefs.shareLocation,
+            onChanged: (value) async {
+              await prefs.setShareLocation(value);
+            },
+            activeColor: AppColors.rappiOrange,
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showLanguageDialog() {
+    final prefsProvider = Provider.of<PreferencesProvider>(context, listen: false);
+    final localeProvider = Provider.of<LocaleProvider>(context, listen: false);
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Seleccionar Idioma'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -780,30 +466,40 @@ class _SettingsScreenState extends State<SettingsScreen>
               leading: Radio<String>(
                 value: 'es',
                 groupValue: _language,
-                onChanged: (value) {
-                  setState(() => _language = value!);
-                  Navigator.pop(context);
+                onChanged: (v) {
+                  setState(() => _language = v!);
+                  Navigator.pop(ctx);
+                  prefsProvider.setLanguage(v!);
+                  localeProvider.setLocale(Locale(v));
                 },
+                activeColor: AppColors.rappiOrange,
               ),
               title: Text('Español'),
               onTap: () {
                 setState(() => _language = 'es');
-                Navigator.pop(context);
+                Navigator.pop(ctx);
+                prefsProvider.setLanguage('es');
+                localeProvider.setLocale(Locale('es'));
               },
             ),
             ListTile(
               leading: Radio<String>(
                 value: 'en',
                 groupValue: _language,
-                onChanged: (value) {
-                  setState(() => _language = value!);
-                  Navigator.pop(context);
+                onChanged: (v) {
+                  setState(() => _language = v!);
+                  Navigator.pop(ctx);
+                  prefsProvider.setLanguage(v!);
+                  localeProvider.setLocale(Locale(v));
                 },
+                activeColor: AppColors.rappiOrange,
               ),
               title: Text('English'),
               onTap: () {
                 setState(() => _language = 'en');
-                Navigator.pop(context);
+                Navigator.pop(ctx);
+                prefsProvider.setLanguage('en');
+                localeProvider.setLocale(Locale('en'));
               },
             ),
           ],
@@ -811,477 +507,285 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
     );
   }
-  
-  void _showCurrencyDialog() {
+
+  Future<void> _openHelpCenter() async {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Moneda Configurada'),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.help_outline, color: AppColors.rappiOrange),
+            SizedBox(width: 12),
+            Text('Centro de Ayuda'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Radio<String>(
-                value: 'PEN',
-                groupValue: _currency,
-                onChanged: null, // ✅ Deshabilitado - solo PEN disponible
-              ),
-              title: Text('Soles Peruanos (S/)'),
-              subtitle: Text('Moneda fija para Perú'),
+              leading: Icon(Icons.question_answer, color: AppColors.rappiOrange),
+              title: Text('Preguntas frecuentes'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(ctx);
+                _launchUrl('https://rapiteam.com/faq');
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.phone, color: AppColors.rappiOrange),
+              title: Text('Llamar a soporte'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _launchUrl('tel:+51928469836');
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.chat, color: Colors.green),
+              title: Text('WhatsApp'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _contactSupport();
               },
             ),
           ],
         ),
-      ),
-    );
-  }
-  
-  void _showMapStyleDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Estilo de Mapa'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Radio<String>(
-                value: 'standard',
-                groupValue: _mapStyle,
-                onChanged: (value) {
-                  setState(() => _mapStyle = value!);
-                  Navigator.pop(context);
-                },
-              ),
-              title: Text('Estándar'),
-              onTap: () {
-                setState(() => _mapStyle = 'standard');
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Radio<String>(
-                value: 'satellite',
-                groupValue: _mapStyle,
-                onChanged: (value) {
-                  setState(() => _mapStyle = value!);
-                  Navigator.pop(context);
-                },
-              ),
-              title: Text('Satélite'),
-              onTap: () {
-                setState(() => _mapStyle = 'satellite');
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Radio<String>(
-                value: 'terrain',
-                groupValue: _mapStyle,
-                onChanged: (value) {
-                  setState(() => _mapStyle = value!);
-                  Navigator.pop(context);
-                },
-              ),
-              title: Text('Terreno'),
-              onTap: () {
-                setState(() => _mapStyle = 'terrain');
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Radio<String>(
-                value: 'hybrid',
-                groupValue: _mapStyle,
-                onChanged: (value) {
-                  setState(() => _mapStyle = value!);
-                  Navigator.pop(context);
-                },
-              ),
-              title: Text('Híbrido'),
-              onTap: () {
-                setState(() => _mapStyle = 'hybrid');
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  void _resetToDefaults() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Restablecer Configuración'),
-        content: Text('¿Estás seguro de que deseas restablecer todas las configuraciones a sus valores predeterminados?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _notificationsEnabled = true;
-                _locationServices = true;
-                _darkMode = false;
-                _language = 'es';
-                _currency = 'PEN';
-                // Reset all other settings to defaults...
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Configuración restablecida'),
-                  backgroundColor: ModernTheme.success,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.error,
-            ),
-            child: Text('Restablecer'),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cerrar'),
           ),
         ],
       ),
     );
   }
-  
-  void _showPrivacyPolicy() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abriendo política de privacidad...'),
-        backgroundColor: ModernTheme.info,
+
+  Future<void> _contactSupport() async {
+    final whatsappUrl = Uri.parse(
+      'https://wa.me/51928469836?text=Hola,%20necesito%20ayuda%20con%20Rappi%20Team'
+    );
+    try {
+      await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir WhatsApp'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _launchUrl(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir el enlace'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  void _showAbout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [AppColors.rappiOrange, AppColors.rappiOrangeDark],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.local_taxi, color: Colors.white, size: 24),
+            ),
+            SizedBox(width: 12),
+            Text('Rappi Team'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Tu servicio de transporte confiable.'),
+              SizedBox(height: 16),
+              Text('Versión: 1.0.0', style: TextStyle(color: AppColors.grey500)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }
-  
-  void _downloadData() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Iniciando descarga de datos...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
+
+  Future<void> _rateApp() async {
+    Uri storeUrl;
+    if (Platform.isAndroid) {
+      storeUrl = Uri.parse('market://details?id=com.rapiteam.app');
+    } else {
+      storeUrl = Uri.parse('https://apps.apple.com/app/rappi-team/id123456789');
+    }
+
+    try {
+      await launchUrl(storeUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      // If market:// fails, try web URL
+      if (Platform.isAndroid) {
+        await launchUrl(
+          Uri.parse('https://play.google.com/store/apps/details?id=com.rapiteam.app'),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+    }
   }
-  
-  void _changePassword() {
-    final currentPasswordController = TextEditingController();
-    final newPasswordController = TextEditingController();
-    final confirmPasswordController = TextEditingController();
+
+  void _deleteAccount() {
+    final confirmController = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Eliminar Cuenta',
+          style: TextStyle(color: AppColors.error),
         ),
-        title: Text('Cambiar Contraseña'),
         content: SingleChildScrollView(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: currentPasswordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña Actual',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
+              Text('Esta acción es irreversible. Se eliminarán:'),
+              SizedBox(height: 12),
+              Text('• Todos tus datos personales'),
+              Text('• Historial de viajes'),
+              Text('• Métodos de pago'),
               SizedBox(height: 16),
-              TextField(
-                controller: newPasswordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Nueva Contraseña',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  prefixIcon: Icon(Icons.lock),
-                  helperText: 'Mín. 8 caracteres, mayúsculas, minúsculas, números y símbolos',
-                  helperMaxLines: 2,
-                ),
+              Text(
+                'Escribe ELIMINAR para confirmar:',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 16),
+              SizedBox(height: 8),
               TextField(
-                controller: confirmPasswordController,
-                obscureText: true,
+                controller: confirmController,
                 decoration: InputDecoration(
-                  labelText: 'Confirmar Nueva Contraseña',
+                  hintText: 'ELIMINAR',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  prefixIcon: Icon(Icons.check_circle_outline),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
+                textCapitalization: TextCapitalization.characters,
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              currentPasswordController.dispose();
-              newPasswordController.dispose();
-              confirmPasswordController.dispose();
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(ctx),
             child: Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () async {
-              // Validar que las contraseñas coincidan
-              if (newPasswordController.text != confirmPasswordController.text) {
+              if (confirmController.text.trim().toUpperCase() != 'ELIMINAR') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Las contraseñas no coinciden'),
-                    backgroundColor: ModernTheme.error,
+                    content: Text('Debes escribir ELIMINAR para confirmar'),
+                    backgroundColor: AppColors.warning,
                   ),
                 );
                 return;
               }
 
-              // Validar fortaleza de contraseña
-              final password = newPasswordController.text;
-              if (password.length < 8 ||
-                  !password.contains(RegExp(r'[A-Z]')) ||
-                  !password.contains(RegExp(r'[a-z]')) ||
-                  !password.contains(RegExp(r'[0-9]')) ||
-                  !password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('La contraseña debe tener al menos 8 caracteres con mayúsculas, minúsculas, números y caracteres especiales'),
-                    backgroundColor: ModernTheme.error,
-                    duration: Duration(seconds: 5),
-                  ),
-                );
-                return;
-              }
-
-              // Llamar a authProvider.changePassword()
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              final navigator = Navigator.of(context);
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-              final success = await authProvider.changePassword(
-                currentPasswordController.text,
-                newPasswordController.text,
-              );
-
-              // Dispose controllers
-              currentPasswordController.dispose();
-              newPasswordController.dispose();
-              confirmPasswordController.dispose();
-
-              navigator.pop();
-
-              // Mostrar resultado real
-              if (success) {
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text('Contraseña actualizada exitosamente'),
-                    backgroundColor: ModernTheme.success,
-                  ),
-                );
-              } else {
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text(authProvider.errorMessage ?? 'Error al cambiar contraseña'),
-                    backgroundColor: ModernTheme.error,
-                  ),
-                );
-              }
+              Navigator.pop(ctx);
+              await _performAccountDeletion();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.rappiOrange,
-            ),
-            child: Text('Cambiar'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _showConnectedDevices() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Mostrando dispositivos conectados...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _clearCache() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Limpiar Caché'),
-        content: Text('Esto liberará $_cacheSize de espacio. ¿Continuar?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Caché limpiado exitosamente'),
-                  backgroundColor: ModernTheme.success,
-                ),
-              );
-              setState(() => _cacheSize = '0 MB');
-            },
-            child: Text('Limpiar'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _manageStorage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abriendo gestión de almacenamiento...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _openHelpCenter() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abriendo centro de ayuda...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _contactSupport() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Contactando con soporte...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _reportIssue() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abriendo reporte de problemas...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _showAbout() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Mostrando información de la app...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _rateApp() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abriendo tienda de aplicaciones...'),
-        backgroundColor: ModernTheme.info,
-      ),
-    );
-  }
-  
-  void _logout() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Cerrar Sesión'),
-        content: Text('¿Estás seguro de que deseas cerrar sesión?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              await authProvider.logout();
-              if (!context.mounted) return;
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/login',
-                (route) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.warning,
-            ),
-            child: Text('Cerrar Sesión'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _deleteAccount() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Eliminar Cuenta',
-          style: TextStyle(color: ModernTheme.error),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Esta acción es irreversible. Se eliminará:'),
-            SizedBox(height: 8),
-            Text('• Todos tus datos personales'),
-            Text('• Historial de viajes'),
-            Text('• Métodos de pago'),
-            Text('• Calificaciones y comentarios'),
-            SizedBox(height: 16),
-            Text(
-              '¿Estás completamente seguro?',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Solicitud de eliminación enviada'),
-                  backgroundColor: ModernTheme.error,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ModernTheme.error,
+              backgroundColor: AppColors.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: Text('Eliminar Cuenta'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _performAccountDeletion() async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+    final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.rappiOrange),
+            const SizedBox(width: 16),
+            const Text('Eliminando cuenta...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Server-side delete: limpia Firestore + Storage + Auth en una sola
+      // operación atómica (Cloud Function `deleteMyAccount` 2nd gen).
+      // No requiere reauth con password — funciona también con OAuth.
+      await AccountDeletionService.deleteCurrentUserAccount();
+
+      try {
+        await authProvider.logout();
+      } catch (_) {/* el server ya borró el user; logout local es best-effort */}
+
+      if (!mounted) return;
+      navigator.pop(); // Close loading
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Cuenta eliminada correctamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      navigator.pushNamedAndRemoveUntil('/login', (route) => false);
+    } on AccountDeletionException catch (e) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('No se pudo eliminar la cuenta: ${e.message}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error inesperado: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 }
