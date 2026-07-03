@@ -201,3 +201,5 @@ secrets/
 .oasis-taxi-local/
 local-data/
 test-reports/
+# Fastlane session cookie (sensitive)
+app/fastlane/.env

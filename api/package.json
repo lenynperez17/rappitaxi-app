@@ -1,0 +1,32 @@
+{
+  "name": "rapi-team-app-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3120",
+    "build": "next build",
+    "start": "next start -p 3120",
+    "type-check": "tsc --noEmit",
+    "migrate": "bash db/run-migrations.sh"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.2",
+    "@types/pg": "^8.20.0",
+    "dotenv": "^17.2.3",
+    "firebase-admin": "^13.6.0",
+    "google-auth-library": "^10.9.0",
+    "jose": "^6.2.3",
+    "next": "^16.1.1",
+    "pg": "^8.22.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "twilio": "^5.9.0",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "typescript": "^5.7.2"
+  }
+}
