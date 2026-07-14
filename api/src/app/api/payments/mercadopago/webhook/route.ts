@@ -9,7 +9,48 @@
  * Idempotencia: unique constraint mp_payment_id + external_reference matching.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { query, maybeOne, tx, isUniqueViolation } from '@/lib/db'
+
+/**
+ * Verifica x-signature de MercadoPago (HMAC-SHA256).
+ * Docs: https://www.mercadopago.com.pe/developers/es/docs/your-integrations/notifications/webhooks
+ *
+ * Formato del header:
+ *   x-signature: ts=<timestamp>,v1=<hex>
+ * Payload firmado: `id:<paymentId>;request-id:<requestId>;ts:<timestamp>;`
+ *
+ * Retorna:
+ *   - true si la firma coincide
+ *   - false si NO coincide o falta header
+ *   - null si no hay MERCADOPAGO_WEBHOOK_SECRET configurado (skip check, log warning)
+ */
+function verifyMpSignature(
+  req: NextRequest,
+  paymentId: string,
+): boolean | null {
+  const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
+  if (!secret) {
+    console.warn('[mp/webhook] MERCADOPAGO_WEBHOOK_SECRET no configurado — signature check saltado')
+    return null
+  }
+  const xSig = req.headers.get('x-signature')
+  const xRequestId = req.headers.get('x-request-id') ?? ''
+  if (!xSig) return false
+  const parts = Object.fromEntries(
+    xSig.split(',').map((kv) => kv.trim().split('=', 2) as [string, string]),
+  )
+  const ts = parts.ts
+  const v1 = parts.v1
+  if (!ts || !v1) return false
+  const manifest = `id:${paymentId};request-id:${xRequestId};ts:${ts};`
+  const expected = createHmac('sha256', secret).update(manifest).digest('hex')
+  try {
+    return timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 'hex'))
+  } catch {
+    return false
+  }
+}
 
 export const runtime = 'nodejs'
 
@@ -73,6 +114,18 @@ export async function POST(req: NextRequest) {
   // Solo procesamos notificaciones de payment
   if (type !== 'payment' || !paymentId) {
     return NextResponse.json({ ok: true, ignored: true })
+  }
+
+  // Verificar HMAC signature de MP para prevenir DoS trivial + replay abuse.
+  // Si secret no está configurado, saltamos (log warning) — el sistema aún
+  // funciona pero sin firma.
+  const sigOk = verifyMpSignature(req, paymentId)
+  if (sigOk === false) {
+    console.warn('[mp/webhook] firma inválida — request rechazada', {
+      hasHeader: !!req.headers.get('x-signature'),
+      paymentId,
+    })
+    return NextResponse.json({ ok: false, error: 'invalid_signature' }, { status: 401 })
   }
 
   const payment = await fetchPayment(paymentId, mpToken)
