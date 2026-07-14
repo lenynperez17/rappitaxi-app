@@ -85,6 +85,21 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
     } else if (payload == 'price_negotiation') {
       // Nueva negociación de precio
       _handlePriceNegotiation();
+    } else if (payload.startsWith('chat:')) {
+      // Notif de chat: payload 'chat:<rideId>'. El backend envía rideId ya
+      // que la conversación se identifica por el ride.
+      final rideId = payload.substring('chat:'.length);
+      if (rideId.isNotEmpty) {
+        Navigator.pushNamed(
+          context,
+          '/shared/chat',
+          arguments: {'rideId': rideId},
+        );
+      }
+    } else if (payload.startsWith('promo:')) {
+      // Notif de promo/vale: por ahora navegar al home del passenger para
+      // que vea el mensaje. En el futuro, ruta dedicada a promos.
+      _navigateToPassengerHome();
     }
   }
   

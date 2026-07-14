@@ -21,8 +21,10 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -82,10 +84,21 @@ class AuthProvider with ChangeNotifier {
     try {
       await _api.restore();
       if (_api.isSignedIn) {
+        // Cargar user cachado del último login exitoso — permite abrir la app
+        // sin red mientras hubo un login previo con tokens válidos.
+        await _loadCachedUser();
+
         final ok = await _refreshFromBackend();
         if (ok) {
           RapiSseClient.instance.start();
           await _registerFcmTokenSafely();
+        } else if (_currentUser != null) {
+          // Refresh falló (probable network/timeout, no 401) pero tenemos user
+          // cachado — mantenemos sesión y arrancamos SSE de forma optimista.
+          // Si el token está realmente revocado, cualquier request 401 hará
+          // logout más tarde.
+          _isAuthenticated = true;
+          RapiSseClient.instance.start();
         }
       }
     } catch (e, st) {
@@ -93,6 +106,32 @@ class AuthProvider with ChangeNotifier {
     } finally {
       _isInitializing = false;
       notifyListeners();
+    }
+  }
+
+  static const String _kCachedUserPref = 'rapi_cached_user_v1';
+
+  Future<void> _loadCachedUser() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString(_kCachedUserPref);
+      if (raw == null || raw.isEmpty) return;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      _currentUser = _userFromApi(json);
+      _updateVerificationFlags();
+    } catch (e) {
+      AppLogger.error('loadCachedUser fallo', e);
+    }
+  }
+
+  Future<void> _saveCachedUser() async {
+    try {
+      if (_currentUser == null) return;
+      final sp = await SharedPreferences.getInstance();
+      final json = _currentUser!.toJson();
+      await sp.setString(_kCachedUserPref, jsonEncode(json));
+    } catch (e) {
+      AppLogger.error('saveCachedUser fallo', e);
     }
   }
 
@@ -105,6 +144,8 @@ class AuthProvider with ChangeNotifier {
       _currentUser = _userFromApi(userJson);
       _isAuthenticated = true;
       _updateVerificationFlags();
+      // Cachear user para próximo cold-start offline.
+      await _saveCachedUser();
       return true;
     } catch (e) {
       AppLogger.error('refreshFromBackend fallo', e);
@@ -396,6 +437,11 @@ class AuthProvider with ChangeNotifier {
     try {
       final gsi = GoogleSignIn.instance;
       await gsi.signOut();
+    } catch (_) {}
+    // Limpiar cache del user para que la próxima apertura offline no lo revierta.
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove(_kCachedUserPref);
     } catch (_) {}
     _currentUser = null;
     _isAuthenticated = false;

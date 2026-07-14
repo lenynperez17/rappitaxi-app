@@ -168,6 +168,20 @@ export async function POST(
     )
   }
 
+  // No permitir enviar mensajes cuando el ride ya terminó — evita spam
+  // post-viaje y confusión con conversaciones "fantasmas".
+  const closedStates = new Set(['completed', 'cancelled', 'no_show', 'expired'])
+  if (closedStates.has(participation.ride.status)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'ride_closed',
+        message: `El viaje está ${participation.ride.status}; no se pueden enviar más mensajes.`,
+      },
+      { status: 409 },
+    )
+  }
+
   try {
     const result = await tx(async (client) => {
       const inserted = await client.query<{

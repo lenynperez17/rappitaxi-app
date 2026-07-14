@@ -454,6 +454,8 @@ class FirebaseService {
   }
 
   /// Escucha actualizaciones del viaje en tiempo real vía SSE.
+  /// Al reconectar SSE tras un drop, refetch el estado del ride para no perder
+  /// eventos que ocurrieron mientras el socket estaba caído.
   StreamSubscription<Map<String, dynamic>> listenToRideUpdates(
     String rideId,
     void Function(TripModel) onUpdate,
@@ -466,12 +468,36 @@ class FirebaseService {
     // Asegurar que el SSE está corriendo
     RapiSseClient.instance.start();
 
-    return RapiSseClient.instance.rideUpdates.listen((event) {
+    // Suscripción auxiliar: cuando SSE se reconecte (false→true), refetch
+    // del ride para no perder eventos ocurridos durante el drop.
+    // La guardamos y la cancelamos junto con el SSE sub via onCancel del wrapper.
+    var wasConnected = false;
+    final reconnectSub = RapiSseClient.instance.connected.listen((isConnected) {
+      if (isConnected && !wasConnected) {
+        wasConnected = true;
+        // Skip el primer emit al conectarse por primera vez — el initial fetch
+        // arriba ya cubre eso. Solo refetch en reconexiones subsecuentes.
+        Future.microtask(() async {
+          final trip = await getRideById(rideId);
+          if (trip != null) onUpdate(trip);
+        });
+      } else if (!isConnected) {
+        wasConnected = false;
+      }
+    });
+
+    final sseSub = RapiSseClient.instance.rideUpdates.listen((event) {
       final eventRideId = (event['rideId'] ?? event['id'])?.toString();
       if (eventRideId != null && eventRideId != rideId) return;
       final trip = _tripFromJson(rideId, event);
       if (trip != null) onUpdate(trip);
     });
+
+    // Cuando el caller cancela la subscription retornada, tambien cancelamos
+    // la del reconnect — sin esto queda leak del listener a `connected`.
+    sseSub.onDone(() { reconnectSub.cancel(); });
+    // Wrap para asegurar que cancel() también limpia reconnectSub.
+    return _WrappedSubscription(sseSub, reconnectSub);
   }
 
   /// Construye un TripModel a partir del JSON del backend Node.
@@ -610,4 +636,34 @@ class FirebaseService {
       throw Exception('No se pudo cancelar el viaje');
     }
   }
+}
+
+/// Wrapper de StreamSubscription que cancela una subscription secundaria
+/// junto con la primaria. Usado por listenToRideUpdates para no filtrar
+/// el listener al `connected` stream cuando el caller cancela.
+class _WrappedSubscription<T> implements StreamSubscription<T> {
+  final StreamSubscription<T> _inner;
+  final StreamSubscription<dynamic> _secondary;
+  _WrappedSubscription(this._inner, this._secondary);
+
+  @override
+  Future<void> cancel() async {
+    await _secondary.cancel();
+    await _inner.cancel();
+  }
+
+  @override
+  void onData(void Function(T data)? handleData) => _inner.onData(handleData);
+  @override
+  void onError(Function? handleError) => _inner.onError(handleError);
+  @override
+  void onDone(void Function()? handleDone) => _inner.onDone(handleDone);
+  @override
+  void pause([Future<void>? resumeSignal]) => _inner.pause(resumeSignal);
+  @override
+  void resume() => _inner.resume();
+  @override
+  bool get isPaused => _inner.isPaused;
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => _inner.asFuture<E>(futureValue);
 }
