@@ -168,6 +168,47 @@ export async function POST(req: NextRequest) {
   if (body.documentType === 'invoice' && (!body.customerDoc || body.customerDocType !== 'RUC')) {
     return NextResponse.json({ success: false, error: 'invoice_requires_ruc' }, { status: 400 })
   }
+
+  // Validaciones de formato SUNAT — SIN esto, XML enviado a SUNAT es rechazado
+  // y se generan contingencias fiscales.
+  if (body.customerDoc && body.customerDocType) {
+    const doc = body.customerDoc.trim()
+    const dt = body.customerDocType
+    if (dt === 'RUC') {
+      // RUC: 11 dígitos, empieza con 10/15/17/20 + checksum mod-11
+      if (!/^(10|15|17|20)\d{9}$/.test(doc)) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_ruc', message: 'RUC debe tener 11 dígitos y empezar con 10, 15, 17 o 20' },
+          { status: 400 },
+        )
+      }
+      // Checksum mod-11 SUNAT
+      const factors = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+      let sum = 0
+      for (let i = 0; i < 10; i++) sum += Number(doc[i]) * factors[i]!
+      const check = (11 - (sum % 11)) % 10
+      if (check !== Number(doc[10])) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_ruc_checksum', message: 'Dígito verificador del RUC inválido' },
+          { status: 400 },
+        )
+      }
+    } else if (dt === 'DNI') {
+      if (!/^\d{8}$/.test(doc)) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_dni', message: 'DNI debe tener exactamente 8 dígitos' },
+          { status: 400 },
+        )
+      }
+    } else if (dt === 'CE') {
+      if (!/^\d{9,12}$/.test(doc)) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_ce', message: 'Carnet de extranjería debe tener entre 9 y 12 dígitos' },
+          { status: 400 },
+        )
+      }
+    }
+  }
   if (!Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ success: false, error: 'items_required' }, { status: 400 })
   }

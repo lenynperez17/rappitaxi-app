@@ -80,6 +80,22 @@ export async function POST(req: NextRequest) {
   if (accountType !== 'savings' && accountType !== 'checking') {
     return NextResponse.json({ success: false, error: 'invalid_account_type' }, { status: 400 })
   }
+  // Validaciones SUNAT/bancarias — sin esto, retiros con documento mal
+  // formado terminan en cuentas erróneas.
+  if (!/^\d{8}$/.test(holderDocument) && !/^(10|15|17|20)\d{9}$/.test(holderDocument)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_holder_document',
+        message: 'DNI (8 dígitos) o RUC (11 dígitos empezando en 10/15/17/20)' },
+      { status: 400 },
+    )
+  }
+  // CCI Perú: 20 dígitos exactos
+  if (cci && !/^\d{20}$/.test(cci)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_cci', message: 'CCI debe tener exactamente 20 dígitos' },
+      { status: 400 },
+    )
+  }
 
   try {
     const acc = await tx(async (client: PoolClient) => {
