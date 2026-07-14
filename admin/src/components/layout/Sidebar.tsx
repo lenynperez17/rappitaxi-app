@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) 
 
       {!collapsed && (
         <div className="px-4 py-3 border-t border-gray-700/50 flex-shrink-0">
-          <p className="text-xs text-gray-500">v1.0.5 &middot; Rapi Team Peru</p>
+          <p className="text-xs text-gray-500">v1.1.3 &middot; Rapi Team Perú</p>
         </div>
       )}
     </aside>

@@ -6,7 +6,8 @@
  *   < 60 min -> "hace 12 min"
  *   < 24 h   -> "hace 3 h"
  *   < 7 d    -> "hace 2 d"
- *   else     -> absolute date (dd/MM)
+ *   este año -> dd/MM
+ *   else     -> dd/MM/yyyy (con año, para evitar ambigüedad)
  */
 export function relativeTime(date: Date | null | undefined): string {
   if (!date) return '—'
@@ -19,7 +20,11 @@ export function relativeTime(date: Date | null | undefined): string {
   if (diffHr < 24) return `hace ${diffHr} h`
   const diffDay = Math.floor(diffHr / 24)
   if (diffDay < 7) return `hace ${diffDay} d`
-  return date.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' })
+  const currentYear = new Date().getFullYear()
+  if (date.getFullYear() === currentYear) {
+    return date.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' })
+  }
+  return date.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 /**
