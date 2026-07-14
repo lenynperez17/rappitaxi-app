@@ -53,8 +53,10 @@ class RapiApiClient {
   // Secure storage (encriptado por Android Keystore / iOS Keychain).
   // Reemplaza el uso previo de SharedPreferences que dejaba tokens en
   // plaintext XML accesible con root/ADB backup.
+  // v11 de flutter_secure_storage migra automáticamente a custom ciphers;
+  // AndroidOptions no requiere parámetros. IOSOptions solo accessibility.
   static const _secureStorage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
   );
 
