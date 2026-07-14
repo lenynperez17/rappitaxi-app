@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import '../utils/logger.dart';
 import '../services/rapi_api_client.dart';
+import '../utils/error_messages.dart';
 
 /// Provider para gestión completa de vehículos, documentos, mantenimiento y recordatorios
 class VehicleProvider extends ChangeNotifier {
@@ -42,7 +43,7 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      AppLogger.info('Cargando datos del vehículo para driver: $driverId');
+      AppLogger.info(userFriendlyError(driverId, fallback: 'Cargando datos del vehículo para driver'));
 
       // Cargar en paralelo desde el backend
       await Future.wait([
@@ -54,7 +55,7 @@ class VehicleProvider extends ChangeNotifier {
 
       AppLogger.info('Datos del vehículo cargados exitosamente');
     } catch (e) {
-      _error = 'Error al cargar datos del vehículo: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar datos del vehículo');
       AppLogger.error('Error cargando datos del vehículo', e);
     }
 
@@ -210,7 +211,7 @@ class VehicleProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al actualizar información del vehículo: $e';
+      _error = userFriendlyError(e, fallback: 'Error al actualizar información del vehículo');
       AppLogger.error('Error actualizando vehículo', e);
       _isSaving = false;
       notifyListeners();
@@ -250,7 +251,7 @@ class VehicleProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al subir foto del vehículo: $e';
+      _error = userFriendlyError(e, fallback: 'Error al subir foto del vehículo');
       AppLogger.error('Error subiendo foto', e);
       _isSaving = false;
       _uploadProgress = 0.0;
@@ -301,12 +302,12 @@ class VehicleProvider extends ChangeNotifier {
       _documents.add(newDoc);
       _documents.sort((a, b) => (a.expiryDate ?? DateTime.now()).compareTo(b.expiryDate ?? DateTime.now()));
 
-      AppLogger.info('Documento agregado: $type');
+      AppLogger.info(userFriendlyError(type, fallback: 'Documento agregado'));
       _isSaving = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al agregar documento: $e';
+      _error = userFriendlyError(e, fallback: 'Error al agregar documento');
       AppLogger.error('Error agregando documento', e);
       _isSaving = false;
       notifyListeners();
@@ -357,12 +358,12 @@ class VehicleProvider extends ChangeNotifier {
         );
       }
 
-      AppLogger.info('Registro de mantenimiento agregado: $type');
+      AppLogger.info(userFriendlyError(type, fallback: 'Registro de mantenimiento agregado'));
       _isSaving = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al agregar registro de mantenimiento: $e';
+      _error = userFriendlyError(e, fallback: 'Error al agregar registro de mantenimiento');
       AppLogger.error('Error agregando mantenimiento', e);
       _isSaving = false;
       notifyListeners();
@@ -399,12 +400,12 @@ class VehicleProvider extends ChangeNotifier {
       _reminders.add(newReminder);
       _reminders.sort((a, b) => a.date.compareTo(b.date));
 
-      AppLogger.info('Recordatorio agregado: $title');
+      AppLogger.info(userFriendlyError(title, fallback: 'Recordatorio agregado'));
       _isSaving = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al agregar recordatorio: $e';
+      _error = userFriendlyError(e, fallback: 'Error al agregar recordatorio');
       AppLogger.error('Error agregando recordatorio', e);
       _isSaving = false;
       notifyListeners();
@@ -421,10 +422,10 @@ class VehicleProvider extends ChangeNotifier {
         notifyListeners();
       }
 
-      AppLogger.info('Recordatorio completado: $reminderId');
+      AppLogger.info(userFriendlyError(reminderId, fallback: 'Recordatorio completado'));
       return true;
     } catch (e) {
-      _error = 'Error al completar recordatorio: $e';
+      _error = userFriendlyError(e, fallback: 'Error al completar recordatorio');
       AppLogger.error('Error completando recordatorio', e);
       return false;
     }
@@ -436,10 +437,10 @@ class VehicleProvider extends ChangeNotifier {
       _documents.removeWhere((doc) => doc.id == documentId);
       notifyListeners();
 
-      AppLogger.info('Documento eliminado localmente: $documentId');
+      AppLogger.info(userFriendlyError(documentId, fallback: 'Documento eliminado localmente'));
       return true;
     } catch (e) {
-      _error = 'Error al eliminar documento: $e';
+      _error = userFriendlyError(e, fallback: 'Error al eliminar documento');
       AppLogger.error('Error eliminando documento', e);
       return false;
     }

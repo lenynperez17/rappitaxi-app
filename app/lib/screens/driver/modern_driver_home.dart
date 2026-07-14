@@ -37,6 +37,7 @@ import '../../services/road_snapping_service.dart';
 import '../../generated/l10n/app_localizations.dart';
 import 'driver_profile_screen.dart';
 import 'active_trip_screen.dart';
+import '../../utils/error_messages.dart';
 
 // Top-level payment method helpers (used by multiple State classes in this file)
 PaymentMethod _parsePaymentMethod(String method) {
@@ -195,7 +196,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _loadRealRequests();
       }
     }).catchError((e, stackTrace) {
-      debugPrint('Error initializing driver home: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error initializing driver home'));
     });
   }
 
@@ -263,7 +264,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // Load initial stats
       await _loadTodayStats();
     } catch (e) {
-      AppLogger.error('Error initializing driver: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error initializing driver'));
     }
   }
 
@@ -292,7 +293,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final now = DateTime.now();
       final thirtyMinutesAgo = now.subtract(const Duration(minutes: 30));
 
-      AppLogger.info('Searching zombie rides for driver: $_driverId');
+      AppLogger.info(userFriendlyError(_driverId, fallback: 'Searching zombie rides for driver'));
 
       final response = await _api.listRides(role: 'driver', pageSize: 50);
       final rides = _extractRides(response);
@@ -321,16 +322,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             );
             cleanedCount++;
           } catch (e) {
-            AppLogger.warning('No se pudo cancelar zombie ride $rideId: $e');
+            AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo cancelar zombie ride $rideId'));
           }
         }
       }
 
       if (cleanedCount > 0) {
-        AppLogger.info('Total zombie rides cleaned: $cleanedCount');
+        AppLogger.info(userFriendlyError(cleanedCount, fallback: 'Total zombie rides cleaned'));
       }
     } catch (e) {
-      AppLogger.warning('Error cleaning zombie rides: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error cleaning zombie rides'));
     }
   }
 
@@ -356,7 +357,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       AppLogger.info('Driver credits: S/ $_serviceCredits (Min: S/ $_minServiceCredits, Cost/service: S/ $_serviceFee)');
     } catch (e) {
-      AppLogger.error('Error checking credits: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error checking credits'));
       if (_isDisposed) return;
       setState(() {
         _hasEnoughCredits = true; // Don't block driver on error — commission model doesn't require upfront credits
@@ -411,7 +412,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           if (mounted) setState(() {});
         }
       } catch (e) {
-        AppLogger.warning('Error consultando verificación: $e');
+        AppLogger.warning(userFriendlyError(e, fallback: 'Error consultando verificación'));
       }
     });
   }
@@ -442,7 +443,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         AppLogger.info('No active rides on server for driver');
       }
     } catch (e) {
-      AppLogger.warning('Server check failed: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Server check failed'));
     }
   }
 
@@ -453,7 +454,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final status = tripData['status'] as String?;
     final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
     if (status == null || terminalStatuses.contains(status)) {
-      AppLogger.info('Skipping navigation to ride $tripId with terminal status: $status');
+      AppLogger.info(userFriendlyError(status, fallback: 'Skipping navigation to ride $tripId with terminal status'));
       return;
     }
 
@@ -580,7 +581,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cancelar: ${e.toString()}'), backgroundColor: Colors.red),
+        SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al cancelar')), backgroundColor: Colors.red),
       );
     }
   }
@@ -608,9 +609,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _checkForActiveRidesOnce();
         return;
       }
-      AppLogger.warning('Error checking ride $tripId existence: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error checking ride $tripId existence'));
     } catch (e) {
-      AppLogger.warning('Error checking ride $tripId existence: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error checking ride $tripId existence'));
       // If we can't check, proceed with navigation - the active_trip_screen will handle it
     }
 
@@ -824,7 +825,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _pendingOfferTripId = null;
       }
     }, onError: (e) {
-      print('Error in offer listener: $e');
+      print(userFriendlyError(e, fallback: 'Error in offer listener'));
     });
   }
 
@@ -919,7 +920,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         }
       });
     } catch (e) {
-      AppLogger.error('Error starting GPS tracking: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error starting GPS tracking'));
     }
   }
 
@@ -943,7 +944,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         heading: _currentHeading,
       );
     } catch (e) {
-      AppLogger.warning('Error enviando heartbeat al backend: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error enviando heartbeat al backend'));
     }
   }
 
@@ -1032,11 +1033,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           );
         },
         onError: (error) {
-          AppLogger.error('Error in rides listener: $error');
+          AppLogger.error(userFriendlyError(error, fallback: 'Error in rides listener'));
         },
       );
     } catch (e) {
-      AppLogger.error('Error starting rides listener: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error starting rides listener'));
     }
   }
 
@@ -1077,7 +1078,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           // TODO(node-migration): reemplazar con endpoint de marcado 'expired'
           // cuando el backend soporte marcar negotiations expiradas explícitamente.
         } catch (e) {
-          AppLogger.error('Error parsing request: $e');
+          AppLogger.error(userFriendlyError(e, fallback: 'Error parsing request'));
         }
       }
 
@@ -1101,7 +1102,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         }
       });
     } catch (e) {
-      AppLogger.error('Error loading requests: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error loading requests'));
       if (!mounted) return;
       setState(() {
         _availableRequests = [];
@@ -1215,7 +1216,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       });
       _slideController.reverse();
     } catch (e) {
-      AppLogger.error('Error making offer: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error making offer'));
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
@@ -1302,7 +1303,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               final rideData = (rideResponse['ride'] as Map<String, dynamic>?) ?? rideResponse;
               _doNavigateToActiveTrip(rideId, rideData);
             } catch (e) {
-              AppLogger.warning('Error obteniendo ride $rideId: $e');
+              AppLogger.warning(userFriendlyError(e, fallback: 'Error obteniendo ride $rideId'));
             }
           }
         }
@@ -1337,7 +1338,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         return;
       }
     }, onError: (e) {
-      AppLogger.error('Error in negotiation listener: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error in negotiation listener'));
       _dismissOfferingOverlay('Error de conexión');
     });
   }
@@ -1428,7 +1429,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         try {
           await _api.cancelRide(rideId, reason: 'credit_consumption_failed');
         } catch (rollbackError) {
-          AppLogger.error('CRITICAL: Rollback failed: $rollbackError');
+          AppLogger.error(userFriendlyError(rollbackError, fallback: 'CRITICAL: Rollback failed'));
         }
         messenger.showSnackBar(
           const SnackBar(content: Text('Error al procesar creditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
@@ -1444,7 +1445,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               : 'Error: ${e.message ?? e.code}';
       messenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error));
     } catch (e) {
-      AppLogger.error('Error accepting request: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error accepting request'));
       if (!mounted) return;
       String errorMessage = e.toString().contains('ya acepto')
           ? 'Otro conductor ya acepto esta solicitud'
@@ -1686,7 +1687,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('De: $passengerName', style: TextStyle(color: AppColors.getTextPrimary(context), fontWeight: FontWeight.w600, fontSize: 16)),
+              Text(userFriendlyError(passengerName, fallback: 'De'), style: TextStyle(color: AppColors.getTextPrimary(context), fontWeight: FontWeight.w600, fontSize: 16)),
               SizedBox(height: 12),
               Container(
                 padding: EdgeInsets.all(12),
@@ -1762,7 +1763,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       _doNavigateToActiveTrip(tripId, rideData.isNotEmpty ? rideData : tripData);
     } catch (e) {
-      print('Error accepting counter-offer: $e');
+      print(userFriendlyError(e, fallback: 'Error accepting counter-offer'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al aceptar contraoferta'), backgroundColor: AppColors.error),
@@ -1777,7 +1778,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         SnackBar(content: Text('Contraoferta de S/ ${counterPrice.toStringAsFixed(2)} rechazada'), backgroundColor: ModernTheme.warning),
       );
     } catch (e) {
-      print('Error rejecting counter-offer: $e');
+      print(userFriendlyError(e, fallback: 'Error rejecting counter-offer'));
     }
   }
 
@@ -3084,7 +3085,7 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading mini-map route: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error loading mini-map route'));
     }
   }
 

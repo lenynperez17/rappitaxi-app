@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
+import '../utils/error_messages.dart';
 
 /// PreferencesProvider - Maneja todas las configuraciones de la app.
 ///
@@ -124,7 +125,7 @@ class PreferencesProvider extends ChangeNotifier {
       _isLoading = false;
       debugPrint('✅ PreferencesProvider inicializado exitosamente');
     } catch (e) {
-      _error = 'Error inicializando preferencias: $e';
+      _error = userFriendlyError(e, fallback: 'Error inicializando preferencias');
       _isLoading = false;
       _isInitialized = false;
       debugPrint('❌ Error en PreferencesProvider.init: $e');
@@ -197,7 +198,7 @@ class PreferencesProvider extends ChangeNotifier {
     try {
       await _saveAllToPrefs();
     } catch (e) {
-      AppLogger.debug('Error al guardar preferencias localmente: $e');
+      AppLogger.debug(userFriendlyError(e, fallback: 'Error al guardar preferencias localmente'));
     }
   }
 
@@ -210,7 +211,7 @@ class PreferencesProvider extends ChangeNotifier {
     try {
       await loadPreferences();
     } catch (e) {
-      AppLogger.debug('Error al cargar preferencias locales: $e');
+      AppLogger.debug(userFriendlyError(e, fallback: 'Error al cargar preferencias locales'));
     }
   }
 

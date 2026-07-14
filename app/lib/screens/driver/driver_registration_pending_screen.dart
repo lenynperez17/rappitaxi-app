@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 /// Pantalla 5: Espera de aprobación
 class DriverRegistrationPendingScreen extends StatefulWidget {
@@ -103,7 +104,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
       });
       _contentController.forward();
     } catch (e) {
-      AppLogger.error('Error cargando solicitud pendiente: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando solicitud pendiente'));
       if (mounted) {
         setState(() => _isLoading = false);
         _contentController.forward();

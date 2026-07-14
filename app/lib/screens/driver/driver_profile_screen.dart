@@ -11,6 +11,7 @@ import 'documents_screen.dart';
 import 'earnings_withdrawal_screen.dart';
 
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 class DriverProfileScreen extends StatefulWidget {
   const DriverProfileScreen({super.key});
 
@@ -160,7 +161,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       try {
         driverProfileData = await _api.myDriverProfile();
       } catch (e) {
-        AppLogger.warning('No se pudo cargar driver profile: $e');
+        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo cargar driver profile'));
       }
 
       // Estadísticas desde /api/rides (viajes completados como conductor)
@@ -196,7 +197,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           }
         }
       } catch (e) {
-        AppLogger.warning('No se pudieron cargar estadísticas de rides: $e');
+        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudieron cargar estadísticas de rides'));
         totalTripsCount = (userData['totalTrips'] as num?)?.toInt() ?? 0;
         totalEarnings = (userData['totalEarnings'] as num?)?.toDouble() ?? 0.0;
       }
@@ -225,7 +226,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           _documents = map;
         }
       } catch (e) {
-        AppLogger.warning('No se pudieron cargar documentos: $e');
+        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudieron cargar documentos'));
       }
 
       // Logros: endpoint no disponible aún — lista vacía
@@ -2866,7 +2867,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             );
           }
         } catch (e) {
-          AppLogger.warning('No se pudo guardar contacto de emergencia: $e');
+          AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo guardar contacto de emergencia'));
         }
 
         // Actualizar estado local
@@ -2908,7 +2909,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Error al actualizar: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al actualizar')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -2986,7 +2987,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Error al actualizar: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al actualizar')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -3047,7 +3048,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al actualizar preferencias: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al actualizar preferencias')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -3156,7 +3157,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al guardar horario: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al guardar horario')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -3321,7 +3322,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error al seleccionar foto desde cámara: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar foto desde cámara'));
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3417,7 +3418,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error al seleccionar foto desde galería: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar foto desde galería'));
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(

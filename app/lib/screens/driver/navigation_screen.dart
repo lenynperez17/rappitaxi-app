@@ -13,6 +13,7 @@ import '../../services/rapi_api_client.dart';
 import '../../services/rapi_sse_client.dart';
 import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
+import '../../utils/error_messages.dart';
 
 // API Key de Google Maps para Directions API
 const String _googleMapsApiKey = 'AIzaSyB0lGTYq7wjOUEzPYIbxsTPp_COdhEk5Hc';
@@ -178,7 +179,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       debugPrint('Iconos personalizados cargados correctamente (MapMarkerUtils)');
       if (mounted) setState(() {});
     } catch (e) {
-      debugPrint('Error cargando iconos personalizados: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando iconos personalizados'));
     }
   }
 
@@ -197,7 +198,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           (pickupLat is double) ? pickupLat : (pickupLat as num).toDouble(),
           (pickupLng is double) ? pickupLng : (pickupLng as num).toDouble(),
         );
-        debugPrint('Pickup desde pickupLat/pickupLng: $_pickupLocation');
+        debugPrint(userFriendlyError(_pickupLocation, fallback: 'Pickup desde pickupLat/pickupLng'));
       }
 
       // Fallback con 'pickupLocation', 'origin' o 'pickup' (mapa {lat, lng}).
@@ -215,7 +216,7 @@ class _NavigationScreenState extends State<NavigationScreen>
             );
           }
         }
-        debugPrint('Pickup desde pickupLocation/origin/pickup: $_pickupLocation');
+        debugPrint(userFriendlyError(_pickupLocation, fallback: 'Pickup desde pickupLocation/origin/pickup'));
       }
 
       // Intentar con destinationLat/destinationLng
@@ -226,7 +227,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           (destLat is double) ? destLat : (destLat as num).toDouble(),
           (destLng is double) ? destLng : (destLng as num).toDouble(),
         );
-        debugPrint('Destino desde destinationLat/destinationLng: $_finalDestination');
+        debugPrint(userFriendlyError(_finalDestination, fallback: 'Destino desde destinationLat/destinationLng'));
       }
 
       // Fallback con 'destinationLocation' (mapa {lat, lng} desde el backend).
@@ -242,7 +243,7 @@ class _NavigationScreenState extends State<NavigationScreen>
             );
           }
         }
-        debugPrint('Destino desde destinationLocation/destination: $_finalDestination');
+        debugPrint(userFriendlyError(_finalDestination, fallback: 'Destino desde destinationLocation/destination'));
       }
 
       // Set destination based on current ride status
@@ -272,7 +273,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _passengerPhone = data['passengerPhone'] as String? ?? '';
       _passengerId = data['passengerId'] as String? ?? data['userId'] as String? ?? '';
 
-      debugPrint('RESUMEN - Pickup: $_pickupLocation ($_pickupAddress), Destino final: $_finalDestination ($_destinationAddress), Pasajero: $_passengerName');
+      debugPrint(userFriendlyError(_passengerName, fallback: 'RESUMEN - Pickup: $_pickupLocation ($_pickupAddress), Destino final: $_finalDestination ($_destinationAddress), Pasajero'));
 
       if (_tripId != null) {
         _listenToTripChanges();
@@ -301,7 +302,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           (event['ride'] as Map<String, dynamic>?) ?? event;
       final status = data['status'] as String?;
 
-      debugPrint('Status del viaje: $status');
+      debugPrint(userFriendlyError(status, fallback: 'Status del viaje'));
 
       if (status == 'in_progress' && !_isTripInProgress) {
         setState(() {
@@ -311,7 +312,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           _hasArrivedAtPickup = true;
           if (_finalDestination != null) {
             _destination = _finalDestination!;
-            debugPrint('Destino actualizado al destino final: $_destination');
+            debugPrint(userFriendlyError(_destination, fallback: 'Destino actualizado al destino final'));
           }
         });
         _waitingTimer?.cancel();
@@ -418,10 +419,10 @@ class _NavigationScreenState extends State<NavigationScreen>
     String arrivalText;
     if (!_isTripInProgress && _pickupLocation != null) {
       instructionText = 'Recoge a $_passengerName';
-      arrivalText = 'Llegando: $_pickupAddress';
+      arrivalText = userFriendlyError(_pickupAddress, fallback: 'Llegando');
     } else {
       instructionText = 'Lleva al pasajero al destino';
-      arrivalText = 'Llegando: $_destinationAddress';
+      arrivalText = userFriendlyError(_destinationAddress, fallback: 'Llegando');
     }
 
     _instructions = [
@@ -562,7 +563,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       }
     } catch (e) {
       Logger.error('Error obteniendo ruta real de Google Directions', e);
-      debugPrint('Error: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error'));
       if (mounted && !_isDisposed) {
         _drawSimpleFallbackRoute(l10n);
       }
@@ -945,7 +946,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   Future<void> _onDriverArrivedAtPickup() async {
-    debugPrint('BOTON LLEGUE PRESIONADO - tripId: $_tripId');
+    debugPrint(userFriendlyError(_tripId, fallback: 'BOTON LLEGUE PRESIONADO - tripId'));
     if (_tripId == null) {
       debugPrint('ERROR: _tripId es NULL, no se puede continuar');
       return;
@@ -1003,7 +1004,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         _isNavigatingToPickup = false;
         if (_finalDestination != null) {
           _destination = _finalDestination!;
-          debugPrint('Destino actualizado al destino final: $_destination');
+          debugPrint(userFriendlyError(_destination, fallback: 'Destino actualizado al destino final'));
         }
       });
 

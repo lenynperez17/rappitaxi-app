@@ -4,6 +4,7 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart';
 import '../../providers/wallet_provider.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 class RechargeCreditsScreen extends StatefulWidget {
   const RechargeCreditsScreen({super.key});
@@ -47,7 +48,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
       });
       _currentCredits = (creditStatus['currentCredits'] as num?)?.toDouble() ?? _currentCredits;
     } catch (e) {
-      AppLogger.warning('Error obteniendo créditos: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error obteniendo créditos'));
     }
 
     try {
@@ -61,7 +62,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
         _packages = configPackages;
       }
     } catch (e) {
-      AppLogger.warning('Error obteniendo config: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'Error obteniendo config'));
     }
 
     // SIEMPRE terminar loading
@@ -514,7 +515,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      _showErrorDialog('Error: $e');
+      _showErrorDialog(userFriendlyError(e, fallback: 'Error'));
     }
   }
 

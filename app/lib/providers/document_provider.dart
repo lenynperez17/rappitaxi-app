@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/rapi_api_client.dart';
+import '../utils/error_messages.dart';
 
 class DocumentProvider extends ChangeNotifier {
   final RapiApiClient _api = RapiApiClient.instance;
@@ -91,7 +92,7 @@ class DocumentProvider extends ChangeNotifier {
       // Cargar estado de verificación
       await loadVerificationStatus(driverId);
     } catch (e) {
-      _error = 'Error al cargar documentos: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar documentos');
     }
 
     _isLoading = false;
@@ -131,7 +132,7 @@ class DocumentProvider extends ChangeNotifier {
       debugPrint('📄 DocumentProvider: Estado final: $_verificationStatus');
     } catch (e) {
       debugPrint('📄 DocumentProvider: ❌ Error: $e');
-      _error = 'Error al cargar estado de verificación: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar estado de verificación');
     }
     notifyListeners();
   }
@@ -181,7 +182,7 @@ class DocumentProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al subir documento: $e';
+      _error = userFriendlyError(e, fallback: 'Error al subir documento');
       _isLoading = false;
       _uploadProgress = 0.0;
       notifyListeners();
@@ -208,7 +209,7 @@ class DocumentProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al eliminar documento: $e';
+      _error = userFriendlyError(e, fallback: 'Error al eliminar documento');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -277,7 +278,7 @@ class DocumentProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Error al solicitar verificación: $e';
+      _error = userFriendlyError(e, fallback: 'Error al solicitar verificación');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -305,7 +306,7 @@ class DocumentProvider extends ChangeNotifier {
         _vehicleDocuments = [];
       }
     } catch (e) {
-      _error = 'Error al cargar documentos del vehículo: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar documentos del vehículo');
     }
 
     _isLoading = false;

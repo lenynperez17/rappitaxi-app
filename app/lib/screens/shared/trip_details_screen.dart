@@ -15,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 /// TripDetailsScreen - Complete trip details
 class TripDetailsScreen extends StatefulWidget {
@@ -249,7 +250,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
           onPressed: () async {
             final messenger = ScaffoldMessenger.of(context); final navigator = Navigator.of(context);
             try { navigator.pushReplacementNamed('/passenger-home', arguments: {'repeatTrip': true, 'pickupLocation': _trip!.pickupLocation, 'pickupAddress': _trip!.pickupAddress, 'destinationLocation': _trip!.destinationLocation, 'destinationAddress': _trip!.destinationAddress}); }
-            catch (e) { messenger.showSnackBar(SnackBar(content: Text('Error al repetir viaje: $e'), backgroundColor: AppColors.error)); }
+            catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al repetir viaje')), backgroundColor: AppColors.error)); }
           },
           icon: Icon(Icons.repeat, color: AppColors.priceBlack), label: Text('Repetir Viaje', style: TextStyle(color: AppColors.priceBlack)),
           style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: AppColors.priceBlack), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -277,7 +278,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
             final statusText = _trip!.status == 'completed' ? 'Viaje Completado' : _trip!.status;
             final shareText = 'Detalles del Viaje - Rappi Team\nFecha: ${_formatDateTime(_trip!.requestedAt)}\nEstado: $statusText\nOrigen: ${_trip!.pickupAddress}\nDestino: ${_trip!.destinationAddress}\nDistancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km\n${_trip!.finalFare != null ? 'Tarifa final: S/${_trip!.finalFare!.toStringAsFixed(2)}' : 'Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}'}\nCompartido desde Rappi Team';
             await Share.share(shareText, subject: 'Detalles del Viaje - Rappi Team');
-          } catch (e) { messenger.showSnackBar(SnackBar(content: Text('Error al compartir: $e'), backgroundColor: AppColors.error)); }
+          } catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al compartir')), backgroundColor: AppColors.error)); }
         }),
         if (_trip!.status == 'completed') ListTile(leading: Icon(Icons.receipt, color: AppColors.priceBlack), title: Text('Descargar Recibo'), onTap: () async {
           Navigator.pop(context);
@@ -304,7 +305,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
             final output = await getTemporaryDirectory(); final file = File('${output.path}/recibo_${_trip!.id}.pdf'); await file.writeAsBytes(await pdf.save());
             await Share.shareXFiles([XFile(file.path)], subject: 'Recibo de Viaje - Rappi Team', text: 'Recibo de viaje del ${_formatDateTime(_trip!.requestedAt)}');
             messenger.showSnackBar(SnackBar(content: Text('Recibo generado exitosamente'), backgroundColor: AppColors.success));
-          } catch (e) { messenger.showSnackBar(SnackBar(content: Text('Error al generar recibo: $e'), backgroundColor: AppColors.error)); }
+          } catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al generar recibo')), backgroundColor: AppColors.error)); }
         }),
         ListTile(leading: Icon(Icons.report, color: AppColors.warning), title: Text('Reportar Problema'), onTap: () { Navigator.pop(context); _showReportDialog(); }),
       ]));

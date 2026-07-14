@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/google_maps_service.dart';
 import '../core/config/app_config.dart';
+import '../utils/error_messages.dart';
 
 /// Provider real para ubicación ✅ IMPLEMENTACIÓN REAL
 class LocationProvider with ChangeNotifier {
@@ -58,7 +59,7 @@ class LocationProvider with ChangeNotifier {
         _setLoading(false);
       }
     } catch (e) {
-      _setError('Error de ubicación: $e');
+      _setError(userFriendlyError(e, fallback: 'Error de ubicación'));
       _setLoading(false);
     }
   }
@@ -94,7 +95,7 @@ class LocationProvider with ChangeNotifier {
         return null;
       }
     } catch (e) {
-      _setError('Error buscando ubicación: $e');
+      _setError(userFriendlyError(e, fallback: 'Error buscando ubicación'));
       return null;
     }
   }
@@ -145,7 +146,7 @@ class LocationProvider with ChangeNotifier {
         return null;
       }
     } catch (e) {
-      _setError('Error calculando ruta: $e');
+      _setError(userFriendlyError(e, fallback: 'Error calculando ruta'));
       return null;
     }
   }

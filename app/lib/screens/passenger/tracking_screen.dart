@@ -12,6 +12,7 @@ import '../shared/rating_dialog.dart';
 import '../../services/sound_service.dart';
 import '../../services/rapi_api_client.dart';
 import '../../services/rapi_sse_client.dart';
+import '../../utils/error_messages.dart';
 
 class TrackingScreen extends StatefulWidget {
   final String tripId;
@@ -154,7 +155,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       final ride = _extractRide(data);
       _applyRideSnapshot(ride);
     }).catchError((error) {
-      debugPrint('TrackingScreen: Error fetching ride: $error');
+      debugPrint(userFriendlyError(error, fallback: 'TrackingScreen: Error fetching ride'));
     });
 
     _sse.start();
@@ -167,7 +168,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (rideId != widget.tripId) return;
       _applyRideSnapshot(_extractRide(event));
     }, onError: (error) {
-      debugPrint('TrackingScreen: Error listening ride updates: $error');
+      debugPrint(userFriendlyError(error, fallback: 'TrackingScreen: Error listening ride updates'));
     });
 
     _driverLocationSub = _sse.driverLocations.listen((event) {
@@ -397,7 +398,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       driverPhoto: widget.driverPhoto,
       tripId: widget.tripId,
       onSubmit: (rating, comment, tags) {
-        debugPrint('Rating submitted: $rating stars, tags: $tags');
+        debugPrint(userFriendlyError(tags, fallback: 'Rating submitted: $rating stars, tags'));
         Navigator.of(context).popUntil((route) => route.isFirst);
       },
     );
@@ -1018,7 +1019,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         }
       }
     } catch (e) {
-      debugPrint('Error calling driver: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error calling driver'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1132,11 +1133,11 @@ class _TrackingScreenState extends State<TrackingScreen>
                   Navigator.pop(context);
                 }
               } catch (e) {
-                debugPrint('Error cancelling trip: $e');
+                debugPrint(userFriendlyError(e, fallback: 'Error cancelling trip'));
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Error al cancelar: $e'),
+                      content: Text(userFriendlyError(e, fallback: 'Error al cancelar')),
                       backgroundColor: AppColors.error,
                     ),
                   );
@@ -1167,12 +1168,12 @@ class _TrackingScreenState extends State<TrackingScreen>
       debugPrint('Trip completed vía backend Node');
     } catch (e) {
       _isCompleting = false;
-      debugPrint('Error completing trip: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error completing trip'));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al completar viaje: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al completar viaje')),
             backgroundColor: AppColors.error,
           ),
         );

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../services/notification_service.dart';
 import '../../providers/auth_provider.dart';
 import 'dart:async';
+import '../../utils/error_messages.dart';
 
 class NotificationHandlerWidget extends StatefulWidget {
   final Widget child;
@@ -59,7 +60,7 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
         arguments: {'rideId': rideId},
       );
       
-      debugPrint('Navegando al viaje: $rideId');
+      debugPrint(userFriendlyError(rideId, fallback: 'Navegando al viaje'));
     } else if (payload == 'ride_request') {
       // Nueva solicitud de viaje para conductores
       _navigateToDriverHome();
@@ -117,7 +118,7 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
       // activeMode retorna el modo actual ('driver' o 'passenger') incluso para cuentas dual
       return user.activeMode;
     } catch (e) {
-      debugPrint('Error obteniendo tipo de usuario: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo tipo de usuario'));
       return 'passenger';
     }
   }

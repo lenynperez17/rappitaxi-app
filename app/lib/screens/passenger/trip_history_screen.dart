@@ -17,6 +17,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/ride_provider.dart';
 import '../../models/trip_model.dart';
 import '../shared/rating_dialog.dart';
+import '../../utils/error_messages.dart';
 
 class TripHistoryScreen extends StatefulWidget {
   const TripHistoryScreen({super.key});
@@ -107,7 +108,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen>
         setState(() {
           _isLoading = false;
         });
-        debugPrint('Error loading trip history: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error loading trip history'));
       }
     } else {
       setState(() {
@@ -1176,7 +1177,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Error al enviar reporte: ${e.toString()}',
+                    userFriendlyError(e, fallback: 'Error al enviar reporte'),
                     style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
                   ),
                 ),
@@ -1501,7 +1502,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                 Icon(Icons.error, color: Theme.of(context).colorScheme.onPrimary),
                 SizedBox(width: 12),
                 Expanded(
-                  child: Text('Error al generar PDF: ${e.toString()}'),
+                  child: Text(userFriendlyError(e, fallback: 'Error al generar PDF')),
                 ),
               ],
             ),

@@ -12,6 +12,7 @@ import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para col
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
 
@@ -172,7 +173,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         _profileImagePath = currentUser.profilePhotoUrl;
       });
     } catch (e) {
-      AppLogger.error('Error cargando datos del usuario: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando datos del usuario'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -965,11 +966,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         ),
       );
     } catch (e) {
-      debugPrint('Error tomando foto: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error tomando foto'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al tomar foto: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al tomar foto')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1008,11 +1009,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         ),
       );
     } catch (e) {
-      debugPrint('Error seleccionando imagen: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error seleccionando imagen'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al seleccionar imagen: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al seleccionar imagen')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1110,7 +1111,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
             AppLogger.debug('✅ Foto subida: $profileImageUrl');
           }
         } catch (e) {
-          AppLogger.error('Error subiendo foto de perfil: $e');
+          AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo foto de perfil'));
           // No fallar el guardado si hay error en la foto
         }
       }
@@ -1165,7 +1166,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error guardando perfil: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error guardando perfil'));
       if (mounted) {
         setState(() => _isLoading = false);
         

@@ -8,6 +8,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 /// Pantalla 4: Subir documentos
 class DriverRegistrationDocumentsScreen extends StatefulWidget {
@@ -195,12 +196,12 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
         arguments: navData,
       );
     } catch (e) {
-      AppLogger.error('Error enviando solicitud: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error enviando solicitud'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al enviar solicitud: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al enviar solicitud')),
           backgroundColor: AppColors.error,
         ),
       );
@@ -225,7 +226,7 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       }
       return url;
     } catch (e) {
-      AppLogger.error('Error subiendo imagen $scope: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo imagen $scope'));
       rethrow;
     }
   }

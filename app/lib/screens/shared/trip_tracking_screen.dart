@@ -26,6 +26,7 @@ import '../../providers/ride_provider.dart';
 // Screens
 import 'chat_screen.dart';
 import 'rating_dialog.dart';
+import '../../utils/error_messages.dart';
 
 class TripTrackingScreen extends StatefulWidget {
   final String rideId;
@@ -123,7 +124,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       );
       if (mounted) setState(() {});
     } catch (e) {
-      debugPrint('Error loading custom marker icons: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error loading custom marker icons'));
     }
   }
 
@@ -215,7 +216,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar datos del viaje: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al cargar datos del viaje')),
             backgroundColor: Colors.red,
           ),
         );
@@ -608,7 +609,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         setState(() {});
       }
     } catch (e) {
-      debugPrint('Error fetching driver route: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error fetching driver route'));
     } finally {
       _isFetchingDriverRoute = false;
     }
@@ -832,7 +833,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           return [origin, destination];
         }
       } catch (e) {
-        debugPrint('Exception getting route (attempt $attempt): $e');
+        debugPrint(userFriendlyError(e, fallback: 'Exception getting route (attempt $attempt)'));
         if (attempt == 0) {
           await Future.delayed(const Duration(seconds: 2));
           continue;
@@ -1046,7 +1047,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al activar emergencia: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al activar emergencia')),
             backgroundColor: Colors.red,
           ),
         );
@@ -1089,7 +1090,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al cancelar: $e'),
+              content: Text(userFriendlyError(e, fallback: 'Error al cancelar')),
               backgroundColor: Colors.red,
             ),
           );
@@ -1138,8 +1139,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
               : 'Driver is on the way. Arriving very soon';
         }
         return isEs
-            ? 'El conductor va en camino. Tiempo estimado: $eta'
-            : 'Driver is on the way. Estimated time: $eta';
+            ? userFriendlyError(eta, fallback: 'El conductor va en camino. Tiempo estimado')
+            : userFriendlyError(eta, fallback: 'Driver is on the way. Estimated time');
       case 'accepted':
         final eta = _estimatedArrivalKey;
         if (eta == null || eta == 'verySoon') {
@@ -1148,8 +1149,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
               : 'Driver assigned. Arriving very soon';
         }
         return isEs
-            ? 'Conductor asignado. Tiempo estimado: $eta'
-            : 'Driver assigned. Estimated time: $eta';
+            ? userFriendlyError(eta, fallback: 'Conductor asignado. Tiempo estimado')
+            : userFriendlyError(eta, fallback: 'Driver assigned. Estimated time');
       case 'in_progress':
         // Calculate estimated arrival time as absolute clock time
         final etaKey = _estimatedArrivalKey;
@@ -1889,7 +1890,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                       _isCompletionHandled = false;
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                          SnackBar(content: Text(userFriendlyError(e, fallback: 'Error')), backgroundColor: Colors.red),
                         );
                       }
                     }

@@ -6,6 +6,7 @@ import '../../services/emergency_service.dart';
 import '../../services/firebase_service.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../utils/error_messages.dart';
 
 /// PANTALLA DE EMERGENCIA SOS - RAPPI TEAM
 /// =======================================
@@ -122,7 +123,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
       _emergencyHistory = await _emergencyService.getUserEmergencyHistory(widget.userId);
 
     } catch (e) {
-      _showErrorSnackBar('Error cargando datos: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cargando datos'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -174,7 +175,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
         _showErrorSnackBar(result.error ?? 'Error activando SOS');
       }
     } catch (e) {
-      _showErrorSnackBar('Error activando SOS: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error activando SOS'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -210,7 +211,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
         _showErrorSnackBar('Error cancelando emergencia');
       }
     } catch (e) {
-      _showErrorSnackBar('Error cancelando emergencia: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cancelando emergencia'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

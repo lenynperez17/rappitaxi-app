@@ -8,6 +8,7 @@ import '../../core/utils/currency_formatter.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/price_negotiation_model.dart';
+import '../../utils/error_messages.dart';
 
 /// Pantalla de negociaciones para conductores
 /// Muestra las solicitudes activas donde pueden hacer ofertas.
@@ -684,7 +685,7 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
                 if (mounted) {
                   scaffoldMessenger.showSnackBar(
                     SnackBar(
-                      content: Text('Error al enviar oferta: $e'),
+                      content: Text(userFriendlyError(e, fallback: 'Error al enviar oferta')),
                       backgroundColor: ModernTheme.error,
                     ),
                   );

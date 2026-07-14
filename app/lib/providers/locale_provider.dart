@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/error_messages.dart';
 
 /// Provider para manejar el idioma de la aplicación
 /// Soporta Español (es) e Inglés (en)
@@ -20,7 +21,7 @@ class LocaleProvider extends ChangeNotifier {
       _locale = Locale(languageCode);
       notifyListeners();
     } catch (e) {
-      debugPrint('Error cargando idioma: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando idioma'));
     }
   }
 
@@ -36,7 +37,7 @@ class LocaleProvider extends ChangeNotifier {
       await prefs.setString('language_code', locale.languageCode);
       debugPrint('Idioma guardado: ${locale.languageCode}');
     } catch (e) {
-      debugPrint('Error guardando idioma: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error guardando idioma'));
     }
   }
 

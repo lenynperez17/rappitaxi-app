@@ -10,6 +10,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
 import '../../services/rapi_api_client.dart';
 import '../shared/rating_dialog.dart';
+import '../../utils/error_messages.dart';
 
 class TripCompletedScreen extends StatefulWidget {
   final String tripId;
@@ -113,7 +114,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
         });
       }
     } catch (e) {
-      debugPrint('Error cargando viaje: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando viaje'));
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -146,7 +147,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
             comment: combinedComment,
           );
         } catch (e) {
-          debugPrint('Error enviando calificación: $e');
+          debugPrint(userFriendlyError(e, fallback: 'Error enviando calificación'));
         }
 
         if (mounted) {

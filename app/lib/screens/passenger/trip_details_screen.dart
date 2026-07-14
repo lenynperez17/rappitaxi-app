@@ -10,6 +10,7 @@ import '../../core/utils/currency_formatter.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
   
@@ -278,7 +279,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar el viaje: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al cargar el viaje')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1273,7 +1274,7 @@ ID de viaje: ${trip.id}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al compartir: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al compartir')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1472,7 +1473,7 @@ ID de viaje: ${trip.id}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al generar recibo: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al generar recibo')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1592,7 +1593,7 @@ ID de viaje: ${trip.id}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al repetir viaje: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al repetir viaje')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1673,7 +1674,7 @@ ID de viaje: ${trip.id}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al enviar reporte: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al enviar reporte')),
             backgroundColor: ModernTheme.error,
           ),
         );

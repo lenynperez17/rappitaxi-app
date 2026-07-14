@@ -15,6 +15,7 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 class MetricsScreen extends StatefulWidget {
   const MetricsScreen({super.key});
 
@@ -1210,7 +1211,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1222,7 +1223,7 @@ class _MetricsScreenState extends State<MetricsScreen>
     final buffer = StringBuffer();
     buffer.writeln('REPORTE DE MÉTRICAS - RAPPI TEAM');
     buffer.writeln('Fecha: ${DateTime.now().toString().split('.')[0]}');
-    buffer.writeln('Período: $_selectedPeriod');
+    buffer.writeln(userFriendlyError(_selectedPeriod, fallback: 'Período'));
     buffer.writeln('');
     buffer.writeln('RESUMEN:');
     buffer.writeln('- Total Viajes: ${_currentMetrics['totalTrips']}');
@@ -1300,7 +1301,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar CSV: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar CSV')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1364,7 +1365,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                   style: pw.TextStyle(font: ttfRegular, fontSize: 12),
                 ),
                 pw.Text(
-                  'Período: $_selectedPeriod',
+                  userFriendlyError(_selectedPeriod, fallback: 'Período'),
                   style: pw.TextStyle(font: ttfRegular, fontSize: 12),
                 ),
                 pw.SizedBox(height: 20),
@@ -1457,7 +1458,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar PDF: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar PDF')),
           backgroundColor: ModernTheme.error,
         ),
       );

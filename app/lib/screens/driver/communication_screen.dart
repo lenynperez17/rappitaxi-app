@@ -5,6 +5,7 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../widgets/animated/modern_animated_widgets.dart';
+import '../../utils/error_messages.dart';
 
 class CommunicationScreen extends StatefulWidget {
   final Map<String, dynamic>? tripData;
@@ -331,7 +332,7 @@ class _CommunicationScreenState extends State<CommunicationScreen>
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Tono: $digit'),
+            content: Text(userFriendlyError(digit, fallback: 'Tono')),
             duration: Duration(milliseconds: 300),
             backgroundColor: ModernTheme.rappiOrange,
           ),

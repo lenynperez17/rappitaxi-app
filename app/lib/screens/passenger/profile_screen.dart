@@ -16,6 +16,7 @@ import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Textos local
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../services/account_deletion_service.dart';
 import '../auth/email_verification_screen.dart'; // Verificación de email nativa de Firebase
+import '../../utils/error_messages.dart';
 // import '../../providers/ride_provider.dart'; // Se usará para estadísticas reales
 
 class ProfileScreen extends StatefulWidget {
@@ -131,7 +132,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
     } catch (e) {
-      debugPrint('Error cargando perfil: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando perfil'));
       setState(() {
         _isLoadingProfile = false;
       });
@@ -201,7 +202,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      _showError('Error al guardar perfil: $e');
+      _showError(userFriendlyError(e, fallback: 'Error al guardar perfil'));
     }
   }
 
@@ -485,7 +486,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al subir foto: ${uploadError.toString()}'),
+            content: Text(userFriendlyError(uploadError, fallback: 'Error al subir foto')),
             backgroundColor: ModernTheme.error,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 5),
@@ -493,7 +494,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       }
     } catch (e) {
-      debugPrint('Error seleccionando imagen: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error seleccionando imagen'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2519,7 +2520,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       }
     } catch (e) {
-      debugPrint('Error abriendo configuración: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error abriendo configuración'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2642,11 +2643,11 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       }
     } catch (e) {
-      debugPrint('Error exportando datos: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error exportando datos'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al exportar datos: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al exportar datos')),
             backgroundColor: ModernTheme.error,
           ),
         );

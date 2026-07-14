@@ -10,6 +10,7 @@ import '../../services/rapi_api_client.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../widgets/common/rappi_app_bar.dart';
+import '../../utils/error_messages.dart';
 
 /// Screen for upgrading a passenger to driver (dual-account)
 class UpgradeToDriverScreen extends StatefulWidget {
@@ -141,7 +142,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
         if (!mounted) return;
         Navigator.pushNamedAndRemoveUntil(context, '/driver/home', (route) => route.isFirst);
       } else { if (!mounted) return; _showError('Error al registrarte como conductor'); }
-    } catch (e) { if (!mounted) return; _showError('Error: $e'); }
+    } catch (e) { if (!mounted) return; _showError(userFriendlyError(e, fallback: 'Error')); }
     finally { if (mounted) { setState(() { _isUploading = false; }); } }
   }
 
@@ -196,9 +197,9 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle, color: Colors.white, size: 20), const SizedBox(width: 12), Expanded(child: Text('$type (${isPdf ? 'PDF' : 'imagen'}) subido correctamente', overflow: TextOverflow.ellipsis, maxLines: 2))]), backgroundColor: AppColors.rappiOrange, behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)));
     } catch (e) {
-      debugPrint('Error seleccionando documento: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error seleccionando documento'));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al seleccionar documento: $e'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al seleccionar documento')), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating));
     }
   }
 

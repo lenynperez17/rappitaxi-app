@@ -12,6 +12,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/chat_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../utils/error_messages.dart';
 
 /// ChatScreen - Real-time professional chat
 class ChatScreen extends StatefulWidget {
@@ -91,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           if (mounted) { setState(() { _messages = messages; _isLoading = false; }); _scrollToBottom(); }
         },
         onError: (error) {
-          debugPrint('Error en stream de chat: $error');
+          debugPrint(userFriendlyError(error, fallback: 'Error en stream de chat'));
           if (mounted) { setState(() { _isLoading = false; _hasError = true; }); }
         },
       );
@@ -103,7 +104,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
       if (mounted) setState(() { _isLoading = false; });
     } catch (e) {
-      debugPrint('Error inicializando chat: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error inicializando chat'));
       if (mounted) {
         setState(() { _isLoading = false; });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al inicializar el chat'), backgroundColor: AppColors.error));
@@ -130,7 +131,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (success) { HapticFeedback.lightImpact(); _messageAnimationController.forward().then((_) { _messageAnimationController.reset(); }); }
       else { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al enviar mensaje'), backgroundColor: AppColors.error)); }
     } catch (e) {
-      debugPrint('Error enviando mensaje: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error enviando mensaje'));
       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al enviar mensaje'), backgroundColor: AppColors.error)); }
     }
   }
@@ -142,7 +143,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (user == null) return;
       final success = await _chatService.sendQuickMessage(rideId: widget.rideId, senderId: user.id, senderName: user.fullName, senderRole: user.activeMode, type: type);
       if (success && mounted) { setState(() { _showQuickMessages = false; }); }
-    } catch (e) { debugPrint('Error enviando mensaje rapido: $e'); }
+    } catch (e) { debugPrint(userFriendlyError(e, fallback: 'Error enviando mensaje rapido')); }
   }
 
   Future<void> _shareLocation() async {
@@ -157,7 +158,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       final success = await _chatService.shareLocation(rideId: widget.rideId, senderId: user.id, senderName: user.fullName, senderRole: user.activeMode, latitude: latitude, longitude: longitude);
       if (!success && mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al compartir ubicacion'), backgroundColor: AppColors.error)); }
     } catch (e) {
-      debugPrint('Error compartiendo ubicacion: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error compartiendo ubicacion'));
       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo obtener la ubicación'), backgroundColor: AppColors.error)); }
     }
   }
@@ -190,7 +191,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     } catch (e) {
       if (mounted) { ScaffoldMessenger.of(context).hideCurrentSnackBar(); }
-      debugPrint('Error enviando multimedia: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error enviando multimedia'));
       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al enviar archivo'), backgroundColor: AppColors.error)); }
     }
   }

@@ -6,6 +6,7 @@ import '../../core/l10n/driver_strings.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/payment_service.dart';
 import '../../services/rapi_api_client.dart';
+import '../../utils/error_messages.dart';
 
 class DriverRechargeScreen extends StatefulWidget {
   const DriverRechargeScreen({super.key});
@@ -351,7 +352,7 @@ class _DriverRechargeScreenState extends State<DriverRechargeScreen> {
       if (mounted) {
         setState(() => _isProcessing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+          SnackBar(content: Text(userFriendlyError(e, fallback: 'Error')), backgroundColor: AppColors.error),
         );
       }
     }

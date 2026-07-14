@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../dev_tour_orchestrator.dart';
 import '../../services/rapi_api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../utils/error_messages.dart';
 
 /// Pantalla de splash con animaciones modernas
 ///
@@ -174,7 +175,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
           AppLogger.info('DEV_TOUR: auto-login OK, refrescando AuthProvider…');
           await authProvider.refreshUserData();
         } catch (e) {
-          AppLogger.warning('DEV_TOUR: auto-login falló, tour continuará como no-auth: $e');
+          AppLogger.warning(userFriendlyError(e, fallback: 'DEV_TOUR: auto-login falló, tour continuará como no-auth'));
         }
 
         if (!mounted) return;
@@ -189,7 +190,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
         }
       }
     } catch (e) {
-      AppLogger.warning('DEV_TOUR check failed: $e');
+      AppLogger.warning(userFriendlyError(e, fallback: 'DEV_TOUR check failed'));
     }
 
     _navigateToHome();
@@ -297,7 +298,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                   await authProvider.switchMode('passenger');
                 } catch (e) {
                   // No crashear si falla - solo log warning
-                  AppLogger.warning('Error sincronizando currentMode: $e');
+                  AppLogger.warning(userFriendlyError(e, fallback: 'Error sincronizando currentMode'));
                 }
                 // Verificar mounted después de operaciones async
                 if (!mounted) return;

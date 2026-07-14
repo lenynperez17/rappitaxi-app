@@ -36,6 +36,7 @@ import '../../services/location_service.dart';
 import 'package:share_plus/share_plus.dart'; // Para compartir la app
 import 'passenger_negotiations_screen.dart'; // Pantalla de negociaciones
 import '../shared/map_picker_screen.dart'; // Map picker for selecting locations
+import '../../utils/error_messages.dart';
 
 // Enum para tipos de servicio disponibles (Estilo inDrive)
 enum ServiceType {
@@ -305,18 +306,18 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         _setupRideProviderListener();
         _loadActiveTripIfNeeded();
       } catch (e) {
-        debugPrint('Error en setupRideProviderListener: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error en setupRideProviderListener'));
       }
       _requestLocationPermission().then((_) {
         _autoFillCurrentLocation();
       }).catchError((e) {
-        debugPrint('Error en requestLocationPermission: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error en requestLocationPermission'));
       });
       _loadFareConfig().catchError((e) {
-        debugPrint('Error en loadFareConfig: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error en loadFareConfig'));
       });
       _loadUserPlaces().catchError((e) {
-        debugPrint('Error en loadUserPlaces: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error en loadUserPlaces'));
       });
     });
   }
@@ -333,7 +334,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       final negotiationProvider = context.read<PriceNegotiationProvider>();
       await negotiationProvider.cleanupExpiredNegotiations();
     } catch (e) {
-      debugPrint('Error cleaning up negotiations: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cleaning up negotiations'));
     }
 
     if (!rideProvider.hasActiveTrip) {
@@ -466,7 +467,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
       }
     } catch (e) {
-      AppLogger.error('Error cargando lugares del usuario: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando lugares del usuario'));
       if (mounted) {
         setState(() => _loadingPlaces = false);
       }
@@ -538,7 +539,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           );
         }
 
-        AppLogger.info('Ubicación auto-llenada: $address');
+        AppLogger.info(userFriendlyError(address, fallback: 'Ubicación auto-llenada'));
 
         await _addReferencePointDots(currentLocation);
         await _addSimulatedDriverMarkers(currentLocation);
@@ -546,7 +547,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         setState(() => _pickupController.text = '');
       }
     } catch (e) {
-      AppLogger.error('Error auto-llenando ubicación: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error auto-llenando ubicación'));
       if (mounted) {
         setState(() => _pickupController.text = '');
       }
@@ -693,7 +694,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         rideProvider.removeListener(_onRideProviderChanged);
       }
     } catch (e) {
-      AppLogger.debug('Error removiendo listener en dispose: $e');
+      AppLogger.debug(userFriendlyError(e, fallback: 'Error removiendo listener en dispose'));
     }
 
     _bottomSheetController.dispose();
@@ -730,7 +731,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
       }
     } catch (e) {
-      AppLogger.debug('Reverse geocode error: $e');
+      AppLogger.debug(userFriendlyError(e, fallback: 'Reverse geocode error'));
     }
   }
 
@@ -801,7 +802,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         AppLogger.debug('Roads API status: ${response.statusCode}');
       }
     } catch (e) {
-      AppLogger.debug('Roads API error: $e');
+      AppLogger.debug(userFriendlyError(e, fallback: 'Roads API error'));
     }
     return candidates;
   }
@@ -1109,7 +1110,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
       }
     } catch (e) {
-      AppLogger.error('Error getting place details: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error getting place details'));
     }
   }
 
@@ -1190,7 +1191,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
       }
     } catch (e) {
-      AppLogger.error('Error getting origin place details: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error getting origin place details'));
     }
   }
 
@@ -1395,7 +1396,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al crear solicitud: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al crear solicitud')),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
@@ -2748,7 +2749,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                       });
                       _addMarkerAndZoom(currentLocation, 'pickup_marker', true);
 
-                      AppLogger.info('Ubicación GPS con dirección: $address');
+                      AppLogger.info(userFriendlyError(address, fallback: 'Ubicación GPS con dirección'));
                     } else {
                       if (!mounted) return;
                       setState(() {
@@ -3324,11 +3325,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error accepting driver offer: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error accepting driver offer'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error')),
             backgroundColor: Colors.red,
           ),
         );
@@ -3358,11 +3359,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error rejecting driver offer: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error rejecting driver offer'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al rechazar oferta: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error al rechazar oferta')),
             backgroundColor: Colors.red,
           ),
         );
@@ -3444,7 +3445,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         final ok = await negotiationProvider.cancelNegotiation(currentNegotiation.id);
         AppLogger.info('🗑️ Negotiation ${currentNegotiation.id} cancel result: $ok');
       } catch (e) {
-        AppLogger.error('Error cancelling negotiation: $e');
+        AppLogger.error(userFriendlyError(e, fallback: 'Error cancelling negotiation'));
       }
     }
 
@@ -3806,7 +3807,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         setState(() {
           _selectedPaymentMethod = label;
         });
-        AppLogger.info('Método de pago seleccionado: $label');
+        AppLogger.info(userFriendlyError(label, fallback: 'Método de pago seleccionado'));
       },
       borderRadius: BorderRadius.circular(20),
       child: Container(
@@ -4524,7 +4525,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     // perfil de conductor: si existe y está en estado pending/under_review,
     // se considera solicitud pendiente. Si no hay perfil, no hay solicitud.
     try {
-      AppLogger.info('Verificando solicitud de conductor pendiente para userId: $userId');
+      AppLogger.info(userFriendlyError(userId, fallback: 'Verificando solicitud de conductor pendiente para userId'));
       final profile = await RapiApiClient.instance.myDriverProfile();
       final data = (profile['driver'] as Map?) ??
           (profile['profile'] as Map?) ??
@@ -4537,7 +4538,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       AppLogger.info('No se encontró solicitud pendiente (status=$status)');
       return null;
     } catch (e) {
-      AppLogger.info('No hay perfil de conductor / solicitud pendiente: $e');
+      AppLogger.info(userFriendlyError(e, fallback: 'No hay perfil de conductor / solicitud pendiente'));
       return null;
     }
   }
@@ -4608,7 +4609,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         AppLogger.warning('Dirección vacía después de reverse geocoding');
         return 'Ubicación encontrada (${coordinates.latitude.toStringAsFixed(4)}, ${coordinates.longitude.toStringAsFixed(4)})';
       }
-      AppLogger.info('Reverse geocoding exitoso: $address');
+      AppLogger.info(userFriendlyError(address, fallback: 'Reverse geocoding exitoso'));
       return address;
     } catch (e, stackTrace) {
       AppLogger.error('Error en reverse geocoding', e, stackTrace);

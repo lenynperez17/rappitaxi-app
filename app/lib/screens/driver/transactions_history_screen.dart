@@ -14,6 +14,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/utils/payment_utils.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 class TransactionsHistoryScreen extends StatefulWidget {
   const TransactionsHistoryScreen({super.key});
@@ -214,7 +215,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error cargando transacciones: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error cargando transacciones')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1226,7 +1227,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1316,7 +1317,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar CSV: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar CSV')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -1490,7 +1491,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar PDF: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar PDF')),
           backgroundColor: ModernTheme.error,
         ),
       );

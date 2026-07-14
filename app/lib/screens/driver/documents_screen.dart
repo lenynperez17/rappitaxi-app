@@ -12,6 +12,7 @@ import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para col
 import '../../services/rapi_api_client.dart';
 
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
 
@@ -186,12 +187,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         _slideController.forward();
       }
     } catch (e) {
-      AppLogger.error('Error al cargar documentos: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al cargar documentos'));
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar documentos: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al cargar documentos')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1190,12 +1191,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error al capturar desde cámara: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al capturar desde cámara'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al subir documento: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1256,12 +1257,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error al seleccionar desde galería: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar desde galería'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al subir documento: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1339,12 +1340,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error al seleccionar archivo: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar archivo'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al subir documento: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -1419,13 +1420,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         ),
       );
     } catch (e) {
-      AppLogger.error('Error al abrir documento: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al abrir documento'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al abrir el documento: ${e.toString()}'),
+          content: Text(userFriendlyError(e, fallback: 'Error al abrir el documento')),
           backgroundColor: ModernTheme.error,
           duration: Duration(seconds: 4),
         ),
@@ -1618,13 +1619,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         ),
       );
     } catch (e) {
-      AppLogger.error('Error al generar lista de documentos: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error al generar lista de documentos'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al generar la lista: ${e.toString()}'),
+          content: Text(userFriendlyError(e, fallback: 'Error al generar la lista')),
           backgroundColor: ModernTheme.error,
           duration: Duration(seconds: 4),
         ),

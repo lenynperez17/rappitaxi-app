@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/price_negotiation_model.dart';
+import '../../utils/error_messages.dart';
 
 /// Pantalla de negociaciones para pasajeros
 /// Muestra las negociaciones activas y las ofertas de conductores
@@ -633,7 +634,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al cancelar: $e'),
+              content: Text(userFriendlyError(e, fallback: 'Error al cancelar')),
               backgroundColor: AppColors.error,
             ),
           );
@@ -932,7 +933,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al aceptar oferta: $e'),
+              content: Text(userFriendlyError(e, fallback: 'Error al aceptar oferta')),
               backgroundColor: AppColors.error,
             ),
           );

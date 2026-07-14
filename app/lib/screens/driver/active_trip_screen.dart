@@ -27,6 +27,7 @@ import '../../services/rapi_sse_client.dart';
 import '../shared/rating_dialog.dart';
 import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
+import '../../utils/error_messages.dart';
 
 /// Estados del viaje desde la perspectiva del conductor
 enum DriverTripState {
@@ -198,7 +199,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           );
         }
       } catch (e) {
-        debugPrint('Error cargando viaje: $e');
+        debugPrint(userFriendlyError(e, fallback: 'Error cargando viaje'));
       }
     }
     _updateMapMarkers();
@@ -363,7 +364,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _updateLocationInFirebase();
       });
     } catch (e) {
-      debugPrint('Error iniciando tracking de ubicación: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error iniciando tracking de ubicación'));
     }
   }
 
@@ -386,7 +387,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     } on TimeoutException {
       debugPrint('⏱️ Timeout en actualización de ubicación');
     } catch (e) {
-      debugPrint('Error actualizando ubicación: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error actualizando ubicación'));
     }
   }
 
@@ -603,7 +604,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -769,7 +770,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error verificando: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error verificando')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -874,7 +875,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error iniciando viaje: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error iniciando viaje')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -934,7 +935,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error finalizando viaje: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error finalizando viaje')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1085,7 +1086,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             comment: comment,
           );
         } catch (e) {
-          debugPrint('Error calificando pasajero: $e');
+          debugPrint(userFriendlyError(e, fallback: 'Error calificando pasajero'));
         }
 
         if (mounted) {
@@ -1125,7 +1126,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         );
       }
     } catch (e) {
-      debugPrint('Error al llamar: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error al llamar'));
     }
   }
 
@@ -2044,7 +2045,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error cancelando viaje: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error cancelando viaje')),
             backgroundColor: AppColors.error,
           ),
         );

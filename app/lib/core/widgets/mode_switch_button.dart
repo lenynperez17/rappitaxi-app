@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../theme/modern_theme.dart';
+import '../../utils/error_messages.dart';
 
 /// Botón para cambiar entre modos (pasajero, conductor, admin)
 ///
@@ -458,7 +459,7 @@ class ModeSwitchButton extends StatelessWidget {
               ),
               SizedBox(width: 12),
               Expanded(
-                child: Text('Error: ${e.toString()}'),
+                child: Text(userFriendlyError(e, fallback: 'Error')),
               ),
             ],
           ),

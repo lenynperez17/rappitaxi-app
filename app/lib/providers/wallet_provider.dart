@@ -6,6 +6,7 @@ import '../services/rapi_sse_client.dart';
 import '../services/payment_service.dart';
 import '../widgets/mercadopago_checkout_pro_widget.dart';
 import '../core/constants/credit_constants.dart';
+import '../utils/error_messages.dart';
 
 // Helper: parse ISO8601 date strings desde la respuesta del backend Node.
 // Acepta tanto Strings como null (defaults a DateTime.now()).
@@ -393,7 +394,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al agregar ganancia: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al agregar ganancia'));
       _setLoading(false);
       return false;
     }
@@ -448,7 +449,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     } catch (e) {
-      _setError('Error al solicitar retiro: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al solicitar retiro'));
       _setLoading(false);
       return false;
     }
@@ -468,7 +469,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     } catch (e) {
-      _setError('Error al cancelar retiro: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al cancelar retiro'));
       _setLoading(false);
       return false;
     }
@@ -506,7 +507,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     } catch (e) {
-      _setError('Error al agregar cuenta bancaria: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al agregar cuenta bancaria'));
       _setLoading(false);
       return false;
     }
@@ -650,7 +651,7 @@ class WalletProvider extends ChangeNotifier {
       );
     } catch (e) {
       AppLogger.error('Error procesando retiro', e);
-      _error = 'Error al procesar retiro: ${e.toString()}';
+      _error = userFriendlyError(e, fallback: 'Error al procesar retiro');
       return false;
     } finally {
       _isLoading = false;
@@ -681,7 +682,7 @@ class WalletProvider extends ChangeNotifier {
               .timeout(const Duration(seconds: 10));
           credits = (data['balance'] ?? 0).toDouble();
         } catch (walletError) {
-          AppLogger.warning('No se pudo leer wallet del backend: $walletError');
+          AppLogger.warning(userFriendlyError(walletError, fallback: 'No se pudo leer wallet del backend'));
         }
       }
 
@@ -693,7 +694,7 @@ class WalletProvider extends ChangeNotifier {
       }
       return hasEnough;
     } catch (e) {
-      AppLogger.error('Error verificando créditos: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error verificando créditos'));
       // En caso de error, permitir y dejar que el backend valide en accept.
       return true;
     }
@@ -727,7 +728,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al consumir créditos: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al consumir créditos'));
       AppLogger.error('Error refrescando saldo tras consumo de créditos', e);
       _setLoading(false);
       return false;
@@ -753,7 +754,7 @@ class WalletProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al refrescar créditos tras recarga: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al refrescar créditos tras recarga'));
       _setLoading(false);
       return false;
     }
@@ -860,7 +861,7 @@ class WalletProvider extends ChangeNotifier {
     } catch (e) {
       AppLogger.error('Error en processRechargeWithMercadoPago', e);
       debugPrint('❌ Error procesando pago: $e');
-      return {'success': false, 'message': 'Error procesando pago: $e'};
+      return {'success': false, 'message': userFriendlyError(e, fallback: 'Error procesando pago')};
     }
   }
 

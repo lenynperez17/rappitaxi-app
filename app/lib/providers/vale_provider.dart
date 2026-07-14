@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/corporate_vale_model.dart';
 import '../services/vale_service.dart';
 import '../core/utils/logger.dart';
+import '../utils/error_messages.dart';
 
 /// Provider para gestión de vales corporativos
 class ValeProvider extends ChangeNotifier {
@@ -50,7 +51,7 @@ class ValeProvider extends ChangeNotifier {
       } else {
         _currentVale = null;
         _validationError = result['error'] as String?;
-        Logger.warning('Error validando vale: $_validationError');
+        Logger.warning(userFriendlyError(_validationError, fallback: 'Error validando vale'));
       }
 
       _isValidating = false;
@@ -58,7 +59,7 @@ class ValeProvider extends ChangeNotifier {
 
       return result['success'] == true;
     } catch (e) {
-      Logger.error('Error en validateAndLoadVale: $e');
+      Logger.error(userFriendlyError(e, fallback: 'Error en validateAndLoadVale'));
       _validationError = 'Error al validar el código de vale';
       _currentVale = null;
       _isValidating = false;
@@ -116,7 +117,7 @@ class ValeProvider extends ChangeNotifier {
 
       return result;
     } catch (e) {
-      Logger.error('Error aplicando vale: $e');
+      Logger.error(userFriendlyError(e, fallback: 'Error aplicando vale'));
       return {
         'success': false,
         'error': 'Error al aplicar el vale',

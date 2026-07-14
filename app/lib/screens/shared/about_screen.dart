@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../utils/error_messages.dart';
 
 class AboutScreen extends StatefulWidget {
   final String? userType; // 'passenger', 'driver', 'admin'
@@ -450,7 +451,7 @@ class _AboutScreenState extends State<AboutScreen>
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
           SizedBox(height: 16),
-          Text('Ultima actualizacion: $dateStr', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontStyle: FontStyle.italic)),
+          Text(userFriendlyError(dateStr, fallback: 'Ultima actualizacion'), style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontStyle: FontStyle.italic)),
           SizedBox(height: 24),
           Text(content, style: TextStyle(fontSize: 14, height: 1.6, color: AppColors.getTextPrimary(context))),
         ]),

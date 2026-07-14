@@ -8,6 +8,7 @@ import '../services/fcm_service.dart';
 import '../services/notification_service.dart';
 import '../services/rapi_api_client.dart';
 import '../services/rapi_sse_client.dart';
+import '../utils/error_messages.dart';
 
 /// Provider de Notificaciones — usa el backend Node (RapiApiClient) para el
 /// listado in-app y suscribe SSE (RapiSseClient) para nuevas notifs en tiempo
@@ -90,7 +91,7 @@ class NotificationProvider extends ChangeNotifier {
         _notifications.add(_notificationFromBackend(data));
       }
     } catch (e) {
-      debugPrint('Error cargando notificaciones: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando notificaciones'));
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -116,7 +117,7 @@ class NotificationProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      debugPrint('Error procesando notificación SSE: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error procesando notificación SSE'));
     }
   }
 
@@ -205,7 +206,7 @@ class NotificationProvider extends ChangeNotifier {
     try {
       await _api.markNotificationRead(notificationId);
     } catch (e) {
-      debugPrint('Error marcando notificación leída: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error marcando notificación leída'));
     }
   }
 
@@ -225,7 +226,7 @@ class NotificationProvider extends ChangeNotifier {
     try {
       await _api.markAllNotificationsRead();
     } catch (e) {
-      debugPrint('Error marcando todas notificaciones leídas: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error marcando todas notificaciones leídas'));
     }
   }
 
@@ -428,7 +429,7 @@ class NotificationProvider extends ChangeNotifier {
       tripId: tripId,
       type: NotificationType.tripCancelled,
       title: 'Viaje cancelado',
-      body: 'Cancelado por $cancelledBy. Motivo: $reason',
+      body: userFriendlyError(reason, fallback: 'Cancelado por $cancelledBy. Motivo'),
       tripData: {
         'reason': reason,
         'cancelledBy': cancelledBy,
@@ -519,7 +520,7 @@ class NotificationProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error limpiando notificaciones antiguas: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error limpiando notificaciones antiguas'));
     }
   }
 

@@ -7,6 +7,7 @@ import '../services/rapi_sse_client.dart';
 import '../services/notification_service.dart';
 import '../models/trip_model.dart';
 import '../models/user_model.dart';
+import '../utils/error_messages.dart';
 
 /// Provider de Viajes usando backend Node (rapi-team-api) vía HTTP + SSE.
 ///
@@ -139,7 +140,7 @@ class RideProvider with ChangeNotifier {
 
       debugPrint('🚗 Conductores encontrados: ${_nearbyDrivers.length}');
     } catch (e) {
-      _errorMessage = 'Error buscando conductores: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error buscando conductores');
       debugPrint('❌ $e');
     }
 
@@ -234,7 +235,7 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Error solicitando viaje: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error solicitando viaje');
       debugPrint('❌ $e');
       _isLoading = false;
       notifyListeners();
@@ -261,7 +262,7 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Error cancelando viaje: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error cancelando viaje');
       debugPrint('❌ $e');
       _isLoading = false;
       notifyListeners();
@@ -304,7 +305,7 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Error completando viaje: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error completando viaje');
       debugPrint('❌ Error completando viaje: $e');
       _isLoading = false;
       notifyListeners();
@@ -323,7 +324,7 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Error calificando viaje: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error calificando viaje');
       debugPrint('❌ $e');
       _isLoading = false;
       notifyListeners();
@@ -342,7 +343,7 @@ class RideProvider with ChangeNotifier {
       _tripHistory = rides.map((r) => TripModel.fromJson(r)).toList();
       notifyListeners();
     } catch (e) {
-      debugPrint('Error cargando historial: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando historial'));
     }
   }
 
@@ -363,7 +364,7 @@ class RideProvider with ChangeNotifier {
       _updateTripStatus(_currentTrip!.status);
       notifyListeners();
     }).catchError((e) {
-      debugPrint('Error refrescando viaje actual: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error refrescando viaje actual'));
     });
 
     // La suscripción global ya está viva desde el constructor. Nos aseguramos
@@ -389,7 +390,7 @@ class RideProvider with ChangeNotifier {
       _updateTripStatus(status);
       notifyListeners();
     } catch (e) {
-      debugPrint('Error procesando ride_update SSE: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error procesando ride_update SSE'));
     }
   }
 
@@ -590,7 +591,7 @@ class RideProvider with ChangeNotifier {
           '✅ Viaje creado con código de verificación del pasajero: $passengerCode');
       return trip;
     } catch (e) {
-      _errorMessage = 'Error creando viaje: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error creando viaje');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error creando viaje: $e');
@@ -634,7 +635,7 @@ class RideProvider with ChangeNotifier {
       debugPrint('✅ Ride aceptado y código del conductor generado: $tripId');
       return true;
     } catch (e) {
-      _errorMessage = 'Error generando código del conductor: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error generando código del conductor');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error generando código del conductor: $e');
@@ -681,7 +682,7 @@ class RideProvider with ChangeNotifier {
       debugPrint('✅ Conductor verificó al pasajero correctamente: $tripId');
       return true;
     } catch (e) {
-      _errorMessage = 'Error verificando código del pasajero: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error verificando código del pasajero');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error verificando código del pasajero: $e');
@@ -731,7 +732,7 @@ class RideProvider with ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _errorMessage = 'Error verificando código del conductor: $e';
+      _errorMessage = userFriendlyError(e, fallback: 'Error verificando código del conductor');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error verificando código del conductor: $e');
@@ -837,7 +838,7 @@ class RideProvider with ChangeNotifier {
       final rides = _extractRideList(response);
       return rides.map((r) => TripModel.fromJson(r)).toList();
     } catch (e) {
-      debugPrint('Error obteniendo historial de usuario: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo historial de usuario'));
       return [];
     }
   }
@@ -875,7 +876,7 @@ class RideProvider with ChangeNotifier {
       }
       return trips;
     } catch (e) {
-      debugPrint('Error obteniendo historial del conductor: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo historial del conductor'));
       return [];
     }
   }
@@ -927,7 +928,7 @@ class RideProvider with ChangeNotifier {
       await searchNearbyDrivers(pickup, 5.0);
       debugPrint('🔄 Lista de conductores cercanos refrescada');
     } catch (e) {
-      debugPrint('Error refrescando conductores cercanos: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error refrescando conductores cercanos'));
     }
   }
 
@@ -972,8 +973,8 @@ class RideProvider with ChangeNotifier {
 
       debugPrint('Calificación actualizada: $rating estrellas para viaje $tripId');
     } catch (e) {
-      debugPrint('Error actualizando calificación: $e');
-      _errorMessage = 'Error al guardar calificación: $e';
+      debugPrint(userFriendlyError(e, fallback: 'Error actualizando calificación'));
+      _errorMessage = userFriendlyError(e, fallback: 'Error al guardar calificación');
       rethrow;
     } finally {
       _isLoading = false;

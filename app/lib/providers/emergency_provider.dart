@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/logger.dart';
 import '../services/rapi_api_client.dart';
 import '../services/rapi_sse_client.dart';
+import '../utils/error_messages.dart';
 
 // Modelo para contacto de emergencia
 class EmergencyContact {
@@ -380,7 +381,7 @@ class EmergencyProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Error al activar SOS: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al activar SOS'));
       _setLoading(false);
       return false;
     }
@@ -403,7 +404,7 @@ class EmergencyProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _setError('Error al desactivar SOS: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al desactivar SOS'));
       _setLoading(false);
       return false;
     }
@@ -434,7 +435,7 @@ class EmergencyProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al agregar contacto: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al agregar contacto'));
       _setLoading(false);
       return false;
     }
@@ -452,7 +453,7 @@ class EmergencyProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al eliminar contacto: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al eliminar contacto'));
       _setLoading(false);
       return false;
     }

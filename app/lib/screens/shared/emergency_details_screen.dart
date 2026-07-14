@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/emergency_provider.dart';
+import '../../utils/error_messages.dart';
 
 /// Emergency details screen - shows info about an active emergency
 class EmergencyDetailsScreen extends StatefulWidget {
@@ -259,7 +260,7 @@ class _EmergencyDetailsScreenState extends State<EmergencyDetailsScreen> {
       try {
         await provider.deactivateSOS(resolution: 'Resuelta manualmente');
         if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Emergencia resuelta exitosamente'))); Navigator.pop(context); }
-      } catch (e) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al resolver: $e'), backgroundColor: AppColors.error)); } }
+      } catch (e) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al resolver')), backgroundColor: AppColors.error)); } }
     }
   }
 

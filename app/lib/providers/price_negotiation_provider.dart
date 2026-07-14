@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import '../models/price_negotiation_model.dart';
 import '../services/rapi_api_client.dart';
 import '../services/rapi_sse_client.dart';
+import '../utils/error_messages.dart';
 
 /// Provider para manejar las negociaciones de precios estilo InDrive.
 /// Migrado de Firebase (Firestore / FirebaseAuth) al backend Node:
@@ -720,7 +721,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
       return null; // Éxito.
     } catch (e) {
       debugPrint('❌ Error haciendo oferta: $e');
-      return 'Error al enviar oferta: $e';
+      return userFriendlyError(e, fallback: 'Error al enviar oferta');
     }
   }
 

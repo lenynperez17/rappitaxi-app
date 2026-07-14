@@ -16,6 +16,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../services/payment_service.dart';
 import '../../services/rapi_api_client.dart';
 import '../../widgets/mercadopago_checkout_pro_widget.dart';
+import '../../utils/error_messages.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -129,7 +130,7 @@ class _WalletScreenState extends State<WalletScreen>
         _currentUserEmail = me['email'] as String?;
       }
     } catch (e) {
-      debugPrint('Error obteniendo usuario actual: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo usuario actual'));
     }
 
     await _refreshWalletBalance();
@@ -160,7 +161,7 @@ class _WalletScreenState extends State<WalletScreen>
         });
       }
     } catch (e) {
-      debugPrint('Error refrescando balance: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error refrescando balance'));
       if (!_isBalanceLoaded && mounted) {
         setState(() => _isBalanceLoaded = true);
       }
@@ -171,7 +172,7 @@ class _WalletScreenState extends State<WalletScreen>
     try {
       await _paymentService.initialize(isProduction: true); // Usar producción
     } catch (e) {
-      debugPrint('Error inicializando PaymentService: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error inicializando PaymentService'));
     }
   }
   
@@ -1889,7 +1890,7 @@ class _WalletScreenState extends State<WalletScreen>
         ),
       );
 
-      debugPrint('Error en _processWithdrawal: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error en _processWithdrawal'));
     }
   }
 
@@ -2093,7 +2094,7 @@ class _WalletScreenState extends State<WalletScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -2122,7 +2123,7 @@ class _WalletScreenState extends State<WalletScreen>
         final sign = transaction.amount > 0 ? '+' : '-';
         buffer.writeln('ID: ${transaction.id}');
         buffer.writeln('Fecha: ${_formatDate(transaction.date)} ${transaction.date.hour.toString().padLeft(2, '0')}:${transaction.date.minute.toString().padLeft(2, '0')}');
-        buffer.writeln('Tipo: $typeStr');
+        buffer.writeln(userFriendlyError(typeStr, fallback: 'Tipo'));
         buffer.writeln('Descripción: ${transaction.description}');
         if (transaction.passenger != null) {
           buffer.writeln('Pasajero: ${transaction.passenger}');
@@ -2214,7 +2215,7 @@ class _WalletScreenState extends State<WalletScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar CSV: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar CSV')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -2386,7 +2387,7 @@ class _WalletScreenState extends State<WalletScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al exportar PDF: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error al exportar PDF')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -2814,7 +2815,7 @@ class _WalletScreenState extends State<WalletScreen>
         ),
       );
 
-      debugPrint('Error en _processRecharge: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error en _processRecharge'));
     }
   }
 }

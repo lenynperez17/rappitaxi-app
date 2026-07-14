@@ -16,6 +16,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/payment_service.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 enum CardType { visa, mastercard, amex, discover, other }
 enum PaymentMethodType { card, cash, wallet, paypal }
@@ -139,7 +140,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
 
       AppLogger.info('Métodos de pago cargados exitosamente');
     } catch (e) {
-      AppLogger.error('Error cargando métodos de pago: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando métodos de pago'));
       setState(() {
         _isLoading = false;
       });
@@ -201,7 +202,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         });
       }
     } catch (e) {
-      AppLogger.error('Error cargando payment methods: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando payment methods'));
     }
   }
 
@@ -231,7 +232,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         }
       });
     } catch (e) {
-      AppLogger.error('Error cargando wallet balance: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando wallet balance'));
     }
   }
 
@@ -263,7 +264,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         AppLogger.info('No hay historial de transacciones aún');
       }
     } catch (e) {
-      AppLogger.error('Error cargando historial: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando historial'));
       // ✅ No mostrar SnackBar aquí, solo loguear el error
       // El historial vacío es manejado por el UI con _buildEmptyState
     }
@@ -1348,8 +1349,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Cerrar loader
-      AppLogger.error('Error procesando recarga: $e');
-      _showError('Error procesando recarga: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error procesando recarga'));
+      _showError(userFriendlyError(e, fallback: 'Error procesando recarga'));
     }
   }
 
@@ -1580,7 +1581,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
 
       _showSuccess('Recibo generado exitosamente');
     } catch (e) {
-      AppLogger.error('Error generando PDF: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error generando PDF'));
       _showError('Error generando recibo');
     }
   }
@@ -1920,12 +1921,12 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
           ),
         );
       } catch (e) {
-        AppLogger.error('Error agregando tarjeta: $e');
+        AppLogger.error(userFriendlyError(e, fallback: 'Error agregando tarjeta'));
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error agregando tarjeta: $e'),
+            content: Text(userFriendlyError(e, fallback: 'Error agregando tarjeta')),
             backgroundColor: ModernTheme.error,
           ),
         );

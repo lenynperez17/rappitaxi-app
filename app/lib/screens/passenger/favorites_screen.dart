@@ -13,6 +13,7 @@ import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../core/config/app_config.dart';
+import '../../utils/error_messages.dart';
 
 // 🔐 GOOGLE MAPS API KEY - Usar AppConfig.googleMapsApiKey directamente
 
@@ -132,7 +133,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
           if (loadedRecent.length >= 3) break;
         }
       } catch (e) {
-        AppLogger.error('Error cargando recientes: $e');
+        AppLogger.error(userFriendlyError(e, fallback: 'Error cargando recientes'));
       }
 
       if (!mounted) return;
@@ -142,7 +143,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         _isLoading = false;
       });
     } catch (e) {
-      AppLogger.error('Error cargando favoritos: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando favoritos'));
       if (!mounted) return;
       setState(() => _isLoading = false);
 
@@ -231,7 +232,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error agregando favorito: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error agregando favorito'));
       setState(() => _isLoading = false);
 
       if (mounted) {
@@ -305,7 +306,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         );
       }
     } catch (e) {
-      AppLogger.error('Error actualizando favorito: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error actualizando favorito'));
       setState(() => _isLoading = false);
 
       if (mounted) {

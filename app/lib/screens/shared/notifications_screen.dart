@@ -9,6 +9,7 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../services/rapi_sse_client.dart';
+import '../../utils/error_messages.dart';
 
 /// Notifications screen — lee del backend Node via RapiApiClient y se
 /// refresca en tiempo real con el stream SSE de notificaciones.
@@ -164,7 +165,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         children: [
           const Icon(Icons.error_outline, size: 48, color: Colors.red),
           const SizedBox(height: 16),
-          Text('Error al cargar notificaciones: $_error'),
+          Text(userFriendlyError(_error, fallback: 'Error al cargar notificaciones')),
           const SizedBox(height: 8),
           ElevatedButton(
               onPressed: () {
@@ -350,7 +351,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         }
       });
     } catch (e) {
-      debugPrint('Error marcando notificacion como leida: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error marcando notificacion como leida'));
     }
   }
 
@@ -366,10 +367,10 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           content: Text('Todas las notificaciones marcadas como leidas'),
           backgroundColor: Colors.green));
     } catch (e) {
-      debugPrint('Error marcando todas como leidas: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error marcando todas como leidas'));
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+          .showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error'))));
     }
   }
 

@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../utils/error_messages.dart';
 class RatingsHistoryScreen extends StatefulWidget {
   const RatingsHistoryScreen({super.key});
 
@@ -167,7 +168,7 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
         _isLoading = false;
       });
     } catch (e) {
-      AppLogger.error('Error cargando calificaciones: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando calificaciones'));
       if (!mounted) return;
       setState(() => _isLoading = false);
 

@@ -4,6 +4,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/l10n/driver_strings.dart';
 import '../../services/rapi_api_client.dart';
 import 'driver_wallet_simple_screen.dart';
+import '../../utils/error_messages.dart';
 
 class DriverFreightScreen extends StatefulWidget {
   const DriverFreightScreen({super.key});
@@ -464,7 +465,7 @@ class _DriverFreightScreenState extends State<DriverFreightScreen> {
                 onTap: () {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Queja enviada: $reason')),
+                    SnackBar(content: Text(userFriendlyError(reason, fallback: 'Queja enviada'))),
                   );
                 },
               ),
@@ -493,7 +494,7 @@ class _DriverFreightScreenState extends State<DriverFreightScreen> {
                 onTap: () {
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Filtro: $type')),
+                    SnackBar(content: Text(userFriendlyError(type, fallback: 'Filtro'))),
                   );
                 },
               ),

@@ -5,6 +5,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 class VehicleManagementScreen extends StatefulWidget {
   const VehicleManagementScreen({super.key});
@@ -172,7 +173,7 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error cargando datos del vehículo: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error cargando datos del vehículo')),
           backgroundColor: ModernTheme.error,
         ),
       );

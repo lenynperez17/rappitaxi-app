@@ -9,6 +9,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 enum PromotionType { percentage, fixed, freeRide, loyalty }
 enum PromotionStatus { active, used, expired }
 
@@ -141,7 +142,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
       AppLogger.info(
           'Promociones — endpoint /api/promotions pendiente en backend Node');
     } catch (e) {
-      AppLogger.error('Error cargando promociones: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando promociones'));
       if (mounted) {
         setState(() => _isLoading = false);
       }

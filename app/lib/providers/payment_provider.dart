@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/rapi_api_client.dart';
 import '../utils/logger.dart';
+import '../utils/error_messages.dart';
 
 enum CardType { visa, mastercard, amex, discover, other }
 enum PaymentMethodType { card, cash, wallet, paypal }
@@ -262,7 +263,7 @@ class PaymentProvider with ChangeNotifier {
     } on RapiApiException catch (e) {
       _error = 'Error al cargar métodos de pago: ${e.message ?? e.code}';
     } catch (e) {
-      _error = 'Error al cargar métodos de pago: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar métodos de pago');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -303,7 +304,7 @@ class PaymentProvider with ChangeNotifier {
       _error = 'Error al agregar método de pago: ${e.message ?? e.code}';
       return false;
     } catch (e) {
-      _error = 'Error al agregar método de pago: $e';
+      _error = userFriendlyError(e, fallback: 'Error al agregar método de pago');
       return false;
     } finally {
       _isLoading = false;
@@ -355,7 +356,7 @@ class PaymentProvider with ChangeNotifier {
       _paymentMethods.removeWhere((m) => m.id == paymentMethodId);
       return true;
     } catch (e) {
-      _error = 'Error al eliminar método de pago: $e';
+      _error = userFriendlyError(e, fallback: 'Error al eliminar método de pago');
       return false;
     } finally {
       _isLoading = false;
@@ -380,7 +381,7 @@ class PaymentProvider with ChangeNotifier {
     } on RapiApiException catch (e) {
       _error = 'Error al cargar historial: ${e.message ?? e.code}';
     } catch (e) {
-      _error = 'Error al cargar historial: $e';
+      _error = userFriendlyError(e, fallback: 'Error al cargar historial');
     } finally {
       _isLoadingTransactions = false;
       notifyListeners();
@@ -463,7 +464,7 @@ class PaymentProvider with ChangeNotifier {
       _error = 'Error al recargar billetera: ${e.message ?? e.code}';
       return false;
     } catch (e) {
-      _error = 'Error al recargar billetera: $e';
+      _error = userFriendlyError(e, fallback: 'Error al recargar billetera');
       return false;
     } finally {
       _isWalletLoading = false;
@@ -495,7 +496,7 @@ class PaymentProvider with ChangeNotifier {
       // El débito real lo ejecuta el backend en completeRide.
       return true;
     } catch (e) {
-      _error = 'Error al procesar pago: $e';
+      _error = userFriendlyError(e, fallback: 'Error al procesar pago');
       notifyListeners();
       return false;
     }

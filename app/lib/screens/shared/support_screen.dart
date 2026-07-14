@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/error_messages.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -59,7 +60,7 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
       });
       _fadeController.forward(); _slideController.forward();
     } catch (e) {
-      print('Error cargando datos de soporte: $e');
+      print(userFriendlyError(e, fallback: 'Error cargando datos de soporte'));
       if (!mounted) return;
       setState(() { _tickets = []; _faqs = _getDefaultFAQs(); _isLoading = false; });
     }
@@ -235,20 +236,20 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
   void _callSupport() async {
     if (_supportPhone.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Numero de soporte no configurado'), backgroundColor: Colors.orange)); return; }
     try { final Uri phoneUri = Uri(scheme: 'tel', path: _supportPhone); if (await canLaunchUrl(phoneUri)) { await launchUrl(phoneUri); } else { throw 'No se puede abrir la app de telefono'; } }
-    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al llamar: $e'), backgroundColor: Colors.red)); }
+    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al llamar')), backgroundColor: Colors.red)); }
   }
 
   void _openLiveChat() { DefaultTabController.of(context).animateTo(2); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Crea un ticket y te responderemos pronto'), backgroundColor: AppColors.rappiOrange)); }
 
   void _sendEmail() async {
     try { final Uri emailUri = Uri(scheme: 'mailto', path: _supportEmail, query: 'subject=Soporte Rappi Team'); if (await canLaunchUrl(emailUri)) { await launchUrl(emailUri); } else { throw 'No se puede abrir el cliente de correo'; } }
-    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al abrir email: $e'), backgroundColor: Colors.red)); }
+    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al abrir email')), backgroundColor: Colors.red)); }
   }
 
   void _openWhatsApp() async {
     if (_supportWhatsApp.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('WhatsApp no configurado'), backgroundColor: Colors.orange)); return; }
     try { final cleanNumber = _supportWhatsApp.replaceAll(RegExp(r'[^\d+]'), ''); final Uri whatsappUri = Uri.parse('https://wa.me/$cleanNumber'); if (await canLaunchUrl(whatsappUri)) { await launchUrl(whatsappUri, mode: LaunchMode.externalApplication); } else { throw 'No se puede abrir WhatsApp'; } }
-    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al abrir WhatsApp: $e'), backgroundColor: Colors.red)); }
+    catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al abrir WhatsApp')), backgroundColor: Colors.red)); }
   }
 
   void _openSocialMedia(String platform) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo $platform...'), backgroundColor: AppColors.rappiOrange)); }

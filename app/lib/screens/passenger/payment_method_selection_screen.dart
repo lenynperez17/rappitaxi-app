@@ -8,6 +8,7 @@ import '../../services/payment_service.dart';
 import '../../services/firebase_service.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../utils/error_messages.dart';
 
 /// PANTALLA DE SELECCIÓN DE MÉTODO DE PAGO - RAPPI TEAM
 /// ====================================================
@@ -136,7 +137,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
           break;
       }
     } catch (e) {
-      _showErrorDialog('Error procesando pago: $e');
+      _showErrorDialog(userFriendlyError(e, fallback: 'Error procesando pago'));
     } finally {
       setState(() => _isLoading = false);
     }

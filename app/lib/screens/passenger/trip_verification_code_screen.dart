@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../models/trip_model.dart';
 import '../../services/emergency_service.dart';
 import '../../widgets/verification_code_widget.dart'; // ✅ NUEVO: Widget de verificación mutua
+import '../../utils/error_messages.dart';
 
 /// Pantalla de verificación mutua para pasajeros
 /// Muestra el código del pasajero y permite ingresar el código del conductor
@@ -409,8 +410,8 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
       // Cerrar loading dialog si aún está abierto
       if (mounted) Navigator.pop(context);
       
-      debugPrint('Error activando SOS: $e');
-      _showEmergencyErrorDialog('Error activando emergencia: $e');
+      debugPrint(userFriendlyError(e, fallback: 'Error activando SOS'));
+      _showEmergencyErrorDialog(userFriendlyError(e, fallback: 'Error activando emergencia'));
     }
   }
 

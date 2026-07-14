@@ -9,6 +9,7 @@ import '../../providers/preferences_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/auth_provider.dart' as app_auth;
 import '../../services/account_deletion_service.dart';
+import '../../utils/error_messages.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String? userType;
@@ -780,7 +781,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       navigator.pop();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Error inesperado: $e'),
+          content: Text(userFriendlyError(e, fallback: 'Error inesperado')),
           backgroundColor: AppColors.error,
         ),
       );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/rapi_api_client.dart';
 import '../services/rapi_sse_client.dart';
 import '../utils/logger.dart';
+import '../utils/error_messages.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers de parseo (reemplazan Firebase Timestamp → ISO 8601 string)
@@ -270,7 +271,7 @@ class ChatProvider extends ChangeNotifier {
 
       _setLoading(false);
     } catch (e) {
-      _setError('Error al inicializar chat: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al inicializar chat'));
       _setLoading(false);
     }
   }
@@ -378,7 +379,7 @@ class ChatProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _isSendingMessage = false;
-      _setError('Error al enviar mensaje: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al enviar mensaje'));
       return false;
     }
   }
@@ -481,7 +482,7 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       _setLoading(false);
     } catch (e) {
-      _setError('Error al cargar conversaciones: $e');
+      _setError(userFriendlyError(e, fallback: 'Error al cargar conversaciones'));
       _setLoading(false);
     }
   }

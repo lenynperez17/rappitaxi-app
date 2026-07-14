@@ -10,6 +10,7 @@ import '../../widgets/loading_overlay.dart';
 
 import '../../utils/logger.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../utils/error_messages.dart';
 /// PANTALLA DE RETIRO DE GANANCIAS - CONDUCTORES RAPPI TEAM
 /// ========================================================
 /// 
@@ -123,7 +124,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       await _loadEarningsHistory();
       await _loadWithdrawalHistory();
     } catch (e) {
-      _showErrorSnackBar('Error cargando información: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cargando información'));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -145,7 +146,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
         _totalWithdrawn = (withdrawn is num ? withdrawn : 0).toDouble();
       });
     } catch (e) {
-      _showErrorSnackBar('Error cargando ganancias: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cargando ganancias'));
     }
   }
 
@@ -215,7 +216,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       });
     } catch (e) {
       AppLogger.error('❌ Error cargando historial de ganancias: $e');
-      _showErrorSnackBar('Error cargando historial: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cargando historial'));
     }
   }
 
@@ -255,7 +256,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       });
     } catch (e) {
       AppLogger.error('❌ Error cargando historial de retiros: $e');
-      _showErrorSnackBar('Error cargando historial de retiros: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error cargando historial de retiros'));
     }
   }
 
@@ -290,7 +291,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       _clearForm();
 
     } catch (e) {
-      _showErrorSnackBar('Error procesando retiro: $e');
+      _showErrorSnackBar(userFriendlyError(e, fallback: 'Error procesando retiro'));
     } finally {
       setState(() => _isLoading = false);
     }

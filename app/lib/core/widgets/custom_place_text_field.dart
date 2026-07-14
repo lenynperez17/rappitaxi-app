@@ -5,6 +5,7 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/error_messages.dart';
 
 /// ✅ WIDGET CUSTOM: Resuelve problema de borrado del teclado
 ///
@@ -69,7 +70,7 @@ class _CustomPlaceTextFieldState extends State<CustomPlaceTextField> {
       AppLogger.debug('Places (${data['provider']}): ${predictions.length} resultados para "$query"');
       return predictions;
     } catch (e) {
-      AppLogger.error('Error buscando lugares: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error buscando lugares'));
       return [];
     }
   }
@@ -100,7 +101,7 @@ class _CustomPlaceTextFieldState extends State<CustomPlaceTextField> {
         return null;
       }
     } catch (e) {
-      AppLogger.error('Error obteniendo detalles del lugar: $e');
+      AppLogger.error(userFriendlyError(e, fallback: 'Error obteniendo detalles del lugar'));
       return null;
     }
   }
