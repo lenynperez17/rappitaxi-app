@@ -275,6 +275,30 @@ class AdminApi {
     return this.rawFetch(`/api/admin/emergencies/${id}`, { method: 'PATCH', body: input })
   }
 
+  // ─── Documentos de driver ─────────────────────────────────────
+  async listDocuments(params: {
+    status?: string; driverId?: string; page?: number; pageSize?: number
+  } = {}): Promise<{
+    documents: Array<{
+      id: string; driverId: string; docType: string; fileUrl: string;
+      status: string; rejectionReason: string | null; reviewedAt: string | null;
+      expiresAt: string | null; createdAt: string;
+      driver: { id: string; fullName: string | null; email: string | null; phone: string | null };
+    }>;
+    total: number;
+  }> {
+    const qp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '' && v !== null) qp.set(k, String(v))
+    return this.rawFetch(`/api/admin/documents?${qp.toString()}`, { method: 'GET' })
+  }
+
+  async reviewDocument(
+    id: string,
+    input: { status: 'approved' | 'rejected' | 'expired'; rejectionReason?: string; expiresAt?: string },
+  ): Promise<{ document: { id: string; status: string }; driverVerified: boolean | null }> {
+    return this.rawFetch(`/api/admin/documents/${id}`, { method: 'PATCH', body: input })
+  }
+
   // ─── Facturación (invoices) ────────────────────────────────────
   async listInvoices(params: {
     status?: string; type?: string; customerId?: string;

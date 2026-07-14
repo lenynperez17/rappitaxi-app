@@ -107,7 +107,7 @@ export function DriverVerificationDetailPage() {
 
       {!user.isVerified && (
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h3 className="font-semibold text-gray-900">Acciones</h3>
+          <h3 className="font-semibold text-gray-900">Marcar verificado manualmente</h3>
           <button
             onClick={() => void verify()}
             disabled={busy}
@@ -117,8 +117,120 @@ export function DriverVerificationDetailPage() {
             Marcar como verificado
           </button>
           <p className="text-xs text-gray-500">
-            La gestión de documentos (foto de licencia, brevete, SOAT, tarjeta de propiedad) se mueve a Storage local del backend Node y se implementará en la próxima release.
+            Verificación manual sin revisión de documentos individuales.
           </p>
+        </div>
+      )}
+
+      <DocumentsSection driverId={driverId!} onFlash={setFlash} onError={setActionError} />
+    </div>
+  )
+}
+
+// ============================================================================
+// Sección de documentos del driver — lista + aprobar/rechazar
+// ============================================================================
+function DocumentsSection({ driverId, onFlash, onError }: {
+  driverId: string; onFlash: (msg: string) => void; onError: (msg: string) => void
+}) {
+  const [docs, setDocs] = useState<Array<{ id: string; docType: string; fileUrl: string; status: string; rejectionReason: string | null; createdAt: string }>>([])
+  const [loading, setLoading] = useState(true)
+  const [reviewingId, setReviewingId] = useState<string | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await adminApi.listDocuments({ driverId, status: 'all', pageSize: 50 })
+      setDocs(r.documents)
+    } catch (e) {
+      onError(e instanceof AdminApiError ? e.message : 'Error cargando documentos')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [driverId])
+
+  const review = async (id: string, status: 'approved' | 'rejected') => {
+    if (reviewingId) return
+    let rejectionReason: string | undefined
+    if (status === 'rejected') {
+      const r = window.prompt('Motivo del rechazo (obligatorio):')
+      if (!r?.trim()) return
+      rejectionReason = r.trim()
+    }
+    setReviewingId(id)
+    try {
+      const res = await adminApi.reviewDocument(id, { status, rejectionReason })
+      onFlash(status === 'approved'
+        ? `Documento aprobado${res.driverVerified ? '. Driver verificado automáticamente.' : ''}`
+        : 'Documento rechazado')
+      await load()
+    } catch (e) {
+      onError(e instanceof AdminApiError ? e.message : 'Error revisando documento')
+    } finally { setReviewingId(null) }
+  }
+
+  const STATUS_BADGE: Record<string, string> = {
+    pending: 'bg-yellow-100 text-yellow-700',
+    approved: 'bg-green-100 text-green-700',
+    rejected: 'bg-red-100 text-red-700',
+    expired: 'bg-gray-100 text-gray-700',
+  }
+  const STATUS_LABEL: Record<string, string> = {
+    pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', expired: 'Expirado',
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Documentos ({docs.length})</h3>
+        <button type="button" onClick={() => void load()} className="text-xs text-gray-600 hover:text-gray-900">
+          Recargar
+        </button>
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> Cargando documentos…
+        </div>
+      ) : docs.length === 0 ? (
+        <p className="text-sm text-gray-500">Este conductor aún no ha subido documentos.</p>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((d) => (
+            <div key={d.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-gray-600">{d.docType}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[d.status] ?? ''}`}>
+                    {STATUS_LABEL[d.status] ?? d.status}
+                  </span>
+                </div>
+                {d.rejectionReason && (
+                  <p className="text-xs text-red-600 mt-1">Motivo: {d.rejectionReason}</p>
+                )}
+                <a href={d.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Ver archivo</a>
+              </div>
+              {d.status === 'pending' && (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void review(d.id, 'approved')}
+                    disabled={reviewingId === d.id}
+                    className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {reviewingId === d.id ? '…' : 'Aprobar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void review(d.id, 'rejected')}
+                    disabled={reviewingId === d.id}
+                    className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                  >
+                    Rechazar
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
