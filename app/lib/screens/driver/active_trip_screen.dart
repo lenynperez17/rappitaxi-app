@@ -81,6 +81,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
   bool _isLoading = false;
   bool _isDisposed = false;
+  // Guard contra concurrent _drawRouteAsync — sin esto, cada GPS tick puede
+  // observar _polylines.isEmpty=true si la primera Directions call aún no
+  // completó, disparando N requests duplicadas por state change.
+  bool _routeInFlight = false;
   bool _isFollowingDriver = true; // Toggle for camera follow
 
   // Waiting timer for arrived at pickup state
@@ -442,8 +446,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       ),
     ));
 
-    // Draw route only once per state change
-    if (_polylines.isEmpty) {
+    // Draw route only once per state change (con guard concurrent).
+    if (_polylines.isEmpty && !_routeInFlight) {
       _drawRouteAsync();
     }
 
@@ -467,7 +471,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// Fetch real road route from Google Directions API and draw it
   Future<void> _drawRouteAsync() async {
     if (_currentTrip == null) return;
+    if (_routeInFlight) return;
+    _routeInFlight = true;
+    try {
+      await _drawRouteInner();
+    } finally {
+      _routeInFlight = false;
+    }
+  }
 
+  Future<void> _drawRouteInner() async {
     final pickupLatLng = LatLng(_currentTrip!.pickupLocation.latitude, _currentTrip!.pickupLocation.longitude);
     final destinationLatLng = LatLng(_currentTrip!.destinationLocation.latitude, _currentTrip!.destinationLocation.longitude);
 
