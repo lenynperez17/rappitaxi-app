@@ -241,6 +241,8 @@ map*.yml
 *-page.png
 map-page.png
 reset-password-modal.png
+login_*.png
+test_*.png
 
 # Apple App Store Connect API key privada
 *.p8
