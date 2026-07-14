@@ -62,6 +62,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void dispose() {
     _messagesSubscription?.cancel();
     _presenceSubscription?.cancel();
+    // Fire-and-forget: cancelar SSE + cerrar StreamController del service
+    // para este rideId. Sin esto, cada chat abierto deja controllers y
+    // listeners colgados en memoria hasta cerrar la app (leak por ride).
+    // Si el user reabre el mismo chat, `getChatMessages` reconstruye el
+    // controller automáticamente.
+    unawaited(_chatService.clearChat(widget.rideId));
     _typingAnimationController.dispose();
     _messageAnimationController.dispose();
     _messageController.dispose();
