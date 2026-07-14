@@ -45,6 +45,7 @@ export function UsersPage() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -136,23 +137,21 @@ export function UsersPage() {
     setOpenMenuId(null)
   }
 
-  const handleResetPassword = async (u: AdminUser) => {
-    const label = u.fullName ?? u.email ?? u.phone ?? u.id.slice(0, 8)
-    const newPassword = window.prompt(
-      `Nueva contraseña para "${label}" (mínimo 8 caracteres, con mayúsculas, minúsculas y números):`,
-    )
-    if (!newPassword) return
-    if (newPassword.length < 8) {
-      setFlash({ kind: 'err', msg: 'Contraseña muy corta (mín. 8 caracteres)' })
-      return
-    }
+  const handleResetPassword = (u: AdminUser) => {
+    // Abre el modal seguro (con input type=password enmascarado) en vez de
+    // window.prompt() que muestra la clave en texto plano y ofrece autofill.
+    setResetPasswordUser(u)
+    setOpenMenuId(null)
+  }
+
+  const submitResetPassword = async (u: AdminUser, newPassword: string) => {
     try {
       await adminApi.changePassword(u.id, newPassword)
       setFlash({ kind: 'ok', msg: 'Contraseña reseteada correctamente' })
+      setResetPasswordUser(null)
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error reseteando contraseña' })
     }
-    setOpenMenuId(null)
   }
 
   return (
@@ -341,7 +340,7 @@ export function UsersPage() {
                           )}
                           {!u.deletedAt && (u.email || u.userType === 'admin') && (
                             <button
-                              onClick={() => void handleResetPassword(u)}
+                              onClick={() => handleResetPassword(u)}
                               className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50"
                             >
                               <KeyRound className="w-4 h-4" /> Resetear contraseña
@@ -388,6 +387,112 @@ export function UsersPage() {
           }}
         />
       )}
+
+      {resetPasswordUser && (
+        <ResetPasswordModal
+          user={resetPasswordUser}
+          onClose={() => setResetPasswordUser(null)}
+          onSubmit={(pw) => submitResetPassword(resetPasswordUser, pw)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Modal: Resetear contraseña (input type=password, no window.prompt)
+// ============================================================================
+function ResetPasswordModal({
+  user, onClose, onSubmit,
+}: { user: AdminUser; onClose: () => void; onSubmit: (pw: string) => Promise<void> }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const label = user.fullName ?? user.email ?? user.phone ?? user.id.slice(0, 8)
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setError(null)
+    if (password.length < 8) return setError('Mínimo 8 caracteres')
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+      return setError('Debe incluir mayúsculas, minúsculas y números')
+    }
+    if (password !== confirm) return setError('Las contraseñas no coinciden')
+    setSubmitting(true)
+    try {
+      await onSubmit(password)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[500] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="p-5 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Resetear contraseña</h3>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            Nueva contraseña para <strong>{label}</strong>. Se cerrarán todas sus sesiones activas.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Nueva contraseña</label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+              autoComplete="new-password"
+              autoFocus
+              disabled={submitting}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Confirmar contraseña</label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+              autoComplete="new-password"
+              disabled={submitting}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+            />
+            Mostrar contraseñas
+          </label>
+          {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+              disabled={submitting}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 rounded-lg text-sm bg-[#E31E24] text-white hover:bg-[#B5181D] disabled:opacity-50"
+            >
+              {submitting ? 'Reseteando…' : 'Resetear'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

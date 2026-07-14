@@ -9,7 +9,10 @@ export function DriverVerificationDetailPage() {
   const [user, setUser] = useState<AdminUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  // Distinguimos entre "error del fetch inicial" (que sí bloquea la vista) y
+  // "error de acción" (mostrar banner pero mantener el detalle visible).
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
 
   useEffect(() => {
@@ -39,9 +42,11 @@ export function DriverVerificationDetailPage() {
     setBusy(true)
     try {
       const updated = await adminApi.updateUser(driverId, { isVerified: true })
-      setUser(updated); setFlash('Conductor verificado exitosamente')
+      setUser(updated); setFlash('Conductor verificado exitosamente'); setActionError(null)
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error verificando')
+      // NO usamos setError(): eso descartaría la vista completa. En su lugar,
+      // mostramos el error en un banner sin bloquear el resto del contenido.
+      setActionError(err instanceof AdminApiError ? err.message : 'Error verificando')
     } finally { setBusy(false) }
   }
 
@@ -71,6 +76,13 @@ export function DriverVerificationDetailPage() {
       {flash && (
         <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4" /> {flash}
+        </div>
+      )}
+
+      {actionError && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="text-red-600 hover:text-red-800 text-xs">Cerrar</button>
         </div>
       )}
 
