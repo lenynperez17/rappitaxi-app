@@ -411,7 +411,7 @@ class NotificationProvider extends ChangeNotifier {
       type: NotificationType.tripCompleted,
       title: '¡Viaje completado!',
       body:
-          'Total: S/. ${totalFare.toStringAsFixed(2)} - ${formatPaymentMethodLabel(paymentMethod)}',
+          'Total: S/ ${totalFare.toStringAsFixed(2)} - ${formatPaymentMethodLabel(paymentMethod)}',
       tripData: {
         'totalFare': totalFare,
         'paymentMethod': paymentMethod,

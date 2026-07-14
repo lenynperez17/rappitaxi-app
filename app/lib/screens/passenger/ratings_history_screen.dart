@@ -569,7 +569,7 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
                       ),
                     ),
                     Text(
-                      'S/. ${rating.tripAmount.toStringAsFixed(2)}',
+                      'S/ ${rating.tripAmount.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: ModernTheme.rappiOrange,
@@ -824,7 +824,7 @@ class RatingDetailsModal extends StatelessWidget {
                       _buildDetailRow(Icons.route, AppLocalizations.of(context)!.routeLabel, rating.route, context),
                       _buildDetailRow(Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
                         AppLocalizations.of(context)!.amountLabel,
-                        'S/. ${rating.tripAmount.toStringAsFixed(2)}', context),
+                        'S/ ${rating.tripAmount.toStringAsFixed(2)}', context),
                       _buildDetailRow(Icons.tag, AppLocalizations.of(context)!.tripIdLabel, rating.tripId, context),
                     ],
                     context,

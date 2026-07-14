@@ -412,7 +412,7 @@ class WalletProvider extends ChangeNotifier {
         throw Exception('Monto excede el balance disponible');
       }
       if (amount < 20) {
-        throw Exception('El monto mínimo de retiro es S/. 20.00');
+        throw Exception('El monto mínimo de retiro es S/ 20.00');
       }
       String? bankAccountId = bankDetails['bankAccountId'] as String?;
       // Si no vino explícito, buscar la default cargando la lista.
@@ -688,7 +688,7 @@ class WalletProvider extends ChangeNotifier {
       final hasEnough = credits >= serviceFee && credits >= minCredits;
       if (!hasEnough) {
         AppLogger.warning(
-          'Créditos insuficientes: S/. $credits (necesita >= S/. $serviceFee y >= S/. $minCredits)',
+          'Créditos insuficientes: S/ $credits (necesita >= S/ $serviceFee y >= S/ $minCredits)',
         );
       }
       return hasEnough;
@@ -771,7 +771,7 @@ class WalletProvider extends ChangeNotifier {
       }
 
       debugPrint(
-        '💳 WalletProvider: Iniciando recarga con MercadoPago Checkout Pro - S/. ${amount.toStringAsFixed(2)}',
+        '💳 WalletProvider: Iniciando recarga con MercadoPago Checkout Pro - S/ ${amount.toStringAsFixed(2)}',
       );
 
       // 1) Crear preferencia via backend Node.

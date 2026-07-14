@@ -3,7 +3,7 @@
 class CreditConstants {
   // ✅ Mínimo de créditos para operar como conductor
   // El conductor puede aceptar viajes mientras tenga saldo >= costo del servicio
-  // El mínimo de recarga (S/. 10) es diferente — es restricción de MercadoPago
+  // El mínimo de recarga (S/10) es diferente — es restricción de MercadoPago
   static const double minServiceCredits = 0.0;
 
   // ✅ Sin tarifa fija por servicio — solo se cobra 12% de comisión al completar viaje
@@ -22,9 +22,9 @@ class CreditConstants {
 
   // ✅ Mensaje de créditos insuficientes
   static String get insufficientCreditsMessage =>
-      'Créditos insuficientes. Necesitas mínimo S/. ${minServiceCredits.toStringAsFixed(2)} para operar.';
+      'Créditos insuficientes. Necesitas mínimo S/${minServiceCredits.toStringAsFixed(2)} para operar.';
 
   // ✅ Mensaje para el banner
   static String get insufficientCreditsBanner =>
-      'Créditos de servicio insuficientes (mín: S/. ${minServiceCredits.toStringAsFixed(0)})';
+      'Créditos de servicio insuficientes (mín: S/${minServiceCredits.toStringAsFixed(0)})';
 }

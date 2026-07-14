@@ -409,7 +409,7 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'S/. ${negotiation.offeredPrice.toStringAsFixed(2)}',
+                    'S/ ${negotiation.offeredPrice.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ModernTheme.rappiOrange),
                   ),
                 ),

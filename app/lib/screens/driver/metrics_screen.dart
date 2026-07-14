@@ -362,7 +362,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       });
 
       AppLogger.info('✅ Métricas completas cargadas:');
-      AppLogger.debug('   - $totalTrips viajes, S/. ${totalEarnings.toStringAsFixed(2)}');
+      AppLogger.debug('   - $totalTrips viajes, S/ ${totalEarnings.toStringAsFixed(2)}');
       AppLogger.debug('   - Horas pico: ${peakHoursList.join(", ")}');
       AppLogger.debug('   - Top zonas: ${topZones.join(", ")}');
     } catch (e) {
@@ -395,7 +395,7 @@ class _MetricsScreenState extends State<MetricsScreen>
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
             ),
             Text(
-              'Viajes: ${_currentMetrics['totalTrips']} · S/. ${_currentMetrics['totalEarnings']} · ${_currentMetrics['avgRating']}★',
+              'Viajes: ${_currentMetrics['totalTrips']} · S/ ${_currentMetrics['totalEarnings']} · ${_currentMetrics['avgRating']}★',
               style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
           ],
@@ -584,7 +584,7 @@ class _MetricsScreenState extends State<MetricsScreen>
           ),
           _buildMetricCard(
             'Ganancias',
-            'S/. ${_currentMetrics['totalEarnings']}',
+            'S/ ${_currentMetrics['totalEarnings']}',
             Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
             ModernTheme.rappiOrange,
             '+${_comparisons['earningsGrowth']}%',
@@ -1043,7 +1043,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'S/. ${earnings.toStringAsFixed(2)}',
+                          'S/ ${earnings.toStringAsFixed(2)}',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14, // ✅ Reducido de default a 14
@@ -1053,7 +1053,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                           maxLines: 1,
                         ),
                         Text(
-                          trips > 0 ? 'S/. ${(earnings / trips).toStringAsFixed(2)}/viaje' : 'Sin viajes',
+                          trips > 0 ? 'S/ ${(earnings / trips).toStringAsFixed(2)}/viaje' : 'Sin viajes',
                           style: TextStyle(
                             fontSize: 10, // ✅ Reducido de 11 a 10
                             color: context.secondaryText,
@@ -1226,14 +1226,14 @@ class _MetricsScreenState extends State<MetricsScreen>
     buffer.writeln('');
     buffer.writeln('RESUMEN:');
     buffer.writeln('- Total Viajes: ${_currentMetrics['totalTrips']}');
-    buffer.writeln('- Ganancias: S/. ${_currentMetrics['totalEarnings']}');
+    buffer.writeln('- Ganancias: S/ ${_currentMetrics['totalEarnings']}');
     buffer.writeln('- Calificación Promedio: ${_currentMetrics['avgRating']}');
     buffer.writeln('- Tasa de Aceptación: ${_currentMetrics['acceptanceRate']}%');
     buffer.writeln('- Horas en Línea: ${_currentMetrics['onlineHours']}h');
     buffer.writeln('');
     buffer.writeln('RENDIMIENTO SEMANAL:');
     for (var day in _weeklyData) {
-      buffer.writeln('${day['day']}: ${day['trips']} viajes, S/. ${day['earnings']}');
+      buffer.writeln('${day['day']}: ${day['trips']} viajes, S/ ${day['earnings']}');
     }
     return buffer.toString();
   }
@@ -1249,7 +1249,7 @@ class _MetricsScreenState extends State<MetricsScreen>
         ['RESUMEN'],
         ['Métrica', 'Valor'],
         ['Total Viajes', _currentMetrics['totalTrips']],
-        ['Ganancias', 'S/. ${_currentMetrics['totalEarnings']}'],
+        ['Ganancias', 'S/ ${_currentMetrics['totalEarnings']}'],
         ['Calificación Promedio', _currentMetrics['avgRating']],
         ['Tasa de Aceptación', '${_currentMetrics['acceptanceRate']}%'],
         ['Horas en Línea', '${_currentMetrics['onlineHours']}h'],
@@ -1259,7 +1259,7 @@ class _MetricsScreenState extends State<MetricsScreen>
         ..._weeklyData.map((day) => [
           day['day'],
           day['trips'],
-          'S/. ${day['earnings']}'
+          'S/ ${day['earnings']}'
         ]),
       ];
 
@@ -1382,7 +1382,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                   border: pw.TableBorder.all(color: PdfColors.grey300),
                   children: [
                     _buildPdfTableRow('Total Viajes', '${_currentMetrics['totalTrips']}', true, ttfRegular, ttfBold),
-                    _buildPdfTableRow('Ganancias', 'S/. ${_currentMetrics['totalEarnings']}', false, ttfRegular, ttfBold),
+                    _buildPdfTableRow('Ganancias', 'S/ ${_currentMetrics['totalEarnings']}', false, ttfRegular, ttfBold),
                     _buildPdfTableRow('Calificación Promedio', '${_currentMetrics['avgRating']}', true, ttfRegular, ttfBold),
                     _buildPdfTableRow('Tasa de Aceptación', '${_currentMetrics['acceptanceRate']}%', false, ttfRegular, ttfBold),
                     _buildPdfTableRow('Horas en Línea', '${_currentMetrics['onlineHours']}h', true, ttfRegular, ttfBold),
@@ -1414,7 +1414,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                       children: [
                         _buildPdfCell('${day['day']}', ttfRegular),
                         _buildPdfCell('${day['trips']}', ttfRegular),
-                        _buildPdfCell('S/. ${day['earnings']}', ttfRegular),
+                        _buildPdfCell('S/ ${day['earnings']}', ttfRegular),
                       ],
                     )),
                   ],

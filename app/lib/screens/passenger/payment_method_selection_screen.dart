@@ -358,7 +358,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
             ),
             const SizedBox(height: 12),
             Text(
-              'Monto: S/. ${widget.fareAmount.toStringAsFixed(2)}',
+              'Monto: S/ ${widget.fareAmount.toStringAsFixed(2)}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
@@ -423,7 +423,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
             ),
             const SizedBox(height: 12),
             Text(
-              'Monto: S/. ${widget.fareAmount.toStringAsFixed(2)}',
+              'Monto: S/ ${widget.fareAmount.toStringAsFixed(2)}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
@@ -481,7 +481,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                   const Text('• Solicita tu comprobante digital'),
                   const SizedBox(height: 12),
                   Text(
-                    'Monto total: S/. ${widget.fareAmount.toStringAsFixed(2)}',
+                    'Monto total: S/ ${widget.fareAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -566,7 +566,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
               child: Column(
                 children: [
                   Text(
-                    'Monto pagado: S/. ${widget.fareAmount.toStringAsFixed(2)}',
+                    'Monto pagado: S/ ${widget.fareAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -574,11 +574,11 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Comisión plataforma: S/. ${_platformCommission.toStringAsFixed(2)}',
+                    'Comisión plataforma: S/ ${_platformCommission.toStringAsFixed(2)}',
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                   Text(
-                    'Ganancia conductor: S/. ${_driverEarnings.toStringAsFixed(2)}',
+                    'Ganancia conductor: S/ ${_driverEarnings.toStringAsFixed(2)}',
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                 ],
@@ -914,7 +914,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         style: TextStyle(fontSize: 16),
                       ),
                       Text(
-                        'S/. ${widget.fareAmount.toStringAsFixed(2)}',
+                        'S/ ${widget.fareAmount.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -934,7 +934,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         ),
                       ),
                       Text(
-                        'S/. ${_platformCommission.toStringAsFixed(2)}',
+                        'S/ ${_platformCommission.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 14,
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
@@ -954,7 +954,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         ),
                       ),
                       Text(
-                        'S/. ${_driverEarnings.toStringAsFixed(2)}',
+                        'S/ ${_driverEarnings.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 14,
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
@@ -975,7 +975,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                         ),
                       ),
                       Text(
-                        'S/. ${widget.fareAmount.toStringAsFixed(2)}',
+                        'S/ ${widget.fareAmount.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -1062,7 +1062,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
         ),
         child: Text(
           _selectedMethod != null 
-            ? 'Pagar S/. ${widget.fareAmount.toStringAsFixed(2)} con ${_selectedMethod!.name}'
+            ? 'Pagar S/ ${widget.fareAmount.toStringAsFixed(2)} con ${_selectedMethod!.name}'
             : 'Selecciona un método de pago',
           style: const TextStyle(
             fontSize: 16,

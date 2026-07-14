@@ -218,7 +218,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                       ),
                     ),
                     child: Text(
-                      'S/. ${amount.toStringAsFixed(0)}',
+                      'S/ ${amount.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -269,11 +269,11 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
     // TODO(node-migration): reemplazar con endpoint POST /api/rides/:id/tip
     // cuando exista. Por ahora sólo mostramos feedback visual local.
     debugPrint(
-        'ℹ️ processTip local (endpoint /tip pendiente): S/. ${amount.toStringAsFixed(2)}');
+        'ℹ️ processTip local (endpoint /tip pendiente): S/ ${amount.toStringAsFixed(2)}');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('¡Propina de S/. ${amount.toStringAsFixed(2)} registrada!'),
+          content: Text('¡Propina de S/ ${amount.toStringAsFixed(2)} registrada!'),
           backgroundColor: ModernTheme.success,
         ),
       );
@@ -411,7 +411,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'S/. ${(_trip?.finalFare ?? _trip?.estimatedFare ?? 0).toStringAsFixed(2)}',
+                                  'S/ ${(_trip?.finalFare ?? _trip?.estimatedFare ?? 0).toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     fontSize: 40,
                                     fontWeight: FontWeight.bold,

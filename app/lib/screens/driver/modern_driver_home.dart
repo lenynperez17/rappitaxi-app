@@ -354,7 +354,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _isCheckingCredits = false;
       });
 
-      AppLogger.info('Driver credits: S/. $_serviceCredits (Min: S/. $_minServiceCredits, Cost/service: S/. $_serviceFee)');
+      AppLogger.info('Driver credits: S/ $_serviceCredits (Min: S/ $_minServiceCredits, Cost/service: S/ $_serviceFee)');
     } catch (e) {
       AppLogger.error('Error checking credits: $e');
       if (_isDisposed) return;
@@ -1540,14 +1540,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               child: Row(children: [
                 const Icon(Icons.info_outline, color: ModernTheme.warning, size: 20),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Tu saldo actual: S/. ${_serviceCredits.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600))),
+                Expanded(child: Text('Tu saldo actual: S/ ${_serviceCredits.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600))),
               ]),
             ),
             const SizedBox(height: 16),
             Text('Para aceptar servicios necesitas:', style: TextStyle(color: context.secondaryText)),
             const SizedBox(height: 8),
-            _buildCreditRequirement('Minimo requerido', 'S/. ${_minServiceCredits.toStringAsFixed(2)}'),
-            _buildCreditRequirement('Costo por servicio', 'S/. ${_serviceFee.toStringAsFixed(2)}'),
+            _buildCreditRequirement('Minimo requerido', 'S/ ${_minServiceCredits.toStringAsFixed(2)}'),
+            _buildCreditRequirement('Costo por servicio', 'S/ ${_serviceFee.toStringAsFixed(2)}'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -2051,7 +2051,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                     color: _hasEnoughCredits ? AppColors.rappiOrange : ModernTheme.warning),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'S/. ${_serviceCredits.toStringAsFixed(2)}',
+                                  'S/ ${_serviceCredits.toStringAsFixed(2)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,

@@ -1274,7 +1274,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                 controller: customAmountController,
                 decoration: InputDecoration(
                   labelText: AppLocalizations.of(context)!.customAmount,
-                  prefixText: 'S/. ',
+                  prefixText: 'S/ ',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),

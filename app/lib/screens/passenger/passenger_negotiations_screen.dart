@@ -444,7 +444,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                       Text(
-                        'S/. ${negotiation.offeredPrice.toStringAsFixed(2)}',
+                        'S/ ${negotiation.offeredPrice.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -511,7 +511,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Mejor: S/. ${bestOffer.acceptedPrice.toStringAsFixed(2)}',
+                                'Mejor: S/ ${bestOffer.acceptedPrice.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -695,7 +695,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  'S/. ${offer.acceptedPrice.toStringAsFixed(2)}',
+                  'S/ ${offer.acceptedPrice.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

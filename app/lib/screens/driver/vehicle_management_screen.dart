@@ -868,7 +868,7 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              'S/. ${record.cost.toStringAsFixed(2)}',
+              'S/ ${record.cost.toStringAsFixed(2)}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: ModernTheme.rappiOrange,
@@ -895,7 +895,7 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
               children: [
                 _buildMaintenanceDetail('Taller', record.workshop, Icons.store),
                 _buildMaintenanceDetail('Kilometraje', '${record.mileage} km', Icons.speed),
-                _buildMaintenanceDetail('Costo', 'S/. ${record.cost.toStringAsFixed(2)}', Icons.account_balance_wallet), // ✅ Cambiado de attach_money ($) a wallet
+                _buildMaintenanceDetail('Costo', 'S/ ${record.cost.toStringAsFixed(2)}', Icons.account_balance_wallet), // ✅ Cambiado de attach_money ($) a wallet
                 if (record.notes != null)
                   _buildMaintenanceDetail('Notas', record.notes!, Icons.note),
               ],

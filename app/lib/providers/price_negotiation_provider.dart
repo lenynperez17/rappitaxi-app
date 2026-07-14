@@ -625,7 +625,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
           _toDouble(balance['available']) ??
           0.0;
       debugPrint(
-          '💰 Créditos conductor $driverId: S/. $credits (mínimo: S/. $minDriverBalance)');
+          '💰 Créditos conductor $driverId: S/ $credits (mínimo: S/ $minDriverBalance)');
       return credits >= minDriverBalance;
     } catch (e) {
       debugPrint('❌ Error verificando saldo: $e');
@@ -646,7 +646,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
       final hasBalance = await checkDriverBalance(userId);
       if (!hasBalance) {
         debugPrint('❌ Conductor sin saldo suficiente para hacer ofertas');
-        return 'Saldo insuficiente. Necesitas mínimo S/. ${minDriverBalance.toStringAsFixed(2)} para hacer ofertas. Recarga tu billetera.';
+        return 'Saldo insuficiente. Necesitas mínimo S/ ${minDriverBalance.toStringAsFixed(2)} para hacer ofertas. Recarga tu billetera.';
       }
 
       // Datos del conductor.

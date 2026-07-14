@@ -189,7 +189,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen> {
           Column(
             children: [
               Text(
-                'S/. ${widget.trip.estimatedFare.toStringAsFixed(2)}',
+                'S/ ${widget.trip.estimatedFare.toStringAsFixed(2)}',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,

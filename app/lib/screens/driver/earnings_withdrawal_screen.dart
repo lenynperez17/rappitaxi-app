@@ -397,7 +397,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
   bool _validateWithdrawal() {
     // Validaciones de monto
     if (_withdrawalAmount < _minWithdrawal) {
-      _showErrorSnackBar('El monto mínimo de retiro es S/. $_minWithdrawal');
+      _showErrorSnackBar('El monto mínimo de retiro es S/ $_minWithdrawal');
       return false;
     }
 
@@ -407,7 +407,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
     }
 
     if (_withdrawalAmount > _maxDailyWithdrawal) {
-      _showErrorSnackBar('El monto máximo diario de retiro es S/. $_maxDailyWithdrawal');
+      _showErrorSnackBar('El monto máximo diario de retiro es S/ $_maxDailyWithdrawal');
       return false;
     }
 
@@ -465,7 +465,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('¿Confirmas el retiro de S/. ${_withdrawalAmount.toStringAsFixed(2)}?'),
+            Text('¿Confirmas el retiro de S/ ${_withdrawalAmount.toStringAsFixed(2)}?'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -480,14 +480,14 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Monto a retirar:'),
-                      Text('S/. ${_withdrawalAmount.toStringAsFixed(2)}'),
+                      Text('S/ ${_withdrawalAmount.toStringAsFixed(2)}'),
                     ],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Comisión:'),
-                      Text('- S/. ${_withdrawalFee.toStringAsFixed(2)}'),
+                      Text('- S/ ${_withdrawalFee.toStringAsFixed(2)}'),
                     ],
                   ),
                   Divider(color: Theme.of(context).dividerColor),
@@ -499,7 +499,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'S/. ${_netAmount.toStringAsFixed(2)}',
+                        'S/ ${_netAmount.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.green,
@@ -569,7 +569,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
               child: Column(
                 children: [
                   Text(
-                    'S/. ${_netAmount.toStringAsFixed(2)}',
+                    'S/ ${_netAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -750,7 +750,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'S/. ${_availableForWithdrawal.toStringAsFixed(2)}',
+                    'S/ ${_availableForWithdrawal.toStringAsFixed(2)}',
                     style: TextStyle(
                       color: colorScheme.onPrimary,
                       fontSize: 32,
@@ -766,7 +766,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 Expanded(
                   child: _buildSummaryItem(
                     'Total Ganado',
-                    'S/. ${_totalEarnings.toStringAsFixed(2)}',
+                    'S/ ${_totalEarnings.toStringAsFixed(2)}',
                     Icons.trending_up,
                     Colors.blue,
                     colorScheme,
@@ -775,7 +775,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 Expanded(
                   child: _buildSummaryItem(
                     'Total Retirado',
-                    'S/. ${_totalWithdrawn.toStringAsFixed(2)}',
+                    'S/ ${_totalWithdrawn.toStringAsFixed(2)}',
                     Icons.download,
                     Colors.orange,
                     colorScheme,
@@ -789,7 +789,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 Expanded(
                   child: _buildSummaryItem(
                     'Pendientes',
-                    'S/. ${_pendingWithdrawals.toStringAsFixed(2)}',
+                    'S/ ${_pendingWithdrawals.toStringAsFixed(2)}',
                     Icons.schedule,
                     colorScheme.surfaceContainerHighest,
                     colorScheme,
@@ -873,7 +873,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                   title: Text(period.period),
                   subtitle: Text('${period.trips} viajes • ${period.hours} horas'),
                   trailing: Text(
-                    'S/. ${period.earnings.toStringAsFixed(2)}',
+                    'S/ ${period.earnings.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -913,7 +913,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 Expanded(
                   child: _buildStatItem(
                     'Promedio por viaje',
-                    'S/. ${avgPerTrip.toStringAsFixed(2)}',
+                    'S/ ${avgPerTrip.toStringAsFixed(2)}',
                     Icons.directions_car,
                     Colors.blue,
                     colorScheme,
@@ -922,7 +922,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 Expanded(
                   child: _buildStatItem(
                     'Promedio por hora',
-                    'S/. ${avgPerHour.toStringAsFixed(2)}',
+                    'S/ ${avgPerHour.toStringAsFixed(2)}',
                     Icons.schedule,
                     Colors.orange,
                     colorScheme,
@@ -1010,7 +1010,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     style: TextStyle(fontSize: 16, color: colorScheme.surfaceContainerHighest),
                   ),
                   Text(
-                    'S/. ${_availableForWithdrawal.toStringAsFixed(2)}',
+                    'S/ ${_availableForWithdrawal.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -1018,7 +1018,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     ),
                   ),
                   Text(
-                    'Mínimo: S/. $_minWithdrawal • Máximo diario: S/. $_maxDailyWithdrawal',
+                    'Mínimo: S/ $_minWithdrawal • Máximo diario: S/ $_maxDailyWithdrawal',
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.surfaceContainerHighest,
@@ -1136,7 +1136,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
               decoration: const InputDecoration(
                 labelText: 'Monto (S/.)',
                 hintText: '0.00',
-                prefixText: 'S/. ',
+                prefixText: 'S/ ',
                 border: OutlineInputBorder(),
                 suffixIcon: Icon(Icons.money),
               ),
@@ -1327,14 +1327,14 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Monto a retirar:'),
-                Text('S/. ${_withdrawalAmount.toStringAsFixed(2)}'),
+                Text('S/ ${_withdrawalAmount.toStringAsFixed(2)}'),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Comisión (${_getMethodDisplayName(_selectedWithdrawalMethod)}):'),
-                Text('- S/. ${_withdrawalFee.toStringAsFixed(2)}'),
+                Text('- S/ ${_withdrawalFee.toStringAsFixed(2)}'),
               ],
             ),
             Divider(color: Theme.of(context).dividerColor),
@@ -1346,7 +1346,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'S/. ${_netAmount.toStringAsFixed(2)}',
+                  'S/ ${_netAmount.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -1382,7 +1382,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
         onPressed: isEnabled ? _processWithdrawal : null,
         icon: const Icon(Icons.download),
         label: Text(
-          'Procesar Retiro${_netAmount > 0 ? ' (S/. ${_netAmount.toStringAsFixed(2)})' : ''}',
+          'Procesar Retiro${_netAmount > 0 ? ' (S/ ${_netAmount.toStringAsFixed(2)})' : ''}',
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green,
@@ -1451,13 +1451,13 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                       backgroundColor: statusColor.withValues(alpha: 0.2),
                       child: Icon(statusIcon, color: statusColor),
                     ),
-                    title: Text('S/. ${withdrawal.amount.toStringAsFixed(2)}'),
+                    title: Text('S/ ${withdrawal.amount.toStringAsFixed(2)}'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('${withdrawal.method} • ${withdrawal.destination}'),
                         Text(
-                          'Recibido: S/. ${withdrawal.netAmount.toStringAsFixed(2)} • '
+                          'Recibido: S/ ${withdrawal.netAmount.toStringAsFixed(2)} • '
                           '${withdrawal.createdAt.day}/${withdrawal.createdAt.month}/${withdrawal.createdAt.year}',
                           style: const TextStyle(fontSize: 12),
                         ),

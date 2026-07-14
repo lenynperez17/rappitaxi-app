@@ -207,7 +207,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'S/. ${_currentCredits.toStringAsFixed(2)}',
+            'S/ ${_currentCredits.toStringAsFixed(2)}',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 36,
@@ -314,7 +314,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
                 const SizedBox(height: 6),
                 // Etiqueta
                 Text(
-                  label.isNotEmpty ? label : 'S/. ${amount.toStringAsFixed(0)}',
+                  label.isNotEmpty ? label : 'S/ ${amount.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: isPopular ? FontWeight.bold : FontWeight.normal,
@@ -399,11 +399,11 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const Divider(),
-          _buildSummaryRow('Monto a pagar', 'S/. ${amount.toStringAsFixed(2)}'),
+          _buildSummaryRow('Monto a pagar', 'S/ ${amount.toStringAsFixed(2)}'),
           const Divider(),
           _buildSummaryRow(
             'Total de créditos',
-            'S/. ${amount.toStringAsFixed(2)}',
+            'S/ ${amount.toStringAsFixed(2)}',
             isBold: true,
           ),
         ],
@@ -543,7 +543,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Se han agregado S/. ${totalCredits.toStringAsFixed(2)} a tu cuenta',
+              'Se han agregado S/ ${totalCredits.toStringAsFixed(2)} a tu cuenta',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.secondaryText),
             ),
@@ -560,7 +560,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
                   const Icon(Icons.account_balance_wallet, color: ModernTheme.rappiOrange),
                   const SizedBox(width: 8),
                   Text(
-                    'Nuevo saldo: S/. ${_currentCredits.toStringAsFixed(2)}',
+                    'Nuevo saldo: S/ ${_currentCredits.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: ModernTheme.rappiOrange,

@@ -289,7 +289,7 @@ class RideProvider with ChangeNotifier {
       await _api.completeRide(tripId, finalFare: finalFare);
 
       debugPrint(
-          '✅ Viaje completado: $tripId con tarifa S/. ${finalFare.toStringAsFixed(2)}');
+          '✅ Viaje completado: $tripId con tarifa S/ ${finalFare.toStringAsFixed(2)}');
 
       if (_currentTrip?.id == tripId) {
         _currentTrip = _currentTrip!.copyWith(

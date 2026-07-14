@@ -29,7 +29,7 @@ class CurrencyHelper {
   /// Formato de moneda peruana
   static final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'es_PE',
-    symbol: 'S/.',
+    symbol: 'S/',
     decimalDigits: 2,
   );
 

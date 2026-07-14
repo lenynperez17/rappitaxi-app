@@ -962,7 +962,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Ganancia: S/. ${finalFare.toStringAsFixed(2)}',
+              'Ganancia: S/ ${finalFare.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,

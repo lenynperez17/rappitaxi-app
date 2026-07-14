@@ -4740,7 +4740,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         _offeredPrice = suggestedPrice;
       }
     });
-    AppLogger.info('Ruta: ${totalDistance.toStringAsFixed(1)} km, ~$estimatedTime min, precio sugerido: S/. ${suggestedPrice.toStringAsFixed(2)}');
+    AppLogger.info('Ruta: ${totalDistance.toStringAsFixed(1)} km, ~$estimatedTime min, precio sugerido: S/ ${suggestedPrice.toStringAsFixed(2)}');
   }
 
   double _haversineDistance(LatLng a, LatLng b) {

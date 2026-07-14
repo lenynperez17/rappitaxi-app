@@ -1094,7 +1094,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   _buildStatCard(
                     AppLocalizations.of(context)!.totalSpent,
-                    'S/. ${_userStats['totalSpent'].toStringAsFixed(2)}',
+                    'S/ ${_userStats['totalSpent'].toStringAsFixed(2)}',
                     Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
                     ModernTheme.success,
                     1,

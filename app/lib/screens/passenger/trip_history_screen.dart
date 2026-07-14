@@ -1367,9 +1367,9 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                       ),
                       pw.SizedBox(height: 12),
                       _buildPdfRow('Método de pago', widget.trip.vehicleInfo?['paymentMethod'] ?? 'Efectivo'),
-                      _buildPdfRow('Tarifa estimada', 'S/. ${widget.trip.estimatedFare.toStringAsFixed(2)}'),
+                      _buildPdfRow('Tarifa estimada', 'S/ ${widget.trip.estimatedFare.toStringAsFixed(2)}'),
                       if (widget.trip.finalFare != null)
-                        _buildPdfRow('Tarifa final', 'S/. ${widget.trip.finalFare!.toStringAsFixed(2)}'),
+                        _buildPdfRow('Tarifa final', 'S/ ${widget.trip.finalFare!.toStringAsFixed(2)}'),
                       pw.SizedBox(height: 8),
                       pw.Divider(),
                       pw.SizedBox(height: 8),
@@ -1384,7 +1384,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                             ),
                           ),
                           pw.Text(
-                            'S/. ${(widget.trip.finalFare ?? widget.trip.estimatedFare).toStringAsFixed(2)}',
+                            'S/ ${(widget.trip.finalFare ?? widget.trip.estimatedFare).toStringAsFixed(2)}',
                             style: pw.TextStyle(
                               fontSize: 18,
                               fontWeight: pw.FontWeight.bold,
