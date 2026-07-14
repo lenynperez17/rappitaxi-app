@@ -121,7 +121,25 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
   }
 
   Widget _buildTicketsTab() {
-    if (_tickets.isEmpty) { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.support_agent, size: 64, color: AppColors.getTextSecondary(context)), SizedBox(height: 16), Text('No tienes tickets de soporte', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextSecondary(context))), SizedBox(height: 8), Text('Crea un ticket si necesitas ayuda', style: TextStyle(color: AppColors.getTextSecondary(context)))])); }
+    if (_tickets.isEmpty) {
+      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.support_agent, size: 64, color: AppColors.getTextSecondary(context)),
+        SizedBox(height: 16),
+        Text('No tienes tickets de soporte', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextSecondary(context))),
+        SizedBox(height: 8),
+        Text('Crea un ticket si necesitas ayuda', style: TextStyle(color: AppColors.getTextSecondary(context))),
+        SizedBox(height: 20),
+        ElevatedButton.icon(
+          onPressed: () => DefaultTabController.of(context).animateTo(2),
+          icon: Icon(Icons.add),
+          label: Text('Crear ticket'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.rappiOrange,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ]));
+    }
     return ListView.builder(padding: EdgeInsets.all(16), itemCount: _tickets.length, itemBuilder: (context, index) => _buildTicketCard(_tickets[index]));
   }
 

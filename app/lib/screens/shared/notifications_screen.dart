@@ -192,6 +192,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           Text('No tienes notificaciones',
               style: TextStyle(
                   fontSize: 18, color: AppColors.getTextSecondary(context))),
+          const SizedBox(height: 8),
+          Text('Aquí verás alertas de tus viajes, promociones y mensajes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Volver'),
+          ),
         ],
       ),
     );

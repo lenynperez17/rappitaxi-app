@@ -307,6 +307,17 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             'Solicita un viaje para comenzar',
             style: TextStyle(color: AppColors.getTextSecondary(context)),
           ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pushReplacementNamed('/passenger/home'),
+            icon: const Icon(Icons.local_taxi),
+            label: const Text('Solicitar viaje'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.rappiOrange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
         ],
       ),
     );
