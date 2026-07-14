@@ -23,7 +23,7 @@ class _DriverRechargeScreenState extends State<DriverRechargeScreen> {
 
   // TODO(node-migration): estos ratios deberían venir del endpoint
   // /api/config/rates. Por ahora son constantes coherentes con Perú (10%).
-  double _avgFarePerTrip = 2.0; // Average commission per trip
+  final double _avgFarePerTrip = 2.0; // Average commission per trip
 
   final PaymentService _paymentService = PaymentService();
 
