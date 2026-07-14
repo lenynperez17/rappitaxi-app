@@ -124,7 +124,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
     } catch (e) {
       _showErrorSnackBar('Error cargando datos: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -176,7 +176,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
     } catch (e) {
       _showErrorSnackBar('Error activando SOS: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -212,7 +212,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
     } catch (e) {
       _showErrorSnackBar('Error cancelando emergencia: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

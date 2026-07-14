@@ -53,7 +53,11 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
     _submitController = AnimationController(duration: const Duration(milliseconds: 300), vsync: this);
     _starControllers = List.generate(5, (index) => AnimationController(duration: const Duration(milliseconds: 200), vsync: this));
     _dialogController.forward();
-    Future.delayed(const Duration(milliseconds: 300), () { _starsController.forward(); });
+    // Guard mounted — sin esto, si el user cierra el diálogo antes de 300ms,
+    // el controller queda disposed y forward() lanza excepción.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _starsController.forward();
+    });
   }
 
   @override

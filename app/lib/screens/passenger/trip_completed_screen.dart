@@ -460,14 +460,20 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                                 if (_trip?.vehicleInfo != null) ...[
                                   Row(
                                     children: [
-                                      CircleAvatar(
-                                        radius: 30,
-                                        backgroundImage: _trip?.vehicleInfo?['driverPhoto'] != null
-                                            ? NetworkImage(_trip!.vehicleInfo!['driverPhoto'])
-                                            : null,
-                                        child: _trip?.vehicleInfo?['driverPhoto'] == null
-                                            ? const Icon(Icons.person, size: 30)
-                                            : null,
+                                      Builder(
+                                        builder: (_) {
+                                          // driverPhoto puede ser String, Map, o vacío.
+                                          // Guard: solo instanciar NetworkImage con string no-vacío.
+                                          final raw = _trip?.vehicleInfo?['driverPhoto'];
+                                          final url = raw is String ? raw : null;
+                                          final hasPhoto = url != null && url.isNotEmpty;
+                                          return CircleAvatar(
+                                            radius: 30,
+                                            backgroundImage: hasPhoto ? NetworkImage(url) : null,
+                                            onBackgroundImageError: hasPhoto ? (_, __) {} : null,
+                                            child: hasPhoto ? null : const Icon(Icons.person, size: 30),
+                                          );
+                                        },
                                       ),
                                       const SizedBox(width: 16),
                                       Expanded(

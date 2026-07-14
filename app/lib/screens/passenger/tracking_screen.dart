@@ -675,7 +675,17 @@ class _TrackingScreenState extends State<TrackingScreen>
                       ),
                       child: CircleAvatar(
                         radius: 35,
-                        backgroundImage: NetworkImage(widget.driverPhoto),
+                        // Guard contra photoUrl vacío o inválido — NetworkImage('')
+                        // lanza excepción al paint. Cae a placeholder si no hay foto.
+                        backgroundImage: widget.driverPhoto.isNotEmpty
+                            ? NetworkImage(widget.driverPhoto)
+                            : null,
+                        onBackgroundImageError: widget.driverPhoto.isNotEmpty
+                            ? (_, __) {}
+                            : null,
+                        child: widget.driverPhoto.isEmpty
+                            ? const Icon(Icons.person, size: 35, color: Colors.white)
+                            : null,
                       ),
                     ),
                     const SizedBox(width: 16),

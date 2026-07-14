@@ -95,7 +95,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           if (mounted) { setState(() { _isOtherUserOnline = presence.online; _otherUserLastSeen = presence.lastSeen; }); }
         });
       }
-      setState(() { _isLoading = false; });
+      if (mounted) setState(() { _isLoading = false; });
     } catch (e) {
       debugPrint('Error inicializando chat: $e');
       if (mounted) {
