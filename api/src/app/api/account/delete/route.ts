@@ -117,6 +117,71 @@ export async function POST(req: NextRequest) {
       await client.query('DELETE FROM fcm_tokens WHERE user_id = $1', [auth.userId])
       // Borrar passkeys
       await client.query('DELETE FROM passkey_credentials WHERE user_id = $1', [auth.userId])
+
+      // ========================================================================
+      // GDPR Art. 17 / Play Data Safety — cascadear anonimización de PII residual
+      // ========================================================================
+      // Emergency contacts: contienen PII de TERCEROS (mamá, esposo, etc.)
+      // que nunca consintieron. Borrar completo (no anonimizar).
+      await client.query('DELETE FROM emergency_contacts WHERE user_id = $1', [auth.userId])
+
+      // Favoritos: contienen direcciones casa/trabajo → borrar
+      await client.query('DELETE FROM user_favorites WHERE user_id = $1', [auth.userId])
+
+      // Payment methods: borrar (nunca guardamos card raw pero por si).
+      await client.query('DELETE FROM user_payment_methods WHERE user_id = $1', [auth.userId])
+
+      // Rides: anonimizar direcciones (mantiene historial contable pero sin PII)
+      await client.query(
+        `UPDATE rides
+            SET pickup_address = '[deleted]',
+                destination_address = '[deleted]'
+          WHERE passenger_id = $1 OR driver_id = $1`,
+        [auth.userId],
+      )
+
+      // Chat messages: anonimizar body de mensajes enviados por el user
+      // (se mantiene solo la referencia para el otro participante).
+      await client.query(
+        `UPDATE ride_messages SET body = '[mensaje eliminado]', attachment_url = NULL
+          WHERE sender_id = $1`,
+        [auth.userId],
+      )
+
+      // Emergencies: limpiar descripción + metadata (contiene IP/UA)
+      await client.query(
+        `UPDATE emergencies SET description = NULL, metadata = '{}'::jsonb, address = NULL
+          WHERE user_id = $1`,
+        [auth.userId],
+      )
+
+      // Auth events: purgar (contienen IP + UA de sesiones del user)
+      await client.query('DELETE FROM auth_events WHERE user_id = $1', [auth.userId])
+
+      // Notifications: borrar (contienen data.name/phone del user en payloads)
+      await client.query('DELETE FROM notifications WHERE user_id = $1', [auth.userId])
+
+      // Si es driver: driver-specific PII
+      const isDriverRes = await client.query<{ user_type: string }>(
+        `SELECT user_type FROM users WHERE id = $1`, [auth.userId],
+      )
+      const userType = isDriverRes.rows[0]?.user_type
+      if (userType === 'driver' || userType === 'dual') {
+        // Bank accounts: borrar completo (números + CCI + holder document)
+        await client.query('DELETE FROM driver_bank_accounts WHERE driver_id = $1', [auth.userId])
+        // Documents: anonimizar file_url (foto ya la maneja el user en su device)
+        await client.query(
+          `UPDATE driver_documents SET file_url = '[deleted]', metadata = '{}'::jsonb
+            WHERE driver_id = $1`, [auth.userId],
+        )
+        // Vehicles: anonimizar placa (mantiene historial contable)
+        await client.query(
+          `UPDATE driver_vehicles SET plate = '[deleted]', is_active = false
+            WHERE driver_id = $1`, [auth.userId],
+        )
+        // Driver presence: limpiar
+        await client.query('DELETE FROM driver_presence WHERE driver_id = $1', [auth.userId])
+      }
     })
 
     // Revocar TODAS las sesiones
