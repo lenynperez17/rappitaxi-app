@@ -37,11 +37,18 @@ async function fetchPayment(paymentId: string, token: string): Promise<MpPayment
 }
 
 export async function POST(req: NextRequest) {
-  const mpToken = process.env.MP_ACCESS_TOKEN
+  // Acepta ambos nombres (nuevo `MP_ACCESS_TOKEN` y legacy `MERCADOPAGO_ACCESS_TOKEN`)
+  // para tolerar drift entre .env.example antiguo y el nuevo canónico.
+  const mpToken = process.env.MP_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN
   if (!mpToken) {
-    // Aún así retornamos 200 para que MP no reintente 12 veces mientras arreglamos config
-    console.error('[mp/webhook] MP_ACCESS_TOKEN missing')
-    return NextResponse.json({ ok: true, note: 'unconfigured' })
+    // Retornar 500 en vez de 200: si prod tiene el token missing, queremos
+    // que MP reintente + que el error levante alerta. Un 200 silencioso
+    // hacía que los pagos aprobados nunca se acreditaran sin señal visible.
+    console.error('[mp/webhook] CRITICAL: MP_ACCESS_TOKEN (o MERCADOPAGO_ACCESS_TOKEN) missing en producción')
+    return NextResponse.json(
+      { ok: false, error: 'server_misconfigured' },
+      { status: 500 },
+    )
   }
 
   let body: {

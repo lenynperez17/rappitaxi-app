@@ -41,6 +41,62 @@ export async function POST(req: NextRequest) {
 
   try {
     await tx(async (client) => {
+      // Cancelar rides activos donde el user es passenger o driver.
+      // Sin esto, quedan huérfanos hasta el janitor 24h de admin/live: el
+      // otro lado ve viaje fantasma y el driver contraparte queda con
+      // driver_presence.active_ride_id bloqueado sin driver alcanzable.
+      const activeStates = ['requested', 'searching', 'accepted', 'on_way', 'arrived', 'in_progress']
+      const cancelledRides = await client.query<{ id: string; driver_id: string | null }>(
+        `UPDATE rides
+            SET status = 'cancelled',
+                cancelled_by = $1,
+                cancelled_reason = 'user_deleted',
+                completed_at = now()
+          WHERE (passenger_id = $1 OR driver_id = $1)
+            AND status = ANY($2::text[])
+          RETURNING id, driver_id`,
+        [auth.userId, activeStates],
+      )
+      // Liberar drivers contraparte que quedaron con active_ride_id apuntando
+      // a un ride del user borrado.
+      const otherDriverIds = cancelledRides.rows
+        .map((r) => r.driver_id)
+        .filter((d): d is string => d !== null && d !== auth.userId)
+      if (otherDriverIds.length > 0) {
+        await client.query(
+          `UPDATE driver_presence
+              SET active_ride_id = NULL, updated_at = now()
+            WHERE driver_id = ANY($1::text[])
+              AND active_ride_id = ANY($2::uuid[])`,
+          [otherDriverIds, cancelledRides.rows.map((r) => r.id)],
+        )
+      }
+
+      // Rechazar withdrawals pending — sin esto siguen consumiendo balance
+      // (rapi_team_user_balance de migración 014 cuenta pending).
+      await client.query(
+        `UPDATE wallet_withdrawals
+            SET status = 'rejected',
+                reject_reason = 'user_deleted'
+          WHERE driver_id = $1 AND status = 'pending'`,
+        [auth.userId],
+      )
+      // Marcar wallet_transactions pending como cancelled correspondientemente
+      await client.query(
+        `UPDATE wallet_transactions
+            SET status = 'cancelled'
+          WHERE user_id = $1 AND status = 'pending'`,
+        [auth.userId],
+      )
+
+      // Limpiar driver_presence propia
+      await client.query(
+        `UPDATE driver_presence
+            SET is_online = false, active_ride_id = NULL, updated_at = now()
+          WHERE driver_id = $1`,
+        [auth.userId],
+      )
+
       // Anonimizar el usuario
       await client.query(
         `UPDATE users
