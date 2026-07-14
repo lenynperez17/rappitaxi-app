@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../widgets/rappi_spinner.dart';
 
 class RapiOtpScreen extends StatefulWidget {
   final String phoneNumber;
@@ -146,7 +147,7 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
                   ),
                   onPressed: _loading ? null : _verify,
                   child: _loading
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const RappiSpinner(size: 22, onDark: true)
                     : const Text('Verificar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
