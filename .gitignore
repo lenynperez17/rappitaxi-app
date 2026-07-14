@@ -203,3 +203,18 @@ local-data/
 test-reports/
 # Fastlane session cookie (sensitive)
 app/fastlane/.env
+
+# Screenshots temporales de Playwright / auditorías
+.playwright-mcp/
+admin-*.jpeg
+admin-*.png
+*-page.png
+map-page.png
+reset-password-modal.png
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Editor / OS artifacts
+.serena/
