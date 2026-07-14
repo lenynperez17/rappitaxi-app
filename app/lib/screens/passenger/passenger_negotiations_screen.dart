@@ -52,18 +52,23 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
       _negotiationProvider!.startListeningToMyNegotiations();
     });
 
-    // Iniciar timer para actualizar el cronómetro cada segundo
+    // Timer del cronómetro: rebuild cada 1s solo para actualizar el countdown.
+    // Antes también corría _checkAndExpireNegotiations() cada segundo → tocaba
+    // el provider 60x/min. Ahora ese check corre en un segundo timer más lento.
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          // Forzar rebuild para actualizar el cronómetro
-        });
+      if (mounted) setState(() {})
+      ;
+    });
 
-        // ✅ NUEVO: Verificar y expirar negociaciones automáticamente cada segundo
-        _checkAndExpireNegotiations();
-      }
+    // Timer de expiración: verificar cada 10s si alguna negociación expiró
+    // (mucho menos costoso que cada segundo). El backend ya marca expiración
+    // server-side; este es solo un fallback UX.
+    _expireCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _checkAndExpireNegotiations();
     });
   }
+
+  Timer? _expireCheckTimer;
 
   // ✅ NUEVO: Verificar negociaciones expiradas en cada tick del timer
   void _checkAndExpireNegotiations() {
@@ -129,6 +134,8 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   void dispose() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
+    _expireCheckTimer?.cancel();
+    _expireCheckTimer = null;
     _listAnimController.dispose();
 
     // ✅ CORREGIDO: Usar la referencia guardada en lugar de Provider.of(context)
