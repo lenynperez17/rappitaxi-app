@@ -56,8 +56,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
     // Antes también corría _checkAndExpireNegotiations() cada segundo → tocaba
     // el provider 60x/min. Ahora ese check corre en un segundo timer más lento.
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {})
-      ;
+      if (mounted) setState(() {});
     });
 
     // Timer de expiración: verificar cada 10s si alguna negociación expiró

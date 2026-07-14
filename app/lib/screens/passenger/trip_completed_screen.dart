@@ -129,7 +129,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
       driverPhoto: _trip?.vehicleInfo?['driverPhoto'] ?? '',
       tripId: widget.tripId,
       onSubmit: (rating, comment, tagsList) async {
-        final tags = tagsList ?? const <String>[];
+        final tags = tagsList;
         try {
           // Concatenamos los tags al comentario (el endpoint `/rate` sólo
           // acepta `stars` y `comment`). El backend recalcula el promedio

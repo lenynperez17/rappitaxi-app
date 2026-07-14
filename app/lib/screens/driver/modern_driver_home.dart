@@ -1381,7 +1381,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   /// (`_makeOffer` -> `_listenForNegotiationResponse`). Se mantiene el shim
   /// para no romper callers antiguos: delega en `api.acceptRide` que hace la
   /// aceptación atómica en el backend Node.
-  void _acceptRequestLegacy(PriceNegotiation request, {double? customPrice}) async {
+  void _acceptRequestLegacy(PriceNegotiation request) async {
     final messenger = ScaffoldMessenger.of(context);
 
     try {
