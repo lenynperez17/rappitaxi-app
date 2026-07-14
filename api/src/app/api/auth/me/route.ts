@@ -14,6 +14,7 @@ export const runtime = 'nodejs'
 interface UserRow {
   id: string
   full_name: string | null
+  display_name: string | null
   email: string | null
   email_verified: boolean
   phone: string | null
@@ -22,6 +23,8 @@ interface UserRow {
   profile_complete: boolean
   profile_photo_url: string | null
   auth_provider: string | null
+  birth_date: Date | null
+  identity_document: string | null
   is_active: boolean
   created_at: Date
 }
@@ -31,8 +34,9 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response
 
   const user = await maybeOne<UserRow>(
-    `SELECT id, full_name, email, email_verified, phone, phone_verified,
+    `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, profile_complete, profile_photo_url, auth_provider,
+            birth_date, identity_document,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],
@@ -50,6 +54,7 @@ export async function GET(req: NextRequest) {
     user: {
       id: user.id,
       fullName: user.full_name,
+      displayName: user.display_name,
       email: user.email,
       emailVerified: user.email_verified,
       phone: user.phone,
@@ -58,6 +63,8 @@ export async function GET(req: NextRequest) {
       profileComplete: user.profile_complete,
       profilePhotoUrl: user.profile_photo_url,
       authProvider: user.auth_provider,
+      birthDate: user.birth_date,
+      identityDocument: user.identity_document,
       createdAt: user.created_at,
     },
   })
@@ -146,8 +153,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   const updated = await maybeOne<UserRow>(
-    `SELECT id, full_name, email, email_verified, phone, phone_verified,
+    `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, profile_complete, profile_photo_url, auth_provider,
+            birth_date, identity_document,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],
