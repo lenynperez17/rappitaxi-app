@@ -31,7 +31,14 @@ function verifyMpSignature(
 ): boolean | null {
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET
   if (!secret) {
-    console.warn('[mp/webhook] MERCADOPAGO_WEBHOOK_SECRET no configurado — signature check saltado')
+    // FAIL-CLOSED en producción: sin secret configurado NO aceptamos nada.
+    // En dev/test devolvemos null (skip) para no bloquear desarrollo local.
+    // Antes esto era fail-open también en producción — vulnerabilidad.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[mp/webhook] CRITICAL: MERCADOPAGO_WEBHOOK_SECRET no configurado en producción — rechazando webhook')
+      return false
+    }
+    console.warn('[mp/webhook] MERCADOPAGO_WEBHOOK_SECRET no configurado (dev) — signature check saltado')
     return null
   }
   const xSig = req.headers.get('x-signature')
@@ -116,9 +123,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true })
   }
 
-  // Verificar HMAC signature de MP para prevenir DoS trivial + replay abuse.
-  // Si secret no está configurado, saltamos (log warning) — el sistema aún
-  // funciona pero sin firma.
+  // Verificar HMAC signature de MP. Fail-CLOSED en prod (rechaza si no puede
+  // verificar), fail-open solo en dev cuando el secret NO está configurado.
+  // Solo procesamos si sigOk === true; null es solo aceptable en dev.
   const sigOk = verifyMpSignature(req, paymentId)
   if (sigOk === false) {
     console.warn('[mp/webhook] firma inválida — request rechazada', {
@@ -126,6 +133,11 @@ export async function POST(req: NextRequest) {
       paymentId,
     })
     return NextResponse.json({ ok: false, error: 'invalid_signature' }, { status: 401 })
+  }
+  if (sigOk === null && process.env.NODE_ENV === 'production') {
+    // Defensa doble: nunca deberíamos llegar acá en prod (verifyMpSignature
+    // retorna false, no null, en prod sin secret), pero por si acaso.
+    return NextResponse.json({ ok: false, error: 'signature_required' }, { status: 401 })
   }
 
   const payment = await fetchPayment(paymentId, mpToken)

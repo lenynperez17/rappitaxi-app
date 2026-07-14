@@ -29,7 +29,9 @@ class _DriverWalletSimpleScreenState extends State<DriverWalletSimpleScreen> {
       double balance = 0;
       try {
         final w = await RapiApiClient.instance.walletBalance();
-        final b = w['balance'] ?? w['serviceCredits'];
+        // Backend Node solo devuelve `balance`. El fallback `serviceCredits`
+        // era el nombre Firestore legacy — muerto desde la migración.
+        final b = w['balance'];
         if (b is num) balance = b.toDouble();
       } catch (_) {}
 

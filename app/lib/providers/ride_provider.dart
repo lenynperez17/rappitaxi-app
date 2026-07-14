@@ -810,7 +810,10 @@ class RideProvider with ChangeNotifier {
       await _api.markRideArrived(tripId);
 
       if (_currentTrip?.id == tripId) {
-        _currentTrip = _currentTrip!.copyWith(status: 'driver_arriving');
+        // Backend escribe 'arrived' — mantenemos consistencia. Antes ponía
+        // 'driver_arriving' localmente y luego el SSE con 'arrived' hacía
+        // que la UI cayera al default y "retrocediera" al panel de pickup.
+        _currentTrip = _currentTrip!.copyWith(status: 'arrived');
         _tripStatus = TripStatus.driverArriving;
         notifyListeners();
       }

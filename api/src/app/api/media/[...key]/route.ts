@@ -56,8 +56,19 @@ export async function GET(
   if (!auth.ok) return auth.response
 
   const isOwner = file.user_id === auth.userId
+  // Los admins pueden ver cualquier archivo (necesario para verificación
+  // manual de documentos de drivers). Sin este check, el flow "pending →
+  // approved" era imposible: el admin no podía ver el documento.
+  let isAdmin = false
   if (!file.is_public && !isOwner) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    const adminCheck = await maybeOne<{ is_admin: boolean; user_type: string }>(
+      'SELECT is_admin, user_type FROM users WHERE id = $1',
+      [auth.userId],
+    )
+    isAdmin = !!(adminCheck && (adminCheck.is_admin || adminCheck.user_type === 'admin'))
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
   }
 
   // Emitir X-Accel-Redirect: Nginx sirve el archivo directamente

@@ -183,6 +183,7 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
   const [invoices, setInvoices] = useState<AdminInvoice[]>([])
   const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoice | null>(null)
   const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [invoicesError, setInvoicesError] = useState<string | null>(null)
   const [reason, setReason] = useState<'anulacion' | 'devolucion' | 'descuento_global' | 'descuento_item' | 'ajuste_precio' | 'otros'>('anulacion')
   const [reasonNotes, setReasonNotes] = useState('')
   const [amount, setAmount] = useState('')
@@ -192,11 +193,18 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
     if (q.trim().length < 2) { setInvoices([]); return }
     const t = setTimeout(async () => {
       setLoadingInvoices(true)
+      setInvoicesError(null)
       try {
         const resp = await adminApi.listInvoices({ search: q.trim(), pageSize: 20 })
         setInvoices(resp.invoices.filter((i) => i.documentType !== 'receipt' && i.status !== 'voided'))
-      } catch { /* ignore */ }
-      finally { setLoadingInvoices(false) }
+      } catch (e) {
+        setInvoices([])
+        setInvoicesError(
+          e instanceof AdminApiError
+            ? `Error al buscar facturas: ${e.message || e.code}`
+            : 'Error al buscar facturas (revisa conexión).',
+        )
+      } finally { setLoadingInvoices(false) }
     }, 300)
     return () => clearTimeout(t)
   }, [q])
@@ -286,7 +294,12 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
                     ))}
                   </div>
                 )}
-                {!loadingInvoices && q.trim().length >= 2 && invoices.length === 0 && (
+                {!loadingInvoices && invoicesError && (
+                  <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+                    {invoicesError}
+                  </div>
+                )}
+                {!loadingInvoices && !invoicesError && q.trim().length >= 2 && invoices.length === 0 && (
                   <div className="text-center py-3 text-sm text-gray-500">Sin resultados</div>
                 )}
               </>

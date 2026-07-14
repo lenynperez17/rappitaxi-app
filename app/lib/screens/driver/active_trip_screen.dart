@@ -281,20 +281,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
     switch (_currentTrip!.status) {
       case 'accepted':
+      case 'on_way':
         _tripState = DriverTripState.goingToPickup;
         break;
-      case 'driver_arriving':
+      case 'arrived':
+      case 'driver_arriving':  // legacy Firestore, mantener compat
         _tripState = DriverTripState.arrivedAtPickup;
         break;
-      case 'waiting_verification':
-        // Verification removed - treat as in_progress
-        _tripState = DriverTripState.inProgress;
-        break;
       case 'in_progress':
+      case 'waiting_verification':  // legacy — treat as in_progress
+      case 'arriving_destination':  // legacy
         _tripState = DriverTripState.inProgress;
-        break;
-      case 'arriving_destination':
-        _tripState = DriverTripState.arrivedAtDestination;
         break;
       case 'completed':
         _tripState = DriverTripState.completed;

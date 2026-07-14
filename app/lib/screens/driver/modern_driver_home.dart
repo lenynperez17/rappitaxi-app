@@ -237,7 +237,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             .timeout(const Duration(seconds: 5));
         final rides = _extractRides(response);
         final activeRide = rides.firstWhere(
-          (r) => const {'accepted', 'driver_arriving', 'in_progress'}
+          (r) => const {'accepted', 'arrived', 'on_way', 'driver_arriving', 'in_progress'}
               .contains(r['status'] as String? ?? ''),
           orElse: () => const <String, dynamic>{},
         );
@@ -430,7 +430,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           .listRides(role: 'driver', pageSize: 10)
           .timeout(const Duration(seconds: 5));
       final rides = _extractRides(response);
-      final activeStates = const {'accepted', 'driver_arriving', 'waiting_verification', 'in_progress'};
+      final activeStates = const {'accepted', 'arrived', 'on_way', 'driver_arriving', 'waiting_verification', 'in_progress'};
       final activeRide = rides.firstWhere(
         (r) => activeStates.contains(r['status'] as String? ?? ''),
         orElse: () => const <String, dynamic>{},

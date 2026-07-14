@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Loader2, CreditCard, TrendingUp } from 'lucide-react'
-import { adminApi, type AdminStats, type AdminRecharge } from '../../lib/adminApi'
+import { Loader2, CreditCard, TrendingUp, AlertCircle } from 'lucide-react'
+import { adminApi, AdminApiError, type AdminStats, type AdminRecharge } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
 import { relativeTime, toDate } from '../../utils/timeFormat'
 
@@ -13,6 +13,7 @@ export function FinancialPage() {
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [recharges, setRecharges] = useState<AdminRecharge[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -21,15 +22,29 @@ export function FinancialPage() {
           adminApi.getStats(),
           adminApi.listRecharges({ status: 'completed', pageSize: 50 }),
         ])
-        setStats(s); setRecharges(r.recharges)
-      } catch { /* ignore */ }
-      finally { setLoading(false) }
+        setStats(s); setRecharges(r.recharges); setError(null)
+      } catch (e) {
+        setError(
+          e instanceof AdminApiError
+            ? `Error cargando datos financieros: ${e.message || e.code}`
+            : 'Error cargando datos financieros (revisa tu conexión)',
+        )
+      } finally { setLoading(false) }
     })()
   }, [])
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">
       <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando datos financieros...
+    </div>
+  )
+
+  if (error && !stats) return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-900">Financiero</h1>
+      <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+        <AlertCircle className="w-4 h-4" /> {error}
+      </div>
     </div>
   )
 

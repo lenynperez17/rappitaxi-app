@@ -1,23 +1,40 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Loader2, TrendingUp, Users, Car, Route, CreditCard } from 'lucide-react'
-import { adminApi, type AdminStats } from '../../lib/adminApi'
+import { BarChart3, Loader2, TrendingUp, Users, Car, Route, CreditCard, AlertCircle } from 'lucide-react'
+import { adminApi, AdminApiError, type AdminStats } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
 
 export function AnalyticsPage() {
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
-      try { setStats(await adminApi.getStats()) }
-      catch { /* ignore */ }
-      finally { setLoading(false) }
+      try {
+        setStats(await adminApi.getStats())
+        setError(null)
+      } catch (e) {
+        setError(
+          e instanceof AdminApiError
+            ? `Error cargando analíticas: ${e.message || e.code}`
+            : 'Error cargando analíticas (revisa tu conexión)',
+        )
+      } finally { setLoading(false) }
     })()
   }, [])
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">
       <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando analíticas...
+    </div>
+  )
+
+  if (error && !stats) return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-900">Analíticas</h1>
+      <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
+        <AlertCircle className="w-4 h-4" /> {error}
+      </div>
     </div>
   )
 
