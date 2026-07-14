@@ -243,6 +243,8 @@ map-page.png
 reset-password-modal.png
 login_*.png
 test_*.png
+verification-*.png
+verification_*.png
 
 # Apple App Store Connect API key privada
 *.p8
