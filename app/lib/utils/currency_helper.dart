@@ -245,8 +245,8 @@ class CurrencyHelper {
   static const int minimumRecharge = 1000; // S/ 10.00
   static const int minimumWithdrawal = 2000; // S/ 20.00
 
-  /// Comisión de la plataforma (20%)
-  static const double platformCommissionPercentage = 20.0;
+  /// Comisión de la plataforma (12%)
+  static const double platformCommissionPercentage = 12.0;
 
   // ============================================================================
   // MIGRACIONES Y COMPATIBILIDAD

@@ -80,6 +80,7 @@ export class NotificationService {
       throw new Error('No se encontraron tokens válidos');
     }
 
+    const type = data?.type as string | undefined;
     const message = {
       notification: {
         title: notification.title,
@@ -90,19 +91,22 @@ export class NotificationService {
         ...data,
         timestamp: new Date().toISOString(),
       },
-      android: this.buildAndroidConfig(priority),
-      apns: this.buildApnsConfig(notification, priority),
+      android: this.buildAndroidConfig(priority, type),
+      apns: this.buildApnsConfig(notification, priority, type),
       tokens: validTokens,
     };
 
     try {
-      const response = await this.messaging.sendMulticast(message);
+      // sendEachForMulticast is the non-deprecated replacement for sendMulticast
+      const response = await (this.messaging as any).sendEachForMulticast
+        ? await (this.messaging as any).sendEachForMulticast(message)
+        : await this.messaging.sendMulticast(message);
       
       console.log(`✅ Notificación enviada: ${response.successCount}/${validTokens.length} éxito`);
       
       // Log de tokens que fallaron
       if (response.failureCount > 0) {
-        response.responses.forEach((resp, idx) => {
+        response.responses.forEach((resp: any, idx: number) => {
           if (!resp.success) {
             console.warn(`❌ Token falló [${idx}]: ${resp.error?.code} - ${resp.error?.message}`);
           }
@@ -133,6 +137,7 @@ export class NotificationService {
     
     console.log(`📤 Enviando notificación al topic: ${topic}`);
 
+    const type = data?.type as string | undefined;
     const message = {
       topic,
       notification: {
@@ -144,8 +149,8 @@ export class NotificationService {
         ...data,
         timestamp: new Date().toISOString(),
       },
-      android: this.buildAndroidConfig(priority),
-      apns: this.buildApnsConfig(notification, priority),
+      android: this.buildAndroidConfig(priority, type),
+      apns: this.buildApnsConfig(notification, priority, type),
     };
 
     try {
@@ -174,6 +179,7 @@ export class NotificationService {
 
     console.log(`📤 Enviando notificación a token: ${token.substring(0, 20)}...`);
 
+    const type = data?.type as string | undefined;
     const message = {
       token,
       notification: {
@@ -185,8 +191,8 @@ export class NotificationService {
         ...data,
         timestamp: new Date().toISOString(),
       },
-      android: this.buildAndroidConfig(priority),
-      apns: this.buildApnsConfig(notification, priority),
+      android: this.buildAndroidConfig(priority, type),
+      apns: this.buildApnsConfig(notification, priority, type),
     };
 
     try {
@@ -200,35 +206,79 @@ export class NotificationService {
   }
 
   /**
-   * Construir configuración Android
+   * Map notification type to Android channel ID and sound filename
    */
-  private buildAndroidConfig(priority: 'normal' | 'high'): AndroidConfig {
+  private channelForType(type?: string): { channelId: string; sound: string } {
+    switch (type) {
+      case 'ride':
+      case 'rideRequest':
+      case 'tripRequest':
+      case 'tripAccepted':
+      case 'tripStarted':
+      case 'driverArrived':
+        return { channelId: 'rappi_rides', sound: 'ride_request' };
+      case 'payment':
+      case 'paymentSuccess':
+      case 'paymentFailed':
+      case 'tripCompleted':
+        return { channelId: 'rappi_payments', sound: 'trip_completed' };
+      case 'emergency':
+      case 'securityAlert':
+      case 'sos':
+        return { channelId: 'rappi_emergency', sound: 'emergency_alert' };
+      case 'chat':
+      case 'chatMessage':
+      case 'message':
+        return { channelId: 'rappi_chat', sound: 'chat_message' };
+      case 'promotion':
+      case 'discount':
+      case 'offer':
+        return { channelId: 'rappi_promotions', sound: 'ride_accepted' };
+      default:
+        return { channelId: 'rappi_general', sound: 'ride_accepted' };
+    }
+  }
+
+  /**
+   * Construir configuración Android con canal y sonido dinámicos
+   */
+  private buildAndroidConfig(priority: 'normal' | 'high', type?: string): AndroidConfig {
+    const { channelId, sound } = this.channelForType(type);
+    // 5-second alternating vibration (total ~5.5s) for high-priority notifications
+    const longVibration = [0, 1000, 500, 1000, 500, 1000, 500, 1000];
     return {
       priority,
       notification: {
-        channelId: priority === 'high' ? 'rappi_rides' : 'rappi_general',
-        priority: priority === 'high' ? 'high' : 'default',
-        sound: 'default',
-        vibrate_timings_millis: priority === 'high' ? [0, 250, 250, 250] : [0, 100],
+        channelId,
+        priority: priority === 'high' ? 'max' : 'high',
+        sound,
+        vibrate_timings_millis: priority === 'high' ? longVibration : [0, 500, 200, 500],
         lights: {
-          color: '#4CAF50',
-          light_on_duration_millis: 300,
-          light_off_duration_millis: 300,
+          color: '#E31E24',
+          light_on_duration_millis: 1000,
+          light_off_duration_millis: 500,
         },
-      },
-      ttl: priority === 'high' ? 3600 : 86400, // ✅ Cambiado a segundos como número
+        visibility: 'PUBLIC',
+      } as any,
+      ttl: priority === 'high' ? 3600 : 86400,
     };
   }
 
   /**
-   * Construir configuración iOS (APNs)
+   * Construir configuración iOS (APNs) con sonido personalizado y volumen máximo
    */
-  private buildApnsConfig(notification: NotificationPayload, priority: 'normal' | 'high'): ApnsConfig {
+  private buildApnsConfig(
+    notification: NotificationPayload,
+    priority: 'normal' | 'high',
+    type?: string
+  ): ApnsConfig {
+    const { sound } = this.channelForType(type);
+    const isEmergency = type === 'emergency' || type === 'securityAlert' || type === 'sos';
     return {
       headers: {
         'apns-priority': priority === 'high' ? '10' : '5',
         ...(priority === 'high' && {
-          'apns-expiration': Math.floor(Date.now() / 1000 + 3600).toString()
+          'apns-expiration': Math.floor(Date.now() / 1000 + 3600).toString(),
         }),
       },
       payload: {
@@ -237,11 +287,16 @@ export class NotificationService {
             title: notification.title,
             body: notification.body,
           },
-          sound: 'default',
+          // Custom sound with max volume; iOS only plays a single file per push
+          sound: isEmergency
+            ? ({ critical: 1, name: `${sound}.wav`, volume: 1.0 } as any)
+            : ({ name: `${sound}.wav`, volume: 1.0 } as any),
           badge: 1,
           category: priority === 'high' ? 'RIDE_REQUEST' : 'GENERAL',
+          // iOS 15+: allow notification to break through Focus / Do Not Disturb
+          'interruption-level': isEmergency ? 'critical' : 'time-sensitive',
           ...(priority === 'high' && { critical: 1 }),
-        },
+        } as any,
       },
     };
   }

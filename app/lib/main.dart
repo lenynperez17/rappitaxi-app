@@ -8,25 +8,28 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // 🔐 NUEVO: Cargar variables de entorno desde .env
 import 'generated/l10n/app_localizations.dart'; // ✅ NUEVO: Localizaciones generadas
-// Firebase
+// Firebase — SOLO FCM para notificaciones push (todo lo demás migró al backend Node)
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_analytics/firebase_analytics.dart'; // ✅ NUEVO: Analytics
-import 'package:firebase_app_check/firebase_app_check.dart'; // ✅ NUEVO: App Check con Play Integrity
-import 'package:firebase_crashlytics/firebase_crashlytics.dart'; // ✅ FIX: Crashlytics para reportar errores
 import 'firebase_options.dart';
 import 'firebase_messaging_handler.dart';
 
 // Core
 import 'core/theme/modern_theme.dart';
-import 'core/widgets/notification_handler_widget.dart'; // ✅ NUEVO: Handler de clicks en notificaciones
+import 'core/widgets/notification_handler_widget.dart';
 
-// Services
-import 'services/firebase_service.dart';
+// Services — Backend propio (VPS)
+import 'services/rapi_api_client.dart';
+import 'services/rapi_sse_client.dart';
 import 'services/notification_service.dart';
+
+// Dev-only: tour orchestrator (import indirecto)
+// ignore: unused_import
+import 'dev_tour_orchestrator.dart';
 
 // Utils
 import 'utils/logger.dart';
+import 'utils/navigation_helper.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
@@ -42,8 +45,7 @@ import 'models/trip_model.dart';
 
 // Screens
 import 'screens/auth/modern_splash_screen.dart';
-import 'screens/auth/modern_login_screen.dart';
-import 'screens/auth/forgot_password_screen.dart';
+import 'screens/auth/rapi_login_screen.dart';
 import 'screens/auth/email_verification_screen.dart';
 import 'screens/auth/phone_verification_screen.dart';
 import 'screens/auth/complete_profile_screen.dart'; // ✅ NUEVO: Pantalla obligatoria para login social
@@ -65,11 +67,33 @@ import 'screens/driver/metrics_screen.dart';
 import 'screens/driver/vehicle_management_screen.dart';
 import 'screens/driver/transactions_history_screen.dart';
 import 'screens/driver/earnings_details_screen.dart';
-// import 'screens/driver/earnings_withdrawal_screen.dart'; // No usado - ruta comentada
+import 'screens/driver/earnings_withdrawal_screen.dart';
+import 'providers/vale_provider.dart';
 import 'screens/driver/documents_screen.dart';
 import 'screens/driver/driver_profile_screen.dart';
 import 'screens/driver/driver_negotiations_screen.dart';
 import 'screens/driver/recharge_credits_screen.dart';
+import 'screens/driver/driver_settings_screen.dart';
+import 'screens/driver/driver_security_screen.dart';
+import 'screens/driver/driver_ride_config_screen.dart';
+import 'screens/driver/driver_notifications_screen.dart';
+import 'screens/driver/driver_registration_type_screen.dart';
+import 'screens/driver/driver_registration_personal_screen.dart';
+import 'screens/driver/driver_registration_vehicle_screen.dart';
+import 'screens/driver/driver_registration_documents_screen.dart';
+import 'screens/driver/driver_registration_pending_screen.dart';
+import 'screens/driver/driver_performance_screen.dart';
+import 'screens/driver/driver_achievements_screen.dart';
+import 'screens/driver/driver_order_history_screen.dart';
+import 'screens/driver/driver_intercity_screen.dart';
+import 'screens/driver/driver_freight_screen.dart';
+import 'screens/driver/driver_benefits_screen.dart';
+import 'screens/driver/driver_benefit_detail_screen.dart';
+import 'screens/driver/driver_comfort_rules_screen.dart';
+import 'screens/driver/driver_wallet_simple_screen.dart';
+import 'screens/driver/driver_recharge_screen.dart';
+import 'screens/driver/driver_earnings_detail_screen.dart';
+import 'screens/passenger/vale_input_screen.dart';
 import 'screens/admin/admin_login_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/admin/users_management_screen.dart';
@@ -101,17 +125,14 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    // Capture Flutter framework errors and send to Crashlytics
+    // Capturar errores del framework Flutter (Crashlytics removido: se migró a logging propio)
     FlutterError.onError = (FlutterErrorDetails details) {
       FlutterError.presentError(details);
       AppLogger.error('FlutterError capturado', details.exception, details.stack);
-      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
     };
 
-    // Capture platform errors and send to Crashlytics
     PlatformDispatcher.instance.onError = (error, stack) {
       AppLogger.error('PlatformError capturado', error, stack);
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       return true;
     };
 
@@ -147,49 +168,25 @@ void main() {
       ),
     );
 
-    // ✅ iOS FIX: Solo inicializar Firebase si NO está ya inicializado
-    // En iOS, AppDelegate.swift llama FirebaseApp.configure() ANTES
-    // de que este código ejecute. Si intentamos inicializar de nuevo,
-    // causa [core/duplicate-app] crash.
-    AppLogger.info('Verificando estado de Firebase...');
+    // Firebase Core — SOLO para que firebase_messaging (FCM push) funcione.
+    // Todo lo demás (Auth, Firestore, Storage, Analytics, Crashlytics, App Check)
+    // fue migrado al backend Node en el VPS.
+    AppLogger.info('Inicializando Firebase Core (solo para FCM)...');
     if (Firebase.apps.isEmpty) {
-      AppLogger.info('Firebase no inicializado, inicializando desde Dart...');
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-    } else {
-      AppLogger.info('Firebase ya inicializado desde nativo (iOS)');
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     }
-    AppLogger.info('Firebase listo');
+    AppLogger.info('Firebase Core listo');
 
-    // ✅ FIX: App Check — debug provider en simuladores, deviceCheck en producción
-    try {
-      // NOTE: Using debug provider until app is signed with release key
-      // and registered in Google Play. PlayIntegrity requires both.
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.debug,
-        appleProvider: AppleProvider.debug,
-      );
-      AppLogger.info('Firebase App Check activado (debug provider)');
-    } catch (e) {
-      AppLogger.warning('App Check no disponible (no fatal): $e');
+    // Restaurar sesión del backend Node si hay tokens guardados
+    await RapiApiClient.instance.restore();
+    if (RapiApiClient.instance.isSignedIn) {
+      AppLogger.info('Sesión restaurada — iniciando stream SSE');
+      RapiSseClient.instance.start();
     }
 
-    // ✅ FIX: Habilitar Crashlytics y configurar usuario
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-    AppLogger.info('Firebase Crashlytics habilitado');
-
-    // Firebase Analytics
-    final analytics = FirebaseAnalytics.instance;
-    await analytics.logAppOpen();
-    AppLogger.info('Firebase Analytics OK');
-
-    // Inicializar servicios
-    await FirebaseService().initialize();
-    AppLogger.info('FirebaseService OK');
-
+    // FCM: registrar handler de background messages
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    AppLogger.info('Firebase Messaging OK');
+    AppLogger.info('Firebase Messaging (FCM) OK');
 
     await NotificationService().initialize();
     AppLogger.info('NotificationService OK');
@@ -214,7 +211,7 @@ void main() {
     }
   }
   }, (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    AppLogger.error('Zone error no capturado', error, stack);
   });
 }
 
@@ -236,6 +233,7 @@ class RappiTeamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()), // ✅ FIX: Provider para créditos de servicio
         ChangeNotifierProvider(create: (_) => DocumentProvider()), // ✅ FIX: Provider para documentos de conductor
+        ChangeNotifierProvider(create: (_) => ValeProvider()),
       ],
       // ✅ HANDLER DE NOTIFICACIONES - Procesa clicks en notificaciones
       child: NotificationHandlerWidget(
@@ -274,6 +272,9 @@ class _ThemedMaterialApp extends StatelessWidget {
         return MaterialApp(
       title: 'Rappi Team',
       debugShowCheckedModeBanner: false,
+      // navigatorKey global usado por NavigationHelper para navegar desde
+      // callbacks externos al widget tree (notificaciones locales, etc.).
+      navigatorKey: NavigationHelper.navigatorKey,
 
       // Configurar localizaciones
       localizationsDelegates: const [
@@ -299,8 +300,9 @@ class _ThemedMaterialApp extends StatelessWidget {
       // Rutas
       routes: {
         '/': (context) => ModernSplashScreen(),
-        '/login': (context) => ModernLoginScreen(),
-        '/forgot-password': (context) => ForgotPasswordScreen(),
+        '/login': (context) => const RapiLoginScreen(),
+        // '/login-legacy' y '/forgot-password' eliminadas: el backend Node solo
+        // soporta login por SMS/OAuth, no email+password (no hay password reset).
         '/email-verification': (context) => EmailVerificationScreen(
           email: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
         ),
@@ -346,10 +348,50 @@ class _ThemedMaterialApp extends StatelessWidget {
         '/driver/vehicle-management': (context) => VehicleManagementScreen(),
         '/driver/transactions-history': (context) => TransactionsHistoryScreen(),
         '/driver/earnings-details': (context) => EarningsDetailsScreen(),
+        '/driver/earnings-withdrawal': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return EarningsWithdrawalScreen(driverId: args?['driverId'] ?? '');
+        },
         '/driver/negotiations': (context) => DriverNegotiationsScreen(),
         '/driver/documents': (context) => DocumentsScreen(),
         '/driver/profile': (context) => DriverProfileScreen(),
         '/driver/recharge-credits': (context) => RechargeCreditsScreen(),
+        '/driver/settings': (context) => DriverSettingsScreen(),
+        '/driver/security': (context) => DriverSecurityScreen(),
+        '/driver/ride-config': (context) => DriverRideConfigScreen(),
+        '/driver/notifications': (context) => DriverNotificationsScreen(),
+        '/driver/registration-type': (context) => DriverRegistrationTypeScreen(),
+        '/driver/registration-personal': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationPersonalScreen(workType: args?['workType'] ?? 'full_time');
+        },
+        '/driver/registration-vehicle': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationVehicleScreen(registrationData: args?['registrationData'] ?? {});
+        },
+        '/driver/registration-documents': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationDocumentsScreen(registrationData: args?['registrationData'] ?? {});
+        },
+        '/driver/registration-pending': (context) => DriverRegistrationPendingScreen(),
+        '/driver/performance': (context) => DriverPerformanceScreen(),
+        '/driver/achievements': (context) => DriverAchievementsScreen(),
+        '/driver/order-history': (context) => DriverOrderHistoryScreen(),
+        '/driver/intercity': (context) => DriverIntercityScreen(),
+        '/driver/freight': (context) => DriverFreightScreen(),
+        '/driver/benefits': (context) => DriverBenefitsScreen(),
+        '/driver/comfort-rules': (context) => DriverComfortRulesScreen(),
+        '/driver/wallet-simple': (context) => DriverWalletSimpleScreen(),
+        '/driver/recharge': (context) => DriverRechargeScreen(),
+        '/driver/earnings-detail': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverEarningsDetailScreen(
+            todayEarnings: (args?['todayEarnings'] as num?)?.toDouble() ?? 0.0,
+            targetEarnings: (args?['targetEarnings'] as num?)?.toDouble() ?? 100.0,
+          );
+        },
+        // '/shared/change-password' eliminada: no aplica con SMS/OAuth.
+        '/passenger/vale-input': (context) => ValeInputScreen(),
         // Driver verification screen removed - no longer needed
         '/driver/active-trip': (context) {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
@@ -371,18 +413,34 @@ class _ThemedMaterialApp extends StatelessWidget {
         '/admin/analytics': (context) => AnalyticsScreen(),
         '/admin/settings': (context) => SettingsAdminScreen(),
 
-        // Rutas Compartidas
-        '/shared/chat': (context) => ChatScreen(
-          rideId: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
-          otherUserName: 'Usuario',
-          otherUserRole: 'user',
-        ),
-        '/shared/trip-details': (context) => TripDetailsScreen(
-          tripId: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
-        ),
-        '/shared/trip-tracking': (context) => TripTrackingScreen(
-          rideId: (ModalRoute.of(context)!.settings.arguments as String?) ?? '',
-        ),
+        // Rutas Compartidas — algunas rutas reciben Map, otras String plano.
+        // Los helpers _readArg / _readMap abajo normalizan ambos casos.
+        '/shared/chat': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          final rideId = _readRideOrTripId(args);
+          String? otherUserName;
+          String? otherUserRole;
+          String? otherUserId;
+          if (args is Map) {
+            otherUserName = args['otherUserName'] as String?;
+            otherUserRole = args['otherUserRole'] as String?;
+            otherUserId = args['otherUserId'] as String?;
+          }
+          return ChatScreen(
+            rideId: rideId,
+            otherUserName: otherUserName ?? 'Usuario',
+            otherUserRole: otherUserRole ?? 'user',
+            otherUserId: otherUserId,
+          );
+        },
+        '/shared/trip-details': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return TripDetailsScreen(tripId: _readRideOrTripId(args));
+        },
+        '/shared/trip-tracking': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return TripTrackingScreen(rideId: _readRideOrTripId(args));
+        },
         '/shared/help-center': (context) => HelpCenterScreen(),
         '/shared/settings': (context) => SettingsScreen(),
         '/shared/about': (context) => AboutScreen(),
@@ -393,8 +451,20 @@ class _ThemedMaterialApp extends StatelessWidget {
         ),
         '/shared/upgrade-to-driver': (context) => UpgradeToDriverScreen(),
         '/upgrade-to-driver': (context) => UpgradeToDriverScreen(),
-        '/driver/register': (context) => UpgradeToDriverScreen(),
-        '/driver/register/pending': (context) => UpgradeToDriverScreen(),
+        '/driver/register': (context) => DriverRegistrationTypeScreen(),
+        '/driver/register/pending': (context) => DriverRegistrationPendingScreen(),
+        '/driver/register/personal': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationPersonalScreen(workType: args?['workType'] ?? 'full_time');
+        },
+        '/driver/register/vehicle': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationVehicleScreen(registrationData: args ?? {});
+        },
+        '/driver/register/documents': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return DriverRegistrationDocumentsScreen(registrationData: args ?? {});
+        },
         '/maintenance': (context) => MaintenanceScreen(), // ✅ NUEVO: Pantalla de mantenimiento
         '/map-picker': (context) => MapPickerScreen(),
         '/change-phone-number': (context) => ChangePhoneNumberScreen(
@@ -417,4 +487,19 @@ class _ThemedMaterialApp extends StatelessWidget {
       },  // Cierra builder del Consumer
     );    // Cierra Consumer
   }
+}
+
+/// Lee un `rideId`/`tripId` desde el `arguments` de una ruta.
+/// Acepta:
+///   - `String` plano ("abc-123")
+///   - `Map<String, dynamic>` con `rideId`, `tripId` o `id`
+///   - cualquier otra cosa → ''
+String _readRideOrTripId(Object? args) {
+  if (args is String) return args;
+  if (args is Map) {
+    final v = args['rideId'] ?? args['tripId'] ?? args['id'];
+    if (v is String) return v;
+    if (v != null) return v.toString();
+  }
+  return '';
 }

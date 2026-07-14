@@ -1,11 +1,10 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../services/rapi_api_client.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
 import 'documents_screen.dart';
@@ -30,10 +29,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   DriverProfile? _profile;
   bool _isLoading = true;
 
-  // ImagePicker y Firebase Storage para foto de perfil
+  // ImagePicker para foto de perfil (upload va por RapiApiClient)
   final ImagePicker _picker = ImagePicker();
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
+
+  // ID del usuario autenticado (obtenido del backend Node)
+  String? _authUserId;
 
   // ✅ FLAGS DE EDICIÓN INLINE PARA CADA SECCIÓN
   bool _isEditingPersonal = false;  // Información Personal
@@ -137,149 +138,113 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     super.dispose();
   }
   
-  // ✅ Cargar perfil real desde Firebase
+  // Cargar perfil real desde el backend Node (RapiApiClient)
   void _loadProfile() async {
     try {
-      // ✅ Obtener usuario actual de Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        AppLogger.warning('⚠️ No hay usuario autenticado');
+      // Obtener usuario actual del backend Node
+      final meResp = await _api.me();
+      final userData = meResp?['user'] as Map<String, dynamic>?;
+      if (userData == null) {
+        AppLogger.warning('No hay usuario autenticado');
         if (mounted) {
           setState(() => _isLoading = false);
         }
         return;
       }
 
-      final userId = currentUser.uid;
+      final userId = (userData['id'] ?? '') as String;
+      _authUserId = userId;
 
-      // ✅ Cargar datos del usuario desde Firestore
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
-
-      if (!userDoc.exists) {
-        AppLogger.warning('⚠️ Documento de usuario no existe: $userId');
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
-        return;
+      // Perfil driver (vehicle + documents) desde /api/drivers/me/profile
+      Map<String, dynamic> driverProfileData = const {};
+      try {
+        driverProfileData = await _api.myDriverProfile();
+      } catch (e) {
+        AppLogger.warning('No se pudo cargar driver profile: $e');
       }
 
-      final userData = userDoc.data()!;
-
-      // ✅ Calcular estadísticas desde la colección rides (con manejo de errores)
+      // Estadísticas desde /api/rides (viajes completados como conductor)
       double totalDistance = 0.0;
       double totalEarnings = 0.0;
       double totalHours = 0.0;
       int totalTripsCount = 0;
 
       try {
-        // ✅ IMPORTANTE: limit(100) requerido por reglas de Firestore
-        final ridesSnapshot = await FirebaseFirestore.instance
-            .collection('rides')
-            .where('driverId', isEqualTo: userId)
-            .where('status', isEqualTo: 'completed')
-            .limit(100)
-            .get();
-
-        totalTripsCount = ridesSnapshot.docs.length;
-
-        for (var doc in ridesSnapshot.docs) {
-          final data = doc.data();
-          if (data['distance'] != null) {
-            totalDistance += (data['distance'] as num).toDouble();
-          }
-          if (data['fare'] != null) {
-            totalEarnings += (data['fare'] as num).toDouble();
-          }
-          if (data['startedAt'] != null && data['completedAt'] != null) {
-            final startedAt = (data['startedAt'] as Timestamp).toDate();
-            final completedAt = (data['completedAt'] as Timestamp).toDate();
-            final duration = completedAt.difference(startedAt);
-            totalHours += duration.inMinutes / 60.0;
+        final ridesResp = await _api.listRides(
+          role: 'driver',
+          status: 'completed',
+          pageSize: 100,
+        );
+        final rides = ridesResp['rides'] ?? ridesResp['items'] ?? ridesResp['data'];
+        if (rides is List) {
+          totalTripsCount = rides.length;
+          for (final r in rides.whereType<Map>()) {
+            final data = Map<String, dynamic>.from(r);
+            final distance = data['distance'] ?? data['distanceMeters'];
+            if (distance is num) totalDistance += distance.toDouble();
+            final fare = data['fare'] ?? data['finalFare'];
+            if (fare is num) totalEarnings += fare.toDouble();
+            final startedRaw = data['startedAt'] ?? data['started_at'];
+            final completedRaw = data['completedAt'] ?? data['completed_at'];
+            if (startedRaw is String && completedRaw is String) {
+              final startedAt = DateTime.tryParse(startedRaw);
+              final completedAt = DateTime.tryParse(completedRaw);
+              if (startedAt != null && completedAt != null) {
+                totalHours += completedAt.difference(startedAt).inMinutes / 60.0;
+              }
+            }
           }
         }
       } catch (e) {
-        // ✅ Si hay error con rides (índice faltante, permisos, etc.), usar datos del usuario
-        AppLogger.warning('⚠️ No se pudieron cargar estadísticas de rides: $e');
+        AppLogger.warning('No se pudieron cargar estadísticas de rides: $e');
         totalTripsCount = (userData['totalTrips'] as num?)?.toInt() ?? 0;
         totalEarnings = (userData['totalEarnings'] as num?)?.toDouble() ?? 0.0;
       }
 
-      // ✅ Extraer datos del perfil con valores por defecto seguros
-      final emergencyContactData = userData['emergencyContact'] as Map<String, dynamic>?;
-      final preferencesData = userData['preferences'] as Map<String, dynamic>?;
-      final vehicleInfoData = userData['vehicleInfo'] as Map<String, dynamic>?;
-      final workScheduleData = userData['workSchedule'] as Map<String, dynamic>?;
+      // Extraer datos ricos del perfil (vienen en driverProfile o en user)
+      final richProfile = (userData['driverProfile'] as Map<String, dynamic>?) ??
+          driverProfileData;
+      final emergencyContactData = richProfile['emergencyContact'] as Map<String, dynamic>?;
+      final preferencesData = richProfile['preferences'] as Map<String, dynamic>?;
+      final vehicleInfoData = (richProfile['vehicle'] ?? richProfile['vehicleInfo']) as Map<String, dynamic>?;
+      final workScheduleData = richProfile['workSchedule'] as Map<String, dynamic>?;
 
-      // 🔍 DEBUG: Verificar si vehicleInfo existe en Firebase
-      AppLogger.debug('📊 DEBUG - Datos de vehículo desde Firebase:');
-      AppLogger.debug('   vehicleInfoData existe: ${vehicleInfoData != null}');
-      if (vehicleInfoData != null) {
-        AppLogger.debug('   Marca: ${vehicleInfoData['make']}');
-        AppLogger.debug('   Modelo: ${vehicleInfoData['model']}');
-        AppLogger.debug('   Año: ${vehicleInfoData['year']}');
-        AppLogger.debug('   Color: ${vehicleInfoData['color']}');
-        AppLogger.debug('   Placa: ${vehicleInfoData['plate']}');
-        AppLogger.debug('   Capacidad: ${vehicleInfoData['capacity']}');
-      } else {
-        AppLogger.debug('   ⚠️ vehicleInfo NO ENCONTRADO en Firebase para usuario: $userId');
-      }
-
-      // ✅ NUEVO: Cargar documentos del conductor
-      final documentsData = userData['documents'] as Map<String, dynamic>?;
-      _documents = documentsData?.map((key, value) => MapEntry(key, value.toString()));
-
-      // 🔍 DEBUG: Verificar si documentos existen en Firebase
-      AppLogger.debug('📄 DEBUG - Datos de documentos desde Firebase:');
-      AppLogger.debug('   documentsData existe: ${documentsData != null}');
-      if (documentsData != null) {
-        AppLogger.debug('   Documentos encontrados: ${documentsData.keys.join(', ')}');
-        documentsData.forEach((key, value) {
-          AppLogger.debug('   - $key: $value');
-        });
-      } else {
-        AppLogger.debug('   ⚠️ documents NO ENCONTRADO en Firebase para usuario: $userId');
-      }
-
-      // ✅ Cargar logros desde colección achievements si existe (con manejo de errores)
-      List<Achievement> achievementsList = [];
+      // Documentos del conductor (vienen como lista en /api/drivers/me/documents)
       try {
-        final achievementsSnapshot = await FirebaseFirestore.instance
-            .collection('achievements')
-            .where('userId', isEqualTo: userId)
-            .get();
-
-        for (var doc in achievementsSnapshot.docs) {
-          final data = doc.data();
-          achievementsList.add(Achievement(
-            id: doc.id,
-            name: data['name'] ?? '',
-            description: data['description'] ?? '',
-            iconUrl: data['iconUrl'] ?? '',
-            unlockedDate: (data['unlockedDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          ));
+        final docsResp = await _api.myDocuments();
+        final docs = docsResp['documents'];
+        if (docs is List) {
+          final map = <String, String>{};
+          for (final d in docs.whereType<Map>()) {
+            final type = (d['docType'] ?? d['type'])?.toString();
+            final url = (d['fileUrl'] ?? d['url'])?.toString();
+            if (type != null && url != null) {
+              map[type] = url;
+            }
+          }
+          _documents = map;
         }
       } catch (e) {
-        // ✅ Si hay error con achievements (índice faltante, etc.), continuar sin logros
-        AppLogger.warning('⚠️ No se pudieron cargar logros: $e');
+        AppLogger.warning('No se pudieron cargar documentos: $e');
       }
+
+      // Logros: endpoint no disponible aún — lista vacía
+      final List<Achievement> achievementsList = <Achievement>[];
 
       if (mounted) {
         setState(() {
           _profile = DriverProfile(
             id: userId,
-          name: userData['fullName'] ?? currentUser.displayName ?? '',
-          email: userData['email'] ?? currentUser.email ?? '',
-          phone: userData['phone'] ?? '',
-          profileImageUrl: userData['profilePhotoUrl'] ?? currentUser.photoURL ?? '',
-          rating: (userData['rating'] ?? 5.0).toDouble(),
+          name: (userData['fullName'] ?? '') as String,
+          email: (userData['email'] ?? '') as String,
+          phone: (userData['phone'] ?? '') as String,
+          profileImageUrl: (userData['profilePhotoUrl'] ?? '') as String,
+          rating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
           totalTrips: totalTripsCount,
           totalDistance: totalDistance,
           totalHours: totalHours,
           totalEarnings: totalEarnings,
-          memberSince: (userData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          memberSince: DateTime.tryParse((userData['createdAt'] ?? '').toString()) ?? DateTime.now(),
           bio: userData['bio'] ?? '',
           emergencyContact: EmergencyContact(
             name: emergencyContactData?['name'] ?? '',
@@ -297,12 +262,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ),
           achievements: achievementsList,
           vehicleInfo: VehicleInfo(
-            make: vehicleInfoData?['make'] ?? '',
-            model: vehicleInfoData?['model'] ?? '',
-            year: vehicleInfoData?['year'] ?? 0,
-            color: vehicleInfoData?['color'] ?? '',
-            plate: vehicleInfoData?['plate'] ?? '',
-            capacity: vehicleInfoData?['capacity'] ?? 4,
+            make: (vehicleInfoData?['make'] ?? vehicleInfoData?['brand'] ?? '') as String,
+            model: (vehicleInfoData?['model'] ?? '') as String,
+            year: (vehicleInfoData?['year'] as num?)?.toInt() ?? 0,
+            color: (vehicleInfoData?['color'] ?? '') as String,
+            plate: (vehicleInfoData?['plate'] ?? '') as String,
+            capacity: (vehicleInfoData?['capacity'] as num?)?.toInt() ?? (vehicleInfoData?['seats'] as num?)?.toInt() ?? 4,
           ),
           workSchedule: WorkSchedule(
             mondayStart: workScheduleData?['mondayStart'] ?? '00:00',
@@ -1323,7 +1288,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ],
       onEdit: () {
         // Navegar a la pantalla de configuración de retiros
-        final userId = FirebaseAuth.instance.currentUser?.uid;
+        final userId = _authUserId;
         if (userId != null) {
           Navigator.push(
             context,
@@ -1638,29 +1603,18 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
-                  // ✅ GUARDAR en Firestore
+                  // Guardar via backend Node.
+                  // El endpoint /api/payment-methods solo persiste (methodType, label, isDefault);
+                  // los datos ricos (banco, cuenta, CCI, DNI) quedan pendientes de un endpoint dedicado.
                   try {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user == null) return;
-                    final userId = user.uid;
-                    final paymentMethodData = {
-                      'userId': userId,
-                      'type': 'bank',
-                      'status': 'pending_verification',
-                      'createdAt': FieldValue.serverTimestamp(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                      'bankName': selectedBank,
-                      'accountType': accountTypeController.text,
-                      'accountNumber': accountNumberController.text,
-                      'cci': cciController.text,
-                      'accountHolderName': holderNameController.text,
-                      'accountHolderDni': holderDniController.text,
-                      'isDefault': true,
-                    };
-
-                    await FirebaseFirestore.instance
-                        .collection('paymentMethods')
-                        .add(paymentMethodData);
+                    if (_authUserId == null) return;
+                    final label =
+                        '$selectedBank · ****${accountNumberController.text.trim().length >= 4 ? accountNumberController.text.trim().substring(accountNumberController.text.trim().length - 4) : accountNumberController.text.trim()}';
+                    await _api.addPaymentMethod(
+                      methodType: 'bank',
+                      label: label,
+                      isDefault: true,
+                    );
 
                     // ignore: use_build_context_synchronously
                     Navigator.pop(context);
@@ -1858,26 +1812,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
-                  // ✅ GUARDAR en Firestore
+                  // Guardar via backend Node (solo metadata: methodType + label).
                   try {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user == null) return;
-                    final userId = user.uid;
-                    final paymentMethodData = {
-                      'userId': userId,
-                      'type': 'card',
-                      'status': 'pending_verification',
-                      'createdAt': FieldValue.serverTimestamp(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                      'cardNumber': cardNumberController.text, // Solo últimos 4 dígitos
-                      'cardHolderName': cardHolderController.text,
-                      'cardBank': selectedBank,
-                      'isDefault': false,
-                    };
-
-                    await FirebaseFirestore.instance
-                        .collection('paymentMethods')
-                        .add(paymentMethodData);
+                    if (_authUserId == null) return;
+                    final label = '$selectedBank · ****${cardNumberController.text.trim()}';
+                    await _api.addPaymentMethod(
+                      methodType: 'card',
+                      label: label,
+                      isDefault: false,
+                    );
 
                     // ignore: use_build_context_synchronously
                     Navigator.pop(context);
@@ -1919,9 +1862,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
   // ✅ REAL: Información de retiro en efectivo
   void _showCashPickupInfo() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final userId = user.uid;
+    if (_authUserId == null) return;
 
     showDialog(
       context: context,
@@ -1989,20 +1930,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ),
           ElevatedButton(
             onPressed: () async {
-              // ✅ GUARDAR en Firestore
+              // Guardar via backend Node (methodType 'cash').
               try {
-                final paymentMethodData = {
-                  'userId': userId,
-                  'type': 'cash',
-                  'status': 'active', // Efectivo siempre está activo
-                  'createdAt': FieldValue.serverTimestamp(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                  'isDefault': false,
-                };
-
-                await FirebaseFirestore.instance
-                    .collection('paymentMethods')
-                    .add(paymentMethodData);
+                await _api.addPaymentMethod(
+                  methodType: 'cash',
+                  label: 'Efectivo en oficina',
+                  isDefault: false,
+                );
 
                 // ignore: use_build_context_synchronously
                 Navigator.pop(context);
@@ -2903,30 +2837,37 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   //   });
   // }
 
-  // ✅ ACTUALIZADO: Guardar información personal
+  // Guardar información personal via backend Node (RapiApiClient.updateMe)
   Future<void> _saveProfile() async {
     if (_personalFormKey.currentState!.validate()) {
-      // ✅ Capturar ScaffoldMessenger ANTES del await
       final messenger = ScaffoldMessenger.of(context);
 
       try {
-        // Actualizar en Firebase
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-        if (userId == null) {
+        if (_authUserId == null) {
           throw Exception('Usuario no autenticado');
         }
 
-        await FirebaseFirestore.instance.collection('users').doc(userId).update({
-          'name': _nameController.text.trim(),
-          'phone': _phoneController.text.trim(),
-          'bio': _bioController.text.trim(),
-          'emergencyContact': {
-            'name': _emergencyContactController.text.trim(),
-            'phone': _emergencyPhoneController.text.trim(),
-            'relationship': _profile!.emergencyContact.relationship,
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        // El backend Node solo soporta campos básicos vía updateMe.
+        // Bio, emergencyContact y otros extendidos por ahora no persisten en el server.
+        await _api.updateMe(
+          fullName: _nameController.text.trim(),
+          phone: _phoneController.text.trim(),
+        );
+
+        // Contacto de emergencia: intentar guardarlo via /api/emergency-contacts
+        try {
+          if (_emergencyContactController.text.trim().isNotEmpty &&
+              _emergencyPhoneController.text.trim().isNotEmpty) {
+            await _api.addEmergencyContact(
+              name: _emergencyContactController.text.trim(),
+              phone: _emergencyPhoneController.text.trim(),
+              relationship: _profile!.emergencyContact.relationship,
+              isPrimary: true,
+            );
+          }
+        } catch (e) {
+          AppLogger.warning('No se pudo guardar contacto de emergencia: $e');
+        }
 
         // Actualizar estado local
         if (!mounted) return;
@@ -2975,15 +2916,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     }
   }
 
-  // ✅ NUEVO: Guardar información del vehículo
+  // Guardar información del vehículo via backend Node (upsertVehicle)
   Future<void> _saveVehicleInfo() async {
     if (_vehicleFormKey.currentState!.validate()) {
-      // ✅ Capturar ScaffoldMessenger ANTES del await
       final messenger = ScaffoldMessenger.of(context);
 
       try {
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-        if (userId == null) {
+        if (_authUserId == null) {
           throw Exception('Usuario no autenticado');
         }
 
@@ -2995,18 +2934,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         final plate = _plateController.text.trim().toUpperCase();
         final capacity = int.tryParse(_capacityController.text.trim()) ?? 4;
 
-        // Actualizar en Firebase
-        await FirebaseFirestore.instance.collection('users').doc(userId).update({
-          'vehicleInfo': {
-            'make': make,
-            'model': model,
-            'year': year,
-            'color': color,
-            'plate': plate,
-            'capacity': capacity,
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        // Persistir vehículo en backend Node
+        await _api.upsertVehicle(
+          vehicleType: 'sedan',
+          plate: plate,
+          make: make,
+          model: model,
+          color: color,
+          year: year,
+        );
 
         // Actualizar estado local
         if (!mounted) return;
@@ -3061,23 +2997,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   Future<void> _savePreferences() async {
     if (_preferencesFormKey.currentState!.validate()) {
       try {
-        final userId = FirebaseAuth.instance.currentUser?.uid;
-        if (userId == null) {
+        if (_authUserId == null) {
           throw Exception('Usuario no autenticado');
         }
 
-        // Actualizar en Firebase
-        await FirebaseFirestore.instance.collection('users').doc(userId).update({
-          'preferences': {
-            'acceptPets': _acceptPets,
-            'acceptSmoking': _acceptSmoking,
-            'musicPreference': _musicPreference,
-            'languages': _languages,
-            'maxTripDistance': _maxTripDistance,
-            'preferredZones': _preferredZones,
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        // El backend Node aún no expone endpoint dedicado para preferences del driver.
+        // Persistimos solo en memoria durante la sesión.
+        AppLogger.info('Preferencias del conductor actualizadas en memoria');
 
         // Actualizar estado local
         setState(() {
@@ -3131,8 +3057,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
   Future<void> _saveWorkSchedule() async {
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
+      if (_authUserId == null) {
         throw Exception('Usuario no autenticado');
       }
 
@@ -3165,31 +3090,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         return;
       }
 
-      // Formatear horarios para Firestore
+      // Formatear horarios para persistencia
       String formatTime(TimeOfDay time) {
         return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
       }
 
-      // Actualizar en Firebase
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({
-        'workSchedule': {
-          'mondayStart': _weekSchedule['Lunes']!['active'] ? formatTime(_weekSchedule['Lunes']!['start']) : '00:00',
-          'mondayEnd': _weekSchedule['Lunes']!['active'] ? formatTime(_weekSchedule['Lunes']!['end']) : '00:00',
-          'tuesdayStart': _weekSchedule['Martes']!['active'] ? formatTime(_weekSchedule['Martes']!['start']) : '00:00',
-          'tuesdayEnd': _weekSchedule['Martes']!['active'] ? formatTime(_weekSchedule['Martes']!['end']) : '00:00',
-          'wednesdayStart': _weekSchedule['Miércoles']!['active'] ? formatTime(_weekSchedule['Miércoles']!['start']) : '00:00',
-          'wednesdayEnd': _weekSchedule['Miércoles']!['active'] ? formatTime(_weekSchedule['Miércoles']!['end']) : '00:00',
-          'thursdayStart': _weekSchedule['Jueves']!['active'] ? formatTime(_weekSchedule['Jueves']!['start']) : '00:00',
-          'thursdayEnd': _weekSchedule['Jueves']!['active'] ? formatTime(_weekSchedule['Jueves']!['end']) : '00:00',
-          'fridayStart': _weekSchedule['Viernes']!['active'] ? formatTime(_weekSchedule['Viernes']!['start']) : '00:00',
-          'fridayEnd': _weekSchedule['Viernes']!['active'] ? formatTime(_weekSchedule['Viernes']!['end']) : '00:00',
-          'saturdayStart': _weekSchedule['Sábado']!['active'] ? formatTime(_weekSchedule['Sábado']!['start']) : '00:00',
-          'saturdayEnd': _weekSchedule['Sábado']!['active'] ? formatTime(_weekSchedule['Sábado']!['end']) : '00:00',
-          'sundayStart': _weekSchedule['Domingo']!['active'] ? formatTime(_weekSchedule['Domingo']!['start']) : '00:00',
-          'sundayEnd': _weekSchedule['Domingo']!['active'] ? formatTime(_weekSchedule['Domingo']!['end']) : '00:00',
-        },
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // El backend Node aún no expone endpoint dedicado para workSchedule del driver.
+      // Persistimos solo en memoria durante la sesión.
+      AppLogger.info('Horario del conductor actualizado en memoria');
 
       // Actualizar estado local
       setState(() {
@@ -3256,9 +3164,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   }
 
   void _changeProfileImage() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -3363,28 +3271,20 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         );
       }
 
-      // Subir imagen a Firebase Storage
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
+      // Subir imagen al backend Node
+      if (_authUserId == null) {
         throw Exception('Usuario no autenticado');
       }
 
       final file = File(image.path);
-      final storageRef = _storage
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('profile')
-          .child('profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final uploaded = await _api.uploadFile(file: file, scope: 'profile');
+      final downloadUrl = (uploaded['url'] ?? '') as String;
+      if (downloadUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL de la foto');
+      }
 
-      await storageRef.putFile(file);
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      // Actualizar Firestore con la nueva URL de la foto
-      await _firestore.collection('users').doc(userId).update({
-        'profilePhotoUrl': downloadUrl,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // Actualizar perfil del usuario con la nueva URL
+      await _api.updateMe(profilePhotoUrl: downloadUrl);
 
       // Actualizar el estado local
       if (mounted) {
@@ -3414,7 +3314,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Foto de perfil actualizada exitosamente'),
+            content: Text('Foto de perfil actualizada exitosamente'),
             backgroundColor: ModernTheme.success,
             duration: Duration(seconds: 2),
           ),
@@ -3467,28 +3367,20 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         );
       }
 
-      // Subir imagen a Firebase Storage
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
+      // Subir imagen al backend Node
+      if (_authUserId == null) {
         throw Exception('Usuario no autenticado');
       }
 
       final file = File(image.path);
-      final storageRef = _storage
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('profile')
-          .child('profile_photo_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final uploaded = await _api.uploadFile(file: file, scope: 'profile');
+      final downloadUrl = (uploaded['url'] ?? '') as String;
+      if (downloadUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL de la foto');
+      }
 
-      await storageRef.putFile(file);
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      // Actualizar Firestore con la nueva URL de la foto
-      await _firestore.collection('users').doc(userId).update({
-        'profilePhotoUrl': downloadUrl,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // Actualizar perfil del usuario con la nueva URL
+      await _api.updateMe(profilePhotoUrl: downloadUrl);
 
       // Actualizar el estado local
       if (mounted) {

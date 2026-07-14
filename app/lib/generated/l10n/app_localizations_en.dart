@@ -575,7 +575,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get preparingExperience => 'Preparing your experience...';
 
   @override
-  String get appVersion => 'Version 2.0.0';
+  String get appVersion => 'Version 1.0.5';
 
   @override
   String get createAccount => 'Create account';

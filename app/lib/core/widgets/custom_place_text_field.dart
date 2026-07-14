@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 
 /// ✅ WIDGET CUSTOM: Resuelve problema de borrado del teclado
@@ -51,37 +52,22 @@ class _CustomPlaceTextFieldState extends State<CustomPlaceTextField> {
     }
 
     try {
-      // URL del Google Places Autocomplete API
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-        '?input=${Uri.encodeComponent(query)}'
-        '&key=${widget.googleApiKey}'
-        '&language=es'
-        '&components=country:pe', // Limitado a Perú
-      );
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['status'] == 'OK') {
-          final predictions = (data['predictions'] as List)
-              .map((p) => PlacePrediction.fromJson(p))
-              .toList();
-
-          AppLogger.debug('Google Places: ${predictions.length} resultados para "$query"');
-          return predictions;
-        } else {
-          if (data['error_message'] != null) {
-            AppLogger.warning('Google Places API: ${data['status']} - ${data['error_message']}');
-          }
-          return [];
-        }
-      } else {
-        AppLogger.error('Google Places API error: ${response.statusCode}');
-        return [];
-      }
+      // Usa backend Node en VPS: Google Places (si key/billing OK) → fallback OSM Nominatim.
+      final data = await RapiApiClient.instance.mapsAutocomplete(query: query);
+      final preds = (data['predictions'] as List?) ?? const [];
+      final predictions = preds
+          .whereType<Map<String, dynamic>>()
+          .map((p) => PlacePrediction(
+                placeId: (p['placeId'] as String?) ?? '',
+                description: (p['description'] as String?) ?? '',
+                mainText: (p['mainText'] as String?) ?? (p['description'] as String?) ?? '',
+                secondaryText: (p['secondaryText'] as String?) ?? '',
+                lat: (p['lat'] as num?)?.toDouble(),
+                lng: (p['lng'] as num?)?.toDouble(),
+              ))
+          .toList();
+      AppLogger.debug('Places (${data['provider']}): ${predictions.length} resultados para "$query"');
+      return predictions;
     } catch (e) {
       AppLogger.error('Error buscando lugares: $e');
       return [];

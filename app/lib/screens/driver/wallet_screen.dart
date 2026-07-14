@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Para cargar assets (fuente TTF)
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
@@ -13,9 +12,10 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../widgets/animated/modern_animated_widgets.dart';
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../services/payment_service.dart';
+import '../../services/rapi_api_client.dart';
 import '../../widgets/mercadopago_checkout_pro_widget.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -30,31 +30,36 @@ class _WalletScreenState extends State<WalletScreen>
   late AnimationController _cardsController;
   late AnimationController _transactionsController;
   late TabController _tabController;
-  
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final PaymentService _paymentService = PaymentService();
+  final RapiApiClient _api = RapiApiClient.instance;
   final bool _isLoading = false;
 
-  // Balance desde Firebase (colección wallets)
+  // Balance desde el backend Node (wallet)
   double _currentBalance = 0.0;
   bool _isBalanceLoaded = false;
   final double _weeklyEarnings = 0.0;
   final double _monthlyEarnings = 0.0;
 
+  // ID del usuario actual (obtenido vía api.me())
+  String? _currentUserId;
+  String? _currentUserName;
+  String? _currentUserEmail;
+
   // ✅ NUEVO: Ganancias semanales para el gráfico (7 días: L, M, M, J, V, S, D)
   final List<double> _weeklyEarningsChart = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-  
+
   // Método de retiro seleccionado
   String _selectedWithdrawalMethod = 'bank';
   final TextEditingController _withdrawalAmountController = TextEditingController();
 
   // Controlador para recarga de saldo
   final TextEditingController _rechargeAmountController = TextEditingController();
-  
-  // Subscription para escuchar cambios de wallet
-  StreamSubscription<DocumentSnapshot>? _walletSubscription;
 
-  // Transacciones reales desde Firebase (inicialmente vacío)
+  // Timer para polling de balance (reemplaza el StreamSubscription de Firestore)
+  Timer? _walletPollTimer;
+
+  // Transacciones reales desde el backend Node (inicialmente vacío)
   final List<Transaction> _transactions = [];
   
   // Estadísticas
@@ -105,42 +110,61 @@ class _WalletScreenState extends State<WalletScreen>
     
     _tabController = TabController(length: 4, vsync: this);
 
-    // Configurar listener de wallet (una sola vez en initState)
-    _setupWalletListener();
+    // Cargar datos del usuario y balance desde el backend Node
+    _bootstrap();
 
     // Inicializar servicio de pagos
     _initializePaymentService();
   }
 
-  /// Configurar listener de wallet desde Firestore (llamado una sola vez desde initState)
-  void _setupWalletListener() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    _walletSubscription = _firestore.collection('wallets').doc(user.uid).snapshots().listen((snapshot) {
+  /// Bootstrap inicial: obtiene el usuario actual, hace fetch del balance,
+  /// y arranca el polling periódico (reemplaza el listener reactivo de Firestore).
+  Future<void> _bootstrap() async {
+    try {
+      final me = await _api.me();
       if (!mounted) return;
-      if (snapshot.exists) {
-        final walletData = snapshot.data();
-        if (walletData != null) {
-          final newBalance = (walletData['serviceCredits'] as num?)?.toDouble() ?? 0.0;
-
-          // Solo actualizar si el balance cambió
-          if (_currentBalance != newBalance) {
-            setState(() {
-              _currentBalance = newBalance;
-              _isBalanceLoaded = true;
-            });
-          } else if (!_isBalanceLoaded) {
-            setState(() => _isBalanceLoaded = true);
-          }
-        }
-      } else {
-        // Wallet no existe aún, mostrar 0
-        if (!_isBalanceLoaded) {
-          setState(() => _isBalanceLoaded = true);
-        }
+      if (me != null) {
+        _currentUserId = (me['id'] ?? me['uid'])?.toString();
+        _currentUserName = (me['name'] ?? me['displayName']) as String?;
+        _currentUserEmail = me['email'] as String?;
       }
+    } catch (e) {
+      debugPrint('Error obteniendo usuario actual: $e');
+    }
+
+    await _refreshWalletBalance();
+
+    // ✅ Polling cada 30s como sustituto del listener reactivo de Firestore.
+    // TODO(node-migration): reemplazar con RapiSseClient.instance.walletUpdates
+    // cuando el backend exponga ese evento en SSE.
+    _walletPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      _refreshWalletBalance();
     });
+  }
+
+  /// Refresca el balance de la wallet consultando el backend Node.
+  Future<void> _refreshWalletBalance() async {
+    try {
+      final response = await _api.walletBalance();
+      if (!mounted) return;
+      // Backend puede devolver el balance como `balance` o `serviceCredits`
+      final newBalance =
+          (response['balance'] as num?)?.toDouble() ??
+              (response['serviceCredits'] as num?)?.toDouble() ??
+              0.0;
+      if (_currentBalance != newBalance || !_isBalanceLoaded) {
+        setState(() {
+          _currentBalance = newBalance;
+          _isBalanceLoaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error refrescando balance: $e');
+      if (!_isBalanceLoaded && mounted) {
+        setState(() => _isBalanceLoaded = true);
+      }
+    }
   }
 
   Future<void> _initializePaymentService() async {
@@ -153,7 +177,7 @@ class _WalletScreenState extends State<WalletScreen>
   
   @override
   void dispose() {
-    _walletSubscription?.cancel();
+    _walletPollTimer?.cancel();
     _balanceController.dispose();
     _cardsController.dispose();
     _transactionsController.dispose();
@@ -162,21 +186,20 @@ class _WalletScreenState extends State<WalletScreen>
     _rechargeAmountController.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
+    // Si no hemos podido obtener aún el usuario, mostramos loading;
+    // si al final el bootstrap falló, mostramos "no autenticado".
+    if (!_isBalanceLoaded && _currentUserId == null) {
       return Scaffold(
         backgroundColor: context.surfaceColor,
         appBar: AppBar(
           backgroundColor: ModernTheme.rappiOrange,
-          title: Text('Mi Billetera', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+          title: Text('Mi Billetera',
+              style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
         ),
-        body: Center(
-          child: Text('Usuario no autenticado'),
-        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -1550,30 +1573,14 @@ class _WalletScreenState extends State<WalletScreen>
   }
   
   void _showTransactionDetails(Transaction transaction) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.0),
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).dividerColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            SizedBox(height: 20),
             Text(
               'Detalles de la Transacción',
               style: TextStyle(
@@ -1790,15 +1797,19 @@ class _WalletScreenState extends State<WalletScreen>
     );
 
     try {
-      // Obtener usuario actual
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
+      // Obtener usuario actual (ya obtenido en _bootstrap; si es null re-intentamos)
+      String? driverId = _currentUserId;
+      if (driverId == null) {
+        final me = await _api.me();
+        driverId = (me?['id'] ?? me?['uid'])?.toString();
+      }
+      if (driverId == null) {
         throw Exception('Usuario no autenticado');
       }
 
       // Solicitar retiro con MercadoPago Money Out API
       final withdrawalResult = await _paymentService.requestWithdrawal(
-        driverId: user.uid,
+        driverId: driverId,
         amount: amount,
         method: 'bank_transfer', // Método de retiro: transferencia bancaria
         bankName: bankData['bankName'] ?? '',
@@ -2684,21 +2695,23 @@ class _WalletScreenState extends State<WalletScreen>
     );
 
     try {
-      // Obtener datos del usuario actual
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado');
+      // Obtener datos del usuario actual desde el backend Node.
+      // Preferimos los valores cacheados desde _bootstrap para evitar un round-trip;
+      // si no están, hacemos api.me() en el momento.
+      String? userName = _currentUserName;
+      String? userEmail = _currentUserEmail;
+      String? userId = _currentUserId;
+      if (userName == null || userEmail == null || userId == null) {
+        final me = await _api.me();
+        if (me == null) {
+          throw Exception('Usuario no autenticado');
+        }
+        userId = (me['id'] ?? me['uid'])?.toString();
+        userName = (me['name'] ?? me['displayName']) as String?;
+        userEmail = me['email'] as String?;
       }
-
-      // Obtener información adicional del usuario desde Firestore
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final userData = userDoc.data();
-      final userName = userData?['name'] ?? user.displayName ?? 'Usuario';
-      final userEmail = user.email ?? 'usuario@rapiteam.app';
+      userName ??= 'Usuario';
+      userEmail ??= 'usuario@rapiteam.app';
 
       // Generar ID único para la recarga
       final rechargeId = 'RECARGA_${DateTime.now().millisecondsSinceEpoch}';

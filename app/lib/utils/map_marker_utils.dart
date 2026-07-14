@@ -77,26 +77,16 @@ class MapMarkerUtils {
 
   // ==================== CONDUCTOR ====================
 
-  /// Auto vista aérea en burbuja blanca con glow verde
+  /// Auto vista aérea — uses BitmapDescriptor.asset (most reliable API)
   static Future<BitmapDescriptor> getCarTopViewIcon({
     String serviceType = 'standard',
   }) async {
     final key = 'car_top_$serviceType';
     if (_iconCache.containsKey(key)) return _iconCache[key]!;
 
-    // TODO: Use glow color based on service type (xl, premium, standard) for marker effects
-
-    final icon = await SizedBox(
-      width: 52,
-      height: 52,
-      child: Image.asset(
-        'assets/images/markers/car_top_view.png',
-        fit: BoxFit.contain,
-      ),
-    ).toBitmapDescriptor(
-      logicalSize: _squareLogical,
-      imageSize: _squareImage,
-      waitToRender: const Duration(milliseconds: 500),
+    final icon = await BitmapDescriptor.asset(
+      const ImageConfiguration(size: Size(48, 48)),
+      'assets/images/markers/car_top_view.png',
     );
 
     _iconCache[key] = icon;
@@ -604,7 +594,7 @@ class _PinTailPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ── Reference Point Dot Icons (small circles for map, like Plus App) ──
+// ── Reference Point Dot Icons (small circles for map, like Rappi Team) ──
 
 /// Small gray circle for inactive reference points
 Future<BitmapDescriptor> getReferencePointIcon() async {

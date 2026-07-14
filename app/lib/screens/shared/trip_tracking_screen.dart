@@ -11,6 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import '../../core/utils/responsive_bottom_sheet.dart';
 
 // Models
 import '../../models/trip_model.dart';
@@ -44,6 +45,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     with TickerProviderStateMixin {
   GoogleMapController? _mapController;
   StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription<Map<String, dynamic>>? _rideUpdatesSubscription;
   Timer? _driverLocationTimer;
   Timer? _etaTimer;
 
@@ -69,7 +71,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   double _distanceToPickup = 0.0;
   String? _currentStatusKey;
   bool _isMapLoaded = false;
-  bool _showDriverInfo = true;
+  final bool _showDriverInfo = true;
 
   // Custom marker icons
   BitmapDescriptor? _carIcon;
@@ -86,10 +88,22 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   // Prevents showing completion/cancellation dialog more than once
   bool _isCompletionHandled = false;
 
+  // Live rating during trip
+  int _liveRating = 0;
+
+  // Smooth driver marker animation
+  AnimationController? _driverAnimController;
+  LatLng? _previousDriverLatLng;
+  double _driverBearing = 0.0;
+
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
+    _driverAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
     _loadCustomIcons();
     _loadRideData();
     _startLocationTracking();
@@ -101,7 +115,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     try {
       _carIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(45, 45)),
-        'assets/images/markers/car_3d.png',
+        'assets/images/markers/car_top_view.png',
       );
       _destinationIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(40, 40)),
@@ -128,8 +142,14 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     _positionSubscription?.cancel();
     _positionSubscription = null;
 
+    _rideUpdatesSubscription?.cancel();
+    _rideUpdatesSubscription = null;
+
     _waitTimer?.cancel();
     _waitTimer = null;
+
+    _driverAnimController?.dispose();
+    _driverAnimController = null;
 
     _pulseController.dispose();
     _slideController.dispose();
@@ -204,7 +224,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   }
 
   void _listenToRideUpdates() {
-    FirebaseService().listenToRideUpdates(widget.rideId, (ride) {
+    _rideUpdatesSubscription?.cancel();
+    _rideUpdatesSubscription = FirebaseService().listenToRideUpdates(widget.rideId, (ride) {
       debugPrint('🔄 TRACKING: ride update - status=${ride.status}, driverId=${ride.driverId}');
       if (mounted) {
         setState(() {
@@ -213,6 +234,11 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           debugPrint('🔄 TRACKING: statusKey=$_currentStatusKey');
           _setupMapMarkers();
         });
+
+        // Recalculate route when trip transitions to in_progress
+        if (ride.status == 'in_progress') {
+          _calculateRoute();
+        }
 
         // Handle ride completion → show rating dialog
         if (ride.status == 'completed' && !_isCompletionHandled) {
@@ -229,9 +255,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
               backgroundColor: Colors.orange,
             ),
           );
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
+          Navigator.of(context).pushNamedAndRemoveUntil('/passenger/home', (route) => false);
         }
       }
     });
@@ -354,7 +378,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         }
       });
     } catch (e, stackTrace) {
-      AppLogger.error('Error al obtener ubicacion', e, stackTrace);
+      AppLogger.error('Error al obtener ubicación', e, stackTrace);
     }
   }
 
@@ -395,45 +419,131 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     if (_currentRide?.driverId == null) return;
 
     try {
-      final driverLocation = await FirebaseService()
-          .getDriverLocation(_currentRide!.driverId);
+      // Antes se leia rides/{rideId}.driverLocation (Firestore GeoPoint).
+      // Ahora leemos la ubicacion desde el backend Node via FirebaseService,
+      // que internamente delega en RapiApiClient.driverLocation(driverId).
+      final driverData = await FirebaseService()
+          .getDriverLocationWithHeading(_currentRide!.driverId);
 
-      if (driverLocation != null && mounted) {
-        _updateDriverPosition(driverLocation);
+      if (driverData != null && mounted) {
+        final newPosition = LatLng(driverData['lat']!, driverData['lng']!);
+        final heading = driverData['heading'] ?? 0.0;
+        _updateDriverPosition(newPosition, firestoreHeading: heading);
       }
     } catch (e, stackTrace) {
-      AppLogger.error('Error al actualizar ubicacion del conductor', e, stackTrace);
+      AppLogger.error('Error al actualizar ubicación del conductor', e, stackTrace);
     }
   }
 
-  void _updateDriverPosition(LatLng position) {
+  void _updateDriverPosition(LatLng newPosition, {double firestoreHeading = 0.0}) {
     if (!mounted) return;
 
-    setState(() {
-      _driverLatLng = position;
+    final oldPos = _driverLatLng;
+
+    // Calculate bearing for car rotation
+    if (oldPos != null) {
+      final dist = Geolocator.distanceBetween(
+        oldPos.latitude, oldPos.longitude,
+        newPosition.latitude, newPosition.longitude,
+      );
+      // Only update bearing if driver actually moved (>5m) to avoid jitter
+      if (dist > 5) {
+        // Prefer Firestore heading if available, otherwise calculate from positions
+        if (firestoreHeading != 0.0) {
+          _driverBearing = firestoreHeading;
+        } else {
+          _driverBearing = Geolocator.bearingBetween(
+            oldPos.latitude, oldPos.longitude,
+            newPosition.latitude, newPosition.longitude,
+          );
+        }
+      }
+    } else if (firestoreHeading != 0.0) {
+      _driverBearing = firestoreHeading;
+    }
+
+    // If no previous position or animation controller unavailable, snap instantly
+    if (oldPos == null || _driverAnimController == null) {
+      _driverLatLng = newPosition;
       _driverPosition = Position(
-        latitude: position.latitude,
-        longitude: position.longitude,
+        latitude: newPosition.latitude,
+        longitude: newPosition.longitude,
         timestamp: DateTime.now(),
         accuracy: 10.0,
         altitude: 0.0,
-        heading: 0.0,
+        heading: _driverBearing,
         speed: 0.0,
         speedAccuracy: 0.0,
         altitudeAccuracy: 0.0,
         headingAccuracy: 0.0,
       );
-    });
+      if (mounted) setState(() {});
+      _setupMapMarkers();
+      _calculateDistances();
+      _updateDriverRouteOnly();
+      _updateCameraBounds();
+      _previousDriverLatLng = newPosition;
+      return;
+    }
 
-    _setupMapMarkers();
-    _calculateDistances();
-    _updateDriverRouteOnly();
-    _updateCameraBounds();
+    // Smooth animation: interpolate from old to new position
+    _previousDriverLatLng = oldPos;
+    final controller = _driverAnimController!;
+    controller.reset();
+
+    final latTween = Tween<double>(begin: oldPos.latitude, end: newPosition.latitude);
+    final lngTween = Tween<double>(begin: oldPos.longitude, end: newPosition.longitude);
+    final curved = CurvedAnimation(parent: controller, curve: Curves.easeInOut);
+
+    void animListener() {
+      if (!mounted || _isDisposed) return;
+      final animLat = latTween.evaluate(curved);
+      final animLng = lngTween.evaluate(curved);
+      _driverLatLng = LatLng(animLat, animLng);
+
+      // Update only the driver marker (lightweight, no full _setupMapMarkers)
+      _markers.removeWhere((m) => m.markerId.value == 'driver');
+      _markers.add(Marker(
+        markerId: const MarkerId('driver'),
+        position: _driverLatLng!,
+        icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        rotation: _driverBearing,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
+      ));
+      setState(() {});
+    }
+
+    controller.addListener(animListener);
+    controller.forward().then((_) {
+      controller.removeListener(animListener);
+      if (!mounted) return;
+      // Final state: update everything
+      _driverLatLng = newPosition;
+      _driverPosition = Position(
+        latitude: newPosition.latitude,
+        longitude: newPosition.longitude,
+        timestamp: DateTime.now(),
+        accuracy: 10.0,
+        altitude: 0.0,
+        heading: _driverBearing,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+        altitudeAccuracy: 0.0,
+        headingAccuracy: 0.0,
+      );
+      _setupMapMarkers();
+      _calculateDistances();
+      _updateDriverRouteOnly();
+      _updateCameraBounds();
+    });
   }
 
   /// Update driver→pickup polyline using Directions API (cached)
   void _updateDriverRouteOnly() {
     if (_currentRide == null) return;
+    // Don't touch polylines during in_progress - main_route handles it
+    if (_currentRide!.status == 'in_progress') return;
 
     // Remove old driver route
     _polylines.removeWhere((p) => p.polylineId.value == 'driver_route');
@@ -452,9 +562,10 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       _polylines.add(Polyline(
         polylineId: const PolylineId('driver_route'),
         points: routePoints,
-        color: Colors.blue,
+        color: AppColors.rappiOrange.withValues(alpha: 0.7),
         width: 4,
-        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
       ));
 
       // Fetch real route if not cached or driver moved significantly (>200m)
@@ -489,9 +600,10 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         _polylines.add(Polyline(
           polylineId: const PolylineId('driver_route'),
           points: route,
-          color: Colors.blue,
+          color: AppColors.rappiOrange.withValues(alpha: 0.7),
           width: 4,
-          patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+          startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
         ));
         setState(() {});
       }
@@ -504,34 +616,47 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
   /// Animate camera to show driver + relevant point (pickup or destination)
   void _updateCameraBounds() {
-    if (_mapController == null || _driverLatLng == null || _currentRide == null) return;
+    if (_mapController == null || _currentRide == null) return;
 
-    LatLng target;
-    if (_currentRide!.status == 'in_progress') {
-      target = LatLng(
-        _currentRide!.destinationLocation.latitude,
-        _currentRide!.destinationLocation.longitude,
-      );
+    final pickup = LatLng(
+      _currentRide!.pickupLocation.latitude,
+      _currentRide!.pickupLocation.longitude,
+    );
+    final destination = LatLng(
+      _currentRide!.destinationLocation.latitude,
+      _currentRide!.destinationLocation.longitude,
+    );
+
+    final isInProgress = _currentRide!.status == 'in_progress';
+
+    // During trip: show pickup + destination route only (not driver GPS which may be far)
+    // During pickup: show driver + pickup
+    final points = <LatLng>[];
+    if (isInProgress) {
+      points.addAll([pickup, destination]);
     } else {
-      target = LatLng(
-        _currentRide!.pickupLocation.latitude,
-        _currentRide!.pickupLocation.longitude,
-      );
+      if (_driverLatLng != null) points.add(_driverLatLng!);
+      points.add(pickup);
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
     }
 
     final bounds = LatLngBounds(
-      southwest: LatLng(
-        math.min(_driverLatLng!.latitude, target.latitude),
-        math.min(_driverLatLng!.longitude, target.longitude),
-      ),
-      northeast: LatLng(
-        math.max(_driverLatLng!.latitude, target.latitude),
-        math.max(_driverLatLng!.longitude, target.longitude),
-      ),
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
     );
 
     _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80),
+      CameraUpdate.newLatLngBounds(bounds, 50),
     );
   }
 
@@ -603,6 +728,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
     _markers.clear();
 
+    final isPickupPhase = _currentRide!.status == 'accepted' ||
+        _currentRide!.status == 'driver_arriving';
+
     // Origin marker
     _markers.add(Marker(
       markerId: const MarkerId('pickup'),
@@ -617,19 +745,21 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
     ));
 
-    // Destination marker
-    _markers.add(Marker(
-      markerId: const MarkerId('dropoff'),
-      position: LatLng(
-        _currentRide!.destinationLocation.latitude,
-        _currentRide!.destinationLocation.longitude,
-      ),
-      infoWindow: InfoWindow(
-        title: 'Destino',
-        snippet: _currentRide!.destinationAddress,
-      ),
-      icon: _destinationIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-    ));
+    // Destination marker (only during trip, not during pickup phase)
+    if (!isPickupPhase) {
+      _markers.add(Marker(
+        markerId: const MarkerId('dropoff'),
+        position: LatLng(
+          _currentRide!.destinationLocation.latitude,
+          _currentRide!.destinationLocation.longitude,
+        ),
+        infoWindow: InfoWindow(
+          title: 'Destino',
+          snippet: _currentRide!.destinationAddress,
+        ),
+        icon: _destinationIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ));
+    }
 
     // Driver marker (if available)
     if (_driverLatLng != null) {
@@ -641,11 +771,14 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           snippet: _currentRide!.vehicleInfo?['driverName'] ?? 'Conductor asignado',
         ),
         icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        rotation: _driverBearing,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
       ));
     }
 
-    // Current position marker
-    if (_currentPosition != null) {
+    // Current position marker (hidden during pickup — passenger already knows where they are)
+    if (_currentPosition != null && !isPickupPhase) {
       _markers.add(Marker(
         markerId: const MarkerId('current'),
         position: LatLng(
@@ -653,8 +786,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           _currentPosition!.longitude,
         ),
         infoWindow: const InfoWindow(
-          title: 'Mi ubicacion',
-          snippet: 'Tu ubicacion actual',
+          title: 'Mi ubicación',
+          snippet: 'Tu ubicación actual',
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
       ));
@@ -728,34 +861,45 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     final mainRoute = _cachedMainRoute ?? await _getRoutePolylinePoints(pickup, destination);
     _cachedMainRoute ??= mainRoute;
 
-    _polylines.add(Polyline(
-      polylineId: const PolylineId('main_route'),
-      points: mainRoute,
-      color: AppColors.rappiOrange,
-      width: 5,
-      startCap: Cap.roundCap,
-      endCap: Cap.roundCap,
-    ));
+    final isPickupPhase = _currentRide!.status == 'accepted' ||
+        _currentRide!.status == 'driver_arriving';
 
-    // Driver → pickup route (uses Directions API, cached with 200m threshold)
-    if (_driverLatLng != null &&
-        (_currentRide!.status == 'accepted' || _currentRide!.status == 'driver_arriving')) {
-      final routePoints = _cachedDriverRoute ?? [_driverLatLng!, pickup];
+    if (isPickupPhase) {
+      // During pickup phase: only show driver → pickup route
+      // Passenger sees the driver coming to them (like Google Maps navigation)
+      if (_driverLatLng != null) {
+        final routePoints = _cachedDriverRoute ?? [_driverLatLng!, pickup];
+        _polylines.add(Polyline(
+          polylineId: const PolylineId('driver_route'),
+          points: routePoints,
+          color: AppColors.rappiOrange.withValues(alpha: 0.7),
+          width: 4,
+          startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        ));
+        // Fetch real route async (will update polyline when ready)
+        _fetchDriverRouteIfNeeded(_driverLatLng!, pickup);
+      }
+    } else {
+      // During trip (in_progress): show pickup → destination route
       _polylines.add(Polyline(
-        polylineId: const PolylineId('driver_route'),
-        points: routePoints,
-        color: Colors.blue,
-        width: 4,
-        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+        polylineId: const PolylineId('main_route'),
+        points: mainRoute,
+        color: AppColors.rappiOrange,
+        width: 5,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
       ));
-      // Fetch real route async (will update polyline when ready)
-      _fetchDriverRouteIfNeeded(_driverLatLng!, pickup);
     }
 
     if (mounted) {
       setState(() {
         _routePoints = mainRoute;
+        // Rebuild markers to include destination marker during in_progress
+        _setupMapMarkers();
       });
+      await Future.delayed(const Duration(milliseconds: 500));
+      _centerMapOnRoute();
     }
   }
 
@@ -789,24 +933,34 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     }
 
     await _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 100),
+      CameraUpdate.newLatLngBounds(bounds, 50),
     );
   }
 
   Future<void> _callDriver() async {
-    if (_currentRide?.vehicleInfo?['driverPhone'] == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Telefono del conductor no disponible'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    var phone = _currentRide?.vehicleInfo?['driverPhone'] as String? ?? '';
+
+    // TODO(node-migration): agregar fallback llamando a /api/users/:id o
+    // exponer el telefono del conductor en el payload del ride cuando exista.
+    // Por ahora solo confiamos en el telefono embebido en vehicleInfo.
+
+    if (phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Teléfono del conductor no disponible'), backgroundColor: Colors.orange),
+        );
+      }
       return;
     }
 
-    final Uri phoneUri = Uri(scheme: 'tel', path: _currentRide!.vehicleInfo?['driverPhone'] ?? '');
+    if (!phone.startsWith('+')) phone = '+51$phone';
+    final Uri phoneUri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(phoneUri)) {
       await launchUrl(phoneUri);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se puede llamar desde este dispositivo'), backgroundColor: Colors.orange),
+      );
     }
   }
 
@@ -929,9 +1083,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       try {
         await FirebaseService().cancelRide(widget.rideId);
         if (mounted) {
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
+          Navigator.of(context).pushNamedAndRemoveUntil('/passenger/home', (route) => false);
         }
       } catch (e) {
         if (mounted) {
@@ -999,7 +1151,21 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             ? 'Conductor asignado. Tiempo estimado: $eta'
             : 'Driver assigned. Estimated time: $eta';
       case 'in_progress':
-        return isEs ? 'En camino al destino' : 'On the way to destination';
+        // Calculate estimated arrival time as absolute clock time
+        final etaKey = _estimatedArrivalKey;
+        if (etaKey != null && etaKey != 'verySoon') {
+          final minutes = int.tryParse(etaKey.replaceAll(' min', '')) ?? 0;
+          if (minutes > 0) {
+            final arrivalTime = DateTime.now().add(Duration(minutes: minutes));
+            final hour = arrivalTime.hour > 12 ? arrivalTime.hour - 12 : (arrivalTime.hour == 0 ? 12 : arrivalTime.hour);
+            final minuteStr = arrivalTime.minute.toString().padLeft(2, '0');
+            final period = arrivalTime.hour >= 12 ? 'PM' : 'AM';
+            return isEs
+                ? 'Llegarás aproximadamente a las $hour:$minuteStr $period'
+                : 'You\'ll arrive at approximately $hour:$minuteStr $period';
+          }
+        }
+        return isEs ? 'Llegando muy pronto' : 'Arriving very soon';
       case 'completed':
         return isEs ? 'Viaje completado' : 'Trip completed';
       case 'cancelled':
@@ -1022,7 +1188,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('Cargando informacion del viaje...'),
+              Text('Cargando información del viaje...'),
             ],
           ),
         ),
@@ -1030,7 +1196,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     }
 
     // Start wait timer only when driver has physically arrived
-    if (_currentRide!.status == 'arrived') {
+    if (_currentRide!.status == 'arrived' || _currentRide!.status == 'driver_arriving') {
       _startWaitTimer();
     }
 
@@ -1048,7 +1214,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     final tripPrice = _currentRide?.finalFare ?? _currentRide?.estimatedFare ?? 0.0;
     final paymentMethod = vehicleInfo?['paymentMethod'] as String? ?? 'cash';
     // isArrived: driver has physically arrived at the pickup point
-    final isArrived = _currentRide!.status == 'arrived';
+    final isArrived = _currentRide!.status == 'arrived' || _currentRide!.status == 'driver_arriving' || _currentRide!.status == 'waiting_verification';
     // isInProgress: trip has started
     final isInProgress = _currentRide!.status == 'in_progress';
 
@@ -1069,6 +1235,11 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                   _currentRide!.pickupLocation.longitude,
                 ),
                 zoom: 15,
+              ),
+              // Bottom sheet covers ~55% of screen — push map content up, add top margin too
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).size.height * 0.58,
+                top: MediaQuery.of(context).padding.top + 20,
               ),
               markers: _markers,
               polylines: _polylines,
@@ -1101,7 +1272,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
           // ── BOTTOM SHEET ──
           DraggableScrollableSheet(
-            initialChildSize: isArrived ? 0.72 : (isInProgress ? 0.60 : 0.62),
+            initialChildSize: isArrived ? 0.72 : (isInProgress ? 0.35 : 0.62),
             minChildSize: 0.25,
             maxChildSize: 0.85,
             builder: (ctx, scrollController) => Container(
@@ -1234,7 +1405,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                     child: Row(
                       children: [
                         // Driver photo + rating
-                        Column(
+                        Expanded(child: Column(
                           children: [
                             Stack(
                               clipBehavior: Clip.none,
@@ -1271,16 +1442,13 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             const SizedBox(height: 6),
                             Text(driverName.split(' ').first, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
                           ],
-                        ),
-                        const Spacer(),
+                        )),
                         // Contact driver
-                        GestureDetector(
+                        Expanded(child: GestureDetector(
                           onTap: () {
-                            showModalBottomSheet(
+                            showResponsiveBottomSheet(
                               context: context,
-                              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-                              builder: (ctx) => SafeArea(
-                                child: Column(
+                              builder: (ctx) => Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const SizedBox(height: 16),
@@ -1298,7 +1466,6 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                                     ),
                                     const SizedBox(height: 16),
                                   ],
-                                ),
                               ),
                             );
                           },
@@ -1316,10 +1483,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                               Text(isEs ? 'Contactar\nal conductor' : 'Contact\ndriver', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
                             ],
                           ),
-                        ),
-                        const SizedBox(width: 24),
+                        )),
                         // Security
-                        GestureDetector(
+                        Expanded(child: GestureDetector(
                           onTap: () => _showSecuritySheet(context, isEs, driverName, driverPhoto, driverRating, vehicleInfo),
                           child: Column(
                             children: [
@@ -1347,7 +1513,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                               Text(isEs ? 'Seguridad' : 'Safety', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
                             ],
                           ),
-                        ),
+                        )),
                       ],
                     ),
                   ),
@@ -1371,7 +1537,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                isEs ? '¿Tienes alguna observacion\npara el conductor?' : 'Any observation\nfor the driver?',
+                                isEs ? '¿Tienes alguna observación\npara el conductor?' : 'Any observation\nfor the driver?',
                                 style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
                               ),
                             ),
@@ -1398,6 +1564,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             const SizedBox(width: 8),
                             Text('S/ ${tripPrice.toStringAsFixed(2)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
                             const SizedBox(width: 8),
+                            Text('·', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextSecondary(context))),
+                            const SizedBox(width: 8),
                             Text(_getPaymentLabel(paymentMethod, isEs), style: TextStyle(fontSize: 15, color: AppColors.getTextSecondary(context))),
                           ],
                         ),
@@ -1420,7 +1588,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                           children: [
                             Column(
                               children: [
-                                Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle)),
+                                Container(width: 10, height: 10, decoration: BoxDecoration(color: AppColors.rappiOrange, shape: BoxShape.circle)),
                                 Container(width: 2, height: 30, color: Colors.grey[300]),
                                 Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)),
                               ],
@@ -1458,7 +1626,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                     child: InkWell(
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(isEs ? 'Compartiendo ubicacion en tiempo real...' : 'Sharing live location...')),
+                          SnackBar(content: Text(isEs ? 'Compartiendo ubicación en tiempo real...' : 'Sharing live location...')),
                         );
                       },
                       child: Row(
@@ -1534,7 +1702,52 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                       ),
                     ),
 
-                  SizedBox(height: MediaQuery.of(context).padding.bottom + 24),
+                  // ── Live rating during trip ──
+                  if (isInProgress) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      child: Column(
+                        children: [
+                          Text(
+                            isEs ? 'Califica a tu conductor' : 'Rate your driver',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context)),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(5, (index) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() => _liveRating = index + 1);
+                                  // La calificación en vivo se envía al finalizar
+                                  // via api.rateRide — no persistimos por evento.
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Icon(
+                                    index < _liveRating ? Icons.star_rounded : Icons.star_outline_rounded,
+                                    size: 40,
+                                    color: index < _liveRating ? AppColors.rappiOrange : Colors.grey.shade300,
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            isEs
+                                ? 'El conductor todavía no ve esta calificación.\nPodrás cambiarla después'
+                                : 'The driver can\'t see this rating yet.\nYou can change it later',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  SizedBox(height: MediaQuery.paddingOf(context).bottom + 24),
                 ],
               ),
             ),
@@ -1546,15 +1759,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
 
   // ── Cancel Confirmation (inDrive-style) ──
   void _showCancelConfirmation(BuildContext context, bool isEs, String driverName, String? driverPhoto) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
+      builder: (ctx) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1567,7 +1774,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             const SizedBox(height: 12),
             Text(
               isEs
-                  ? 'Las cancelaciones frecuentes pueden reducir tu calificacion y afectar la aceptacion de tus solicitudes'
+                  ? 'Las cancelaciones frecuentes pueden reducir tu calificación y afectar la aceptación de tus solicitudes'
                   : 'Frequent cancellations may lower your rating and affect your request acceptance',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
@@ -1617,7 +1824,6 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                 child: Text(isEs ? 'Cancelar viaje' : 'Cancel trip', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ),
             ),
-            SizedBox(height: MediaQuery.of(ctx).padding.bottom),
           ],
         ),
       ),
@@ -1652,27 +1858,12 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             'Other reason',
           ];
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
+      maxHeightFraction: 0.8,
+      builder: (ctx) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
@@ -1692,9 +1883,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                     try {
                       await FirebaseService().cancelRide(widget.rideId);
                       if (mounted) {
-                        if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
+                        Navigator.of(context).pushNamedAndRemoveUntil('/passenger/home', (route) => false);
                       }
                     } catch (e) {
                       _isCompletionHandled = false;
@@ -1713,7 +1902,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
               ),
             ),
             Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(ctx).padding.bottom + 16),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -1731,7 +1920,6 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -1743,17 +1931,10 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         ? '$secVehicleColor $secVehicleModel'.trim()
         : secVehicleModel.toString().trim();
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: ListView(
+      maxHeightFraction: 0.85,
+      builder: (ctx) => ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.all(20),
           children: [
@@ -1893,7 +2074,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isEs ? 'Verificacion de\nconductores' : 'Driver\nverification', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+                        Text(isEs ? 'Verificación de\nconductores' : 'Driver\nverification', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
                         const SizedBox(height: 8),
                         const Icon(Icons.how_to_reg, color: Color(0xFF4CAF50), size: 32),
                       ],
@@ -1902,10 +2083,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                 ),
               ],
             ),
-            SizedBox(height: MediaQuery.of(ctx).padding.bottom + 16),
+            const SizedBox(height: 16),
           ],
         ),
-      ),
     );
   }
 

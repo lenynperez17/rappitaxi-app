@@ -1,4 +1,5 @@
 import '../../core/utils/currency_formatter.dart';
+import '../core/utils/payment_utils.dart';
 
 /// Tipos de notificaciones del sistema RappiTeam
 enum NotificationType {
@@ -297,7 +298,7 @@ class TaxiNotificationBuilder {
     return NotificationData(
       id: 'payment_success_$tripId',
       title: 'Pago procesado exitosamente',
-      body: '${amount.toCurrency()} pagado con $paymentMethod',
+      body: '${amount.toCurrency()} pagado con ${formatPaymentMethodLabel(paymentMethod)}',
       type: NotificationType.paymentSuccess,
       priority: NotificationPriority.normal,
       channel: NotificationChannel.payments,

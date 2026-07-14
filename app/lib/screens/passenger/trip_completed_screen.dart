@@ -3,11 +3,12 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:confetti/confetti.dart';
 
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
+import '../../services/rapi_api_client.dart';
 import '../shared/rating_dialog.dart';
 
 class TripCompletedScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class TripCompletedScreen extends StatefulWidget {
 
 class _TripCompletedScreenState extends State<TripCompletedScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
   TripModel? _trip;
   bool _isLoading = true;
@@ -92,18 +93,27 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
     }
 
     try {
-      final tripDoc = await _firestore.collection('rides').doc(widget.tripId).get();
+      final response = await _api.getRide(widget.tripId);
+      // El endpoint puede devolver { ride: {...} } o el mapa raíz.
+      final rideJson = response['ride'] is Map<String, dynamic>
+          ? response['ride'] as Map<String, dynamic>
+          : response;
 
-      if (tripDoc.exists && mounted) {
+      if (mounted && rideJson.isNotEmpty) {
         setState(() {
           _trip = TripModel.fromJson({
-            'id': tripDoc.id,
-            ...tripDoc.data()!,
+            'id': widget.tripId,
+            ...rideJson,
           });
+          _isLoading = false;
+        });
+      } else if (mounted) {
+        setState(() {
           _isLoading = false;
         });
       }
     } catch (e) {
+      debugPrint('Error cargando viaje: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -118,19 +128,25 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
       driverName: _trip?.vehicleInfo?['driverName'] ?? 'Conductor',
       driverPhoto: _trip?.vehicleInfo?['driverPhoto'] ?? '',
       tripId: widget.tripId,
-      onSubmit: (rating, comment, tags) async {
-        // Guardar calificación del pasajero hacia el conductor
-        await _firestore.collection('rides').doc(widget.tripId).update({
-          'passengerRating': rating,
-          'passengerComment': comment,
-          'passengerRatingTags': tags,
-          'passengerRatedAt': FieldValue.serverTimestamp(),
-        });
-
-        // También actualizar el promedio de calificaciones del conductor
-        final driverId = _trip?.driverId;
-        if (driverId != null && driverId.isNotEmpty) {
-          await _updateDriverRating(driverId, rating.toDouble());
+      onSubmit: (rating, comment, tagsList) async {
+        final tags = tagsList ?? const <String>[];
+        try {
+          // Concatenamos los tags al comentario (el endpoint `/rate` sólo
+          // acepta `stars` y `comment`). El backend recalcula el promedio
+          // del conductor automáticamente al guardar la calificación.
+          final safeComment = comment ?? '';
+          final combinedComment = tags.isEmpty
+              ? safeComment
+              : (safeComment.isEmpty
+                  ? tags.join(', ')
+                  : '$safeComment [${tags.join(', ')}]');
+          await _api.rateRide(
+            widget.tripId,
+            stars: rating.toDouble(),
+            comment: combinedComment,
+          );
+        } catch (e) {
+          debugPrint('Error enviando calificación: $e');
         }
 
         if (mounted) {
@@ -149,54 +165,9 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
     );
   }
 
-  Future<void> _updateDriverRating(String driverId, double newRating) async {
-    try {
-      // Obtener todas las calificaciones del conductor
-      final ridesQuery = await _firestore
-          .collection('rides')
-          .where('driverId', isEqualTo: driverId)
-          .where('passengerRating', isGreaterThan: 0)
-          .get();
-
-      double totalRating = 0;
-      int count = 0;
-
-      for (var doc in ridesQuery.docs) {
-        final rating = (doc.data()['passengerRating'] as num?)?.toDouble() ?? 0;
-        if (rating > 0) {
-          totalRating += rating;
-          count++;
-        }
-      }
-
-      // Incluir la nueva calificación
-      totalRating += newRating;
-      count++;
-
-      final averageRating = totalRating / count;
-
-      // Actualizar en la colección de conductores
-      await _firestore.collection('drivers').doc(driverId).update({
-        'rating': averageRating,
-        'totalRatings': count,
-      });
-
-      // También en users si existe ahí
-      await _firestore.collection('users').doc(driverId).update({
-        'rating': averageRating,
-        'totalRatings': count,
-      });
-    } catch (e) {
-      debugPrint('Error actualizando rating del conductor: $e');
-    }
-  }
-
   void _addTip() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) => _buildTipSheet(),
     );
   }
@@ -295,30 +266,17 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
   }
 
   Future<void> _processTip(double amount) async {
-    try {
-      // Guardar la propina en el viaje
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'tip': amount,
-        'tipAddedAt': FieldValue.serverTimestamp(),
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('¡Propina de S/. ${amount.toStringAsFixed(2)} agregada!'),
-            backgroundColor: ModernTheme.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al agregar propina: $e'),
-            backgroundColor: ModernTheme.error,
-          ),
-        );
-      }
+    // TODO(node-migration): reemplazar con endpoint POST /api/rides/:id/tip
+    // cuando exista. Por ahora sólo mostramos feedback visual local.
+    debugPrint(
+        'ℹ️ processTip local (endpoint /tip pendiente): S/. ${amount.toStringAsFixed(2)}');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('¡Propina de S/. ${amount.toStringAsFixed(2)} registrada!'),
+          backgroundColor: ModernTheme.success,
+        ),
+      );
     }
   }
 

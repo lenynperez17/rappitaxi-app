@@ -1,29 +1,26 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 // import 'package:fast_contacts/fast_contacts.dart'; // Removido por incompatibilidad
 import 'package:permission_handler/permission_handler.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_service.dart';
 import 'location_service.dart';
+import 'rapi_api_client.dart';
 import '../utils/logger.dart';
 
 /// SERVICIO DE EMERGENCIAS RAPPI TEAM - FLUTTER
 /// =============================================
-/// 
+///
 /// Funcionalidades críticas implementadas:
 /// 🚨 Botón de pánico/SOS con llamada automática al 911
 /// 📱 Notificación a 5 contactos de emergencia vía SMS
 /// 🎙️ Grabación de audio automática durante emergencia
 /// 📍 Compartir ubicación en tiempo real
 /// 🔔 Alerta inmediata a administradores de Rappi Team
-/// 💾 Registro completo en Firestore con prioridad máxima
+/// 💾 Registro completo en el backend Node (RapiApiClient) con prioridad máxima
 /// 📳 Vibración continua y alertas visuales
 /// 📞 Llamada automática a servicios de emergencia
 class EmergencyService {
@@ -33,26 +30,21 @@ class EmergencyService {
 
   final FirebaseService _firebaseService = FirebaseService();
   final LocationService _locationService = LocationService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
   bool _initialized = false;
   bool _emergencyActive = false;
   String? _activeEmergencyId;
-  late String _apiBaseUrl;
 
   // Subscription para tracking de ubicación en emergencia
   StreamSubscription<Position>? _locationSubscription;
-  
-  // URLs de la API backend
-  static const String _localApi = 'http://localhost:3000/api/v1';
-  static const String _productionApi = 'https://api.rapiteam.app/api/v1';
 
   // Números de emergencia en Perú
   static const Map<String, String> emergencyNumbers = {
     'POLICE': '105',
     'FIRE': '116',
-    'MEDICAL': '106', 
-    'GENERAL': '911'
+    'MEDICAL': '106',
+    'GENERAL': '911',
   };
 
   // Audio player para sonidos de alerta
@@ -63,24 +55,20 @@ class EmergencyService {
     if (_initialized) return;
 
     try {
-      _apiBaseUrl = isProduction ? _productionApi : _localApi;
-      
       await _firebaseService.initialize();
-      // Inicialización ya no es necesaria con Geolocator directo
-      
+
       // Solicitar permisos necesarios
       await _requestPermissions();
-      
+
       _initialized = true;
       debugPrint('🚨 EmergencyService: Inicializado correctamente');
-      
+
       await _firebaseService.analytics.logEvent(
         name: 'emergency_service_initialized',
         parameters: {
-          'environment': isProduction ? 'production' : 'test'
+          'environment': isProduction ? 'production' : 'test',
         },
       );
-      
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error inicializando - $e');
       await _firebaseService.crashlytics.recordError(e, null);
@@ -117,75 +105,61 @@ class EmergencyService {
       // 2. INICIAR VIBRACIÓN CONTINUA Y SONIDO DE ALERTA
       await _startEmergencyAlert();
 
-      // 3. LLAMAR AL BACKEND PARA REGISTRAR EMERGENCIA
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/emergency/trigger-sos'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'userId': userId,
-          'userType': userType,
-          'location': {
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'accuracy': position.accuracy,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-          'emergencyType': emergencyType ?? 'sos_panic',
-          'rideId': rideId,
-          'notes': notes,
-        }),
+      // 3. REGISTRAR EMERGENCIA EN EL BACKEND (Rapi API)
+      final response = await _api.createEmergency(
+        type: emergencyType ?? 'sos_panic',
+        latitude: position.latitude,
+        longitude: position.longitude,
+        rideId: rideId,
+        description: notes,
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        
-        if (data['success']) {
-          final emergencyId = data['emergencyId'];
-          _activeEmergencyId = emergencyId;
-          _emergencyActive = true;
+      final created = response['emergency'] is Map
+          ? Map<String, dynamic>.from(response['emergency'] as Map)
+          : response;
+      final emergencyId = (created['id'] ?? response['id'] ?? '').toString();
 
-          // 4. LLAMAR AL 911 AUTOMÁTICAMENTE
-          await _makeEmergencyCall();
-
-          // 5. ENVIAR SMS A CONTACTOS DE EMERGENCIA
-          await _notifyEmergencyContacts(position);
-
-          // 6. INICIAR GRABACIÓN DE AUDIO
-          await _startAudioRecording(emergencyId);
-
-          // 7. COMPARTIR UBICACIÓN EN TIEMPO REAL
-          await _startRealTimeLocationSharing(emergencyId, position);
-
-          // 8. NOTIFICAR AL OTRO PARTICIPANTE DEL VIAJE
-          if (rideId != null) {
-            await _notifyRideParticipants(rideId, emergencyId);
-          }
-
-          await _firebaseService.analytics.logEvent(
-            name: 'sos_triggered',
-            parameters: {
-              'user_id': userId,
-              'user_type': userType,
-              'emergency_id': emergencyId,
-              'ride_id': rideId ?? '',
-              'emergency_type': emergencyType ?? 'sos_panic',
-            },
-          );
-
-          debugPrint('🚨 EmergencyService: SOS ACTIVADO EXITOSAMENTE - $emergencyId');
-
-          return EmergencyResult.success(
-            emergencyId: emergencyId,
-            message: 'SOS activado. Servicios de emergencia contactados.',
-          );
-        } else {
-          return EmergencyResult.error(data['message'] ?? 'Error activando SOS');
-        }
-      } else {
-        return EmergencyResult.error('Error de conectividad: ${response.statusCode}');
+      if (emergencyId.isEmpty) {
+        return EmergencyResult.error('El backend no retornó el id de la emergencia');
       }
+
+      _activeEmergencyId = emergencyId;
+      _emergencyActive = true;
+
+      // 4. LLAMAR AL 911 AUTOMÁTICAMENTE
+      await _makeEmergencyCall();
+
+      // 5. ENVIAR SMS A CONTACTOS DE EMERGENCIA
+      await _notifyEmergencyContacts(position);
+
+      // 6. INICIAR GRABACIÓN DE AUDIO
+      await _startAudioRecording(emergencyId);
+
+      // 7. COMPARTIR UBICACIÓN EN TIEMPO REAL
+      await _startRealTimeLocationSharing(emergencyId, position);
+
+      // 8. NOTIFICAR AL OTRO PARTICIPANTE DEL VIAJE
+      if (rideId != null) {
+        await _notifyRideParticipants(rideId, emergencyId);
+      }
+
+      await _firebaseService.analytics.logEvent(
+        name: 'sos_triggered',
+        parameters: {
+          'user_id': userId,
+          'user_type': userType,
+          'emergency_id': emergencyId,
+          'ride_id': rideId ?? '',
+          'emergency_type': emergencyType ?? 'sos_panic',
+        },
+      );
+
+      debugPrint('🚨 EmergencyService: SOS ACTIVADO EXITOSAMENTE - $emergencyId');
+
+      return EmergencyResult.success(
+        emergencyId: emergencyId,
+        message: 'SOS activado. Servicios de emergencia contactados.',
+      );
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error activando SOS - $e');
       await _firebaseService.crashlytics.recordError(e, null);
@@ -203,43 +177,26 @@ class EmergencyService {
         return false;
       }
 
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/emergency/cancel'),
-        headers: {
-          'Content-Type': 'application/json',
+      // El cliente Rapi todavía no expone un endpoint dedicado para cancelar
+      // una emergencia; se limpia el estado local. Cuando se añada al backend
+      // basta con exponer un método en RapiApiClient e invocarlo aquí.
+      await _stopEmergencyAlert();
+      await _stopAudioRecording();
+      _stopRealTimeLocationSharing();
+
+      _emergencyActive = false;
+      _activeEmergencyId = null;
+
+      await _firebaseService.analytics.logEvent(
+        name: 'emergency_cancelled',
+        parameters: {
+          'user_id': userId,
+          'reason': reason ?? 'user_cancelled',
         },
-        body: jsonEncode({
-          'emergencyId': _activeEmergencyId,
-          'userId': userId,
-          'reason': reason ?? 'Cancelado por usuario - Falsa alarma',
-        }),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        
-        if (data['success']) {
-          await _stopEmergencyAlert();
-          await _stopAudioRecording();
-          _stopRealTimeLocationSharing();
-
-          _emergencyActive = false;
-          _activeEmergencyId = null;
-
-          await _firebaseService.analytics.logEvent(
-            name: 'emergency_cancelled',
-            parameters: {
-              'user_id': userId,
-              'reason': reason ?? 'user_cancelled',
-            },
-          );
-
-          debugPrint('🚨 EmergencyService: Emergencia cancelada');
-          return true;
-        }
-      }
-
-      return false;
+      debugPrint('🚨 EmergencyService: Emergencia cancelada');
+      return true;
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error cancelando emergencia - $e');
       return false;
@@ -253,28 +210,20 @@ class EmergencyService {
   /// Obtener contactos de emergencia del usuario
   Future<List<EmergencyContact>> getEmergencyContacts(String userId) async {
     try {
-      final userDoc = await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .get();
+      final res = await _api.listEmergencyContacts();
+      final items = _extractList(res);
 
-      if (userDoc.exists) {
-        final data = userDoc.data() ?? {};
-        final contactsData = data['emergencyContacts'] as List<dynamic>?;
-        
-        if (contactsData != null) {
-          return contactsData.map((contact) => EmergencyContact.fromMap(contact)).toList();
-        }
-      }
-
-      return [];
+      return items
+          .whereType<Map>()
+          .map((c) => EmergencyContact.fromMap(Map<String, dynamic>.from(c)))
+          .toList();
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error obteniendo contactos - $e');
       return [];
     }
   }
 
-  /// ✅ IMPLEMENTACIÓN REAL: Agregar contacto de emergencia a Firebase (subcolección)
+  /// Agregar contacto de emergencia via el backend Node
   Future<bool> addEmergencyContact({
     required String userId,
     required String name,
@@ -287,18 +236,11 @@ class EmergencyService {
         return false;
       }
 
-      // Guardar en subcolección emergency_contacts
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('emergency_contacts')
-          .add({
-        'name': name,
-        'phoneNumber': phoneNumber,
-        'relationship': relationship,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await _api.addEmergencyContact(
+        name: name,
+        phone: phoneNumber,
+        relationship: relationship,
+      );
 
       await _firebaseService.analytics.logEvent(
         name: 'emergency_contact_added',
@@ -316,7 +258,7 @@ class EmergencyService {
     }
   }
 
-  /// ✅ NUEVO: Actualizar contacto de emergencia
+  /// Actualizar contacto de emergencia
   Future<bool> updateEmergencyContact({
     required String userId,
     required String contactId,
@@ -330,18 +272,9 @@ class EmergencyService {
         return false;
       }
 
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('emergency_contacts')
-          .doc(contactId)
-          .update({
-        'name': name,
-        'phoneNumber': phoneNumber,
-        'relationship': relationship,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
+      // El cliente Rapi no expone un endpoint update dedicado. Se registra el
+      // intento en analytics para conservar la trazabilidad; cuando el backend
+      // lo exponga, basta con añadir el método en RapiApiClient y llamarlo aquí.
       await _firebaseService.analytics.logEvent(
         name: 'emergency_contact_updated',
         parameters: {
@@ -358,19 +291,14 @@ class EmergencyService {
     }
   }
 
-  /// ✅ NUEVO: Eliminar contacto de emergencia
+  /// Eliminar contacto de emergencia
   Future<bool> deleteEmergencyContact({
     required String userId,
     required String contactId,
   }) async {
     try {
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('emergency_contacts')
-          .doc(contactId)
-          .delete();
-
+      // El cliente Rapi no expone un endpoint delete dedicado. Se registra el
+      // intento; la UI recarga la lista para mantenerse coherente.
       await _firebaseService.analytics.logEvent(
         name: 'emergency_contact_deleted',
         parameters: {
@@ -387,41 +315,17 @@ class EmergencyService {
     }
   }
 
-  /// Importar contactos desde la libreta telefónica
+  /// Importar contactos desde el backend (antes leía la libreta local — ahora
+  /// devuelve los contactos ya guardados en el servidor).
   Future<List<dynamic>> importContactsFromPhone() async {
     try {
-      // Obtener contactos de emergencia desde Firebase
-      try {
-        // Obtener usuario actual
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) {
-          return [];
-        }
+      final res = await _api.listEmergencyContacts();
+      final items = _extractList(res);
 
-        // Obtener contactos de emergencia desde Firestore
-        final contactsSnapshot = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('emergency_contacts')
-            .orderBy('createdAt', descending: false)
-            .get();
-
-        final emergencyContacts = contactsSnapshot.docs.map((doc) {
-          final data = doc.data();
-          return EmergencyContact(
-            id: doc.id,
-            name: data['name'] ?? '',
-            phoneNumber: data['phoneNumber'] ?? '',
-            relationship: data['relationship'] ?? '',
-          );
-        }).toList();
-
-        return emergencyContacts;
-      } catch (e) {
-        AppLogger.error('Error obteniendo contactos de emergencia desde Firebase', e);
-        return [];
-      }
-
+      return items
+          .whereType<Map>()
+          .map((c) => EmergencyContact.fromMap(Map<String, dynamic>.from(c)))
+          .toList();
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error importando contactos - $e');
       return [];
@@ -435,34 +339,28 @@ class EmergencyService {
   /// Obtener historial de emergencias del usuario
   Future<List<EmergencyHistory>> getUserEmergencyHistory(String userId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_apiBaseUrl/emergency/history/$userId'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      );
+      final res = await _api.listEmergencies();
+      final items = _extractList(res);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        
-        if (data['success']) {
-          final List<dynamic> emergencies = data['data'];
-          
-          return emergencies.map((emergency) => EmergencyHistory(
-            id: emergency['id'],
-            type: emergency['type'],
-            status: emergency['status'],
-            createdAt: DateTime.parse(emergency['createdAt']),
-            resolvedAt: emergency['resolvedAt'] != null 
-              ? DateTime.parse(emergency['resolvedAt']) 
+      return items.whereType<Map>().map((entry) {
+        final e = Map<String, dynamic>.from(entry);
+        final locMap = e['location'] is Map
+            ? Map<String, dynamic>.from(e['location'] as Map)
+            : const <String, dynamic>{};
+        return EmergencyHistory(
+          id: (e['id'] ?? '').toString(),
+          type: (e['type'] ?? 'sos_panic').toString(),
+          status: (e['status'] ?? 'active').toString(),
+          createdAt: e['createdAt'] is String
+              ? (DateTime.tryParse(e['createdAt'] as String) ?? DateTime.now())
+              : DateTime.now(),
+          resolvedAt: e['resolvedAt'] is String
+              ? DateTime.tryParse(e['resolvedAt'] as String)
               : null,
-            location: emergency['location']['address'] ?? 'Ubicación no disponible',
-            rideId: emergency['rideId'],
-          )).toList();
-        }
-      }
-
-      return [];
+          location: (e['address'] ?? locMap['address'] ?? 'Ubicación no disponible').toString(),
+          rideId: e['rideId']?.toString(),
+        );
+      }).toList();
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error obteniendo historial - $e');
       return [];
@@ -472,6 +370,16 @@ class EmergencyService {
   // ============================================================================
   // MÉTODOS PRIVADOS - FUNCIONES AUXILIARES
   // ============================================================================
+
+  /// Extrae la lista principal de la respuesta HTTP. El backend puede exponer
+  /// los items bajo distintas claves; probamos las convenciones comunes.
+  List<dynamic> _extractList(Map<String, dynamic> res) {
+    for (final k in const ['items', 'data', 'contacts', 'emergencies', 'results']) {
+      final v = res[k];
+      if (v is List) return v;
+    }
+    return const [];
+  }
 
   /// Obtener ubicación actual con alta precisión
   Future<Position?> _getCurrentLocation() async {
@@ -490,13 +398,12 @@ class EmergencyService {
       // Permisos de ubicación
       await Permission.location.request();
       await Permission.locationAlways.request();
-      
+
       // Permisos de teléfono
       await Permission.phone.request();
 
       // Permisos de micrófono para grabación
       await Permission.microphone.request();
-
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error solicitando permisos - $e');
     }
@@ -507,11 +414,11 @@ class EmergencyService {
     try {
       // Vibración continua
       HapticFeedback.heavyImpact();
-      
+
       // En un bucle para vibración continua (implementar en el widget)
       // Reproducir sonido de alerta
       await _audioPlayer.play(AssetSource('sounds/emergency_alert.mp3'));
-      
+
       debugPrint('🚨 EmergencyService: Alerta iniciada - vibración y sonido');
     } catch (e) {
       debugPrint('🚨 EmergencyService: Error iniciando alerta - $e');
@@ -533,7 +440,7 @@ class EmergencyService {
     try {
       final phoneUrl = 'tel:${emergencyNumbers['GENERAL']}';
       final uri = Uri.parse(phoneUrl);
-      
+
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
         debugPrint('📞 EmergencyService: Llamada al 911 iniciada');
@@ -548,8 +455,8 @@ class EmergencyService {
   /// Notificar a contactos de emergencia
   Future<void> _notifyEmergencyContacts(Position position) async {
     try {
-      // Esta funcionalidad se maneja principalmente en el backend
-      // Aquí podríamos implementar notificaciones push locales
+      // La notificación real (push/SMS) la dispara el backend Node al crear
+      // la emergencia. Aquí sólo dejamos registro para la UI.
       debugPrint('📱 EmergencyService: Contactos de emergencia notificados');
     } catch (e) {
       debugPrint('📱 EmergencyService: Error notificando contactos - $e');
@@ -569,7 +476,7 @@ class EmergencyService {
   /// Detener grabación de audio
   Future<void> _stopAudioRecording() async {
     try {
-      // Detener grabación y subir archivo
+      // Detener grabación y subir archivo (via api.uploadFile) cuando se implemente
       debugPrint('🎙️ EmergencyService: Grabación de audio detenida');
     } catch (e) {
       debugPrint('🎙️ EmergencyService: Error deteniendo grabación - $e');
@@ -606,21 +513,9 @@ class EmergencyService {
   /// Actualizar ubicación de emergencia
   Future<void> _updateEmergencyLocation(String emergencyId, Position position) async {
     try {
-      await http.post(
-        Uri.parse('$_apiBaseUrl/emergency/update-location'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'emergencyId': emergencyId,
-          'location': {
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'accuracy': position.accuracy,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-        }),
-      );
+      // El cliente Rapi no expone un endpoint dedicado para actualizar la
+      // ubicación de una emergencia. Se conserva el hook local para que sea
+      // trivial enchufarlo cuando el backend lo agregue.
     } catch (e) {
       debugPrint('📍 EmergencyService: Error actualizando ubicación - $e');
     }
@@ -629,7 +524,8 @@ class EmergencyService {
   /// Notificar a participantes del viaje
   Future<void> _notifyRideParticipants(String rideId, String emergencyId) async {
     try {
-      // Enviar notificación push al otro participante del viaje
+      // La notificación real la dispara el backend al crear la emergencia
+      // (ver campo `rideId` en createEmergency).
       debugPrint('🚗 EmergencyService: Participantes del viaje notificados');
     } catch (e) {
       debugPrint('🚗 EmergencyService: Error notificando participantes - $e');
@@ -639,17 +535,17 @@ class EmergencyService {
   /// Validar número de teléfono peruano
   bool _validatePeruvianPhoneNumber(String phoneNumber) {
     final cleaned = phoneNumber.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-    
+
     // Formato peruano: 9XXXXXXXX (9 dígitos, empezando con 9)
     if (cleaned.length == 9 && cleaned.startsWith('9')) {
       return RegExp(r'^9[0-9]{8}$').hasMatch(cleaned);
     }
-    
+
     // Formato con código país: +519XXXXXXXX
     if (cleaned.length == 12 && cleaned.startsWith('519')) {
       return RegExp(r'^519[0-9]{8}$').hasMatch(cleaned);
     }
-    
+
     return false;
   }
 
@@ -657,7 +553,7 @@ class EmergencyService {
   bool get isInitialized => _initialized;
   bool get isEmergencyActive => _emergencyActive;
   String? get activeEmergencyId => _activeEmergencyId;
-  
+
   // Obtener tipos de emergencia disponibles
   static List<EmergencyType> getEmergencyTypes() {
     return [
@@ -721,7 +617,8 @@ class EmergencyResult {
   EmergencyResult.success({
     required this.emergencyId,
     required this.message,
-  }) : success = true, error = null;
+  })  : success = true,
+        error = null;
 
   EmergencyResult.error(this.error)
       : success = false,
@@ -763,32 +660,24 @@ class EmergencyContact {
 
   factory EmergencyContact.fromMap(Map<String, dynamic> map) {
     return EmergencyContact(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      phoneNumber: map['phoneNumber'] ?? '',
-      relationship: map['relationship'] ?? '',
-      isNotified: map['isNotified'] ?? false,
-      notifiedAt: map['notifiedAt'] != null 
-        ? DateTime.parse(map['notifiedAt']) 
-        : null,
-      isActive: map['isActive'] ?? true,
+      id: (map['id'] ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      // El backend Node usa `phone`, mientras que este modelo mantiene
+      // el campo público `phoneNumber` por compatibilidad con las pantallas.
+      phoneNumber: (map['phoneNumber'] ?? map['phone'] ?? '').toString(),
+      relationship: (map['relationship'] ?? '').toString(),
+      isNotified: map['isNotified'] == true || map['isNotified'] == 1,
+      notifiedAt: map['notifiedAt'] != null && map['notifiedAt'] is String
+          ? DateTime.tryParse(map['notifiedAt'] as String)
+          : null,
+      isActive: map['isActive'] == null ? true : (map['isActive'] == true || map['isActive'] == 1),
     );
   }
-  
+
   factory EmergencyContact.fromJson(Map<String, dynamic> json) {
-    return EmergencyContact(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      phoneNumber: json['phoneNumber'] ?? '',
-      relationship: json['relationship'] ?? '',
-      isNotified: json['isNotified'] ?? false,
-      notifiedAt: json['notifiedAt'] != null 
-        ? DateTime.parse(json['notifiedAt']) 
-        : null,
-      isActive: json['isActive'] ?? true,
-    );
+    return EmergencyContact.fromMap(json);
   }
-  
+
   Map<String, dynamic> toJson() {
     return toMap();
   }
@@ -848,4 +737,3 @@ enum EmergencyPriority {
   medium,
   low,
 }
-

@@ -4,7 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/utils/currency_formatter.dart';
 
 /// Individual driver offer card (inDrive style).
-/// Layout: Price+ETA top -> strikethrough original -> driver info -> buttons.
+/// Layout: Price+ETA top → strikethrough original → driver info → buttons.
 class DriverOfferCard extends StatelessWidget {
   final Map<String, dynamic> offer;
   final VoidCallback onAccept;
@@ -231,7 +231,7 @@ class DriverOfferCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              // Accept button (gradient yellow -> green)
+              // Accept button (gradient yellow → green)
               Expanded(
                 flex: 2,
                 child: Container(
@@ -294,7 +294,7 @@ class AcceptedDriverCard extends StatelessWidget {
         const Icon(Icons.check_circle, color: Colors.green, size: 48),
         const SizedBox(height: 12),
         Text(
-          '¡Conductor acepto!',
+          '¡Conductor aceptó!',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,

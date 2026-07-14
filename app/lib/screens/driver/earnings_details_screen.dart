@@ -1,14 +1,14 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../services/rapi_api_client.dart';
 
 import '../../utils/logger.dart';
 class EarningsDetailsScreen extends StatefulWidget {
@@ -66,24 +66,11 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
     super.dispose();
   }
   
-  // ✅ Cargar datos reales desde Firebase
+  // ✅ Cargar datos reales desde el backend Node.
   void _loadEarningsData() async {
     setState(() => _isLoading = true);
 
     try {
-      // ✅ Obtener usuario actual
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        AppLogger.warning('⚠️ No hay usuario autenticado');
-        setState(() {
-          _earningsData = _getEmptyData(_selectedPeriod);
-          _isLoading = false;
-        });
-        return;
-      }
-
-      final userId = currentUser.uid;
-
       // ✅ Calcular rango de fechas según el período seleccionado
       final now = DateTime.now();
       DateTime startDate;
@@ -91,41 +78,37 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
 
       switch (_selectedPeriod) {
         case 'week':
-          // Última semana (7 días)
           startDate = now.subtract(Duration(days: 7));
           break;
         case 'month':
-          // Último mes (30 días)
           startDate = now.subtract(Duration(days: 30));
           break;
         case 'year':
-          // Último año (365 días)
           startDate = now.subtract(Duration(days: 365));
           break;
         default:
           startDate = now.subtract(Duration(days: 7));
       }
 
-      // ✅ Consultar rides completados del conductor en el período
-      final ridesSnapshot = await FirebaseFirestore.instance
-          .collection('rides')
-          .where('driverId', isEqualTo: userId)
-          .where('status', isEqualTo: 'completed')
-          .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-          .where('completedAt', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-          .get();
+      // TODO(node-migration): reemplazar con endpoint agregador
+      // /api/drivers/me/earnings?from=&to= cuando exista. Por ahora traemos
+      // rides completados del driver y agregamos en cliente.
+      final resp = await RapiApiClient.instance.listRides(
+        role: 'driver',
+        status: 'completed',
+        pageSize: 500,
+      );
+      final rawList = (resp['rides'] as List?) ?? const [];
 
       // ✅ Calcular métricas principales
       double totalEarnings = 0.0;
       double totalHours = 0.0;
-      int totalTrips = ridesSnapshot.docs.length;
+      int totalTrips = 0;
 
-      // Mapas para análisis por día y por hora
       Map<String, DailyEarnings> dailyDataMap = {};
       List<double> hourlyEarningsArray = List.filled(24, 0.0);
       List<int> hourlyTripsArray = List.filled(24, 0);
 
-      // Desglose de ingresos
       double baseFares = 0.0;
       double distanceFares = 0.0;
       double timeFares = 0.0;
@@ -133,27 +116,41 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
       double bonuses = 0.0;
       double surgeEarnings = 0.0;
 
-      for (var doc in ridesSnapshot.docs) {
-        final data = doc.data();
+      DateTime? _parseIso(dynamic v) {
+        if (v is String) return DateTime.tryParse(v);
+        return null;
+      }
+
+      for (final raw in rawList) {
+        if (raw is! Map) continue;
+        final data = Map<String, dynamic>.from(raw);
+
+        final completedAt =
+            _parseIso(data['completedAt'] ?? data['completed_at']);
+        if (completedAt == null) continue;
+        if (completedAt.isBefore(startDate) || completedAt.isAfter(endDate)) {
+          continue;
+        }
+
+        totalTrips++;
 
         // Calcular ganancias totales
-        final fare = (data['fare'] ?? data['estimatedFare'] ?? 0.0) as num;
+        final fareRaw = data['finalFare'] ?? data['fare'] ?? data['final_fare'] ?? 0.0;
+        final fare = (fareRaw is num) ? fareRaw : 0;
         totalEarnings += fare.toDouble();
 
         // Duración y análisis temporal
-        if (data['startedAt'] != null && data['completedAt'] != null) {
-          final startedAt = (data['startedAt'] as Timestamp).toDate();
-          final completedAt = (data['completedAt'] as Timestamp).toDate();
+        final startedAt = _parseIso(data['startedAt'] ?? data['started_at']);
+        if (startedAt != null) {
           final duration = completedAt.difference(startedAt);
           totalHours += duration.inMinutes / 60.0;
 
-          // Análisis por hora (hora de inicio del viaje)
           final hour = startedAt.hour;
           hourlyEarningsArray[hour] += fare.toDouble();
           hourlyTripsArray[hour]++;
 
-          // Análisis por día
-          final dateKey = '${completedAt.year}-${completedAt.month.toString().padLeft(2, '0')}-${completedAt.day.toString().padLeft(2, '0')}';
+          final dateKey =
+              '${completedAt.year}-${completedAt.month.toString().padLeft(2, '0')}-${completedAt.day.toString().padLeft(2, '0')}';
           if (!dailyDataMap.containsKey(dateKey)) {
             dailyDataMap[dateKey] = DailyEarnings(
               date: DateTime(completedAt.year, completedAt.month, completedAt.day),
@@ -172,21 +169,21 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
           );
         }
 
-        // Desglose de tarifas (asumiendo estructura de datos)
-        baseFares += (data['baseFare'] ?? fare * 0.4) as num;
-        distanceFares += (data['distanceFare'] ?? fare * 0.4) as num;
-        timeFares += (data['timeFare'] ?? fare * 0.2) as num;
-        tips += (data['tip'] ?? 0.0) as num;
-        bonuses += (data['bonus'] ?? 0.0) as num;
-        surgeEarnings += (data['surge'] ?? 0.0) as num;
+        // Desglose de tarifas.
+        baseFares += ((data['baseFare'] as num?) ?? fare * 0.4).toDouble();
+        distanceFares += ((data['distanceFare'] as num?) ?? fare * 0.4).toDouble();
+        timeFares += ((data['timeFare'] as num?) ?? fare * 0.2).toDouble();
+        tips += ((data['tip'] as num?) ?? 0).toDouble();
+        bonuses += ((data['bonus'] as num?) ?? 0).toDouble();
+        surgeEarnings += ((data['surge'] as num?) ?? 0).toDouble();
       }
 
       // ✅ Calcular promedios
       final avgPerTrip = totalTrips > 0 ? totalEarnings / totalTrips : 0.0;
       final avgPerHour = totalHours > 0 ? totalEarnings / totalHours : 0.0;
 
-      // ✅ Calcular comisión (asumiendo 20%)
-      final commission = totalEarnings * 0.20;
+      // ✅ Calcular comisión (asumiendo 12%)
+      final commission = totalEarnings * 0.12;
       final netEarnings = totalEarnings - commission;
 
       // ✅ Consultar tiempo online (de colección opcional driver_sessions o estimado)
@@ -922,7 +919,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
             _buildBreakdownItem('Tarifa dinámica', breakdown.surgeEarnings, Icons.trending_up, ModernTheme.error),
           Divider(height: 24, thickness: 1),
 
-          // ✅ VISUALIZACIÓN DETALLADA: Desglose de comisión del 20%
+          // ✅ VISUALIZACIÓN DETALLADA: Desglose de comisión del 12%
           Container(
             padding: EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -938,7 +935,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
                     Icon(Icons.info_outline, color: ModernTheme.error, size: 18),
                     SizedBox(width: 8),
                     Text(
-                      'Comisión de Plataforma (20%)',
+                      'Comisión de Plataforma (12%)',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
@@ -966,7 +963,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Comisión Rappi Team (20%):',
+                      'Comisión Rappi Team (12%):',
                       style: TextStyle(fontSize: 13, color: context.secondaryText),
                     ),
                     Text(
@@ -1175,9 +1172,9 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
     buffer.writeln('Generado por Rappi Team App');
 
     // Mostrar opciones de exportación
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,

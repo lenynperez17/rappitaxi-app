@@ -1,9 +1,9 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 
 class VehicleManagementScreen extends StatefulWidget {
@@ -69,70 +69,66 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
 
     _fadeController.forward();
 
-    // ✅ Cargar datos del vehículo desde Firebase
-    _loadVehicleDataFromFirebase();
+    // ✅ Cargar datos del vehículo desde el backend Node
+    _loadVehicleDataFromApi();
   }
 
-  // ✅ NUEVO: Cargar datos reales del vehículo desde Firebase
-  Future<void> _loadVehicleDataFromFirebase() async {
+  // ✅ NUEVO: Cargar datos reales del vehículo desde el backend Node.
+  // Toda la información viene del perfil del conductor (auth-scoped via JWT).
+  Future<void> _loadVehicleDataFromApi() async {
     setState(() => _isLoading = true);
 
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        AppLogger.warning('⚠️ No hay usuario autenticado en vehicle_management');
-        setState(() => _isLoading = false);
-        return;
+      final api = RapiApiClient.instance;
+
+      // ✅ Cargar perfil del conductor (incluye info del vehículo)
+      final profileResponse = await api.myDriverProfile();
+      final vehicleInfo = (profileResponse['vehicle'] ??
+              profileResponse['vehicleInfo'] ??
+              profileResponse['driver']?['vehicle'] ??
+              <String, dynamic>{}) as Map<String, dynamic>;
+
+      if (vehicleInfo.isNotEmpty) {
+        setState(() {
+          _vehicleData = {
+            'brand': vehicleInfo['brand'] ?? vehicleInfo['make'] ?? '',
+            'model': vehicleInfo['model'] ?? '',
+            'year': vehicleInfo['year'] ?? 0,
+            'plate': vehicleInfo['plate'] ?? '',
+            'color': vehicleInfo['color'] ?? '',
+            'vin': vehicleInfo['vin'] ?? '',
+            'seats': vehicleInfo['seats'] ?? 0,
+            'fuelType': vehicleInfo['fuelType'] ?? 'Gasolina',
+            'transmission': vehicleInfo['transmission'] ?? 'Manual',
+            'mileage': vehicleInfo['mileage'] ?? 0,
+            'status': vehicleInfo['status'] ?? 'active',
+            'photos': (vehicleInfo['photos'] as List?)?.map((e) => e.toString()).toList() ?? [],
+          };
+        });
       }
 
-      final driverId = currentUser.uid;
-
-      // ✅ Cargar información del vehículo desde el documento del conductor
-      final driverDoc = await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(driverId)
-          .get();
-
-      if (driverDoc.exists) {
-        final driverData = driverDoc.data();
-        if (driverData != null && driverData.containsKey('vehicleInfo')) {
-          final vehicleInfo = driverData['vehicleInfo'] as Map<String, dynamic>;
-          setState(() {
-            _vehicleData = {
-              'brand': vehicleInfo['brand'] ?? '',
-              'model': vehicleInfo['model'] ?? '',
-              'year': vehicleInfo['year'] ?? 0,
-              'plate': vehicleInfo['plate'] ?? '',
-              'color': vehicleInfo['color'] ?? '',
-              'vin': vehicleInfo['vin'] ?? '',
-              'seats': vehicleInfo['seats'] ?? 0,
-              'fuelType': vehicleInfo['fuelType'] ?? 'Gasolina',
-              'transmission': vehicleInfo['transmission'] ?? 'Manual',
-              'mileage': vehicleInfo['mileage'] ?? 0,
-              'status': vehicleInfo['status'] ?? 'active',
-              'photos': (vehicleInfo['photos'] as List?)?.map((e) => e.toString()).toList() ?? [],
-            };
-          });
-        }
-      }
-
-      // ✅ Cargar documentos del vehículo
-      final docsSnapshot = await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(driverId)
-          .collection('documents')
-          .where('category', isEqualTo: 'vehicle')
-          .get();
+      // ✅ Cargar documentos del vehículo desde el backend
+      final documentsResponse = await api.myDocuments();
+      final documentsList =
+          (documentsResponse['documents'] ?? documentsResponse['items'] ?? []) as List;
 
       final List<VehicleDocument> loadedDocs = [];
-      for (var doc in docsSnapshot.docs) {
-        final data = doc.data();
-        final expiryDate = (data['expiryDate'] as Timestamp?)?.toDate();
-        final issueDate = (data['uploadedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      for (final docRaw in documentsList) {
+        final data = docRaw as Map<String, dynamic>;
+        // Solo documentos relacionados al vehículo
+        final category = (data['category'] ?? '').toString();
+        if (category != 'vehicle' && category != '') continue;
+
+        final expiryStr = (data['expiryDate'] ?? data['expiry_date']) as String?;
+        final expiryDate = expiryStr != null ? DateTime.tryParse(expiryStr) : null;
+        final issueStr = (data['uploadedAt'] ?? data['uploaded_at']) as String?;
+        final issueDate = issueStr != null
+            ? DateTime.tryParse(issueStr) ?? DateTime.now()
+            : DateTime.now();
 
         // Calcular estado del documento
         DocumentStatus status = DocumentStatus.pending;
-        if (data['status'] == 'approved') {
+        if (data['status'] == 'approved' || data['status'] == 'verified') {
           if (expiryDate != null) {
             final now = DateTime.now();
             final daysUntilExpiry = expiryDate.difference(now).inDays;
@@ -148,36 +144,38 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
           }
         }
 
+        final docType = (data['type'] ?? data['docType'] ?? '').toString();
         loadedDocs.add(VehicleDocument(
-          id: doc.id,
-          type: data['type'] ?? 'Documento',
-          number: data['documentNumber'] ?? 'N/A',
+          id: (data['id'] ?? '').toString(),
+          type: docType.isNotEmpty ? docType : 'Documento',
+          number: (data['documentNumber'] ?? data['number'] ?? 'N/A').toString(),
           issueDate: issueDate,
           expiryDate: expiryDate,
           status: status,
-          icon: _getDocumentIcon(data['type']),
-          color: _getDocumentColor(data['type']),
+          icon: _getDocumentIcon(docType),
+          color: _getDocumentColor(docType),
         ));
       }
 
+      if (!mounted) return;
       setState(() {
         _documents.clear();
         _documents.addAll(loadedDocs);
         _isLoading = false;
       });
 
-      AppLogger.info('✅ Cargados datos del vehículo y ${loadedDocs.length} documentos desde Firebase');
+      AppLogger.info(
+          '✅ Cargados datos del vehículo y ${loadedDocs.length} documentos desde el backend Node');
     } catch (e) {
       AppLogger.error('❌ Error cargando datos del vehículo: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error cargando datos del vehículo: $e'),
-            backgroundColor: ModernTheme.error,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando datos del vehículo: $e'),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
     }
   }
 
@@ -437,9 +435,9 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
           
           SizedBox(height: 20),
 
-          // UI: Fotos del vehiculo como carousel horizontal (PageView)
+          // UI: Fotos del vehículo como carousel horizontal (PageView)
           Text(
-            'Fotos del Vehiculo',
+            'Fotos del Vehículo',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 12),
@@ -467,7 +465,7 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
                       );
                     },
                   ),
-                  // Indicador de paginas
+                  // Indicador de páginas
                   if ((_vehicleData['photos'] as List).length > 1)
                     Positioned(
                       bottom: 8,
@@ -1112,15 +1110,10 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
   }
   
   void _showDocumentDetails(VehicleDocument doc) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.surfaceColor,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

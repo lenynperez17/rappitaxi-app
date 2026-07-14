@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../providers/price_negotiation_provider.dart';
@@ -10,7 +10,10 @@ import '../../providers/auth_provider.dart';
 import '../../models/price_negotiation_model.dart';
 
 /// Pantalla de negociaciones para conductores
-/// Muestra las solicitudes activas donde pueden hacer ofertas
+/// Muestra las solicitudes activas donde pueden hacer ofertas.
+///
+/// Ya no hace `snapshots()` de Firestore — usa el `PriceNegotiationProvider`
+/// que ya está migrado al backend Node (HTTP + SSE via RapiSseClient).
 class DriverNegotiationsScreen extends StatefulWidget {
   const DriverNegotiationsScreen({super.key});
 
@@ -19,26 +22,26 @@ class DriverNegotiationsScreen extends StatefulWidget {
 }
 
 class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
-  // Timer para actualizar el cronómetro cada segundo
+  // Timer para actualizar el cronómetro cada segundo.
   Timer? _countdownTimer;
-
-  // Stream de negociaciones en tiempo real
-  StreamSubscription<QuerySnapshot>? _negotiationsSubscription;
-  List<PriceNegotiation> _negotiations = [];
-  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _startCountdownTimer();
-    _listenToNegotiations();
+    // Arrancar el listener del provider — usa RapiApiClient + SSE.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider =
+          Provider.of<PriceNegotiationProvider>(context, listen: false);
+      provider.startListeningToDriverRequests();
+    });
   }
 
   @override
   void dispose() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
-    _negotiationsSubscription?.cancel();
     super.dispose();
   }
 
@@ -52,118 +55,11 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
     });
   }
 
-  void _listenToNegotiations() {
-    // Escuchar negociaciones en tiempo real desde Firestore
-    _negotiationsSubscription = FirebaseFirestore.instance
-        .collection('negotiations')
-        .where('status', whereIn: ['waiting', 'negotiating'])
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-
-      final now = DateTime.now();
-      final negotiations = snapshot.docs
-          .map((doc) {
-            try {
-              final data = doc.data();
-
-              // Parsear expiresAt que puede ser String o Timestamp
-              DateTime expiresAt;
-              final expiresAtRaw = data['expiresAt'];
-              if (expiresAtRaw is Timestamp) {
-                expiresAt = expiresAtRaw.toDate();
-              } else if (expiresAtRaw is String) {
-                expiresAt = DateTime.parse(expiresAtRaw);
-              } else {
-                expiresAt = now; // Default a ahora si no es válido
-              }
-
-              // Filtrar expiradas
-              if (now.isAfter(expiresAt)) return null;
-
-              return PriceNegotiation(
-                id: doc.id,
-                passengerId: data['passengerId'] ?? '',
-                passengerName: data['passengerName'] ?? 'Usuario',
-                passengerPhoto: data['passengerPhoto'] ?? '',
-                passengerRating: (data['passengerRating'] ?? 5.0).toDouble(),
-                pickup: LocationPoint(
-                  latitude: (data['pickup']?['latitude'] ?? 0.0).toDouble(),
-                  longitude: (data['pickup']?['longitude'] ?? 0.0).toDouble(),
-                  address: data['pickup']?['address'] ?? '',
-                  reference: data['pickup']?['reference'],
-                ),
-                destination: LocationPoint(
-                  latitude: (data['destination']?['latitude'] ?? 0.0).toDouble(),
-                  longitude: (data['destination']?['longitude'] ?? 0.0).toDouble(),
-                  address: data['destination']?['address'] ?? '',
-                  reference: data['destination']?['reference'],
-                ),
-                suggestedPrice: (data['suggestedPrice'] ?? 0.0).toDouble(),
-                offeredPrice: (data['offeredPrice'] ?? 0.0).toDouble(),
-                distance: (data['distance'] ?? 0.0).toDouble(),
-                estimatedTime: data['estimatedTime'] ?? 0,
-                createdAt: _parseDateTime(data['createdAt'], now),
-                expiresAt: expiresAt,
-                status: _parseStatus(data['status']),
-                driverOffers: [],
-                paymentMethod: _parsePaymentMethod(data['paymentMethod']),
-                notes: data['notes'],
-              );
-            } catch (e) {
-              debugPrint('Error parsing negotiation: $e');
-              return null;
-            }
-          })
-          .whereType<PriceNegotiation>()
-          .toList();
-
-      setState(() {
-        _negotiations = negotiations;
-        _isLoading = false;
-      });
-    }, onError: (e) {
-      debugPrint('Error listening to negotiations: $e');
-      setState(() => _isLoading = false);
-    });
-  }
-
-  // Helper para parsear DateTime que puede ser String o Timestamp
-  DateTime _parseDateTime(dynamic value, DateTime defaultValue) {
-    if (value is Timestamp) {
-      return value.toDate();
-    } else if (value is String) {
-      return DateTime.tryParse(value) ?? defaultValue;
-    }
-    return defaultValue;
-  }
-
-  NegotiationStatus _parseStatus(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'waiting': return NegotiationStatus.waiting;
-      case 'negotiating': return NegotiationStatus.negotiating;
-      case 'accepted': return NegotiationStatus.accepted;
-      case 'completed': return NegotiationStatus.completed;
-      case 'cancelled': return NegotiationStatus.cancelled;
-      case 'expired': return NegotiationStatus.expired;
-      default: return NegotiationStatus.waiting;
-    }
-  }
-
-  PaymentMethod _parsePaymentMethod(String? method) {
-    switch (method?.toLowerCase()) {
-      case 'card': return PaymentMethod.card;
-      case 'wallet': return PaymentMethod.wallet;
-      default: return PaymentMethod.cash;
-    }
-  }
-
   Future<void> _refreshNegotiations() async {
-    // El stream se actualiza automáticamente, pero podemos forzar un refresh
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    setState(() => _isLoading = false);
+    // El provider expone loadDriverRequests() para refrescar via HTTP.
+    final provider =
+        Provider.of<PriceNegotiationProvider>(context, listen: false);
+    await provider.loadDriverRequests();
   }
 
   @override
@@ -172,9 +68,7 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
-          // Cleanup listeners before popping to prevent black screen
           _countdownTimer?.cancel();
-          _negotiationsSubscription?.cancel();
         }
       },
       child: Scaffold(
@@ -188,20 +82,30 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
             ),
           ],
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _negotiations.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: _refreshNegotiations,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _negotiations.length,
-                      itemBuilder: (context, index) {
-                        return _buildNegotiationCard(_negotiations[index]);
-                      },
-                    ),
-                  ),
+        body: Consumer<PriceNegotiationProvider>(
+          builder: (context, provider, _) {
+            final now = DateTime.now();
+            // Filtrar solicitudes visibles (activas y no expiradas).
+            final negotiations = provider.driverVisibleRequests
+                .where((n) => n.expiresAt.isAfter(now))
+                .toList();
+
+            if (negotiations.isEmpty) {
+              return _buildEmptyState();
+            }
+
+            return RefreshIndicator(
+              onRefresh: _refreshNegotiations,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: negotiations.length,
+                itemBuilder: (context, index) {
+                  return _buildNegotiationCard(negotiations[index]);
+                },
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -244,7 +148,6 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
       offer.driverId == currentDriverId
     );
 
-    // UI: Al tap abre bottom sheet con detalle completo
     return GestureDetector(
       onTap: () => _showNegotiationDetailSheet(negotiation),
       child: Card(
@@ -464,33 +367,18 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
 
   // UI: Bottom sheet con detalle de la negociacion
   void _showNegotiationDetailSheet(PriceNegotiation negotiation) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      builder: (context) => Padding(
         padding: EdgeInsets.only(
           top: 20,
           left: 24,
           right: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          bottom: 24,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
             Row(
               children: [
                 CircleAvatar(
@@ -679,6 +567,10 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
     switch (method) {
       case PaymentMethod.cash:
         return 'Efectivo';
+      case PaymentMethod.yape:
+        return 'Yape';
+      case PaymentMethod.plin:
+        return 'Plin';
       case PaymentMethod.card:
         return 'Tarjeta';
       case PaymentMethod.wallet:
@@ -757,7 +649,7 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
               final scaffoldMessenger = ScaffoldMessenger.of(context);
 
               try {
-                // ✅ MODIFICADO: makeDriverOffer ahora retorna String? con mensaje de error
+                // makeDriverOffer retorna String? con mensaje de error.
                 final error = await provider.makeDriverOffer(
                   negotiation.id,
                   price,
@@ -765,7 +657,6 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
 
                 if (mounted) {
                   if (error != null) {
-                    // ✅ Mostrar error (ej: saldo insuficiente)
                     scaffoldMessenger.showSnackBar(
                       SnackBar(
                         content: Text(error),
@@ -775,8 +666,7 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
                           label: 'Recargar',
                           textColor: Colors.white,
                           onPressed: () {
-                            // Navegar a pantalla de billetera
-                            Navigator.pushNamed(context, '/driver-wallet');
+                            Navigator.pushNamed(context, '/driver/wallet');
                           },
                         ) : null,
                       ),

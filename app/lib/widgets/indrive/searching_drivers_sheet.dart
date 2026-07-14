@@ -8,6 +8,7 @@ import '../../providers/ride_provider.dart';
 import '../../providers/price_negotiation_provider.dart';
 import '../../models/price_negotiation_model.dart';
 import 'driver_offer_card.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../services/sound_service.dart';
 
 /// Bottom sheet shown while searching for drivers and viewing offers.
@@ -57,11 +58,26 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
   bool _showExpiredInline = false; // Show "increase fare" options inline (not as modal)
   bool _isExpanded = false; // Collapsed by default
   bool _timerExpiredShown = false; // Prevent showing dialog multiple times
+  late double _localPrice; // Local copy of price for immediate UI update
 
   @override
   void initState() {
     super.initState();
+    _localPrice = widget.offeredPrice;
     _startCountdown();
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchingDriversSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.offeredPrice != widget.offeredPrice) {
+      _localPrice = widget.offeredPrice;
+    }
+  }
+
+  void _changePrice(double newPrice) {
+    setState(() => _localPrice = newPrice);
+    widget.onPriceChanged(newPrice);
   }
 
   void _startCountdown() {
@@ -93,9 +109,9 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
   }
 
   String get _priceMessage {
-    if (widget.offeredPrice < widget.suggestedPrice) {
+    if (_localPrice < widget.suggestedPrice) {
       return 'Tarifa menor al promedio. Espere recibir menos ofertas';
-    } else if (widget.offeredPrice > widget.suggestedPrice) {
+    } else if (_localPrice > widget.suggestedPrice) {
       return 'Mejor tarifa. Tu solicitud tiene prioridad';
     }
     return 'Tarifa promedio. Buscando conductores cercanos';
@@ -262,7 +278,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
               return DriverOfferCard(
                 offer: offer,
                 index: index,
-                passengerOfferedPrice: widget.offeredPrice,
+                passengerOfferedPrice: _localPrice,
                 onAccept: () => widget.onAcceptOffer(offer),
                 onReject: () => widget.onRejectOffer(offer),
                 onCounterOffer: () => widget.onCounterOffer(offer),
@@ -276,7 +292,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
 
   /// Searching state with collapsed/expanded behavior
   Widget _buildSearchingState(BuildContext context) {
-    final showStrikethrough = widget.offeredPrice != widget.suggestedPrice;
+    final showStrikethrough = _localPrice != widget.suggestedPrice;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return GestureDetector(
@@ -357,10 +373,10 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                         Expanded(
                           child: _PriceButton(
                             label: '- 0.50',
-                            enabled: widget.offeredPrice > widget.minPrice,
+                            enabled: _localPrice > widget.minPrice,
                             onTap: () {
-                              final newPrice = (widget.offeredPrice - 0.50).clamp(widget.minPrice, widget.maxPrice);
-                              widget.onPriceChanged(newPrice);
+                              final newPrice = (_localPrice - 0.50).clamp(widget.minPrice, widget.maxPrice);
+                              _changePrice(newPrice);
                             },
                           ),
                         ),
@@ -371,8 +387,8 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                               duration: const Duration(milliseconds: 200),
                               transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
                               child: Text(
-                                widget.offeredPrice.toCurrency(decimals: 2),
-                                key: ValueKey(widget.offeredPrice),
+                                _localPrice.toCurrency(decimals: 2),
+                                key: ValueKey(_localPrice),
                                 style: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.w900,
@@ -396,10 +412,10 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                         Expanded(
                           child: _PriceButton(
                             label: '+ 0.50',
-                            enabled: widget.offeredPrice < widget.maxPrice,
+                            enabled: _localPrice < widget.maxPrice,
                             onTap: () {
-                              final newPrice = (widget.offeredPrice + 0.50).clamp(widget.minPrice, widget.maxPrice);
-                              widget.onPriceChanged(newPrice);
+                              final newPrice = (_localPrice + 0.50).clamp(widget.minPrice, widget.maxPrice);
+                              _changePrice(newPrice);
                             },
                           ),
                         ),
@@ -411,10 +427,10 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: widget.offeredPrice < widget.maxPrice
+                        onPressed: _localPrice < widget.maxPrice
                             ? () {
-                                final newPrice = (widget.offeredPrice + 0.50).clamp(widget.minPrice, widget.maxPrice);
-                                widget.onPriceChanged(newPrice);
+                                final newPrice = (_localPrice + 0.50).clamp(widget.minPrice, widget.maxPrice);
+                                _changePrice(newPrice);
                               }
                             : null,
                         style: ElevatedButton.styleFrom(
@@ -445,7 +461,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Aceptar automaticamente ofertas entre ${widget.offeredPrice.toCurrency(decimals: 2)} y 5 minutos de distancia',
+                        'Aceptar automáticamente ofertas entre ${_localPrice.toCurrency(decimals: 2)} y 5 minutos de distancia',
                         style: TextStyle(fontSize: 13, color: AppColors.getTextPrimary(context)),
                       ),
                     ),
@@ -478,10 +494,10 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                           style: TextStyle(fontSize: 15, color: AppColors.getTextPrimary(context)),
                           children: [
                             TextSpan(
-                              text: widget.offeredPrice.toCurrency(decimals: 2),
+                              text: _localPrice.toCurrency(decimals: 2),
                               style: const TextStyle(fontWeight: FontWeight.w600),
                             ),
-                            if (widget.offeredPrice != widget.suggestedPrice) ...[
+                            if (_localPrice != widget.suggestedPrice) ...[
                               const TextSpan(text: ', '),
                               TextSpan(
                                 text: widget.suggestedPrice.toCurrency(decimals: 2),
@@ -519,7 +535,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  widget.pickupAddress.isNotEmpty ? widget.pickupAddress : 'Mi ubicacion',
+                                  widget.pickupAddress.isNotEmpty ? widget.pickupAddress : 'Mi ubicación',
                                   style: const TextStyle(fontSize: 14),
                                   maxLines: 1, overflow: TextOverflow.ellipsis,
                                 ),
@@ -598,7 +614,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
 
   /// Build the inline "increase fare" UI (replaces the old modal bottom sheet)
   Widget _buildExpiredOptionsInline() {
-    final rawIncrease = widget.offeredPrice * 1.15;
+    final rawIncrease = _localPrice * 1.15;
     final increasedPrice = (rawIncrease * 2).round() / 2.0;
     final clampedPrice = increasedPrice.clamp(widget.minPrice, widget.maxPrice);
 
@@ -613,7 +629,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Aumenta tu tarifa para llamar la atencion de los conductores',
+            'Aumenta tu tarifa para llamar la atención de los conductores',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -623,12 +639,12 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
           ),
           const SizedBox(height: 24),
 
-          // Increase price button (green) -- updates Firestore + re-notifies drivers
+          // Increase price button (green) — updates Firestore + re-notifies drivers
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                widget.onPriceChanged(clampedPrice);
+                _changePrice(clampedPrice);
                 widget.onRenewSearch(clampedPrice); // Update price + re-notify
                 setState(() {
                   _showExpiredInline = false;
@@ -651,7 +667,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
           ),
           const SizedBox(height: 12),
 
-          // Keep current price button (grey) -- just restart local timer
+          // Keep current price button (grey) — just restart local timer
           // No Firestore call needed: ride already has expiresAt=10min
           SizedBox(
             width: double.infinity,
@@ -671,7 +687,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: Text(
-                'Mantener ${widget.offeredPrice.toCurrency(decimals: 2)}',
+                'Mantener ${_localPrice.toCurrency(decimals: 2)}',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
               ),
             ),
@@ -682,18 +698,12 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
   }
 
   void _showCancelConfirmation(BuildContext context) {
-    final increasedPrice = (widget.offeredPrice + 1.0).clamp(widget.minPrice, widget.maxPrice);
+    final increasedPrice = (_localPrice + 1.0).clamp(widget.minPrice, widget.maxPrice);
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).padding.bottom + 24),
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(ctx),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -704,7 +714,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '¿Todavia necesitas un viaje? Busca de nuevo con una tarifa mas alta',
+                    '¿Todavía necesitas un viaje? Busca de nuevo con una tarifa más alta',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
@@ -744,7 +754,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  widget.onPriceChanged(increasedPrice);
+                  _changePrice(increasedPrice);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFC8E636),
@@ -762,7 +772,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
             const SizedBox(height: 8),
             Center(
               child: Text(
-                'La mayoria de pasajeros obtiene quien los lleve con esta tarifa en rutas similares',
+                'La mayoría de pasajeros obtiene quién los lleve con esta tarifa en rutas similares',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,

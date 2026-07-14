@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../widgets/animated/modern_animated_widgets.dart';
 
@@ -290,14 +291,9 @@ class _CommunicationScreenState extends State<CommunicationScreen>
   }
 
   void _showDialpad() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -534,7 +530,7 @@ class _CommunicationScreenState extends State<CommunicationScreen>
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // FAB: Ubicacion
+          // FAB: Ubicación
           FloatingActionButton.small(
             heroTag: 'fab_location',
             backgroundColor: Theme.of(context).colorScheme.surface,
@@ -922,15 +918,10 @@ class _CommunicationScreenState extends State<CommunicationScreen>
   }
   
   void _showAttachmentOptions() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.surfaceColor,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1036,11 +1027,11 @@ class _CommunicationScreenState extends State<CommunicationScreen>
     });
   }
   
-  // UI: placeholder para mostrar ubicacion del pasajero
+  // UI: placeholder para mostrar ubicación del pasajero
   void _showPassengerLocation() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Mostrando ubicacion del pasajero'),
+        content: const Text('Mostrando ubicación del pasajero'),
         backgroundColor: ModernTheme.rappiOrange,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1049,15 +1040,10 @@ class _CommunicationScreenState extends State<CommunicationScreen>
   }
 
   void _showOptionsMenu() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.surfaceColor,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

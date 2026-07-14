@@ -1,15 +1,16 @@
 // ignore_for_file: use_build_context_synchronously
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_storage/firebase_storage.dart'; // ✅ NUEVO: Para subir fotos
+import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart'; // ✅ NUEVO: Para tomar/seleccionar fotos
 import 'dart:io';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 
+import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
@@ -18,9 +19,9 @@ class ProfileEditScreen extends StatefulWidget {
   _ProfileEditScreenState createState() => _ProfileEditScreenState();
 }
 
-class _ProfileEditScreenState extends State<ProfileEditScreen> 
+class _ProfileEditScreenState extends State<ProfileEditScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
   String? _userId; // Se obtendrá del usuario actual
   
   late AnimationController _fadeController;
@@ -133,8 +134,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
     try {
       setState(() => _isLoading = true);
 
-      // ✅ Obtener el ID del usuario autenticado desde Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
+      // Los datos del usuario vienen del backend Node vía AuthProvider (JWT).
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.currentUser;
       if (currentUser == null) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -148,36 +150,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         }
         return;
       }
-      _userId = currentUser.uid;
-      
-      // Cargar datos del usuario desde Firestore
-      final userDoc = await _firestore.collection('users').doc(_userId).get();
-      
-      if (userDoc.exists) {
-        final data = userDoc.data()!;
-        setState(() {
-          _nameController.text = data['firstName'] ?? '';
-          _lastNameController.text = data['lastName'] ?? '';
-          _emailController.text = data['email'] ?? '';
-          _phoneController.text = data['phoneNumber'] ?? '';
-          _birthDate = data['birthDate'] ?? '';
-          _gender = data['gender'] ?? 'Masculino';
-          _documentType = data['documentType'] ?? 'DNI';
-          _documentNumber = data['documentNumber'] ?? '';
-          _emergencyNameController.text = data['emergencyContactName'] ?? '';
-          _emergencyPhoneController.text = data['emergencyContactPhone'] ?? '';
-          _profileImagePath = data['profileImage'] ?? '';
-          _notificationsEnabled = data['notificationsEnabled'] ?? true;
-          _smsEnabled = data['smsEnabled'] ?? false;
-          _emailPromotions = data['emailPromotions'] ?? true;
-          _locationSharing = data['locationSharing'] ?? true;
-        });
-      } else {
-        // Si no existe el documento, mostrar campos vacíos (sin crear datos por defecto)
-        setState(() {
-          // Los campos ya están vacíos por defecto
-        });
-      }
+      _userId = currentUser.id;
+
+      // Los campos guardados como extras (documentType, gender, emergency, etc.)
+      // aún no están mapeados en /api/auth/me. Pre-cargamos lo que tengamos
+      // y dejamos los adicionales vacíos hasta que el backend los exponga.
+      // TODO(node-migration): mapear extras en GET /api/auth/me cuando existan.
+      final fullNameParts = currentUser.fullName.trim().split(' ');
+      final firstName = fullNameParts.isNotEmpty ? fullNameParts.first : '';
+      final lastName = fullNameParts.length > 1
+          ? fullNameParts.sublist(1).join(' ')
+          : '';
+
+      setState(() {
+        _nameController.text = firstName;
+        _lastNameController.text = lastName;
+        _emailController.text = currentUser.email;
+        _phoneController.text = currentUser.phone;
+        _birthDate = currentUser.birthDate ?? '';
+        _documentNumber = currentUser.identityDocument ?? '';
+        _profileImagePath = currentUser.profilePhotoUrl;
+      });
     } catch (e) {
       AppLogger.error('Error cargando datos del usuario: $e');
       if (mounted) {
@@ -840,9 +833,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
   }
   
   void _changeProfileImage() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1094,65 +1087,62 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
     return shouldDiscard ?? false;
   }
   
-  /// ✅ CORREGIDO: Guardar perfil con subida real a Firebase Storage
+  /// Guarda el perfil llamando al backend Node (upload + PATCH /me).
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // ✅ PASO 1: Subir foto de perfil a Firebase Storage si hay cambios
+      // PASO 1: subir la foto al bucket via /api/storage/upload si es archivo local.
       String? profileImageUrl = _profileImagePath;
-
-      // Verificar si _profileImagePath es un archivo local (no una URL de Firebase)
       if (_profileImagePath.isNotEmpty &&
           !_profileImagePath.startsWith('http://') &&
           !_profileImagePath.startsWith('https://')) {
         try {
           final file = File(_profileImagePath);
           if (await file.exists()) {
-            AppLogger.debug('🚕 RappiTeam [DEBUG] Subiendo foto de perfil a Firebase Storage...');
-            // Crear referencia única con timestamp
-            final timestamp = DateTime.now().millisecondsSinceEpoch;
-            final storage = FirebaseStorage.instance;
-            final profilePhotoRef = storage.ref('profile_photos/$_userId/profile_$timestamp.jpg');
-
-            // Subir con metadata
-            final metadata = SettableMetadata(
-              contentType: 'image/jpeg',
-              customMetadata: {'uploadedBy': _userId!, 'type': 'profile_photo'},
-            );
-
-            final uploadTask = await profilePhotoRef.putFile(file, metadata);
-            profileImageUrl = await uploadTask.ref.getDownloadURL();
-
-            AppLogger.debug('🚕 RappiTeam [INFO] ✅ Foto de perfil subida exitosamente: $profileImageUrl');
+            AppLogger.debug('Subiendo foto de perfil a backend Node...');
+            final uploaded = await _api.uploadFile(file: file, scope: 'avatar');
+            profileImageUrl = uploaded['url'] as String? ??
+                uploaded['publicUrl'] as String? ??
+                profileImageUrl;
+            AppLogger.debug('✅ Foto subida: $profileImageUrl');
           }
         } catch (e) {
-          AppLogger.error('🚕 RappiTeam [ERROR] Error subiendo foto de perfil: $e');
+          AppLogger.error('Error subiendo foto de perfil: $e');
           // No fallar el guardado si hay error en la foto
         }
       }
 
-      // ✅ PASO 2: Guardar datos en Firestore con URL de Firebase Storage
-      await _firestore.collection('users').doc(_userId).update({
-        'firstName': _nameController.text.trim(),
-        'lastName': _lastNameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'phoneNumber': _phoneController.text.trim(),
-        'birthDate': _birthDate,
-        'gender': _gender,
-        'documentType': _documentType,
-        'documentNumber': _documentNumber,
-        'emergencyContactName': _emergencyNameController.text.trim(),
-        'emergencyContactPhone': _emergencyPhoneController.text.trim(),
-        'profileImage': profileImageUrl, // ✅ CORREGIDO: Usar URL de Firebase Storage
-        'notificationsEnabled': _notificationsEnabled,
-        'smsEnabled': _smsEnabled,
-        'emailPromotions': _emailPromotions,
-        'locationSharing': _locationSharing,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // PASO 2: persistir los cambios vía AuthProvider (que llama al backend).
+      // TODO(node-migration): AuthProvider.updateProfile aún no persiste los
+      // extras (gender, documentType, emergency, preferencias). Cuando el
+      // backend exponga PATCH /api/auth/me completo, mapear estos campos aquí.
+      final authProvider = context.read<AuthProvider>();
+      final combinedName = [
+        _nameController.text.trim(),
+        _lastNameController.text.trim(),
+      ].where((p) => p.isNotEmpty).join(' ').trim();
+
+      await authProvider.updateProfile(
+        fullName: combinedName.isEmpty ? null : combinedName,
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        profilePhotoUrl: profileImageUrl,
+        birthDate: _birthDate.isEmpty ? null : _birthDate,
+        identityDocument: _documentNumber.isEmpty ? null : _documentNumber,
+        extraFields: {
+          'gender': _gender,
+          'documentType': _documentType,
+          'emergencyContactName': _emergencyNameController.text.trim(),
+          'emergencyContactPhone': _emergencyPhoneController.text.trim(),
+          'notificationsEnabled': _notificationsEnabled,
+          'smsEnabled': _smsEnabled,
+          'emailPromotions': _emailPromotions,
+          'locationSharing': _locationSharing,
+        },
+      );
       
       if (mounted) {
         setState(() {

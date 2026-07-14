@@ -65,6 +65,22 @@ service cloud.firestore {
       return userExists() && getUserData().isActive == true;
     }
 
+    // Prevent a passenger from accepting their own ride as a driver
+    function isNotSelfAccepting(rideData) {
+      return request.auth.uid != rideData.passengerId;
+    }
+
+    // Check if update attempts to modify protected user fields
+    function hasProtectedFieldChanges() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['isAdmin', 'documentVerified', 'isVerified', 'rating', 'totalTrips', 'totalEarnings']);
+    }
+
+    // Check if user is a participant of a conversation
+    function isConversationParticipant() {
+      return request.auth.uid in resource.data.participants;
+    }
+
     // ═══════════════════════════════════════════════
     // USERS
     // ═══════════════════════════════════════════════
@@ -77,11 +93,17 @@ service cloud.firestore {
       );
       allow create: if isAuthenticated() && isOwner(userId);
       allow update: if isAuthenticated() && (
-        (isOwner(userId) &&
-         !('isAdmin' in request.resource.data.diff(resource.data).affectedKeys())) ||
+        (isOwner(userId) && !hasProtectedFieldChanges()) ||
         isAdmin()
       );
       allow delete: if isAdmin();
+
+      // Favorites subcollection (user's saved places)
+      match /favorites/{favoriteId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow create, update: if isAuthenticated() && isOwner(userId);
+        allow delete: if isAuthenticated() && isOwner(userId);
+      }
     }
 
     // ═══════════════════════════════════════════════
@@ -136,6 +158,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Driver registration applications
+    match /driver_applications/{applicationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && isAdmin();
+    }
+
     // Driver locations (real-time GPS)
     match /driver_locations/{driverId} {
       allow read: if isAuthenticated();
@@ -166,8 +195,8 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         isOwner(resource.data.passengerId) ||
         isOwner(resource.data.userId) ||
-        isOwner(resource.data.driverId) ||
-        isDriver() ||
+        (isOwner(resource.data.driverId) && isNotSelfAccepting(resource.data)) ||
+        (isDriver() && isNotSelfAccepting(resource.data)) ||
         isAdmin()
       );
 
@@ -406,31 +435,43 @@ service cloud.firestore {
     // ═══════════════════════════════════════════════
 
     match /conversations/{conversationId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        isConversationParticipant() || isAdmin()
+      );
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isConversationParticipant() || isAdmin()
+      );
       allow delete: if isAdmin();
 
       // Messages subcollection
       match /messages/{messageId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
+        allow read: if isAuthenticated() && (
+          isConversationParticipant() || isAdmin()
+        );
+        allow create: if isAuthenticated() && isConversationParticipant();
+        allow update: if isAuthenticated() && isConversationParticipant();
         allow delete: if isAdmin();
       }
     }
 
     // Chats collection (used by ChatService)
     match /chats/{chatId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        isConversationParticipant() || isAdmin()
+      );
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isConversationParticipant() || isAdmin()
+      );
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
+        allow read: if isAuthenticated() && (
+          isConversationParticipant() || isAdmin()
+        );
+        allow create: if isAuthenticated() && isConversationParticipant();
+        allow update: if isAuthenticated() && isConversationParticipant();
         allow delete: if isAdmin();
       }
     }
@@ -502,7 +543,7 @@ service cloud.firestore {
         isOwner(resource.data.driverId)
       );
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && isOwner(resource.data.userId);
+      allow update: if false; // Ratings are immutable after submission
       allow delete: if isAdmin();
     }
 
@@ -751,6 +792,42 @@ service cloud.firestore {
     match /payment_reconciliation/{date} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // ═══════════════════════════════════════════════
+    // RECARGAS DE CONDUCTORES (admin panel + Cloud Functions)
+    // ═══════════════════════════════════════════════
+
+    match /driverRecharges/{rechargeId} {
+      // Drivers can read their own recharges. Admins can read all.
+      allow read: if isAuthenticated() && (
+        isAdmin() || isOwner(resource.data.driverId)
+      );
+      // Only Cloud Functions and admins can create/update recharges
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════
+    // FACTURAS Y BOLETAS (SUNAT)
+    // ═══════════════════════════════════════════════
+
+    match /invoices/{invoiceId} {
+      // Drivers can read their own invoices. Admins can read all.
+      allow read: if isAuthenticated();
+      // Only admins can write invoices (Cloud Functions emit them)
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════
+    // CONFIGURACION FISCAL DE LA EMPRESA
+    // ═══════════════════════════════════════════════
+
+    match /companySettings/{docId} {
+      // Read: any authenticated user (needed for invoice display)
+      allow read: if isAuthenticated();
+      // Write: only admins
+      allow write: if isAdmin();
     }
 
     // ═══════════════════════════════════════════════

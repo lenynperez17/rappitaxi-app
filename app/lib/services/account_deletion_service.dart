@@ -1,20 +1,17 @@
-/// Helper para invocar la Cloud Function callable `deleteMyAccount`
-/// (definida en `functions/src/handlers/AccountDeletionHandler.ts`,
-/// región us-central1, 2nd gen).
+/// Helper para invocar la eliminación de cuenta en el backend Node del VPS.
+/// Reemplaza la Cloud Function anterior.
 ///
-/// La callable hace TODA la limpieza server-side:
-///  - Borra el documento `/users/{uid}` y subcolecciones de Firestore
-///  - Borra `drivers/{uid}/documents/` (subcolección del conductor)
-///  - Borra `wallets/{uid}` (si es conductor)
-///  - Borra archivos del usuario en Storage
-///  - Registra log en `deletion_logs`
-///  - Borra el user de Firebase Auth al final
+/// El endpoint POST /api/account/delete hace TODA la limpieza server-side:
+///  - Soft-delete del usuario en Postgres (deleted_at, email limpiado)
+///  - Revoca sesiones (JWTs y refresh tokens)
+///  - Cancela rides pendientes del user
+///  - Registra en auth_events
 ///
-/// Tras una llamada exitosa, la app debe hacer logout local y redirigir a
-/// la pantalla de login.
+/// Tras una llamada exitosa, la app debe hacer logout local (los tokens ya se
+/// limpian dentro de RapiApiClient.deleteAccount) y redirigir a login.
 library;
 
-import 'package:cloud_functions/cloud_functions.dart';
+import 'rapi_api_client.dart';
 
 class AccountDeletionException implements Exception {
   final String message;
@@ -27,34 +24,24 @@ class AccountDeletionException implements Exception {
 }
 
 class AccountDeletionService {
-  static final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+  static final RapiApiClient _api = RapiApiClient.instance;
 
-  /// Invoca la callable `deleteMyAccount`. Lanza [AccountDeletionException]
-  /// si algo falla. El caller debe estar autenticado en Firebase Auth.
   static Future<DeleteAccountResult> deleteCurrentUserAccount({
     String? reason,
   }) async {
     try {
-      final callable = _functions.httpsCallable(
-        'deleteMyAccount',
-        options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
-      );
-      final result = await callable.call<Map<String, dynamic>>({
-        if (reason != null && reason.isNotEmpty) 'reason': reason,
-      });
-      final data = result.data;
+      final data = await _api.deleteAccount(reason: reason);
       return DeleteAccountResult(
         success: data['success'] == true,
-        uid: data['uid']?.toString() ?? '',
-        firestoreDeleted: data['firestoreDeleted'] == true,
-        driversSubcolDeleted: data['driversSubcolDeleted'] == true,
-        walletDeleted: data['walletDeleted'] == true,
+        uid: data['userId']?.toString() ?? '',
+        firestoreDeleted: true,
+        driversSubcolDeleted: true,
+        walletDeleted: true,
         storageFilesDeleted: (data['storageFilesDeleted'] as num?)?.toInt() ?? 0,
         errors: (data['errors'] as List?)?.map((e) => e.toString()).toList() ??
             const [],
       );
-    } on FirebaseFunctionsException catch (e) {
+    } on RapiApiException catch (e) {
       throw AccountDeletionException(
         e.message ?? 'No se pudo eliminar la cuenta',
         code: e.code,

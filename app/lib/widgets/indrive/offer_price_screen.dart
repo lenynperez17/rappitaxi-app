@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/currency_formatter.dart';
 
-/// Fullscreen "Ofrece tu tarifa" screen -- inDrive style.
+/// Fullscreen "Ofrece tu tarifa" screen — inDrive style.
 ///
 /// Opened when user taps the big price in PriceSettingSheet.
 /// Allows editing price via text field, shows payment method,
@@ -239,7 +239,7 @@ class _OfferPriceScreenState extends State<OfferPriceScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Aceptar automaticamente al conductor mas cercano por ${_editedPrice.toCurrency()}',
+                            'Aceptar automáticamente al conductor más cercano por ${_editedPrice.toCurrency()}',
                             style: TextStyle(
                               fontSize: 13,
                               color: AppColors.getTextPrimary(context),

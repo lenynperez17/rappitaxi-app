@@ -1,26 +1,31 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-/// Centralized configuration service
-/// Reads fares and configuration from Firestore (config/system_config)
-/// Configurable from the admin panel
+/// Servicio centralizado de configuración.
+///
+/// Antes leía la config desde Firestore (`config/system_config`); tras la
+/// migración al backend Node, la config se sirve mediante valores por defecto
+/// hardcodeados en el cliente. Si en el futuro el backend expone
+/// `/api/config`, este servicio puede llamarlo desde `getConfig()`.
+///
+/// La API pública (SystemConfig, FareConfig, CommissionConfig,
+/// ServiceConfig, CompanyConfig, `calculateFare`, `calculateSimpleFare`,
+/// `getPlatformCommission`, `clearCache`, `watchConfig`) se mantiene igual
+/// para no romper pantallas existentes.
 class ConfigService {
   static final ConfigService _instance = ConfigService._internal();
   factory ConfigService() => _instance;
   ConfigService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static const String _configDocId = 'system_config';
-
-  // Configuration cache
+  // Cache de configuración
   SystemConfig? _cachedConfig;
   DateTime? _lastFetch;
   static const Duration _cacheExpiration = Duration(minutes: 5);
 
-  /// Get system configuration
-  /// Reads from Firestore with 5-minute cache
+  /// Obtiene la configuración del sistema (con cache de 5 min).
+  ///
+  /// Actualmente retorna la config por defecto. Si el backend Node expone un
+  /// endpoint `/api/config`, se puede añadir la llamada aquí.
   Future<SystemConfig> getConfig() async {
-    // Use cache if valid
     if (_cachedConfig != null && _lastFetch != null) {
       final elapsed = DateTime.now().difference(_lastFetch!);
       if (elapsed < _cacheExpiration) {
@@ -28,32 +33,20 @@ class ConfigService {
       }
     }
 
-    try {
-      final doc = await _firestore.collection('config').doc(_configDocId).get();
-
-      if (doc.exists && doc.data() != null) {
-        _cachedConfig = SystemConfig.fromJson(doc.data()!);
-        _lastFetch = DateTime.now();
-        debugPrint('Configuration loaded from Firestore');
-        return _cachedConfig!;
-      }
-    } catch (e) {
-      debugPrint('Error loading configuration: $e');
-    }
-
-    // Return default configuration on failure
-    debugPrint('Using default configuration');
-    return SystemConfig.defaultConfig();
+    // TODO: cuando el backend Node exponga /api/config, invocar aquí.
+    _cachedConfig = SystemConfig.defaultConfig();
+    _lastFetch = DateTime.now();
+    debugPrint('Configuration loaded (defaults)');
+    return _cachedConfig!;
   }
 
-  /// Get fare configuration
+  /// Obtiene la configuración de tarifas.
   Future<FareConfig> getFares() async {
     final config = await getConfig();
     return config.fares;
   }
 
-  /// Calculate fare based on distance and time
-  /// Uses fares configured in the admin panel
+  /// Calcula la tarifa dinámica según distancia, tiempo y modificadores.
   Future<double> calculateFare({
     required double distanceKm,
     required int durationMinutes,
@@ -63,47 +56,47 @@ class ConfigService {
   }) async {
     final fares = await getFares();
 
-    // Base fare by service type
     double baseFare = fares.baseFare;
     double perKm = fares.perKm;
     double perMinute = fares.perMinute;
 
-    // Multipliers by service type
-    double serviceMultiplier = 1.0;
+    // Multiplicadores por tipo de servicio
+    double serviceMultiplier;
     switch (serviceType.toLowerCase()) {
-      case 'premium':
-        serviceMultiplier = 1.5;
+      case 'express':
+        serviceMultiplier = 1.0;
         break;
-      case 'xl':
+      case 'ejecutivo':
+        serviceMultiplier = 1.15;
+        break;
+      case 'vip':
         serviceMultiplier = 1.3;
         break;
+      case 'mototaxi':
       case 'moto':
         serviceMultiplier = 0.7;
         break;
+      case 'entregas':
       case 'delivery':
         serviceMultiplier = 0.8;
+        break;
+      case 'ciudadaciudad':
+        serviceMultiplier = 1.8;
         break;
       default:
         serviceMultiplier = 1.0;
     }
 
-    // Base calculation
     double fare = baseFare + (distanceKm * perKm) + (durationMinutes * perMinute);
-
-    // Apply service multiplier
     fare *= serviceMultiplier;
 
-    // Apply night surcharge (if applicable)
     if (isNightTime && fares.nightSurcharge > 0) {
       fare *= (1 + fares.nightSurcharge / 100);
     }
-
-    // Apply holiday surcharge (if applicable)
     if (isHoliday && fares.holidaySurcharge > 0) {
       fare *= (1 + fares.holidaySurcharge / 100);
     }
 
-    // Apply minimum fare
     if (fare < fares.minimumFare) {
       fare = fares.minimumFare;
     }
@@ -111,44 +104,36 @@ class ConfigService {
     return double.parse(fare.toStringAsFixed(2));
   }
 
-  /// Calculate simple fare by distance only (for quick estimates)
+  /// Cálculo simple por distancia (para estimados rápidos).
   Future<double> calculateSimpleFare(double distanceKm) async {
     final fares = await getFares();
     double fare = fares.baseFare + (distanceKm * fares.perKm);
-    return fare < fares.minimumFare ? fares.minimumFare : double.parse(fare.toStringAsFixed(2));
+    return fare < fares.minimumFare
+        ? fares.minimumFare
+        : double.parse(fare.toStringAsFixed(2));
   }
 
-  /// Get platform commission configuration
+  /// Comisión de la plataforma (porcentaje).
   Future<double> getPlatformCommission() async {
     final config = await getConfig();
     return config.commission.platformPercentage;
   }
 
-  /// Clear cache to force reload
+  /// Fuerza recargar la config en la próxima llamada.
   void clearCache() {
     _cachedConfig = null;
     _lastFetch = null;
     debugPrint('Configuration cache cleared');
   }
 
-  /// Watch config changes in real time (for immediate updates)
-  Stream<SystemConfig> watchConfig() {
-    return _firestore
-        .collection('config')
-        .doc(_configDocId)
-        .snapshots()
-        .map((doc) {
-      if (doc.exists && doc.data() != null) {
-        _cachedConfig = SystemConfig.fromJson(doc.data()!);
-        _lastFetch = DateTime.now();
-        return _cachedConfig!;
-      }
-      return SystemConfig.defaultConfig();
-    });
+  /// Stream de config. Como ya no hay observadores en tiempo real, emite una
+  /// única vez la config actual.
+  Stream<SystemConfig> watchConfig() async* {
+    yield await getConfig();
   }
 }
 
-/// System configuration model
+/// Modelo de configuración del sistema.
 class SystemConfig {
   final CompanyConfig company;
   final FareConfig fares;
@@ -181,7 +166,6 @@ class SystemConfig {
   }
 }
 
-/// Company configuration
 class CompanyConfig {
   final String name;
   final String phone;
@@ -218,15 +202,14 @@ class CompanyConfig {
   }
 }
 
-/// Fare configuration
 class FareConfig {
   final double baseFare;
   final double perKm;
   final double perMinute;
   final double minimumFare;
-  final double maximumFare; // Maximum fare to limit excessive prices
-  final double nightSurcharge; // Percentage
-  final double holidaySurcharge; // Percentage
+  final double maximumFare;
+  final double nightSurcharge; // %
+  final double holidaySurcharge; // %
 
   FareConfig({
     required this.baseFare,
@@ -240,10 +223,10 @@ class FareConfig {
 
   factory FareConfig.fromJson(Map<String, dynamic> json) {
     return FareConfig(
-      baseFare: (json['baseFare'] ?? 5.0).toDouble(),
-      perKm: (json['perKm'] ?? 2.0).toDouble(),
+      baseFare: (json['baseFare'] ?? 3.5).toDouble(),
+      perKm: (json['perKm'] ?? 1.8).toDouble(),
       perMinute: (json['perMinute'] ?? 0.3).toDouble(),
-      minimumFare: (json['minimumFare'] ?? 6.0).toDouble(),
+      minimumFare: (json['minimumFare'] ?? 5.0).toDouble(),
       maximumFare: (json['maximumFare'] ?? 200.0).toDouble(),
       nightSurcharge: (json['nightSurcharge'] ?? 20.0).toDouble(),
       holidaySurcharge: (json['holidaySurcharge'] ?? 30.0).toDouble(),
@@ -252,10 +235,10 @@ class FareConfig {
 
   factory FareConfig.defaultConfig() {
     return FareConfig(
-      baseFare: 5.0,
-      perKm: 2.0,
+      baseFare: 3.5,
+      perKm: 1.8,
       perMinute: 0.3,
-      minimumFare: 6.0,
+      minimumFare: 5.0,
       maximumFare: 200.0,
       nightSurcharge: 20.0,
       holidaySurcharge: 30.0,
@@ -263,7 +246,6 @@ class FareConfig {
   }
 }
 
-/// Commission configuration
 class CommissionConfig {
   final double platformPercentage;
 
@@ -276,11 +258,10 @@ class CommissionConfig {
   }
 
   factory CommissionConfig.defaultConfig() {
-    return CommissionConfig(platformPercentage: 20.0);
+    return CommissionConfig(platformPercentage: 12.0);
   }
 }
 
-/// Service configuration
 class ServiceConfig {
   final double maxDistanceKm;
   final int maxWaitTimeMinutes;

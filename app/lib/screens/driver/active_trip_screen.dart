@@ -11,19 +11,19 @@ import 'dart:async';
 import 'dart:math' as math;
 // TimeoutException ya está disponible en dart:async
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../core/utils/payment_utils.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:provider/provider.dart';
 
-import 'package:flutter_animarker/flutter_map_marker_animation.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:flutter/services.dart';
 import '../../core/config/app_config.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
-import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
+import '../../services/rapi_sse_client.dart';
 import '../shared/rating_dialog.dart';
 import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
@@ -56,12 +56,13 @@ class ActiveTripScreen extends StatefulWidget {
 
 class _ActiveTripScreenState extends State<ActiveTripScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
 
   // Completer para Animarker
   final Completer<GoogleMapController> _mapCompleter = Completer<GoogleMapController>();
   GoogleMapController? _mapController;
-  StreamSubscription<DocumentSnapshot>? _tripSubscription;
+  StreamSubscription<Map<String, dynamic>>? _tripSubscription;
   StreamSubscription<Position>? _positionSubscription;
   Timer? _locationUpdateTimer;
 
@@ -100,22 +101,38 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     if (widget.initialLocation != null) {
       _currentLocation = widget.initialLocation;
     }
+    // Fallback: if no initial location, use pickup location from trip
+    if (_currentLocation == null && widget.initialTrip != null) {
+      _currentLocation = LatLng(
+        widget.initialTrip!.pickupLocation.latitude,
+        widget.initialTrip!.pickupLocation.longitude,
+      );
+    }
     _initAnimations();
-    _loadCarIcon();
-    _loadTrip();
+    _initAsync();
     _startLocationTracking();
     _listenToTripUpdates();
   }
 
-  /// Cargar iconos modernos para el mapa
+  /// Load icons BEFORE loading trip to avoid race condition
+  Future<void> _initAsync() async {
+    await _loadCarIcon();
+    _loadTrip();
+  }
+
+  /// Load custom marker icons using MapMarkerUtils (same as passenger screen)
   Future<void> _loadCarIcon() async {
     try {
       _carIcon = await MapMarkerUtils.getCarTopViewIcon();
-      _pickupIcon = await MapMarkerUtils.getOriginIcon();
+      _pickupIcon = await MapMarkerUtils.getPassengerWaitingIcon();
       _destinationIcon = await MapMarkerUtils.getDestinationIcon();
-      if (mounted && !_isDisposed) setState(() {});
+      debugPrint('✅ Iconos de mapa cargados correctamente (MapMarkerUtils)');
+      if (mounted && !_isDisposed) {
+        _updateMapMarkers();
+        setState(() {});
+      }
     } catch (e) {
-      debugPrint('⚠️ Error cargando iconos de mapa: $e');
+      debugPrint('⚠️ Error cargando iconos: $e');
     }
   }
 
@@ -154,17 +171,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       });
     } else {
       try {
-        // ✅ FIX: Agregar timeout para evitar congelamiento
-        final tripDoc = await _firestore.collection('rides').doc(widget.tripId).get()
+        final response = await _api
+            .getRide(widget.tripId)
             .timeout(const Duration(seconds: 15), onTimeout: () {
-              throw TimeoutException('Timeout cargando viaje');
-            });
-        if (tripDoc.exists && mounted) {
+          throw TimeoutException('Timeout cargando viaje');
+        });
+        final rideJson = _extractRide(response);
+        if (mounted) {
           setState(() {
-            _currentTrip = TripModel.fromJson({
-              'id': tripDoc.id,
-              ...tripDoc.data()!,
-            });
+            _currentTrip = TripModel.fromJson({'id': widget.tripId, ...rideJson});
             _updateTripState();
           });
         }
@@ -185,26 +200,30 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     _updateMapMarkers();
   }
 
+  Map<String, dynamic> _extractRide(Map<String, dynamic> response) {
+    final nested = response['ride'];
+    if (nested is Map<String, dynamic>) return nested;
+    return response;
+  }
+
   void _listenToTripUpdates() {
-    _tripSubscription = _firestore
-        .collection('rides')
-        .doc(widget.tripId)
-        .snapshots()
-        .listen((snapshot) {
+    _sse.start();
+    _tripSubscription = _sse.rideUpdates.listen((event) {
       if (_isDisposed || !mounted) return;
 
-      if (!snapshot.exists) {
-        // Ride document was deleted from Firestore
-        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} no longer exists in Firestore');
-        _handleRideGone();
-        return;
-      }
+      final rideId = (event['rideId'] as String?) ??
+          (event['id'] as String?) ??
+          ((event['ride'] as Map<String, dynamic>?)?['id'] as String?);
+      if (rideId != widget.tripId) return;
 
-      final data = snapshot.data()!;
-      final status = data['status'] as String?;
+      final ridePartial = _extractRide(event);
+      final status = ridePartial['status'] as String?;
 
       // Check if ride was cancelled or has a terminal status
-      if (status == 'cancelled' || status == 'cancelled_by_passenger' || status == 'cancelled_by_driver') {
+      if (status == 'cancelled' ||
+          status == 'cancelled_by_passenger' ||
+          status == 'cancelled_by_driver' ||
+          event['type'] == 'ride_deleted') {
         debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} was cancelled (status=$status)');
         _handleRideGone();
         return;
@@ -213,10 +232,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       // Check if ride was completed externally (e.g., by passenger or admin)
       final wasCompleted = _tripState == DriverTripState.completed;
 
+      final currentJson = _currentTrip?.toJson() ?? const <String, dynamic>{};
       setState(() {
         _currentTrip = TripModel.fromJson({
-          'id': snapshot.id,
-          ...data,
+          ...currentJson,
+          ...ridePartial,
+          'id': widget.tripId,
         });
         _updateTripState();
         _updateMapMarkers();
@@ -256,6 +277,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   void _updateTripState() {
     if (_currentTrip == null) return;
 
+    final oldState = _tripState;
+
     switch (_currentTrip!.status) {
       case 'accepted':
         _tripState = DriverTripState.goingToPickup;
@@ -278,6 +301,11 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         break;
       default:
         _tripState = DriverTripState.goingToPickup;
+    }
+
+    // Force route redraw when state changes
+    if (oldState != _tripState) {
+      _polylines.clear();
     }
   }
 
@@ -342,34 +370,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     if (_currentLocation == null || _currentTrip == null) return;
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final driverId = authProvider.currentUser?.id;
-
-      if (driverId != null) {
-        // Escribir en el ride Y en drivers (para que el pasajero pueda leer la ubicación)
-        await Future.wait([
-          _firestore.collection('rides').doc(widget.tripId).update({
-            'driverLocation': {
-              'latitude': _currentLocation!.latitude,
-              'longitude': _currentLocation!.longitude,
-              'heading': _currentHeading,
-              'timestamp': FieldValue.serverTimestamp(),
-            },
-          }).timeout(const Duration(seconds: 10), onTimeout: () {
-            debugPrint('⏱️ Timeout actualizando ubicación en ride');
-          }),
-          _firestore.collection('drivers').doc(driverId).update({
-            'currentLocation': {
-              'latitude': _currentLocation!.latitude,
-              'longitude': _currentLocation!.longitude,
-              'heading': _currentHeading,
-              'timestamp': FieldValue.serverTimestamp(),
-            },
-          }).timeout(const Duration(seconds: 10), onTimeout: () {
-            debugPrint('⏱️ Timeout actualizando ubicación en drivers');
-          }),
-        ]);
-      }
+      // Un solo heartbeat al backend: éste replica la ubicación al ride y al
+      // presence del conductor. Reemplaza los dos writes previos a Firestore.
+      await _api
+          .heartbeat(
+            latitude: _currentLocation!.latitude,
+            longitude: _currentLocation!.longitude,
+            heading: _currentHeading,
+            activeRideId: widget.tripId,
+          )
+          .timeout(const Duration(seconds: 10), onTimeout: () {
+        throw TimeoutException('Timeout actualizando ubicación');
+      });
     } on TimeoutException {
       debugPrint('⏱️ Timeout en actualización de ubicación');
     } catch (e) {
@@ -391,27 +403,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       _markers.add(Marker(
         markerId: const MarkerId('driver'),
         position: _currentLocation!,
-        icon: _carIcon ?? BitmapDescriptor.defaultMarker,
+        icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         anchor: const Offset(0.5, 0.5),
         flat: true,
         rotation: _currentHeading,
+        zIndexInt: 10,
         infoWindow: const InfoWindow(title: 'Tu ubicación'),
       ));
     }
 
-    // Marcador de recogida (icono moderno verde)
-    _markers.add(Marker(
-      markerId: const MarkerId('pickup'),
-      position: LatLng(
-        _currentTrip!.pickupLocation.latitude,
-        _currentTrip!.pickupLocation.longitude,
-      ),
-      icon: _pickupIcon ?? BitmapDescriptor.defaultMarker,
-      infoWindow: InfoWindow(
-        title: 'Punto de recogida',
-        snippet: _currentTrip!.pickupAddress,
-      ),
-    ));
+    // Marcador de recogida — ocultar si conductor ya llegó o viaje en progreso
+    final hidePickup = _tripState == DriverTripState.inProgress ||
+        _tripState == DriverTripState.arrivedAtDestination;
+    if (!hidePickup) {
+      _markers.add(Marker(
+        markerId: const MarkerId('pickup'),
+        position: LatLng(
+          _currentTrip!.pickupLocation.latitude,
+          _currentTrip!.pickupLocation.longitude,
+        ),
+        icon: _pickupIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        zIndexInt: 1,
+        infoWindow: InfoWindow(
+          title: 'Punto de recogida',
+          snippet: _currentTrip!.pickupAddress,
+        ),
+      ));
+    }
 
     // Marcador de destino (icono moderno rojo)
     _markers.add(Marker(
@@ -420,71 +438,86 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _currentTrip!.destinationLocation.latitude,
         _currentTrip!.destinationLocation.longitude,
       ),
-      icon: _destinationIcon ?? BitmapDescriptor.defaultMarker,
+      icon: _destinationIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       infoWindow: InfoWindow(
         title: 'Destino',
         snippet: _currentTrip!.destinationAddress,
       ),
     ));
 
-    // Dibujar ruta
-    _drawRoute();
+    // Draw route only once per state change
+    if (_polylines.isEmpty) {
+      _drawRouteAsync();
+    }
 
-    // Camera follows driver with dynamic bearing (only if toggle is on)
-    if (_isFollowingDriver && _mapController != null && _currentLocation != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newCameraPosition(CameraPosition(
-          target: _currentLocation!,
-          zoom: 17.0,
-          bearing: _currentHeading,
-          tilt: 45.0,
-        )),
-      );
+    // Camera: during trip show full route, during pickup follow driver
+    if (_mapController != null && _currentLocation != null) {
+      if (_tripState == DriverTripState.inProgress || _tripState == DriverTripState.arrivedAtDestination) {
+        // Only fit bounds once (not every GPS update)
+      } else if (_isFollowingDriver) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(CameraPosition(
+            target: _currentLocation!,
+            zoom: 17.0,
+            bearing: _currentHeading,
+            tilt: 45.0,
+          )),
+        );
+      }
     }
   }
 
-  Future<void> _drawRoute() async {
-    if (_currentTrip == null) {
-      debugPrint('🚗 _drawRoute: _currentTrip es NULL');
-      return;
-    }
+  /// Fetch real road route from Google Directions API and draw it
+  Future<void> _drawRouteAsync() async {
+    if (_currentTrip == null) return;
 
-    debugPrint('🚗 _drawRoute: estado=${_tripState.name}, origin=$_currentLocation');
-    _polylines.clear();
+    final pickupLatLng = LatLng(_currentTrip!.pickupLocation.latitude, _currentTrip!.pickupLocation.longitude);
+    final destinationLatLng = LatLng(_currentTrip!.destinationLocation.latitude, _currentTrip!.destinationLocation.longitude);
 
-    LatLng? origin = _currentLocation;
+    LatLng origin;
     LatLng destination;
 
     if (_tripState == DriverTripState.goingToPickup ||
         _tripState == DriverTripState.arrivedAtPickup ||
         _tripState == DriverTripState.waitingVerification) {
-      destination = LatLng(
-        _currentTrip!.pickupLocation.latitude,
-        _currentTrip!.pickupLocation.longitude,
-      );
+      origin = _currentLocation ?? pickupLatLng;
+      destination = pickupLatLng;
     } else {
-      destination = LatLng(
-        _currentTrip!.destinationLocation.latitude,
-        _currentTrip!.destinationLocation.longitude,
-      );
+      origin = pickupLatLng;
+      destination = destinationLatLng;
     }
 
-    if (origin != null) {
-      // Get real route from Directions API
-      final routePoints = await _getRoutePoints(origin, destination);
-      _polylines.add(Polyline(
-        polylineId: const PolylineId('route'),
-        points: routePoints,
-        color: AppColors.rappiOrange,
-        width: 5,
-      ));
-      if (mounted) setState(() {});
+    final routePoints = await _getRoutePoints(origin, destination);
+    if (mounted && routePoints.isNotEmpty) {
+      setState(() {
+        _polylines.clear();
+        _polylines.add(Polyline(
+          polylineId: const PolylineId('route'),
+          points: routePoints,
+          color: AppColors.rappiOrange,
+          width: 5,
+        ));
+      });
+      // Fit camera to show full route
+      if (_mapController != null) {
+        double minLat = routePoints.map((p) => p.latitude).reduce(math.min);
+        double maxLat = routePoints.map((p) => p.latitude).reduce(math.max);
+        double minLng = routePoints.map((p) => p.longitude).reduce(math.min);
+        double maxLng = routePoints.map((p) => p.longitude).reduce(math.max);
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
+            60,
+          ),
+        );
+      }
     }
   }
 
   Future<List<LatLng>> _getRoutePoints(LatLng origin, LatLng destination) async {
     try {
       debugPrint('🚗 _getRoutePoints: from=$origin to=$destination');
+      // API nueva Routes v2 — reemplaza PolylineRequest (deprecated)
       final polylinePoints = PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
       final result = await polylinePoints.getRouteBetweenCoordinatesV2(
         request: RoutesApiRequest(
@@ -493,17 +526,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           travelMode: TravelMode.driving,
         ),
       );
-      if (result.primaryRoute?.polylinePoints case List<PointLatLng> points) {
-        debugPrint('🚗 Route OK: ${points.length} points');
-        return points
+      final pts = result.routes.isNotEmpty ? result.routes.first.polylinePoints : null;
+      if (pts != null && pts.isNotEmpty) {
+        debugPrint('🚗 Route OK: ${pts.length} points');
+        return pts
             .map((p) => LatLng(p.latitude, p.longitude))
             .toList();
       }
-      debugPrint('🚗 Route: no primaryRoute found, errorMessage=${result.errorMessage}');
+      debugPrint('🚗 Route: no points found, error=${result.errorMessage}');
     } catch (e) {
       debugPrint('🚗 Error getting route: $e');
     }
-    return [origin, destination];
+    return []; // No fallback to straight line — only real routes
   }
 
   // ==================== WAITING TIMER ====================
@@ -536,29 +570,21 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     await HapticFeedback.mediumImpact();
 
     try {
-      // ✅ FIX: Agregar timeout
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'status': 'driver_arriving',
-        'arrivedAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
+      await _api
+          .markRideArrived(widget.tripId)
+          .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout marcando llegada');
       });
 
       // Start waiting timer
       _startWaitingTimer();
 
-      // Enviar notificación al pasajero
-      await _sendNotification(
-        userId: _currentTrip!.userId,
-        title: '¡Tu conductor ha llegado!',
-        body: 'Tu conductor está esperándote en el punto de recogida.',
-        data: {'tripId': widget.tripId, 'type': 'driver_arrived'},
-      );
+      // Backend envía push al pasajero automáticamente al recibir el evento.
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Has llegado. Espera al pasajero y toca "Pasajero a bordo" cuando suba.'),
+            content: const Text('Has llegado. Espera al pasajero y toca "Comenzó el viaje" cuando suba.'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -656,26 +682,27 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// Verificar el código del pasajero
   Future<void> _verifyPassengerCode(String code) async {
     if (code.length != 4) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('El código debe tener 4 dígitos'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('El código debe tener 4 dígitos'),
+            backgroundColor: AppColors.warning,
+          ),
+        );
+      }
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // ✅ FIX: Agregar timeout
-      final tripDoc = await _firestore.collection('rides').doc(widget.tripId).get()
+      // Refrescamos el ride desde el backend para obtener el código actual.
+      final response = await _api
+          .getRide(widget.tripId)
           .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout verificando código');
-          });
-      final tripData = tripDoc.data();
-
-      if (tripData == null) throw Exception('Viaje no encontrado');
+        throw TimeoutException('Timeout verificando código');
+      });
+      final tripData = _extractRide(response);
 
       final passengerCode = tripData['passengerVerificationCode'] ?? tripData['verificationCode'];
 
@@ -694,13 +721,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       }
 
       if (code == passengerCode) {
-        // Código correcto - marcar verificación y cambiar status (con timeout)
-        await _firestore.collection('rides').doc(widget.tripId).update({
-          'isPassengerVerified': true,
-          'passengerVerifiedAt': FieldValue.serverTimestamp(),
-          'status': 'waiting_verification',
-        }).timeout(const Duration(seconds: 15), onTimeout: () {
-          throw TimeoutException('Timeout guardando verificación');
+        // La verificación es solo un check local: marcamos el estado en el
+        // TripModel para que la UI muestre la pantalla de "esperando".
+        // No hay endpoint dedicado; el backend infiere el estado del start.
+        setState(() {
+          _currentTrip = _currentTrip?.copyWith(
+            isPassengerVerified: true,
+            status: 'waiting_verification',
+          );
+          _updateTripState();
         });
 
         _codeController.clear();
@@ -815,22 +844,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     _waitingTimer = null;
 
     try {
-      // ✅ FIX: Agregar timeout
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'status': 'in_progress',
-        'startedAt': FieldValue.serverTimestamp(),
-        'waitingTimeSeconds': _waitingSeconds,
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
+      await _api
+          .startRide(widget.tripId)
+          .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout iniciando viaje');
       });
 
-      // Notificar al pasajero
-      await _sendNotification(
-        userId: _currentTrip!.userId,
-        title: '¡Viaje iniciado!',
-        body: 'Tu viaje ha comenzado. Disfruta del trayecto.',
-        data: {'tripId': widget.tripId, 'type': 'trip_started'},
-      );
+      // Backend dispara el push "trip_started" al pasajero.
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -888,22 +908,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     try {
       final finalFare = _currentTrip?.estimatedFare ?? 0.0;
 
-      // ✅ FIX: Agregar timeout
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'status': 'completed',
-        'completedAt': FieldValue.serverTimestamp(),
-        'finalFare': finalFare,
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
+      // Backend calcula comisión, actualiza wallet del conductor y notifica al
+      // pasajero al recibir /rides/:id/complete.
+      await _api
+          .completeRide(widget.tripId, finalFare: finalFare)
+          .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout completando viaje');
       });
-
-      // Notificar al pasajero
-      await _sendNotification(
-        userId: _currentTrip!.userId,
-        title: '¡Viaje completado!',
-        body: 'Has llegado a tu destino. ¡Gracias por viajar con nosotros!',
-        data: {'tripId': widget.tripId, 'type': 'trip_completed'},
-      );
 
       if (mounted) {
         // Mostrar diálogo de resumen y calificación
@@ -1052,14 +1063,20 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       driverName: _currentTrip?.vehicleInfo?['passengerName'] ?? 'Pasajero',
       driverPhoto: _currentTrip?.vehicleInfo?['passengerPhoto'] ?? '',
       tripId: widget.tripId,
+      isDriverRating: true,
       onSubmit: (rating, comment, tags) async {
-        // Guardar calificación del conductor hacia el pasajero
-        await _firestore.collection('rides').doc(widget.tripId).update({
-          'driverRating': rating,
-          'driverComment': comment,
-          'driverRatingTags': tags,
-          'driverRatedAt': FieldValue.serverTimestamp(),
-        });
+        // Guardar calificación del conductor hacia el pasajero.
+        // El backend persiste stars + comment; los tags aún no tienen endpoint
+        // dedicado y se descartan en esta versión.
+        try {
+          await _api.rateRide(
+            widget.tripId,
+            stars: rating.toDouble(),
+            comment: comment,
+          );
+        } catch (e) {
+          debugPrint('Error calificando pasajero: $e');
+        }
 
         if (mounted) {
           Navigator.of(context).popUntil((route) => route.isFirst);
@@ -1068,47 +1085,34 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     );
   }
 
-  /// Enviar notificación a un usuario mediante Firestore
-  Future<void> _sendNotification({
-    required String userId,
-    required String title,
-    required String body,
-    Map<String, dynamic>? data,
-  }) async {
-    try {
-      await _firestore.collection('notifications').add({
-        'userId': userId,
-        'title': title,
-        'message': body,
-        'data': data ?? {},
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('Error enviando notificación: $e');
-    }
-  }
-
   // ==================== COMUNICACIÓN CON PASAJERO ====================
 
   Future<void> _callPassenger() async {
-    final phone = _currentTrip?.passengerInfo?['passengerPhone'] as String?;
-    if (phone == null || phone.isEmpty) {
+    // Backend adjunta el teléfono del pasajero al ride en `passengerInfo`.
+    // No hay endpoint /users/:id, así que sólo usamos ese payload.
+    final phoneFromInfo = _currentTrip?.passengerInfo?['passengerPhone'] as String? ??
+        _currentTrip?.passengerInfo?['phone'] as String? ??
+        '';
+    var phone = phoneFromInfo;
+
+    if (phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Número de teléfono no disponible'),
-            backgroundColor: AppColors.warning,
-          ),
+          const SnackBar(content: Text('Número de teléfono no disponible'), backgroundColor: AppColors.warning),
         );
       }
       return;
     }
 
+    if (!phone.startsWith('+')) phone = '+51$phone';
     final uri = Uri.parse('tel:$phone');
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se puede llamar desde este dispositivo'), backgroundColor: AppColors.warning),
+        );
       }
     } catch (e) {
       debugPrint('Error al llamar: $e');
@@ -1198,38 +1202,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       child: Scaffold(
         body: Stack(
           children: [
-            // Map with animated marker (Uber/DiDi style)
-            Animarker(
-              mapId: _mapCompleter.future.then<int>((c) => c.mapId),
-              curve: Curves.easeInOut,
-              duration: const Duration(milliseconds: 1500),
-              useRotation: false,
-              markers: _markers,
-              child: GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: _currentLocation ?? const LatLng(-12.0464, -77.0428),
-                  zoom: 16,
-                  tilt: 45,
-                ),
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                  if (!_mapCompleter.isCompleted) {
-                    _mapCompleter.complete(controller);
-                  }
-                },
-                onCameraMoveStarted: () {
-                  if (_isFollowingDriver) {
-                    setState(() => _isFollowingDriver = false);
-                  }
-                },
-                polylines: _polylines,
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                mapToolbarEnabled: false,
-                compassEnabled: true,
-                buildingsEnabled: true,
+            // Map with markers (same approach as App-Plus navigation_screen)
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _currentLocation ?? const LatLng(-12.0464, -77.0428),
+                zoom: 16,
+                tilt: 45,
               ),
+              onMapCreated: (controller) {
+                _mapController = controller;
+                if (!_mapCompleter.isCompleted) {
+                  _mapCompleter.complete(controller);
+                }
+              },
+              onCameraMoveStarted: () {
+                if (_isFollowingDriver) {
+                  setState(() => _isFollowingDriver = false);
+                }
+              },
+              markers: _markers,
+              polylines: _polylines,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              compassEnabled: true,
+              buildingsEnabled: true,
+              trafficEnabled: true,
             ),
 
             // Top gradient overlay with top bar
@@ -1689,7 +1688,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   border: Border.all(color: AppColors.ctaGreen, width: 1),
                 ),
                 child: Text(
-                  _currentTrip?.paymentMethod ?? 'Efectivo',
+                  formatPaymentMethodLabel(_currentTrip?.paymentMethod),
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1786,7 +1785,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
   Widget _buildPriceRow() {
     final fare = _currentTrip?.estimatedFare ?? 0.0;
-    final paymentMethod = _currentTrip?.paymentMethod ?? 'Efectivo';
+    final paymentMethod = formatPaymentMethodLabel(_currentTrip?.paymentMethod);
     final fareText = fare > 0
         ? 'S/ ${fare.toStringAsFixed(2)} · $paymentMethod'
         : 'Precio acordado · $paymentMethod';
@@ -1846,7 +1845,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       );
     } else if (_tripState == DriverTripState.arrivedAtPickup ||
                _tripState == DriverTripState.waitingVerification) {
-      // State 2: waiting for passenger -> "Pasajero a bordo" (lime green)
+      // State 2: waiting for passenger -> "Comenzó el viaje" (lime green)
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton(
@@ -1861,7 +1860,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             elevation: 0,
           ),
           child: const Text(
-            'Pasajero a bordo',
+            'Comenzó el viaje',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
         ),
@@ -1950,12 +1949,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   }
 
   void _showEmergencyOptions() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2025,18 +2021,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     setState(() => _isLoading = true);
 
     try {
-      // ✅ FIX: Agregar timeout
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'status': 'cancelled',
-        'cancelledAt': FieldValue.serverTimestamp(),
-        'cancelledBy': 'driver',
-        'cancellationReason': 'Cancelado por el conductor',
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
+      await _api
+          .cancelRide(widget.tripId, reason: 'driver_cancelled')
+          .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout cancelando viaje');
       });
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (route) => false);
       }
     } catch (e) {
       if (mounted) {
@@ -2046,9 +2038,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             backgroundColor: AppColors.error,
           ),
         );
+        setState(() => _isLoading = false);
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 }

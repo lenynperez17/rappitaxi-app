@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/firebase_service.dart';
 import '../utils/logger.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// PreferencesProvider - Maneja todas las configuraciones de la app
-/// ✅ IMPLEMENTACIÓN COMPLETA con persistencia en SharedPreferences y Firebase
+/// PreferencesProvider - Maneja todas las configuraciones de la app.
+///
+/// Persistencia LOCAL usando SharedPreferences. La sincronización con
+/// Firebase se eliminó tras migrar el backend a la API Node (RapiApiClient);
+/// si se necesita persistir preferencias por usuario en el servidor, hay que
+/// añadir un endpoint dedicado en la API. Los métodos [saveToFirebase] y
+/// [loadFromFirebase] se conservan como no-ops locales para no romper la
+/// interfaz pública que ya usan las pantallas.
 
 class PreferencesProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseService().firestore;
   late SharedPreferences _prefs;
   
   // Estado de inicialización
@@ -183,116 +186,31 @@ class PreferencesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Guardar preferencias en Firebase
+  /// Guardar preferencias remotamente.
+  ///
+  /// Actualmente NO existe sincronización remota: las preferencias se
+  /// persisten sólo en el dispositivo mediante SharedPreferences. Este método
+  /// se conserva por compatibilidad con las pantallas que aún lo invocan y
+  /// vuelca el estado en curso al almacenamiento local. El parámetro
+  /// [userId] se ignora.
   Future<void> saveToFirebase(String userId) async {
     try {
-      await _firestore.collection('users').doc(userId).update({
-        'preferences': {
-          // Generales
-          'notificationsEnabled': _notificationsEnabled,
-          'locationServices': _locationServices,
-          'darkMode': _darkMode,
-          'language': _language,
-          'currency': _currency,
-          
-          // Privacidad
-          'shareLocation': _shareLocation,
-          'shareTrips': _shareTrips,
-          'analytics': _analytics,
-          'crashReports': _crashReports,
-          
-          // Notificaciones
-          'pushNotifications': _pushNotifications,
-          'emailNotifications': _emailNotifications,
-          'smsNotifications': _smsNotifications,
-          'tripUpdates': _tripUpdates,
-          'promotions': _promotions,
-          'newsUpdates': _newsUpdates,
-          
-          // Seguridad
-          'biometricAuth': _biometricAuth,
-          'twoFactorAuth': _twoFactorAuth,
-          'autoLockTime': _autoLockTime,
-          
-          // App
-          'autoUpdate': _autoUpdate,
-          'offlineMaps': _offlineMaps,
-          'mapStyle': _mapStyle,
-          'soundEffects': _soundEffects,
-          'hapticFeedback': _hapticFeedback,
-          
-          // Datos
-          'syncOnWiFiOnly': _syncOnWiFiOnly,
-          'compressImages': _compressImages,
-          'cacheSize': _cacheSize,
-          
-          // Conductor
-          'autoAcceptRides': _autoAcceptRides,
-          'searchRadius': _searchRadius,
-          'saveHistory': _saveHistory,
-        }
-      });
+      await _saveAllToPrefs();
     } catch (e) {
-      AppLogger.debug('Error al guardar preferencias en Firebase: $e');
+      AppLogger.debug('Error al guardar preferencias localmente: $e');
     }
   }
 
-  // Cargar preferencias desde Firebase
+  /// Cargar preferencias remotas.
+  ///
+  /// Sin backend remoto en este momento, delega en [loadPreferences] para
+  /// leer los valores de SharedPreferences. Preservado por compatibilidad;
+  /// el parámetro [userId] se ignora.
   Future<void> loadFromFirebase(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      if (doc.exists && doc.data()?['preferences'] != null) {
-        final prefs = doc.data()!['preferences'];
-        
-        // Generales
-        _notificationsEnabled = prefs['notificationsEnabled'] ?? true;
-        _locationServices = prefs['locationServices'] ?? true;
-        _darkMode = prefs['darkMode'] ?? false;
-        _language = prefs['language'] ?? 'es';
-        _currency = prefs['currency'] ?? 'PEN';
-        
-        // Privacidad
-        _shareLocation = prefs['shareLocation'] ?? true;
-        _shareTrips = prefs['shareTrips'] ?? false;
-        _analytics = prefs['analytics'] ?? true;
-        _crashReports = prefs['crashReports'] ?? true;
-        
-        // Notificaciones
-        _pushNotifications = prefs['pushNotifications'] ?? true;
-        _emailNotifications = prefs['emailNotifications'] ?? true;
-        _smsNotifications = prefs['smsNotifications'] ?? false;
-        _tripUpdates = prefs['tripUpdates'] ?? true;
-        _promotions = prefs['promotions'] ?? true;
-        _newsUpdates = prefs['newsUpdates'] ?? false;
-        
-        // Seguridad
-        _biometricAuth = prefs['biometricAuth'] ?? false;
-        _twoFactorAuth = prefs['twoFactorAuth'] ?? false;
-        _autoLockTime = prefs['autoLockTime'] ?? 5;
-        
-        // App
-        _autoUpdate = prefs['autoUpdate'] ?? true;
-        _offlineMaps = prefs['offlineMaps'] ?? false;
-        _mapStyle = prefs['mapStyle'] ?? 'standard';
-        _soundEffects = prefs['soundEffects'] ?? true;
-        _hapticFeedback = prefs['hapticFeedback'] ?? true;
-        
-        // Datos
-        _syncOnWiFiOnly = prefs['syncOnWiFiOnly'] ?? false;
-        _compressImages = prefs['compressImages'] ?? true;
-        _cacheSize = prefs['cacheSize'] ?? '150 MB';
-        
-        // Conductor
-        _autoAcceptRides = prefs['autoAcceptRides'] ?? false;
-        _searchRadius = prefs['searchRadius'] ?? 5000;
-        _saveHistory = prefs['saveHistory'] ?? true;
-        
-        // Guardar en SharedPreferences
-        await _saveAllToPrefs();
-        notifyListeners();
-      }
+      await loadPreferences();
     } catch (e) {
-      AppLogger.debug('Error al cargar preferencias desde Firebase: $e');
+      AppLogger.debug('Error al cargar preferencias locales: $e');
     }
   }
 

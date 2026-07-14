@@ -4,13 +4,10 @@ class CreditConstants {
   // ✅ Mínimo de créditos para operar como conductor
   // El conductor puede aceptar viajes mientras tenga saldo >= costo del servicio
   // El mínimo de recarga (S/. 10) es diferente — es restricción de MercadoPago
-  static const double minServiceCredits = 1.0;
+  static const double minServiceCredits = 0.0;
 
-  // ✅ Costo por servicio aceptado (se descuenta al aceptar un viaje)
-  static const double defaultServiceFee = 1.0;
-
-  // ✅ Bonificación por primera recarga
-  static const double defaultFirstRechargeBonus = 5.0;
+  // ✅ Sin tarifa fija por servicio — solo se cobra 12% de comisión al completar viaje
+  static const double defaultServiceFee = 0.0;
 
   // ✅ Mínimo para recarga via MercadoPago (restricción del procesador de pagos)
   static const double minimumRechargeAmount = 10.0;
@@ -18,9 +15,9 @@ class CreditConstants {
   // ✅ Paquetes de recarga por defecto
   static const List<Map<String, dynamic>> defaultCreditPackages = [
     {'amount': 10.0, 'bonus': 0.0, 'label': 'Básico'},
-    {'amount': 20.0, 'bonus': 2.0, 'label': 'Popular'},
-    {'amount': 50.0, 'bonus': 10.0, 'label': 'Pro'},
-    {'amount': 100.0, 'bonus': 25.0, 'label': 'Premium'},
+    {'amount': 20.0, 'bonus': 0.0, 'label': 'Popular'},
+    {'amount': 50.0, 'bonus': 0.0, 'label': 'Pro'},
+    {'amount': 100.0, 'bonus': 0.0, 'label': 'Premium'},
   ];
 
   // ✅ Mensaje de créditos insuficientes

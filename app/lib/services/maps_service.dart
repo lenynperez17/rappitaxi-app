@@ -10,17 +10,17 @@
 ///   final place = await MapsService().placeDetails(predictionPlaceId);
 library;
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import '../utils/logger.dart';
+import 'rapi_api_client.dart';
 
 class MapsService {
   static final MapsService _instance = MapsService._internal();
   factory MapsService() => _instance;
   MapsService._internal();
 
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
   // ───────────────────────────────────────────────────────────
   // DIRECTIONS: obtener polyline + distancia + duración
@@ -36,18 +36,13 @@ class MapsService {
     String mode = 'driving',
   }) async {
     try {
-      final result = await _functions
-          .httpsCallable('directionsProxy')
-          .call(<String, dynamic>{
-        'originLat': origin.latitude,
-        'originLng': origin.longitude,
-        'destLat': destination.latitude,
-        'destLng': destination.longitude,
-        'mode': mode,
-      });
-
-      final data = result.data as Map?;
-      if (data == null) return null;
+      final data = await _api.mapsDirections(
+        originLat: origin.latitude,
+        originLng: origin.longitude,
+        destLat: destination.latitude,
+        destLng: destination.longitude,
+        mode: mode,
+      );
 
       final polyline = data['polyline'] as String?;
       final distanceM = (data['distanceMeters'] as num?)?.toInt() ?? 0;
@@ -56,7 +51,6 @@ class MapsService {
 
       if (polyline == null || polyline.isEmpty) return null;
 
-      // Decodificar polyline encoded (formato Google polyline5) a List<LatLng>
       final decoded = PolylinePoints.decodePolyline(polyline);
       final points = decoded
           .map((p) => LatLng(p.latitude, p.longitude))
@@ -70,11 +64,11 @@ class MapsService {
         durationSeconds: durationS,
         provider: provider,
       );
-    } on FirebaseFunctionsException catch (e) {
-      AppLogger.warning('[MapsService] directionsProxy error ${e.code}: ${e.message}');
+    } on RapiApiException catch (e) {
+      AppLogger.warning('[MapsService] directions ${e.code}: ${e.message}');
       return null;
     } catch (e) {
-      AppLogger.error('[MapsService] directionsProxy inesperado', e);
+      AppLogger.error('[MapsService] directions inesperado', e);
       return null;
     }
   }
@@ -123,19 +117,13 @@ class MapsService {
     }
 
     try {
-      final result = await _functions
-          .httpsCallable('placesAutocompleteProxy')
-          .call(<String, dynamic>{
-        'query': query,
-        if (sessionToken != null) 'sessionToken': sessionToken,
-        'languageCode': languageCode,
-        'countryCode': countryCode,
-        if (userLat != null) 'userLat': userLat,
-        if (userLng != null) 'userLng': userLng,
-      });
-
-      final data = result.data as Map?;
-      final preds = (data?['predictions'] as List?) ?? const [];
+      final data = await _api.mapsAutocomplete(
+        query: query,
+        session: sessionToken,
+        lat: userLat,
+        lng: userLng,
+      );
+      final preds = (data['predictions'] as List?) ?? const [];
 
       final predictions = preds.map((p) {
         final m = p as Map;
@@ -148,15 +136,14 @@ class MapsService {
         );
       }).toList(growable: false);
 
-      // Guardar en cache local, evictando el más viejo si excede el límite.
       if (_autocompleteCache.length >= _maxAutocompleteCacheEntries) {
         _autocompleteCache.remove(_autocompleteCache.keys.first);
       }
       _autocompleteCache[cacheKey] = predictions;
 
       return predictions;
-    } on FirebaseFunctionsException catch (e) {
-      AppLogger.warning('[MapsService] autocompleteProxy ${e.code}: ${e.message}');
+    } on RapiApiException catch (e) {
+      AppLogger.warning('[MapsService] autocomplete ${e.code}: ${e.message}');
       return const <PlacePrediction>[];
     } catch (e) {
       AppLogger.error('[MapsService] autocomplete error', e);
@@ -176,28 +163,18 @@ class MapsService {
     if (placeId.isEmpty) return null;
 
     try {
-      final result = await _functions
-          .httpsCallable('placeDetailsProxy')
-          .call(<String, dynamic>{
-        'placeId': placeId,
-        if (sessionToken != null) 'sessionToken': sessionToken,
-      });
-
-      final data = result.data as Map?;
-      if (data == null) return null;
-
+      final data = await _api.mapsPlaceDetails(placeId);
       final lat = (data['lat'] as num?)?.toDouble();
       final lng = (data['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) return null;
-
       return PlaceDetails(
         placeId: data['placeId'] as String? ?? placeId,
         name: data['name'] as String? ?? '',
         formattedAddress: data['formattedAddress'] as String? ?? '',
         coordinates: LatLng(lat, lng),
       );
-    } on FirebaseFunctionsException catch (e) {
-      AppLogger.warning('[MapsService] placeDetailsProxy ${e.code}: ${e.message}');
+    } on RapiApiException catch (e) {
+      AppLogger.warning('[MapsService] placeDetails ${e.code}: ${e.message}');
       return null;
     } catch (e) {
       AppLogger.error('[MapsService] placeDetails error', e);

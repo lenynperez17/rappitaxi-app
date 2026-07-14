@@ -1,10 +1,10 @@
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../config/oauth_config.dart';
 import '../utils/logger.dart';
+import 'rapi_api_client.dart';
 
 /// Servicio de Seguridad Enterprise para AppRappiTeam
 /// Maneja rate limiting, bloqueo de cuentas, logs de seguridad y validaciones
@@ -213,24 +213,47 @@ class SecurityService {
     return !OAuthConfig.blockedEmailDomains.contains(domain);
   }
 
-  /// Registrar evento de seguridad en Firestore
+  /// Registrar evento de seguridad.
+  ///
+  /// Antes escribía en Firestore (`security_logs`). Tras la migración al backend
+  /// Node se registra localmente vía AppLogger; los eventos críticos generan
+  /// una alerta a través de [_notifySecurityTeam].
+  // TODO(node-migration): reemplazar con endpoint POST /api/security/logs cuando exista.
   Future<void> logSecurityEvent(String eventType, Map<String, dynamic> data) async {
     try {
-      await FirebaseFirestore.instance.collection('security_logs').add({
+      final enriched = <String, dynamic>{
         'event_type': eventType,
-        'timestamp': FieldValue.serverTimestamp(),
+        'timestamp': DateTime.now().toIso8601String(),
         'data': data,
         'ip_address': await _getIpAddress(),
         'user_agent': await _getUserAgent(),
         'device_id': await _getDeviceId(),
-      });
-      
+      };
+
+      AppLogger.info('Evento de seguridad', enriched);
+
       // Para eventos críticos, también notificar
       if (_isCriticalEvent(eventType)) {
         await _notifySecurityTeam(eventType, data);
       }
     } catch (e) {
       AppLogger.error('Error al registrar evento de seguridad', e);
+    }
+  }
+
+  /// Validar la sesión del usuario contra el backend.
+  ///
+  /// Reemplaza la lógica anterior basada en Firebase Auth. Si el backend
+  /// devuelve `null` (refresh caducado o inexistente), la sesión es inválida y
+  /// la UI debería redirigir al login.
+  Future<bool> validateSession() async {
+    try {
+      if (!RapiApiClient.instance.isSignedIn) return false;
+      final me = await RapiApiClient.instance.me();
+      return me != null;
+    } catch (e) {
+      AppLogger.warning('Sesión inválida al reautenticar', {'error': e.toString()});
+      return false;
     }
   }
 

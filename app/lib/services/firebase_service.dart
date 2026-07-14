@@ -1,96 +1,148 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:crypto/crypto.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_database/firebase_database.dart' as rtdb;
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
-import 'dart:math' as math;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../utils/logger.dart';
-import '../models/trip_model.dart';
-import '../config/oauth_config.dart'; // ✅ NUEVO: Importar configuración OAuth
 
-/// Servicio Firebase Real para Producción
-/// Maneja toda la integración con Firebase
+import '../config/oauth_config.dart';
+import '../models/trip_model.dart';
+import '../utils/logger.dart';
+import 'rapi_api_client.dart';
+import 'rapi_sse_client.dart';
+
+/// Stub no-op para reemplazar FirebaseAnalytics tras Fase 4.
+///
+/// El pubspec ya no depende de `firebase_analytics`, pero muchas pantallas
+/// llaman `_firebaseService.analytics.logEvent(...)`. Este stub las mantiene
+/// compilables. Cuando se migre a un backend de analítica (Amplitude, PostHog,
+/// Segment, …) se reemplaza la implementación aquí.
+class AnalyticsStub {
+  const AnalyticsStub();
+
+  Future<void> logEvent({
+    required String name,
+    Map<String, Object>? parameters,
+  }) async {
+    if (kDebugMode) {
+      debugPrint('[analytics] $name ${parameters ?? const {}}');
+    }
+  }
+
+  Future<void> setUserId({String? id}) async {}
+  Future<void> setUserProperty({required String name, String? value}) async {}
+  Future<void> setAnalyticsCollectionEnabled(bool enabled) async {}
+  Future<void> logScreenView({
+    String? screenName,
+    String? screenClass,
+    Map<String, Object>? parameters,
+  }) async {}
+}
+
+/// Stub no-op para reemplazar FirebaseCrashlytics tras Fase 4.
+class CrashlyticsStub {
+  const CrashlyticsStub();
+
+  Future<void> recordError(
+    dynamic error,
+    StackTrace? stackTrace, {
+    dynamic reason,
+    Iterable<Object> information = const [],
+    bool fatal = false,
+    bool printDetails = true,
+  }) async {
+    AppLogger.error('Crashlytics stub — recordError', error, stackTrace);
+  }
+
+  Future<void> recordFlutterError(FlutterErrorDetails details,
+      {bool fatal = false}) async {
+    AppLogger.error(
+        'Crashlytics stub — recordFlutterError', details.exception);
+  }
+
+  Future<void> log(String message) async {
+    if (kDebugMode) debugPrint('[crashlytics] $message');
+  }
+
+  Future<void> setUserIdentifier(String identifier) async {}
+  Future<void> setCustomKey(String key, Object value) async {}
+  Future<void> setCrashlyticsCollectionEnabled(bool enabled) async {}
+}
+
+/// Stub no-op para reemplazar FirebaseAppCheck tras Fase 4.
+class AppCheckStub {
+  const AppCheckStub();
+
+  Future<String?> getToken([bool forceRefresh = false]) async => null;
+  Future<void> setTokenAutoRefreshEnabled(bool enabled) async {}
+}
+
+/// Servicio Firebase (stub post-migración al backend Node).
+///
+/// La aplicación migró de Firestore + Firebase Auth + Realtime Database +
+/// Firebase Storage al backend Node (RapiApiClient / RapiSseClient). Este
+/// wrapper se mantiene como capa de compatibilidad para código legado que
+/// aún importa FirebaseService y consume:
+///   - `analytics` / `crashlytics` / `appCheck` (stubs no-op)
+///   - `messaging`                             (FCM push — Firebase real)
+///   - `logEvent` / `recordError`              (helpers de telemetría)
+///   - `signInWithGoogle` / `signInWithApple`  (RapiApiClient)
+///   - `getRideById` / `listenToRideUpdates`   (RapiApiClient/SSE)
+///   - `getDriverLocation*` / `getUserById`    (RapiApiClient)
+///   - `cancelRide` / `reportEmergency`        (RapiApiClient)
+///   - `uploadFile` / `signOut` / `currentUserId` (RapiApiClient)
 class FirebaseService {
   static final FirebaseService _instance = FirebaseService._internal();
   factory FirebaseService() => _instance;
   FirebaseService._internal();
 
-  // Instancias de Firebase
-  late FirebaseAuth auth;
-  late FirebaseFirestore firestore;
-  late FirebaseStorage storage;
+  // Analytics/Crashlytics/AppCheck son stubs no-op — el pubspec ya no depende
+  // de firebase_analytics / firebase_crashlytics / firebase_app_check.
+  static const AnalyticsStub _analyticsStub = AnalyticsStub();
+  static const CrashlyticsStub _crashlyticsStub = CrashlyticsStub();
+  static const AppCheckStub _appCheckStub = AppCheckStub();
+
+  AnalyticsStub get analytics => _analyticsStub;
+  CrashlyticsStub get crashlytics => _crashlyticsStub;
+  AppCheckStub get appCheck => _appCheckStub;
+
+  // Messaging sigue siendo Firebase real — se usa para push notifications.
   late FirebaseMessaging messaging;
-  late rtdb.FirebaseDatabase database;
-  late FirebaseAnalytics analytics;
-  late FirebaseCrashlytics crashlytics;
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
 
-  // Google Sign-In must only be initialized once (v7.x requirement)
+  // Google Sign-In inicialización única (requisito v7.x)
   bool _googleSignInInitialized = false;
 
-  // Subscription para token refresh (se mantiene durante toda la vida de la app)
+  // Suscripción de refresh del token FCM
   // ignore: unused_field
   StreamSubscription<String>? _tokenRefreshSubscription;
 
-  /// Inicializar Firebase con configuración real
+  /// Inicializa Messaging. Analytics/Crashlytics/AppCheck son no-op.
   Future<void> initialize() async {
     if (_initialized) {
-      AppLogger.warning('Firebase ya estaba inicializado, saltando...');
+      AppLogger.warning('Firebase (stub) ya estaba inicializado, saltando...');
       return;
     }
 
     try {
-      AppLogger.firebase('Iniciando servicios de Firebase');
-      
-      // NO inicializar Firebase aquí porque ya se hace en main.dart
-      // await Firebase.initializeApp(); // REMOVIDO - ya se hace en main
-      
-      // Verificar que Firebase ya esté inicializado
+      AppLogger.firebase('Inicializando FirebaseService (stub)');
+
+      // Firebase.initializeApp ya se ejecuta en main.dart
       if (Firebase.apps.isEmpty) {
         AppLogger.error('Firebase no ha sido inicializado en main.dart');
         throw Exception('Firebase debe ser inicializado en main.dart primero');
       }
 
-      // Inicializar servicios
-      AppLogger.firebase('Obteniendo instancias de servicios Firebase');
-      auth = FirebaseAuth.instance;
-      firestore = FirebaseFirestore.instance;
-      storage = FirebaseStorage.instance;
       messaging = FirebaseMessaging.instance;
-      database = rtdb.FirebaseDatabase.instance;
-      analytics = FirebaseAnalytics.instance;
-      crashlytics = FirebaseCrashlytics.instance;
 
-      // Configurar Firestore
-      AppLogger.firebase('Configurando Firestore con cache persistente');
-      firestore.settings = const Settings(
-        persistenceEnabled: true,
-        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-      );
-
-      // ✅ FIX: NO sobrescribir FlutterError.onError aquí
-      // Ya está configurado correctamente en main.dart con logging + Crashlytics
-      // Solo configurar PlatformDispatcher si no se hizo ya
-      if (!kIsWeb) {
-        AppLogger.firebase('Crashlytics ya configurado en main.dart');
-        // Habilitar colección de crashlytics
-        await crashlytics.setCrashlyticsCollectionEnabled(true);
-      }
-
-      // Configurar mensajería (solo si no es web o tiene soporte)
       if (!kIsWeb) {
         try {
           AppLogger.firebase('Configurando Firebase Cloud Messaging');
@@ -101,275 +153,118 @@ class FirebaseService {
       }
 
       _initialized = true;
-      AppLogger.firebase('✅ Todos los servicios de Firebase inicializados correctamente');
+      AppLogger.firebase(
+          'FirebaseService (stub) listo — messaging Firebase real, analytics/crashlytics stub');
     } catch (e, stackTrace) {
-      AppLogger.error('Error inicializando servicios Firebase', e, stackTrace);
-      if (!kIsWeb) {
-        await crashlytics.recordError(e, stackTrace);
-      }
+      AppLogger.error('Error inicializando FirebaseService (stub)', e, stackTrace);
       rethrow;
     }
   }
 
-  /// Configurar Firebase Cloud Messaging
+  /// Configura FCM y registra el token en el backend Node
   Future<void> _setupMessaging() async {
-    // Solicitar permisos en iOS
-    NotificationSettings settings = await messaging.requestPermission(
+    final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
-      provisional: false,
+      provisional: true,
       announcement: false,
       carPlay: false,
       criticalAlert: false,
     );
 
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('✅ Permisos de notificación otorgados');
-      
-      // Obtener token FCM
-      String? token = await messaging.getToken();
+    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional) {
+      debugPrint('Permisos de notificación otorgados');
+
+      final token = await messaging.getToken();
       if (token != null) {
-        await _saveTokenToDatabase(token);
-        debugPrint('📱 FCM Token: $token');
+        await _registerFcmToken(token);
+        debugPrint('FCM Token: $token');
       }
 
-      // Escuchar cambios de token (almacenar subscription)
       _tokenRefreshSubscription = messaging.onTokenRefresh.listen((token) async {
-        await _saveTokenToDatabase(token);
+        await _registerFcmToken(token);
       });
     }
   }
 
-  /// Guardar token FCM en base de datos
-  Future<void> _saveTokenToDatabase(String token) async {
-    if (auth.currentUser != null) {
-      await firestore
-          .collection('users')
-          .doc(auth.currentUser!.uid)
-          .update({
-        'fcmToken': token,
-        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      });
+  /// Registra el token FCM en el backend Node (sustituye escritura en Firestore)
+  Future<void> _registerFcmToken(String token) async {
+    if (!RapiApiClient.instance.isSignedIn) return;
+    try {
+      String? platform;
+      if (kIsWeb) {
+        platform = 'web';
+      } else if (Platform.isAndroid) {
+        platform = 'android';
+      } else if (Platform.isIOS) {
+        platform = 'ios';
+      }
+      await RapiApiClient.instance.registerFcmToken(token, platform: platform);
+    } catch (e) {
+      debugPrint('Error registrando token FCM en backend: $e');
     }
   }
 
-  /// Registrar evento en Analytics
+  /// Registrar evento en Analytics (stub — logs a debug).
   Future<void> logEvent(String name, Map<String, dynamic>? parameters) async {
     try {
       await analytics.logEvent(
         name: name,
-        parameters: parameters?.map((key, value) => MapEntry(key, value as Object)),
+        parameters:
+            parameters?.map((key, value) => MapEntry(key, value as Object)),
       );
     } catch (e) {
       debugPrint('Error registrando evento: $e');
     }
   }
 
-  /// Registrar error en Crashlytics
+  /// Registrar error (stub — logs a AppLogger).
   Future<void> recordError(dynamic error, StackTrace? stackTrace) async {
-    if (!kIsWeb) {
+    try {
       await crashlytics.recordError(error, stackTrace);
-    }
+    } catch (_) {}
   }
 
-  /// Subir archivo a Storage
-  Future<String> uploadFile(String path, File file) async {
+  /// Sube un archivo al backend Node. Retorna la URL pública/firmada.
+  Future<String> uploadFile(String scope, File file) async {
     try {
-      final ref = storage.ref(path);
-      final uploadTask = await ref.putFile(file);
-      return await uploadTask.ref.getDownloadURL();
+      final res =
+          await RapiApiClient.instance.uploadFile(file: file, scope: scope);
+      return (res['url'] as String?) ?? '';
     } catch (e) {
       debugPrint('Error subiendo archivo: $e');
       rethrow;
     }
   }
 
-  /// Obtener documento de Firestore
-  Future<DocumentSnapshot> getDocument(String collection, String docId) async {
-    return await firestore.collection(collection).doc(docId).get();
+  /// UID del usuario actual (el backend Node reusa los mismos IDs).
+  String? get currentUserId {
+    return RapiApiClient.instance.isSignedIn ? '__signed_in__' : null;
   }
 
-  /// Crear documento en Firestore
-  Future<DocumentReference> createDocument(
-    String collection,
-    Map<String, dynamic> data,
-  ) async {
-    data['createdAt'] = FieldValue.serverTimestamp();
-    data['updatedAt'] = FieldValue.serverTimestamp();
-    return await firestore.collection(collection).add(data);
+  /// Compatibilidad con código antiguo — indica si hay sesión activa.
+  bool get hasSession => RapiApiClient.instance.isSignedIn;
+
+  /// Stream de estado de autenticación basado en la conectividad SSE.
+  Stream<bool> get authStateChanges async* {
+    yield RapiApiClient.instance.isSignedIn;
+    yield* RapiSseClient.instance.connected;
   }
 
-  /// Actualizar documento en Firestore
-  Future<void> updateDocument(
-    String collection,
-    String docId,
-    Map<String, dynamic> data,
-  ) async {
-    data['updatedAt'] = FieldValue.serverTimestamp();
-    await firestore.collection(collection).doc(docId).update(data);
-  }
+  // ==========================================================================
+  // OAUTH: Google + Apple sign-in usando el backend Node
+  // ==========================================================================
 
-  /// Eliminar documento de Firestore
-  Future<void> deleteDocument(String collection, String docId) async {
-    await firestore.collection(collection).doc(docId).delete();
-  }
-
-  /// Stream de cambios en colección
-  Stream<QuerySnapshot> getCollectionStream(
-    String collection, {
-    Query Function(Query query)? queryBuilder,
-  }) {
-    Query query = firestore.collection(collection);
-    if (queryBuilder != null) {
-      query = queryBuilder(query);
-    }
-    return query.snapshots();
-  }
-
-  /// Stream del usuario actual
-  Stream<User?> get authStateChanges => auth.authStateChanges();
-
-  /// Usuario actual
-  User? get currentUser => auth.currentUser;
-
-  // ==================== VINCULACIÓN DE CUENTAS POR EMAIL ====================
-  /// Método helper para vincular cuentas OAuth al mismo email/teléfono
-  ///
-  /// REQUISITO DEL USUARIO:
-  /// "cuando quiero continuar con google o facebook o apple... si entra con
-  /// cualquiera de esos 3 debe estar asociado al mismo correo/contraseña y
-  /// numero de telefono"
-  ///
-  /// LÓGICA:
-  /// 1. Buscar si existe un usuario con ese email en Firestore
-  /// 2. Si existe:
-  ///    - Vincular el nuevo proveedor al Firebase Auth UID existente
-  ///    - Actualizar datos del usuario manteniendo info existente
-  /// 3. Si NO existe:
-  ///    - Crear nuevo usuario con los datos del proveedor
-  Future<void> _linkOrCreateUserAccount({
-    required User firebaseUser,
-    required String authProvider,
-    required Map<String, dynamic> providerData,
-  }) async {
-    try {
-      // CORREGIDO: Obtener email de múltiples fuentes
-      final String? providerEmail = providerData['email'] as String?;
-      final String? firebaseEmail = firebaseUser.email;
-
-      // Buscar también en providerData de Firebase
-      String? providerDataEmail;
-      for (final provider in firebaseUser.providerData) {
-        if (provider.email != null && provider.email!.contains('@')) {
-          providerDataEmail = provider.email;
-          break;
-        }
-      }
-
-      // Prioridad: providerEmail > providerDataEmail > firebaseEmail
-      final String? email = (providerEmail != null && providerEmail.isNotEmpty && providerEmail.contains('@'))
-          ? providerEmail
-          : (providerDataEmail ?? firebaseEmail);
-
-      AppLogger.debug('Email detection: providerEmail=$providerEmail, providerDataEmail=$providerDataEmail, firebaseEmail=$firebaseEmail, final=$email');
-
-      // PASO 1: Verificar si ya existe documento con este UID
-      final userDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
-
-      if (userDoc.exists) {
-        // CASO A: Usuario ya existe con este UID - solo actualizar
-        final existingData = userDoc.data()!;
-        final existingEmail = existingData['email'] as String?;
-
-        AppLogger.firebase('Usuario ${firebaseUser.uid} ya existe. Actualizando datos de $authProvider');
-
-        await firestore.collection('users').doc(firebaseUser.uid).update({
-          'lastLoginAt': FieldValue.serverTimestamp(),
-          'authProvider': authProvider,
-          'authProviders': FieldValue.arrayUnion([authProvider]),
-          'updatedAt': FieldValue.serverTimestamp(),
-          // Actualizar email si el existente está vacío y el nuevo es válido
-          if ((existingEmail == null || existingEmail.isEmpty || !existingEmail.contains('@')) &&
-              email != null && email.contains('@'))
-            'email': email,
-          // Actualizar nombre si está vacío
-          if ((existingData['fullName'] == null || existingData['fullName'].toString().isEmpty) &&
-              providerData['fullName'] != null && providerData['fullName'].toString().isNotEmpty)
-            'fullName': providerData['fullName'],
-          // Actualizar foto de perfil si la nueva es mejor
-          if (providerData['profilePhotoUrl'] != null &&
-              providerData['profilePhotoUrl'].toString().isNotEmpty)
-            'profilePhotoUrl': providerData['profilePhotoUrl'],
-        });
-
-        AppLogger.firebase('Datos de $authProvider actualizados para usuario ${firebaseUser.uid}');
-
-      } else {
-        // CASO B: Usuario NO existe - CREAR nuevo con el UID de Firebase Auth
-        AppLogger.firebase('Usuario ${firebaseUser.uid} no existe. Creando nuevo con $authProvider');
-
-        await _createNewUserAccount(firebaseUser, authProvider, providerData);
-      }
-
-    } catch (e, stackTrace) {
-      AppLogger.error('Error en _linkOrCreateUserAccount', e, stackTrace);
-      await recordError(e, stackTrace);
-      rethrow;
-    }
-  }
-
-  /// Crear nueva cuenta de usuario en Firestore
-  Future<void> _createNewUserAccount(
-    User firebaseUser,
-    String authProvider,
-    Map<String, dynamic> providerData,
-  ) async {
-    try {
-      await firestore.collection('users').doc(firebaseUser.uid).set({
-        'fullName': providerData['fullName'] ?? firebaseUser.displayName ?? '',
-        'email': providerData['email'] ?? firebaseUser.email ?? '',
-        'profilePhotoUrl': providerData['profilePhotoUrl'] ?? firebaseUser.photoURL ?? '',
-        'phoneNumber': providerData['phoneNumber'] ?? firebaseUser.phoneNumber ?? '',
-        'userType': 'passenger',
-        'isActive': true,
-        'isVerified': true,
-        'emailVerified': firebaseUser.emailVerified || authProvider != 'email',
-        'authProvider': authProvider,
-        'authProviders': [authProvider], // Lista de proveedores usados
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'lastLoginAt': FieldValue.serverTimestamp(),
-        'rating': 5.0,
-        'totalTrips': 0,
-        'balance': 0.0,
-        // Campos adicionales específicos del proveedor
-        if (providerData['appleUserId'] != null)
-          'appleUserId': providerData['appleUserId'],
-      });
-
-      await logEvent('${authProvider}_signup_success', {
-        'user_id': firebaseUser.uid,
-        'email': firebaseUser.email,
-      });
-
-      AppLogger.firebase('✅ Nueva cuenta creada para ${firebaseUser.email} con $authProvider');
-    } catch (e, stackTrace) {
-      AppLogger.error('Error creando nueva cuenta', e, stackTrace);
-      await recordError(e, stackTrace);
-      rethrow;
-    }
-  }
-
-  /// Iniciar sesión con Google - IMPLEMENTACIÓN v7.2.0
-  Future<User?> signInWithGoogle() async {
+  /// Google Sign-In. Obtiene idToken y lo cambia por sesión en el backend.
+  Future<Map<String, dynamic>?> signInWithGoogle() async {
     try {
       AppLogger.firebase('Iniciando autenticación con Google');
       await logEvent('google_login_attempt', {});
 
       final googleSignIn = GoogleSignIn.instance;
 
-      // initialize() must be called exactly once per app lifecycle (v7.x docs)
       if (!_googleSignInInitialized) {
         await googleSignIn.initialize(
           hostedDomain: null,
@@ -380,217 +275,104 @@ class FirebaseService {
         AppLogger.debug('GoogleSignIn initialized (once)');
       }
 
-      // Sign out previous session to force account picker
       try {
         await googleSignIn.signOut();
       } catch (e) {
         AppLogger.debug('signOut before authenticate (ignorable): $e');
       }
 
-      // Authenticate - shows account picker
-      final GoogleSignInAccount googleUser = await googleSignIn.authenticate(
+      final googleUser = await googleSignIn.authenticate(
         scopeHint: ['email', 'profile'],
       );
 
-      // Guardar email de GoogleSignInAccount
-      final String googleEmail = googleUser.email;
-      final bool isValidEmail = googleEmail.contains('@');
+      final googleAuth = googleUser.authentication;
+      final idToken = googleAuth.idToken;
 
-      // Obtener tokens de autenticación
-      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
-
-      // Extraer email del JWT idToken (más confiable en google_sign_in v7.x)
-      String? emailFromJwt;
-      if (googleAuth.idToken != null) {
-        try {
-          final parts = googleAuth.idToken!.split('.');
-          if (parts.length == 3) {
-            String payload = parts[1];
-            while (payload.length % 4 != 0) {
-              payload += '=';
-            }
-            final decoded = utf8.decode(base64Url.decode(payload));
-            final Map<String, dynamic> jwt = jsonDecode(decoded);
-            emailFromJwt = jwt['email'] as String?;
-            AppLogger.debug('Email extraído del JWT: $emailFromJwt');
-          }
-        } catch (e) {
-          AppLogger.warning('No se pudo extraer email del JWT: $e');
-        }
+      if (idToken == null || idToken.isEmpty) {
+        throw Exception('Google Sign-In no devolvió idToken');
       }
 
-      // Crear credential para Firebase
-      final credential = GoogleAuthProvider.credential(
-        idToken: googleAuth.idToken,
-      );
+      final data =
+          await RapiApiClient.instance.loginWithGoogleIdToken(idToken);
 
-      // Autenticar en Firebase
-      final UserCredential userCredential = await auth.signInWithCredential(credential);
-      final User? user = userCredential.user;
+      RapiSseClient.instance.start();
 
-      if (user != null) {
-        AppLogger.firebase('Login con Google exitoso', {'uid': user.uid, 'email': user.email});
+      await logEvent('google_login_success', {
+        'user_id': (data['user'] as Map?)?['id']?.toString() ?? '',
+        'email': googleUser.email,
+      });
 
-        // Obtener email de múltiples fuentes con prioridad
-        String? emailToSave;
-
-        // Prioridad 1: Email del JWT
-        if (emailFromJwt != null && emailFromJwt.contains('@')) {
-          emailToSave = emailFromJwt;
-        }
-
-        // Prioridad 2: Firebase Auth user.email
-        if ((emailToSave == null || emailToSave.isEmpty) &&
-            user.email != null && user.email!.isNotEmpty && user.email!.contains('@')) {
-          emailToSave = user.email;
-        }
-
-        // Prioridad 3: providerData
-        if (emailToSave == null || emailToSave.isEmpty || !emailToSave.contains('@')) {
-          for (final provider in user.providerData) {
-            if (provider.email != null && provider.email!.contains('@')) {
-              emailToSave = provider.email;
-              break;
-            }
-          }
-        }
-
-        // Prioridad 4: GoogleSignInAccount.email
-        if ((emailToSave == null || emailToSave.isEmpty || !emailToSave.contains('@')) && isValidEmail) {
-          emailToSave = googleEmail;
-        }
-
-        AppLogger.debug('Email final para Firestore: $emailToSave');
-
-        // Actualizar email en Firebase Auth si está vacío
-        if ((user.email == null || user.email!.isEmpty) && emailToSave != null && emailToSave.contains('@')) {
-          try {
-            await user.verifyBeforeUpdateEmail(emailToSave);
-            AppLogger.firebase('Email actualizado en Firebase Auth');
-          } catch (e) {
-            AppLogger.warning('No se pudo actualizar email en Auth: $e');
-          }
-        }
-
-        await _linkOrCreateUserAccount(
-          firebaseUser: user,
-          authProvider: 'google',
-          providerData: {
-            'fullName': googleUser.displayName ?? user.displayName ?? '',
-            'email': emailToSave ?? '',
-            'profilePhotoUrl': googleUser.photoUrl ?? user.photoURL ?? '',
-            'phoneNumber': user.phoneNumber,
-          },
-        );
-
-        await logEvent('google_login_success', {
-          'user_id': user.uid,
-          'email': user.email,
-        });
-
-        AppLogger.firebase('Proceso de Google Sign-In completado exitosamente');
-        return user;
-      }
-
-      AppLogger.warning('Usuario es null después de autenticación');
-      return null;
+      AppLogger.firebase('Google Sign-In completado exitosamente');
+      return data;
     } on GoogleSignInException catch (e, stackTrace) {
-      AppLogger.error('GoogleSignInException: code=${e.code}, description=${e.description}', e, stackTrace);
+      AppLogger.error(
+          'GoogleSignInException: code=${e.code}, description=${e.description}',
+          e,
+          stackTrace);
       await recordError(e, stackTrace);
       rethrow;
     } catch (e, stackTrace) {
-      AppLogger.error('Error en login con Google: ${e.runtimeType}: $e', e, stackTrace);
+      AppLogger.error('Error en login con Google: ${e.runtimeType}: $e', e,
+          stackTrace);
       await recordError(e, stackTrace);
       rethrow;
     }
   }
 
-  /// Iniciar sesión con Apple
-  /// iOS/iPadOS: Uses Firebase signInWithProvider (handles iPad presentation natively)
-  /// Android: Uses sign_in_with_apple package with web authentication
-  Future<User?> signInWithApple() async {
+  /// Sign in with Apple.
+  Future<Map<String, dynamic>?> signInWithApple() async {
     try {
       AppLogger.firebase('Iniciando autenticación con Apple');
       await logEvent('apple_login_attempt', {});
 
-      final UserCredential userCredential;
+      final rawNonce = _generateNonce();
+      final nonce = _sha256ofString(rawNonce);
 
-      if (Platform.isIOS) {
-        // iOS/iPadOS: Use Firebase's native signInWithProvider
-        // This handles the presentation context correctly on both iPhone and iPad
-        final appleProvider = AppleAuthProvider()
-          ..addScope('email')
-          ..addScope('name');
-        userCredential = await auth.signInWithProvider(appleProvider);
-      } else {
-        // Android: Use sign_in_with_apple package with web flow
-        final rawNonce = _generateNonce();
-        final nonce = _sha256ofString(rawNonce);
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: nonce,
+        webAuthenticationOptions: Platform.isAndroid
+            ? WebAuthenticationOptions(
+                clientId: OAuthConfig.appleServiceId,
+                redirectUri: Uri.parse(OAuthConfig.appleRedirectUri),
+              )
+            : null,
+      );
 
-        final appleCredential = await SignInWithApple.getAppleIDCredential(
-          scopes: [
-            AppleIDAuthorizationScopes.email,
-            AppleIDAuthorizationScopes.fullName,
-          ],
-          nonce: nonce,
-          webAuthenticationOptions: WebAuthenticationOptions(
-            clientId: OAuthConfig.appleServiceId,
-            redirectUri: Uri.parse(OAuthConfig.appleRedirectUri),
-          ),
-        );
-
-        if (appleCredential.identityToken == null) {
-          throw Exception('Apple Sign In: No se recibió token de identidad');
-        }
-
-        // ROOT CAUSE fix (de App-Plus v2.0.75+84): el credential de Firebase
-        // necesita `accessToken: appleCredential.authorizationCode` además del
-        // `idToken` y `rawNonce` — sin esto Firebase responde
-        // `invalid_credential` y Apple rechaza el review. El authorizationCode
-        // viene del payload que firma Apple junto al identityToken.
-        final oauthCredential = OAuthProvider("apple.com").credential(
-          idToken: appleCredential.identityToken,
-          rawNonce: rawNonce,
-          accessToken: appleCredential.authorizationCode,
-        );
-        userCredential = await auth.signInWithCredential(oauthCredential);
+      if (appleCredential.identityToken == null) {
+        throw Exception('Apple Sign-In: no se recibió identityToken');
       }
 
-      final User? user = userCredential.user;
-
-      if (user != null) {
-        AppLogger.firebase('Login con Apple exitoso', {'uid': user.uid, 'email': user.email});
-
-        await _linkOrCreateUserAccount(
-          firebaseUser: user,
-          authProvider: 'apple',
-          providerData: {
-            'fullName': user.displayName ?? '',
-            'email': user.email ?? '',
-            'profilePhotoUrl': user.photoURL ?? '',
-            'phoneNumber': user.phoneNumber,
-          },
-        );
-
-        await logEvent('apple_login_success', {
-          'user_id': user.uid,
-          'email': user.email,
-        });
-
-        return user;
+      String? fullName;
+      if (appleCredential.givenName != null ||
+          appleCredential.familyName != null) {
+        fullName =
+            [appleCredential.givenName, appleCredential.familyName]
+                .whereType<String>()
+                .join(' ')
+                .trim();
+        if (fullName.isEmpty) fullName = null;
       }
 
-      return null;
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'canceled' || e.code == 'web-context-canceled') {
-        AppLogger.firebase('Usuario canceló Sign in with Apple');
-        return null;
-      }
-      AppLogger.error('Error de Firebase Auth Apple: ${e.code} - ${e.message}', e);
-      rethrow;
+      final data = await RapiApiClient.instance.loginWithAppleIdentityToken(
+        identityToken: appleCredential.identityToken!,
+        fullName: fullName,
+      );
+
+      RapiSseClient.instance.start();
+
+      await logEvent('apple_login_success', {
+        'user_id': (data['user'] as Map?)?['id']?.toString() ?? '',
+        'email': appleCredential.email ?? '',
+      });
+
+      return data;
     } on SignInWithAppleAuthorizationException catch (e) {
       if (e.code == AuthorizationErrorCode.canceled) {
-        AppLogger.firebase('Usuario canceló Sign in with Apple (Android)');
+        AppLogger.firebase('Usuario canceló Sign in with Apple');
         return null;
       }
       AppLogger.error('Error de autorización Apple: ${e.code}', e);
@@ -602,359 +384,227 @@ class FirebaseService {
     }
   }
 
-  /// Generar nonce aleatorio para Apple Sign In
   String _generateNonce([int length = 32]) {
-    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = math.Random.secure();
     return List.generate(length, (_) => charset[random.nextInt(charset.length)])
         .join();
   }
-  
-  /// SHA256 hash de un string
+
   String _sha256ofString(String input) {
     final bytes = utf8.encode(input);
     final digest = sha256.convert(bytes);
     return digest.toString();
   }
 
-  /// Reportar emergencia (MÉTODO CRÍTICO FALTANTE)
+  // ==========================================================================
+  // EMERGENCIAS — delegan al backend Node
+  // ==========================================================================
+
   Future<void> reportEmergency(String rideId, dynamic position) async {
     try {
       AppLogger.firebase('Reportando emergencia para viaje: $rideId');
       await logEvent('emergency_reported', {'ride_id': rideId});
-      
-      final emergencyData = <String, dynamic>{
-        'rideId': rideId,
-        'userId': auth.currentUser?.uid ?? '',
-        'userName': auth.currentUser?.displayName ?? 'Usuario',
-        'userEmail': auth.currentUser?.email ?? '',
-        'type': 'sos',
-        'status': 'active',
-        'timestamp': FieldValue.serverTimestamp(),
-        'reportedFrom': 'trip_tracking',
-        'description': 'Emergencia reportada desde seguimiento de viaje',
-      };
 
-      // Agregar ubicación si está disponible
-      if (position != null) {
-        emergencyData['location'] = {
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy ?? 0.0,
-          'timestamp': position.timestamp?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        };
-      }
+      await RapiApiClient.instance.createEmergency(
+        rideId: rideId,
+        latitude: (position?.latitude as num?)?.toDouble() ?? 0.0,
+        longitude: (position?.longitude as num?)?.toDouble() ?? 0.0,
+        type: 'sos',
+        description: 'Emergencia reportada desde seguimiento de viaje',
+      );
 
-      // Guardar emergencia en Firestore
-      final emergencyRef = await firestore.collection('emergencies').add(emergencyData);
-      AppLogger.firebase('Emergencia guardada con ID: ${emergencyRef.id}');
-
-      // Notificar a administradores inmediatamente
-      await _notifyAdminsEmergency(emergencyRef.id, rideId);
-      
-      // Registrar llamada de emergencia si está disponible
-      await _logEmergencyCall(emergencyRef.id, '911');
-      
-      AppLogger.firebase('✅ Emergencia reportada exitosamente');
-
+      AppLogger.firebase('Emergencia reportada al backend');
     } catch (e, stackTrace) {
       AppLogger.error('Error reportando emergencia', e, stackTrace);
       await recordError(e, stackTrace);
-      
-      // En caso de error, al menos intentar logging local
-      await _logLocalEmergency(rideId, position);
     }
   }
 
-  /// Notificar a administradores sobre emergencia
-  Future<void> _notifyAdminsEmergency(String emergencyId, String rideId) async {
-    try {
-      // Buscar administradores activos
-      final adminsSnapshot = await firestore
-          .collection('users')
-          .where('userType', isEqualTo: 'admin')
-          .where('isActive', isEqualTo: true)
-          .get();
+  // ==========================================================================
+  // AUTENTICACIÓN — sesión / logout
+  // ==========================================================================
 
-      // Crear notificación para cada admin
-      final batch = firestore.batch();
-      for (final adminDoc in adminsSnapshot.docs) {
-        final notificationRef = firestore
-            .collection('users')
-            .doc(adminDoc.id)
-            .collection('notifications')
-            .doc();
-        
-        batch.set(notificationRef, {
-          'title': '🚨 EMERGENCIA ACTIVA',
-          'body': 'Se reportó una emergencia en el viaje $rideId',
-          'type': 'emergency',
-          'priority': 'high',
-          'emergencyId': emergencyId,
-          'rideId': rideId,
-          'isRead': false,
-          'timestamp': FieldValue.serverTimestamp(),
-          'actionUrl': '/admin/emergencies/$emergencyId',
-        });
-      }
-      
-      await batch.commit();
-      AppLogger.firebase('Administradores notificados sobre emergencia');
-
-    } catch (e) {
-      AppLogger.error('Error notificando administradores', e);
-    }
-  }
-
-  /// Registrar llamada de emergencia
-  Future<void> _logEmergencyCall(String emergencyId, String phoneNumber) async {
-    try {
-      await firestore.collection('emergency_calls').add({
-        'emergencyId': emergencyId,
-        'phoneNumber': phoneNumber,
-        'userId': auth.currentUser?.uid ?? '',
-        'callStatus': 'attempted',
-        'timestamp': FieldValue.serverTimestamp(),
-        'duration': 0,
-        'notes': 'Llamada automática desde app',
-      });
-      
-      AppLogger.firebase('Llamada de emergencia registrada');
-    } catch (e) {
-      AppLogger.error('Error registrando llamada de emergencia', e);
-    }
-  }
-
-  /// Log de emergencia local como fallback
-  Future<void> _logLocalEmergency(String rideId, dynamic position) async {
-    try {
-      // Intentar guardar al menos localmente para debug
-      AppLogger.warning('Guardando emergencia localmente como fallback');
-      AppLogger.warning('RideID: $rideId, Position: $position');
-      
-      // También intentar en Firebase Database como backup
-      await database.ref('emergency_backup/${DateTime.now().millisecondsSinceEpoch}').set({
-        'rideId': rideId,
-        'userId': auth.currentUser?.uid ?? 'unknown',
-        'timestamp': DateTime.now().toIso8601String(),
-        'location': position != null ? {
-          'lat': position.latitude,
-          'lng': position.longitude,
-        } : null,
-        'status': 'backup_logged',
-      });
-      
-    } catch (e) {
-      AppLogger.error('Error en log local de emergencia', e);
-    }
-  }
-
-  /// Cerrar sesión
   Future<void> signOut() async {
-    await auth.signOut();
+    try {
+      await RapiApiClient.instance.logout();
+    } finally {
+      await RapiSseClient.instance.stop();
+    }
   }
 
-  /// Obtener un viaje por ID
+  // ==========================================================================
+  // RIDES — obtener/cancelar/escuchar viajes vía backend Node
+  // ==========================================================================
+
+  /// Obtiene un viaje por ID (delegado a RapiApiClient.getRide).
   Future<TripModel?> getRideById(String rideId) async {
     try {
-      final doc = await firestore.collection('rides').doc(rideId).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-
-        // ✅ CORREGIDO: Soportar ambos formatos de ubicación (lat/lng y latitude/longitude)
-        final pickupLoc = data['pickupLocation'] ?? {};
-        final destLoc = data['destinationLocation'] ?? {};
-
-        return TripModel(
-          id: doc.id,
-          userId: data['userId'] ?? '',
-          driverId: data['driverId'],
-          pickupLocation: LatLng(
-            (pickupLoc['lat'] ?? pickupLoc['latitude'] ?? 0.0).toDouble(),
-            (pickupLoc['lng'] ?? pickupLoc['longitude'] ?? 0.0).toDouble(),
-          ),
-          destinationLocation: LatLng(
-            (destLoc['lat'] ?? destLoc['latitude'] ?? 0.0).toDouble(),
-            (destLoc['lng'] ?? destLoc['longitude'] ?? 0.0).toDouble(),
-          ),
-          pickupAddress: data['pickupAddress'] ?? '',
-          destinationAddress: data['destinationAddress'] ?? '',
-          status: data['status'] ?? 'searching',
-          requestedAt: _parseTimestamp(data['requestedAt']) ?? DateTime.now(),
-          acceptedAt: _parseTimestamp(data['acceptedAt']),
-          startedAt: _parseTimestamp(data['startedAt']),
-          completedAt: _parseTimestamp(data['completedAt']),
-          cancelledAt: _parseTimestamp(data['cancelledAt']),
-          cancelledBy: data['cancelledBy'],
-          estimatedDistance: (data['estimatedDistance'] ?? 0.0).toDouble(),
-          estimatedFare: (data['estimatedFare'] ?? 0.0).toDouble(),
-          finalFare: data['finalFare']?.toDouble(),
-          passengerRating: data['passengerRating']?.toDouble(),
-          passengerComment: data['passengerComment'],
-          driverRating: data['driverRating']?.toDouble(),
-          driverComment: data['driverComment'],
-          vehicleInfo: data['vehicleInfo'],
-          route: data['route'] != null
-              ? (data['route'] as List).map((point) =>
-                  LatLng((point['lat'] as num).toDouble(), (point['lng'] as num).toDouble())).toList()
-              : null,
-          verificationCode: data['verificationCode'] ?? data['passengerVerificationCode'],
-          isVerificationCodeUsed: data['isVerificationCodeUsed'] ?? data['isPassengerVerified'] ?? false,
-          passengerVerificationCode: data['passengerVerificationCode'],
-          driverVerificationCode: data['driverVerificationCode'],
-          isPassengerVerified: data['isPassengerVerified'] ?? false,
-          isDriverVerified: data['isDriverVerified'] ?? false,
-        );
-      }
-      return null;
+      final res = await RapiApiClient.instance.getRide(rideId);
+      final data = (res['ride'] as Map<String, dynamic>?) ??
+          (res['data'] as Map<String, dynamic>?) ??
+          res;
+      return _tripFromJson(rideId, data);
     } catch (e) {
-      AppLogger.firebase('Error obteniendo viaje', {'error': e.toString(), 'rideId': rideId});
+      AppLogger.firebase('Error obteniendo viaje',
+          {'error': e.toString(), 'rideId': rideId});
       return null;
     }
   }
 
-  /// ✅ Helper para parsear timestamps de forma segura
-  DateTime? _parseTimestamp(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-    return null;
-  }
+  /// Escucha actualizaciones del viaje en tiempo real vía SSE.
+  StreamSubscription<Map<String, dynamic>> listenToRideUpdates(
+    String rideId,
+    void Function(TripModel) onUpdate,
+  ) {
+    // Al arrancar, cargar el estado inicial vía HTTP
+    getRideById(rideId).then((trip) {
+      if (trip != null) onUpdate(trip);
+    });
 
-  /// Escuchar actualizaciones de un viaje
-  /// Retorna StreamSubscription para que el llamador pueda cancelar el listener
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> listenToRideUpdates(String rideId, Function(TripModel) onUpdate) {
-    return firestore.collection('rides').doc(rideId).snapshots().listen((snapshot) {
-      if (snapshot.exists) {
-        final data = snapshot.data()!;
-        final pickupLoc = data['pickupLocation'] ?? {};
-        final destLoc = data['destinationLocation'] ?? {};
-        final trip = TripModel(
-          id: snapshot.id,
-          userId: data['userId'] ?? '',
-          driverId: data['driverId'],
-          pickupLocation: LatLng(
-            (pickupLoc['lat'] ?? pickupLoc['latitude'] ?? 0.0).toDouble(),
-            (pickupLoc['lng'] ?? pickupLoc['longitude'] ?? 0.0).toDouble(),
-          ),
-          destinationLocation: LatLng(
-            (destLoc['lat'] ?? destLoc['latitude'] ?? 0.0).toDouble(),
-            (destLoc['lng'] ?? destLoc['longitude'] ?? 0.0).toDouble(),
-          ),
-          pickupAddress: data['pickupAddress'] ?? '',
-          destinationAddress: data['destinationAddress'] ?? '',
-          status: data['status'] ?? 'searching',
-          requestedAt: (data['requestedAt'] as Timestamp).toDate(),
-          acceptedAt: data['acceptedAt'] != null 
-              ? (data['acceptedAt'] as Timestamp).toDate() 
-              : null,
-          startedAt: data['startedAt'] != null 
-              ? (data['startedAt'] as Timestamp).toDate() 
-              : null,
-          completedAt: data['completedAt'] != null 
-              ? (data['completedAt'] as Timestamp).toDate() 
-              : null,
-          cancelledAt: data['cancelledAt'] != null 
-              ? (data['cancelledAt'] as Timestamp).toDate() 
-              : null,
-          cancelledBy: data['cancelledBy'],
-          estimatedDistance: (data['estimatedDistance'] ?? 0.0).toDouble(),
-          estimatedFare: (data['estimatedFare'] ?? 0.0).toDouble(),
-          finalFare: data['finalFare']?.toDouble(),
-          passengerRating: data['passengerRating']?.toDouble(),
-          passengerComment: data['passengerComment'],
-          driverRating: data['driverRating']?.toDouble(),
-          driverComment: data['driverComment'],
-          vehicleInfo: data['vehicleInfo'],
-          route: data['route'] != null
-              ? (data['route'] as List).map((point) =>
-                  LatLng((point['lat'] as num).toDouble(), (point['lng'] as num).toDouble())).toList()
-              : null,
-          verificationCode: data['verificationCode'],
-          isVerificationCodeUsed: data['isVerificationCodeUsed'] ?? false,
-          passengerVerificationCode: data['passengerVerificationCode'],
-          driverVerificationCode: data['driverVerificationCode'],
-          isPassengerVerified: data['isPassengerVerified'] ?? false,
-          isDriverVerified: data['isDriverVerified'] ?? false,
-        );
-        onUpdate(trip);
-      }
+    // Asegurar que el SSE está corriendo
+    RapiSseClient.instance.start();
+
+    return RapiSseClient.instance.rideUpdates.listen((event) {
+      final eventRideId = (event['rideId'] ?? event['id'])?.toString();
+      if (eventRideId != null && eventRideId != rideId) return;
+      final trip = _tripFromJson(rideId, event);
+      if (trip != null) onUpdate(trip);
     });
   }
 
-  /// Obtener ubicación del conductor desde la colección drivers
-  /// Retorna Map con lat, lng y heading (o null si no existe)
-  Future<Map<String, double>?> getDriverLocationWithHeading(String? driverId) async {
-    if (driverId == null) return null;
-
+  /// Construye un TripModel a partir del JSON del backend Node.
+  TripModel? _tripFromJson(String rideId, Map<String, dynamic> data) {
     try {
-      final doc = await firestore.collection('drivers').doc(driverId).get();
-      if (doc.exists && doc.data()?['currentLocation'] != null) {
-        final currentLocation = doc.data()!['currentLocation'];
-        double? lat;
-        double? lng;
-        double heading = 0.0;
+      final pickupLoc =
+          (data['pickupLocation'] as Map?)?.cast<String, dynamic>() ?? {};
+      final destLoc =
+          (data['destinationLocation'] as Map?)?.cast<String, dynamic>() ?? {};
 
-        if (currentLocation is GeoPoint) {
-          // GeoPoint format
-          lat = currentLocation.latitude;
-          lng = currentLocation.longitude;
-          // Heading stored at top level of driver document
-          heading = (doc.data()!['heading'] as num?)?.toDouble() ?? 0.0;
-        } else if (currentLocation is Map) {
-          // Map format: {latitude, longitude, heading}
-          lat = (currentLocation['latitude'] as num?)?.toDouble();
-          lng = (currentLocation['longitude'] as num?)?.toDouble();
-          heading = (currentLocation['heading'] as num?)?.toDouble() ?? 0.0;
-        }
-
-        if (lat != null && lng != null) {
-          return {'lat': lat, 'lng': lng, 'heading': heading};
-        }
-      }
-      return null;
+      return TripModel(
+        id: (data['id'] ?? rideId).toString(),
+        userId: (data['userId'] ?? data['passengerId'] ?? '').toString(),
+        driverId: data['driverId']?.toString(),
+        pickupLocation: LatLng(
+          _asDouble(pickupLoc['lat'] ?? pickupLoc['latitude']) ?? 0.0,
+          _asDouble(pickupLoc['lng'] ?? pickupLoc['longitude']) ?? 0.0,
+        ),
+        destinationLocation: LatLng(
+          _asDouble(destLoc['lat'] ?? destLoc['latitude']) ?? 0.0,
+          _asDouble(destLoc['lng'] ?? destLoc['longitude']) ?? 0.0,
+        ),
+        pickupAddress: (data['pickupAddress'] ?? '').toString(),
+        destinationAddress: (data['destinationAddress'] ?? '').toString(),
+        status: (data['status'] ?? 'searching').toString(),
+        requestedAt: _parseIsoDate(data['requestedAt']) ?? DateTime.now(),
+        acceptedAt: _parseIsoDate(data['acceptedAt']),
+        startedAt: _parseIsoDate(data['startedAt']),
+        completedAt: _parseIsoDate(data['completedAt']),
+        cancelledAt: _parseIsoDate(data['cancelledAt']),
+        cancelledBy: data['cancelledBy']?.toString(),
+        estimatedDistance: _asDouble(data['estimatedDistance']) ?? 0.0,
+        estimatedFare: _asDouble(data['estimatedFare']) ?? 0.0,
+        finalFare: _asDouble(data['finalFare']),
+        passengerRating: _asDouble(data['passengerRating']),
+        passengerComment: data['passengerComment']?.toString(),
+        driverRating: _asDouble(data['driverRating']),
+        driverComment: data['driverComment']?.toString(),
+        vehicleInfo: (data['vehicleInfo'] as Map?)?.cast<String, dynamic>(),
+        route: data['route'] is List
+            ? (data['route'] as List)
+                .whereType<Map>()
+                .map((p) => LatLng(
+                      _asDouble(p['lat']) ?? 0.0,
+                      _asDouble(p['lng']) ?? 0.0,
+                    ))
+                .toList()
+            : null,
+        verificationCode: (data['verificationCode'] ??
+                data['passengerVerificationCode'])
+            ?.toString(),
+        isVerificationCodeUsed:
+            data['isVerificationCodeUsed'] as bool? ??
+                data['isPassengerVerified'] as bool? ??
+                false,
+        passengerVerificationCode:
+            data['passengerVerificationCode']?.toString(),
+        driverVerificationCode: data['driverVerificationCode']?.toString(),
+        isPassengerVerified: data['isPassengerVerified'] as bool? ?? false,
+        isDriverVerified: data['isDriverVerified'] as bool? ?? false,
+      );
     } catch (e) {
-      AppLogger.firebase('Error obteniendo ubicación del conductor', {'error': e.toString()});
+      AppLogger.firebase(
+          'Error mapeando ride JSON → TripModel', {'error': e.toString()});
       return null;
     }
   }
 
-  /// Obtener ubicación del conductor (solo LatLng, compatibilidad)
-  Future<LatLng?> getDriverLocation(String? driverId) async {
-    final data = await getDriverLocationWithHeading(driverId);
-    if (data != null) {
-      return LatLng(data['lat']!, data['lng']!);
-    }
+  double? _asDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
     return null;
   }
 
-  /// Obtener datos de usuario por ID (incluye teléfono, nombre, etc.)
-  Future<Map<String, dynamic>?> getUserById(String userId) async {
+  DateTime? _parseIsoDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    return null;
+  }
+
+  /// Ubicación del conductor con heading.
+  Future<Map<String, double>?> getDriverLocationWithHeading(String? driverId) async {
+    if (driverId == null || driverId.isEmpty) return null;
     try {
-      final doc = await firestore.collection('users').doc(userId).get();
-      if (doc.exists) {
-        return doc.data();
+      final res = await RapiApiClient.instance.driverLocation(driverId);
+      final loc = (res['location'] as Map?)?.cast<String, dynamic>() ?? res;
+      final lat = _asDouble(loc['lat'] ?? loc['latitude']);
+      final lng = _asDouble(loc['lng'] ?? loc['longitude']);
+      final heading = _asDouble(loc['heading']) ?? 0.0;
+      if (lat != null && lng != null) {
+        return {'lat': lat, 'lng': lng, 'heading': heading};
       }
       return null;
     } catch (e) {
-      AppLogger.firebase('Error obteniendo usuario', {'error': e.toString()});
+      AppLogger.firebase(
+          'Error obteniendo ubicación del conductor', {'error': e.toString()});
       return null;
     }
   }
 
-  /// Cancelar un viaje
+  /// Ubicación del conductor (solo LatLng, para compatibilidad).
+  Future<LatLng?> getDriverLocation(String? driverId) async {
+    final data = await getDriverLocationWithHeading(driverId);
+    if (data == null) return null;
+    return LatLng(data['lat']!, data['lng']!);
+  }
+
+  /// Perfil de usuario. Si `userId` es el actual, llama a `me()`; si no,
+  /// retorna null (no hay endpoint público para perfiles ajenos).
+  Future<Map<String, dynamic>?> getUserById(String userId) async {
+    try {
+      if (!RapiApiClient.instance.isSignedIn) return null;
+      final me = await RapiApiClient.instance.me();
+      if (me == null) return null;
+      final user = (me['user'] as Map?)?.cast<String, dynamic>() ?? me;
+      final myId = user['id']?.toString() ?? user['uid']?.toString();
+      if (myId == userId) return user;
+      return null;
+    } catch (e) {
+      AppLogger.firebase(
+          'Error obteniendo usuario', {'error': e.toString()});
+      return null;
+    }
+  }
+
+  /// Cancelar un viaje (delegado a RapiApiClient).
   Future<void> cancelRide(String rideId) async {
     try {
-      await firestore.collection('rides').doc(rideId).update({
-        'status': 'cancelled',
-        'cancelledAt': FieldValue.serverTimestamp(),
-        'cancelledBy': auth.currentUser?.uid,
-      });
-      
-      await logEvent('ride_cancelled', {
-        'ride_id': rideId,
-        'user_id': auth.currentUser?.uid,
-      });
+      await RapiApiClient.instance.cancelRide(rideId);
+      await logEvent('ride_cancelled', {'ride_id': rideId});
     } catch (e) {
       AppLogger.firebase('Error cancelando viaje', {'error': e.toString()});
       throw Exception('No se pudo cancelar el viaje');

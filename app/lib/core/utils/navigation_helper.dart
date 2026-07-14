@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'responsive_bottom_sheet.dart';
 import 'snackbar_helper.dart';
 
 /// Helper centralizado para navegación consistente
@@ -94,7 +95,7 @@ class NavigationHelper {
     return Navigator.canPop(context);
   }
 
-  /// Mostrar modal bottom sheet
+  /// Mostrar modal bottom sheet (responsive: auto keyboard + nav bar padding)
   static Future<T?> showBottomSheet<T>(
     BuildContext context,
     Widget child, {
@@ -103,16 +104,12 @@ class NavigationHelper {
     bool enableDrag = true,
     Color? backgroundColor,
   }) async {
-    return await showModalBottomSheet<T>(
+    return await showResponsiveBottomSheet<T>(
       context: context,
-      builder: (context) => child,
-      isScrollControlled: isScrollControlled,
+      builder: (_) => child,
       isDismissible: isDismissible,
       enableDrag: enableDrag,
       backgroundColor: backgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
     );
   }
 

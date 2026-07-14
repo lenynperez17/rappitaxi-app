@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import '../utils/logger.dart';
-import '../services/firebase_service.dart';
+import '../services/rapi_api_client.dart';
 
 /// Provider para gestión completa de vehículos, documentos, mantenimiento y recordatorios
 class VehicleProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseService().firestore;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
   // Estados de carga
   bool _isLoading = false;
@@ -22,8 +19,8 @@ class VehicleProvider extends ChangeNotifier {
   // Datos del vehículo
   Map<String, dynamic> _vehicleData = {};
   List<VehicleDocument> _documents = [];
-  List<MaintenanceRecord> _maintenanceRecords = [];
-  List<Reminder> _reminders = [];
+  final List<MaintenanceRecord> _maintenanceRecords = [];
+  final List<Reminder> _reminders = [];
 
   // Getters
   bool get isLoading => _isLoading;
@@ -46,8 +43,8 @@ class VehicleProvider extends ChangeNotifier {
 
     try {
       AppLogger.info('Cargando datos del vehículo para driver: $driverId');
-      
-      // Cargar en paralelo
+
+      // Cargar en paralelo desde el backend
       await Future.wait([
         _loadBasicVehicleInfo(driverId),
         _loadDocuments(driverId),
@@ -65,55 +62,61 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Cargar información básica del vehículo
+  // Cargar información básica del vehículo desde /api/drivers/me/profile
   Future<void> _loadBasicVehicleInfo(String driverId) async {
-    final vehicleDoc = await _firestore
-        .collection('drivers')
-        .doc(driverId)
-        .collection('vehicle')
-        .doc('info')
-        .get();
+    try {
+      final profile = await _api.myDriverProfile();
+      final vehicle = profile['vehicle'];
 
-    if (vehicleDoc.exists) {
-      _vehicleData = vehicleDoc.data() ?? {};
-    } else {
-      // Crear datos iniciales
-      _vehicleData = {
-        'brand': '',
-        'model': '',
-        'year': DateTime.now().year,
-        'plate': '',
-        'color': '',
-        'vin': '',
-        'mileage': 0,
-        'seats': 4,
-        'fuelType': 'Gasolina',
-        'transmission': 'Manual',
-        'photos': [],
-        'isActive': false,
-        'registeredAt': FieldValue.serverTimestamp(),
-      };
+      if (vehicle is Map) {
+        _vehicleData = Map<String, dynamic>.from(vehicle);
+      } else {
+        // Datos iniciales cuando el conductor aún no registró vehículo
+        _vehicleData = {
+          'brand': '',
+          'model': '',
+          'year': DateTime.now().year,
+          'plate': '',
+          'color': '',
+          'vin': '',
+          'mileage': 0,
+          'seats': 4,
+          'fuelType': 'Gasolina',
+          'transmission': 'Manual',
+          'photos': <String>[],
+          'isActive': false,
+          'registeredAt': null,
+        };
+      }
+    } catch (e) {
+      AppLogger.error('Error cargando información del vehículo', e);
+      rethrow;
     }
   }
 
-  // Cargar documentos del vehículo
+  // Cargar documentos del vehículo desde /api/drivers/me/documents
   Future<void> _loadDocuments(String driverId) async {
     _isLoadingDocuments = true;
     notifyListeners();
 
     try {
-      final docsSnapshot = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('documents')
-          .collection('list')
-          .orderBy('expiryDate', descending: false)
-          .get();
+      final response = await _api.myDocuments();
+      final docs = response['documents'];
 
-      _documents = docsSnapshot.docs
-          .map((doc) => VehicleDocument.fromFirestore(doc))
-          .toList();
+      if (docs is List) {
+        _documents = docs
+            .whereType<Map>()
+            .map((d) => VehicleDocument.fromJson(Map<String, dynamic>.from(d)))
+            .toList();
+
+        _documents.sort((a, b) {
+          final ea = a.expiryDate ?? DateTime(9999);
+          final eb = b.expiryDate ?? DateTime(9999);
+          return ea.compareTo(eb);
+        });
+      } else {
+        _documents = [];
+      }
 
       AppLogger.info('Documentos cargados: ${_documents.length}');
     } catch (e) {
@@ -124,27 +127,15 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Cargar registros de mantenimiento
+  // Los registros de mantenimiento aún no están persistidos en el backend Node;
+  // se mantienen en memoria durante la sesión.
   Future<void> _loadMaintenanceRecords(String driverId) async {
     _isLoadingMaintenance = true;
     notifyListeners();
 
     try {
-      final maintenanceSnapshot = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('maintenance')
-          .collection('records')
-          .orderBy('date', descending: true)
-          .limit(20)
-          .get();
-
-      _maintenanceRecords = maintenanceSnapshot.docs
-          .map((doc) => MaintenanceRecord.fromFirestore(doc))
-          .toList();
-
-      AppLogger.info('Registros de mantenimiento cargados: ${_maintenanceRecords.length}');
+      // TODO: reemplazar por endpoint /api/drivers/me/maintenance cuando exista
+      AppLogger.info('Registros de mantenimiento en memoria: ${_maintenanceRecords.length}');
     } catch (e) {
       AppLogger.error('Error cargando mantenimiento', e);
     }
@@ -153,27 +144,14 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Cargar recordatorios
+  // Recordatorios en memoria (backend Node aún no expone endpoint dedicado)
   Future<void> _loadReminders(String driverId) async {
     _isLoadingReminders = true;
     notifyListeners();
 
     try {
-      final remindersSnapshot = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('reminders')
-          .collection('list')
-          .where('completed', isEqualTo: false)
-          .orderBy('date', descending: false)
-          .get();
-
-      _reminders = remindersSnapshot.docs
-          .map((doc) => Reminder.fromFirestore(doc))
-          .toList();
-
-      AppLogger.info('Recordatorios cargados: ${_reminders.length}');
+      // TODO: reemplazar por endpoint /api/drivers/me/reminders cuando exista
+      AppLogger.info('Recordatorios en memoria: ${_reminders.length}');
     } catch (e) {
       AppLogger.error('Error cargando recordatorios', e);
     }
@@ -182,7 +160,7 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Actualizar información básica del vehículo
+  // Actualizar información básica del vehículo usando upsertVehicle
   Future<bool> updateVehicleInfo(String driverId, Map<String, dynamic> newData) async {
     _isSaving = true;
     _error = null;
@@ -190,28 +168,41 @@ class VehicleProvider extends ChangeNotifier {
 
     try {
       // Validar datos básicos
-      if (newData['plate'] == null || newData['plate'].toString().isEmpty == true) {
+      final plate = (newData['plate'] ?? _vehicleData['plate'])?.toString() ?? '';
+      if (plate.isEmpty) {
         _error = 'La placa del vehículo es obligatoria';
         _isSaving = false;
         notifyListeners();
         return false;
       }
 
-      await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('info')
-          .set({
+      // Componer el merge para consultar con el backend
+      final merged = <String, dynamic>{
+        ..._vehicleData,
         ...newData,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      final vehicleType = (merged['vehicleType'] ?? merged['type'] ?? 'sedan').toString();
+      final make = (merged['make'] ?? merged['brand'])?.toString();
+      final model = merged['model']?.toString();
+      final color = merged['color']?.toString();
+      final yearRaw = merged['year'];
+      final year = yearRaw is int ? yearRaw : int.tryParse(yearRaw?.toString() ?? '');
+
+      await _api.upsertVehicle(
+        vehicleType: vehicleType,
+        plate: plate,
+        make: make,
+        model: model,
+        color: color,
+        year: year,
+      );
 
       // Actualizar datos locales
       _vehicleData = {
         ..._vehicleData,
         ...newData,
-        'updatedAt': DateTime.now(),
+        'updatedAt': DateTime.now().toIso8601String(),
       };
 
       AppLogger.info('Información del vehículo actualizada');
@@ -227,7 +218,7 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Subir foto del vehículo
+  // Subir foto del vehículo — usa storage genérico del backend
   Future<bool> uploadVehiclePhoto(String driverId, File photoFile) async {
     _isSaving = true;
     _uploadProgress = 0.0;
@@ -235,31 +226,22 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'vehicle_photo_$timestamp.jpg';
-      final ref = _storage
-          .ref()
-          .child('drivers')
-          .child(driverId)
-          .child('vehicle')
-          .child('photos')
-          .child(fileName);
+      _uploadProgress = 0.3;
+      notifyListeners();
 
-      // Subir con progreso
-      final uploadTask = ref.putFile(photoFile);
-      
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        _uploadProgress = snapshot.bytesTransferred / snapshot.totalBytes;
-        notifyListeners();
-      });
+      final uploaded = await _api.uploadFile(file: photoFile, scope: 'vehicle_photos');
+      final downloadUrl = uploaded['url']?.toString() ?? '';
+      if (downloadUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL de la foto');
+      }
 
-      await uploadTask;
-      final downloadUrl = await ref.getDownloadURL();
+      _uploadProgress = 0.8;
+      notifyListeners();
 
-      // Actualizar lista de fotos
-      final currentPhotos = List<String>.from(_vehicleData['photos'] ?? []);
+      // Agregar la foto a la lista y persistir el vehículo
+      final currentPhotos = List<String>.from(_vehicleData['photos'] ?? const <String>[]);
       currentPhotos.add(downloadUrl);
-      
+
       await updateVehicleInfo(driverId, {'photos': currentPhotos});
 
       AppLogger.info('Foto del vehículo subida exitosamente');
@@ -277,7 +259,7 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Agregar documento del vehículo
+  // Agregar documento del vehículo (uploadFile → uploadDocument)
   Future<bool> addDocument({
     required String driverId,
     required String type,
@@ -292,44 +274,22 @@ class VehicleProvider extends ChangeNotifier {
 
     try {
       String? documentUrl;
-      
-      // Si hay archivo, subirlo
-      if (documentFile != null) {
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final fileName = '$type$timestamp.jpg';
-        final ref = _storage
-            .ref()
-            .child('drivers')
-            .child(driverId)
-            .child('vehicle')
-            .child('documents')
-            .child(fileName);
 
-        final uploadTask = ref.putFile(documentFile);
-        await uploadTask;
-        documentUrl = await ref.getDownloadURL();
+      // Si hay archivo, subirlo al storage genérico
+      if (documentFile != null) {
+        final uploaded = await _api.uploadFile(file: documentFile, scope: 'documents');
+        documentUrl = uploaded['url']?.toString();
       }
 
-      // Guardar en Firestore
-      final docRef = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('documents')
-          .collection('list')
-          .add({
-        'type': type,
-        'number': number,
-        'issueDate': Timestamp.fromDate(issueDate),
-        'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate) : null,
-        'documentUrl': documentUrl,
-        'status': 'valid',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // Registrar el documento en el backend
+      if (documentUrl != null && documentUrl.isNotEmpty) {
+        await _api.uploadDocument(docType: type, fileUrl: documentUrl);
+      }
 
-      // Agregar a la lista local
+      // Agregar a la lista local con un ID local (backend regenera al recargar)
+      final localId = '${type}_${DateTime.now().millisecondsSinceEpoch}';
       final newDoc = VehicleDocument(
-        id: docRef.id,
+        id: localId,
         type: type,
         number: number,
         issueDate: issueDate,
@@ -337,7 +297,7 @@ class VehicleProvider extends ChangeNotifier {
         documentUrl: documentUrl,
         status: DocumentStatus.valid,
       );
-      
+
       _documents.add(newDoc);
       _documents.sort((a, b) => (a.expiryDate ?? DateTime.now()).compareTo(b.expiryDate ?? DateTime.now()));
 
@@ -354,7 +314,7 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Agregar registro de mantenimiento
+  // Agregar registro de mantenimiento (solo en memoria hasta que exista endpoint)
   Future<bool> addMaintenanceRecord({
     required String driverId,
     required String type,
@@ -370,26 +330,9 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final docRef = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('maintenance')
-          .collection('records')
-          .add({
-        'type': type,
-        'date': Timestamp.fromDate(date),
-        'mileage': mileage,
-        'cost': cost,
-        'workshop': workshop,
-        'nextDue': nextDue != null ? Timestamp.fromDate(nextDue) : null,
-        'notes': notes,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // Agregar a la lista local
+      final localId = 'maint_${DateTime.now().millisecondsSinceEpoch}';
       final newRecord = MaintenanceRecord(
-        id: docRef.id,
+        id: localId,
         type: type,
         date: date,
         mileage: mileage,
@@ -397,9 +340,10 @@ class VehicleProvider extends ChangeNotifier {
         workshop: workshop,
         nextDue: nextDue,
         notes: notes,
+        createdAt: DateTime.now(),
       );
-      
-      _maintenanceRecords.insert(0, newRecord); // Agregar al inicio
+
+      _maintenanceRecords.insert(0, newRecord);
 
       // Crear recordatorio si hay próximo mantenimiento
       if (nextDue != null) {
@@ -426,7 +370,7 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Agregar recordatorio
+  // Agregar recordatorio (solo en memoria hasta que exista endpoint)
   Future<bool> addReminder({
     required String driverId,
     required String title,
@@ -440,33 +384,18 @@ class VehicleProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final docRef = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('reminders')
-          .collection('list')
-          .add({
-        'title': title,
-        'description': description,
-        'date': Timestamp.fromDate(date),
-        'type': type.index,
-        'priority': priority.index,
-        'completed': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // Agregar a la lista local
+      final localId = 'rem_${DateTime.now().millisecondsSinceEpoch}';
       final newReminder = Reminder(
-        id: docRef.id,
+        id: localId,
         title: title,
         description: description,
         date: date,
         type: type,
         priority: priority,
         completed: false,
+        createdAt: DateTime.now(),
       );
-      
+
       _reminders.add(newReminder);
       _reminders.sort((a, b) => a.date.compareTo(b.date));
 
@@ -483,19 +412,9 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Marcar recordatorio como completado
+  // Marcar recordatorio como completado (solo local)
   Future<bool> completeReminder(String driverId, String reminderId) async {
     try {
-      await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('reminders')
-          .collection('list')
-          .doc(reminderId)
-          .update({'completed': true});
-
-      // Actualizar localmente
       final reminderIndex = _reminders.indexWhere((r) => r.id == reminderId);
       if (reminderIndex != -1) {
         _reminders.removeAt(reminderIndex);
@@ -511,23 +430,13 @@ class VehicleProvider extends ChangeNotifier {
     }
   }
 
-  // Eliminar documento
+  // Eliminar documento (backend Node aún no expone DELETE por docType)
   Future<bool> deleteDocument(String driverId, String documentId) async {
     try {
-      await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicle')
-          .doc('documents')
-          .collection('list')
-          .doc(documentId)
-          .delete();
-
-      // Eliminar localmente
       _documents.removeWhere((doc) => doc.id == documentId);
       notifyListeners();
 
-      AppLogger.info('Documento eliminado: $documentId');
+      AppLogger.info('Documento eliminado localmente: $documentId');
       return true;
     } catch (e) {
       _error = 'Error al eliminar documento: $e';
@@ -547,7 +456,7 @@ class VehicleProvider extends ChangeNotifier {
 
   // Obtener recordatorios de alta prioridad
   List<Reminder> getHighPriorityReminders() {
-    return _reminders.where((reminder) => 
+    return _reminders.where((reminder) =>
       reminder.priority == Priority.high && !reminder.completed
     ).toList();
   }
@@ -577,8 +486,8 @@ class VehicleProvider extends ChangeNotifier {
   void clearData() {
     _vehicleData = {};
     _documents = [];
-    _maintenanceRecords = [];
-    _reminders = [];
+    _maintenanceRecords.clear();
+    _reminders.clear();
     _error = null;
     _isLoading = false;
     _isSaving = false;
@@ -608,31 +517,40 @@ class VehicleDocument {
     this.createdAt,
   });
 
-  factory VehicleDocument.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
+  factory VehicleDocument.fromJson(Map<String, dynamic> data) {
+    final id = (data['id'] ?? data['docType'] ?? data['type'] ?? '').toString();
+    final type = (data['docType'] ?? data['type'] ?? '').toString();
+
     return VehicleDocument(
-      id: doc.id,
-      type: data['type'] ?? '',
-      number: data['number'] ?? '',
-      issueDate: (data['issueDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      expiryDate: data['expiryDate'] != null 
-          ? (data['expiryDate'] as Timestamp).toDate() 
-          : null,
-      documentUrl: data['documentUrl'],
+      id: id,
+      type: type,
+      number: (data['number'] ?? '').toString(),
+      issueDate: _parseDate(data['issueDate']) ?? DateTime.now(),
+      expiryDate: _parseDate(data['expiryDate']),
+      documentUrl: (data['fileUrl'] ?? data['documentUrl'] ?? data['url'])?.toString(),
       status: _getDocumentStatus(data),
-      createdAt: data['createdAt'] != null 
-          ? (data['createdAt'] as Timestamp).toDate() 
-          : null,
+      createdAt: _parseDate(data['createdAt'] ?? data['uploadedAt']),
     );
   }
 
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
   static DocumentStatus _getDocumentStatus(Map<String, dynamic> data) {
-    if (data['expiryDate'] == null) return DocumentStatus.valid;
-    
-    final expiryDate = (data['expiryDate'] as Timestamp).toDate();
+    // Estado explícito del backend
+    final status = data['status']?.toString();
+    if (status == 'rejected') return DocumentStatus.pending;
+    if (status == 'pending' || status == 'under_review') return DocumentStatus.pending;
+
+    final expiry = _parseDate(data['expiryDate']);
+    if (expiry == null) return DocumentStatus.valid;
+
     final now = DateTime.now();
-    final daysDiff = expiryDate.difference(now).inDays;
-    
+    final daysDiff = expiry.difference(now).inDays;
+
     if (daysDiff < 0) return DocumentStatus.expired;
     if (daysDiff <= 30) return DocumentStatus.expiringSoon;
     return DocumentStatus.valid;
@@ -645,9 +563,11 @@ class VehicleDocument {
         return Icons.security;
       case 'revisión técnica':
       case 'revision_tecnica':
+      case 'technical_review':
         return Icons.build_circle;
       case 'tarjeta de propiedad':
       case 'tarjeta_propiedad':
+      case 'vehicle_card':
         return Icons.badge;
       case 'permiso de circulación':
       case 'permiso_circulacion':
@@ -694,23 +614,28 @@ class MaintenanceRecord {
     this.createdAt,
   });
 
-  factory MaintenanceRecord.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
+  factory MaintenanceRecord.fromJson(Map<String, dynamic> data) {
     return MaintenanceRecord(
-      id: doc.id,
-      type: data['type'] ?? '',
-      date: (data['date'] as Timestamp).toDate(),
-      mileage: data['mileage'] ?? 0,
-      cost: (data['cost'] ?? 0).toDouble(),
-      workshop: data['workshop'] ?? '',
-      nextDue: data['nextDue'] != null 
-          ? (data['nextDue'] as Timestamp).toDate() 
-          : null,
-      notes: data['notes'],
-      createdAt: data['createdAt'] != null 
-          ? (data['createdAt'] as Timestamp).toDate() 
-          : null,
+      id: (data['id'] ?? '').toString(),
+      type: (data['type'] ?? '').toString(),
+      date: _parseDate(data['date']) ?? DateTime.now(),
+      mileage: (data['mileage'] is int)
+          ? data['mileage'] as int
+          : int.tryParse(data['mileage']?.toString() ?? '0') ?? 0,
+      cost: (data['cost'] is num)
+          ? (data['cost'] as num).toDouble()
+          : double.tryParse(data['cost']?.toString() ?? '0') ?? 0.0,
+      workshop: (data['workshop'] ?? '').toString(),
+      nextDue: _parseDate(data['nextDue']),
+      notes: data['notes']?.toString(),
+      createdAt: _parseDate(data['createdAt']),
     );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
   }
 
   IconData get icon {
@@ -754,20 +679,30 @@ class Reminder {
     this.createdAt,
   });
 
-  factory Reminder.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
+  factory Reminder.fromJson(Map<String, dynamic> data) {
+    final typeIdx = (data['type'] is int)
+        ? data['type'] as int
+        : int.tryParse(data['type']?.toString() ?? '') ?? 0;
+    final priorityIdx = (data['priority'] is int)
+        ? data['priority'] as int
+        : int.tryParse(data['priority']?.toString() ?? '') ?? 2;
+
     return Reminder(
-      id: doc.id,
-      title: data['title'] ?? '',
-      description: data['description'] ?? '',
-      date: (data['date'] as Timestamp).toDate(),
-      type: ReminderType.values[data['type'] ?? 0],
-      priority: Priority.values[data['priority'] ?? 2],
-      completed: data['completed'] ?? false,
-      createdAt: data['createdAt'] != null 
-          ? (data['createdAt'] as Timestamp).toDate() 
-          : null,
+      id: (data['id'] ?? '').toString(),
+      title: (data['title'] ?? '').toString(),
+      description: (data['description'] ?? '').toString(),
+      date: _parseDate(data['date']) ?? DateTime.now(),
+      type: ReminderType.values[typeIdx.clamp(0, ReminderType.values.length - 1)],
+      priority: Priority.values[priorityIdx.clamp(0, Priority.values.length - 1)],
+      completed: data['completed'] == true,
+      createdAt: _parseDate(data['createdAt']),
     );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
   }
 }
 

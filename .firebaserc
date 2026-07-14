@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "rapi-team"
-  }
+  },
+  "targets": {
+    "rapi-team": {
+      "hosting": {
+        "admin": [
+          "rapi-team-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

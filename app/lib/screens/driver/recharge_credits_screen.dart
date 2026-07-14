@@ -19,9 +19,9 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
   // ✅ INICIALIZAR CON VALORES POR DEFECTO para evitar RangeError
   List<Map<String, dynamic>> _packages = [
     {'amount': 10.0, 'bonus': 0.0, 'label': 'Básico'},
-    {'amount': 20.0, 'bonus': 2.0, 'label': 'Popular'},
-    {'amount': 50.0, 'bonus': 10.0, 'label': 'Pro'},
-    {'amount': 100.0, 'bonus': 25.0, 'label': 'Premium'},
+    {'amount': 20.0, 'bonus': 0.0, 'label': 'Popular'},
+    {'amount': 50.0, 'bonus': 0.0, 'label': 'Pro'},
+    {'amount': 100.0, 'bonus': 0.0, 'label': 'Premium'},
   ];
   Map<String, dynamic>? _selectedPackage;
 
@@ -161,9 +161,6 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
   }
 
   Widget _buildCurrentBalanceCard() {
-    final walletProvider = Provider.of<WalletProvider>(context);
-    final isFirstRecharge = walletProvider.isFirstRecharge;
-
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -217,27 +214,6 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          if (isFirstRecharge) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.card_giftcard, color: Colors.amber, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    '¡Primera recarga con BONIFICACIÓN!',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -259,7 +235,6 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
         final package = _packages[index];
         final isSelected = _selectedPackage == package;
         final amount = (package['amount'] as num).toDouble();
-        final bonus = (package['bonus'] as num).toDouble();
         final label = package['label'] as String? ?? '';
         final isPopular = label.toLowerCase() == 'popular';
 
@@ -271,7 +246,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Circulo principal con monto
+                // Círculo principal con monto
                 Stack(
                   alignment: Alignment.topRight,
                   children: [
@@ -347,13 +322,6 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                if (bonus > 0) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '+${bonus.toStringAsFixed(0)} gratis',
-                    style: const TextStyle(fontSize: 10, color: Colors.amber, fontWeight: FontWeight.w600),
-                  ),
-                ],
               ],
             ),
           ),
@@ -414,12 +382,7 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
   }
 
   Widget _buildSummaryCard() {
-    final walletProvider = Provider.of<WalletProvider>(context);
     final amount = (_selectedPackage!['amount'] as num).toDouble();
-    final bonus = (_selectedPackage!['bonus'] as num).toDouble();
-    final firstRechargeBonus = walletProvider.isFirstRecharge ? 5.0 : 0.0;
-    final totalBonus = bonus + firstRechargeBonus;
-    final totalCredits = amount + totalBonus;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -437,13 +400,10 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
           ),
           const Divider(),
           _buildSummaryRow('Monto a pagar', 'S/. ${amount.toStringAsFixed(2)}'),
-          if (bonus > 0) _buildSummaryRow('Bonificación del paquete', '+S/. ${bonus.toStringAsFixed(2)}', isBonus: true),
-          if (firstRechargeBonus > 0)
-            _buildSummaryRow('Bonificación primera recarga', '+S/. ${firstRechargeBonus.toStringAsFixed(2)}', isBonus: true),
           const Divider(),
           _buildSummaryRow(
             'Total de créditos',
-            'S/. ${totalCredits.toStringAsFixed(2)}',
+            'S/. ${amount.toStringAsFixed(2)}',
             isBold: true,
           ),
         ],
@@ -502,7 +462,6 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
           _buildInfoItem('Cada servicio aceptado consume créditos'),
           _buildInfoItem('Mantén saldo suficiente para no perder viajes'),
           _buildInfoItem('Los créditos no expiran'),
-          _buildInfoItem('Primera recarga incluye bonificación extra'),
         ],
       ),
     );
@@ -532,13 +491,11 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
     setState(() => _isProcessing = true);
 
     final amount = (_selectedPackage!['amount'] as num).toDouble();
-    final bonus = (_selectedPackage!['bonus'] as num).toDouble();
     final walletProvider = Provider.of<WalletProvider>(context, listen: false);
 
     try {
       final result = await walletProvider.processRechargeWithMercadoPago(
         amount: amount,
-        bonus: bonus,
         context: context,
       );
 
@@ -546,11 +503,11 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
       setState(() => _isProcessing = false);
 
       if (result['success'] == true) {
-        final creditStatus = await walletProvider.checkCreditStatus();
+        // Provider already updated locally after recharge — use its value directly
         setState(() {
-          _currentCredits = (creditStatus['currentCredits'] as num?)?.toDouble() ?? 0.0;
+          _currentCredits = walletProvider.serviceCredits;
         });
-        _showSuccessDialog(amount, bonus);
+        _showSuccessDialog(amount);
       } else {
         _showErrorDialog(result['message'] ?? 'Error al procesar el pago.');
       }
@@ -561,10 +518,8 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
     }
   }
 
-  void _showSuccessDialog(double amount, double bonus) {
-    final walletProvider = Provider.of<WalletProvider>(context, listen: false);
-    final firstRechargeBonus = walletProvider.isFirstRecharge ? 5.0 : 0.0;
-    final totalCredits = amount + bonus + firstRechargeBonus;
+  void _showSuccessDialog(double amount) {
+    final totalCredits = amount;
 
     showDialog(
       context: context,

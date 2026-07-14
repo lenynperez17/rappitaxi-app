@@ -1,243 +1,232 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api, use_build_context_synchronously
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/theme/modern_theme.dart';
-import '../../core/extensions/theme_extensions.dart';
+import 'dart:async';
 
-/// Pantalla de notificaciones completa conectada a Firebase Firestore
-/// ✅ IMPLEMENTACIÓN REAL CON FIREBASE - SIN MOCKS
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/constants/app_colors.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
+import '../../services/rapi_sse_client.dart';
+
+/// Notifications screen — lee del backend Node via RapiApiClient y se
+/// refresca en tiempo real con el stream SSE de notificaciones.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
-
   @override
   _NotificationsScreenState createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with SingleTickerProviderStateMixin {
+  final RapiApiClient _api = RapiApiClient.instance;
+  late final AnimationController _listController;
+  bool _hasAnimated = false;
+
+  bool _isLoading = true;
+  String? _error;
+  List<Map<String, dynamic>> _notifications = [];
+
+  StreamSubscription<Map<String, dynamic>>? _sseSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _listController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadNotifications();
+    // Suscribirse al stream SSE global para refresh en tiempo real.
+    _sseSub = RapiSseClient.instance.notifications.listen((_) {
+      _loadNotifications();
+    });
+    RapiSseClient.instance.start();
+  }
+
+  Future<void> _loadNotifications() async {
+    try {
+      final data = await _api.listNotifications(limit: 100);
+      final raw = (data['items'] as List?) ?? (data['notifications'] as List?) ?? const [];
+      final items = raw
+          .whereType<Map>()
+          .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _notifications = items;
+        _isLoading = false;
+        _error = null;
+      });
+      _triggerListAnimation();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _sseSub?.cancel();
+    _listController.dispose();
+    super.dispose();
+  }
+
+  void _triggerListAnimation() {
+    if (!_hasAnimated) {
+      _hasAnimated = true;
+      _listController.forward();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = _auth.currentUser?.uid;
-
-    if (currentUserId == null) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUser = authProvider.currentUser;
+    if (currentUser == null) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Notificaciones'),
-          backgroundColor: AppColors.rappiWhite,
+          title: Text('Notificaciones'),
+          backgroundColor: AppColors.getSurface(context),
         ),
-        body: const Center(
-          child: Text('Debes iniciar sesión para ver las notificaciones'),
-        ),
+        body: Center(child: Text('Inicia sesion para ver tus notificaciones')),
       );
     }
-
     return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
+      backgroundColor: AppColors.getInputFill(context),
       appBar: AppBar(
-        title: Text(
-          'Notificaciones',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        backgroundColor: AppColors.rappiWhite,
+        title: Text('Notificaciones',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(context))),
+        backgroundColor: AppColors.getSurface(context),
         elevation: 0,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
+        iconTheme: IconThemeData(color: AppColors.getTextPrimary(context)),
         actions: [
-          // Marcar todas como leídas
           IconButton(
             icon: const Icon(Icons.done_all),
-            tooltip: 'Marcar todas como leídas',
-            onPressed: () => _markAllAsRead(currentUserId),
+            tooltip: 'Marcar todas como leidas',
+            onPressed: _markAllAsRead,
           ),
-          // Eliminar todas
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             tooltip: 'Eliminar todas',
-            onPressed: () => _deleteAllNotifications(currentUserId),
+            onPressed: _deleteAllNotifications,
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('notifications')
-            .where('userId', isEqualTo: currentUserId)
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          // Cargando
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildErrorState()
+              : _notifications.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      onRefresh: _loadNotifications,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _notifications.length,
+                        itemBuilder: (context, index) {
+                          final n = _notifications[index];
+                          final double delay = (index * 0.1).clamp(0.0, 0.6);
+                          final double end = (delay + 0.4).clamp(0.0, 1.0);
+                          final animation = Tween<double>(begin: 0.0, end: 1.0)
+                              .animate(CurvedAnimation(
+                            parent: _listController,
+                            curve: Interval(delay, end, curve: Curves.easeOutCubic),
+                          ));
+                          return AnimatedBuilder(
+                            animation: animation,
+                            builder: (context, child) => Transform.translate(
+                              offset: Offset(0, 30 * (1 - animation.value)),
+                              child: Opacity(opacity: animation.value, child: child),
+                            ),
+                            child: _buildNotificationCard(n),
+                          );
+                        },
+                      ),
+                    ),
+    );
+  }
 
-          // Error
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, size: 48, color: ModernTheme.error),
-                  const SizedBox(height: 16),
-                  Text('Error al cargar notificaciones:\n${snapshot.error}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => setState(() {}),
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Sin notificaciones
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.notifications_off, size: 64, color: context.secondaryText.withValues(alpha: 0.4)),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No tienes notificaciones',
-                    style: TextStyle(fontSize: 18, color: context.secondaryText),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final notifications = snapshot.data!.docs;
-
-          // Agrupar notificaciones por: Hoy, Ayer, Anteriores
-          final now = DateTime.now();
-          final todayStart = DateTime(now.year, now.month, now.day);
-          final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-
-          final todayDocs = notifications.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final ts = data['createdAt'] as Timestamp?;
-            if (ts == null) return false;
-            return ts.toDate().isAfter(todayStart);
-          }).toList();
-
-          final yesterdayDocs = notifications.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final ts = data['createdAt'] as Timestamp?;
-            if (ts == null) return false;
-            final date = ts.toDate();
-            return date.isAfter(yesterdayStart) && !date.isAfter(todayStart);
-          }).toList();
-
-          final olderDocs = notifications.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final ts = data['createdAt'] as Timestamp?;
-            if (ts == null) return true;
-            return !ts.toDate().isAfter(yesterdayStart);
-          }).toList();
-
-          return CustomScrollView(
-            slivers: [
-              if (todayDocs.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildGroupHeader('Hoy'),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final doc = todayDocs[index];
-                      return _buildNotificationCard(
-                          doc.id, doc.data() as Map<String, dynamic>);
-                    },
-                    childCount: todayDocs.length,
-                  ),
-                ),
-              ],
-              if (yesterdayDocs.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildGroupHeader('Ayer'),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final doc = yesterdayDocs[index];
-                      return _buildNotificationCard(
-                          doc.id, doc.data() as Map<String, dynamic>);
-                    },
-                    childCount: yesterdayDocs.length,
-                  ),
-                ),
-              ],
-              if (olderDocs.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _buildGroupHeader('Anteriores'),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final doc = olderDocs[index];
-                      return _buildNotificationCard(
-                          doc.id, doc.data() as Map<String, dynamic>);
-                    },
-                    childCount: olderDocs.length,
-                  ),
-                ),
-              ],
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            ],
-          );
-        },
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const SizedBox(height: 16),
+          Text('Error al cargar notificaciones: $_error'),
+          const SizedBox(height: 8),
+          ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _isLoading = true;
+                  _error = null;
+                });
+                _loadNotifications();
+              },
+              child: Text('Reintentar')),
+        ],
       ),
     );
   }
 
-  // Header de grupo con texto uppercase en gris
-  Widget _buildGroupHeader(String label) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: context.secondaryText,
-          letterSpacing: 1.2,
-        ),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.notifications_off,
+              size: 64, color: AppColors.getTextSecondary(context)),
+          const SizedBox(height: 16),
+          Text('No tienes notificaciones',
+              style: TextStyle(
+                  fontSize: 18, color: AppColors.getTextSecondary(context))),
+        ],
       ),
     );
   }
 
-  /// Construir tarjeta de notificación individual
-  Widget _buildNotificationCard(String notificationId, Map<String, dynamic> data) {
-    final title = data['title'] ?? 'Notificación';
+  Widget _buildNotificationCard(Map<String, dynamic> data) {
+    final id = (data['id'] ?? '').toString();
+    final title = data['title'] ?? 'Notificacion';
     final body = data['body'] ?? '';
-    final isRead = data['isRead'] ?? false;
-    final type = data['type'] ?? 'info';
-    final createdAt = data['createdAt'] as Timestamp?;
-    final payload = data['payload'] as String?;
+    final isRead = (data['isRead'] ?? data['read'] ?? false) == true;
+    final type = (data['type'] ?? 'info').toString();
+    final createdAtRaw = data['createdAt'];
+    final DateTime? createdAt = createdAtRaw is String
+        ? DateTime.tryParse(createdAtRaw)
+        : (createdAtRaw is num
+            ? DateTime.fromMillisecondsSinceEpoch(createdAtRaw.toInt())
+            : null);
+    final payload = data['payload']?.toString();
 
     return Dismissible(
-      key: Key(notificationId),
+      key: Key(id),
       background: Container(
-        color: ModernTheme.success,
+        color: Colors.green,
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
-        child: Icon(Icons.done, color: Theme.of(context).colorScheme.onPrimary),
+        child: const Icon(Icons.done, color: Colors.white),
       ),
       secondaryBackground: Container(
-        color: ModernTheme.error,
+        color: Colors.red,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onPrimary),
+        child: const Icon(Icons.delete, color: Colors.white),
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          await _markAsRead(notificationId);
+          await _markAsRead(id);
           return false;
         } else {
           return await _confirmDelete(context);
@@ -245,92 +234,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       },
       onDismissed: (direction) {
         if (direction == DismissDirection.endToStart) {
-          _deleteNotification(notificationId);
+          _deleteNotification(id);
         }
       },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: isRead
-              ? Theme.of(context).colorScheme.surface
-              : ModernTheme.info.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
-          // Borde izquierdo naranja para no leídas
-          border: isRead
-              ? null
-              : Border(
-                  left: BorderSide(
-                    color: AppColors.rappiOrange,
-                    width: 4,
-                  ),
-                ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        color: isRead
+            ? AppColors.getSurface(context)
+            : AppColors.rappiOrange.withValues(alpha: 0.1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: SizedBox(
-            width: 40,
-            height: 40,
-            child: _getNotificationIcon(type, isRead),
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          leading: _getNotificationIcon(type, isRead),
+          title: Text(title,
+              style: TextStyle(
+                  fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                  color: AppColors.getTextPrimary(context))),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (body.isNotEmpty) ...[
+              if (body.toString().isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(
-                  body,
-                  style: TextStyle(color: AppColors.textSecondary),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(body.toString(),
+                    style: TextStyle(color: AppColors.getTextSecondary(context))),
               ],
               if (createdAt != null) ...[
                 const SizedBox(height: 4),
-                Text(
-                  _formatTimestamp(createdAt),
-                  style: TextStyle(fontSize: 12, color: context.secondaryText),
-                ),
+                Text(_formatDateTime(createdAt),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.getTextSecondary(context))),
               ],
             ],
           ),
           trailing: !isRead
               ? Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: AppColors.rappiOrange,
-                    shape: BoxShape.circle,
-                  ),
-                )
+                  width: 12,
+                  height: 12,
+                  decoration: const BoxDecoration(
+                      color: Colors.blue, shape: BoxShape.circle))
               : null,
-          onTap: () => _handleNotificationTap(notificationId, payload, isRead),
+          onTap: () => _handleNotificationTap(id, payload, isRead),
         ),
       ),
     );
   }
 
-  /// Obtener icono según tipo de notificación
   Widget _getNotificationIcon(String type, bool isRead) {
     IconData iconData;
     Color iconColor;
-
     switch (type) {
       case 'ride':
         iconData = Icons.local_taxi;
@@ -338,217 +289,149 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         break;
       case 'payment':
         iconData = Icons.account_balance_wallet;
-        iconColor = ModernTheme.success;
+        iconColor = Colors.green;
         break;
       case 'emergency':
         iconData = Icons.warning;
-        iconColor = ModernTheme.error;
+        iconColor = Colors.red;
         break;
       case 'promotion':
         iconData = Icons.local_offer;
-        iconColor = ModernTheme.warning;
+        iconColor = Colors.orange;
         break;
       case 'system':
         iconData = Icons.info;
-        iconColor = ModernTheme.info;
+        iconColor = Colors.purple;
         break;
       default:
         iconData = Icons.notifications;
-        iconColor = context.secondaryText;
+        iconColor = AppColors.getTextSecondary(context);
     }
-
     return CircleAvatar(
-      radius: 20,
-      backgroundColor: isRead ? iconColor.withValues(alpha: 0.15) : iconColor,
-      child: Icon(
-        iconData,
-        color: isRead ? iconColor : Theme.of(context).colorScheme.onPrimary,
-        size: 20,
-      ),
+      backgroundColor:
+          isRead ? iconColor.withValues(alpha: 0.2) : iconColor,
+      child: Icon(iconData, color: isRead ? iconColor : Colors.white, size: 20),
     );
   }
 
-  /// Formatear timestamp a texto legible
-  String _formatTimestamp(Timestamp timestamp) {
-    final dateTime = timestamp.toDate();
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inMinutes < 1) {
-      return 'Ahora';
-    } else if (difference.inMinutes < 60) {
-      return 'Hace ${difference.inMinutes}m';
-    } else if (difference.inHours < 24) {
-      return 'Hace ${difference.inHours}h';
-    } else if (difference.inDays < 7) {
-      return 'Hace ${difference.inDays}d';
-    } else {
-      return DateFormat('dd/MM/yyyy HH:mm').format(dateTime);
-    }
+  String _formatDateTime(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inMinutes < 1) return 'Ahora';
+    if (difference.inMinutes < 60) return 'Hace ${difference.inMinutes} min';
+    if (difference.inHours < 24) return 'Hace ${difference.inHours}h';
+    if (difference.inDays < 7) return 'Hace ${difference.inDays}d';
+    return DateFormat('dd/MM/yyyy HH:mm').format(dateTime);
   }
 
-  /// Manejar tap en notificación
   Future<void> _handleNotificationTap(
-    String notificationId,
-    String? payload,
-    bool isRead,
-  ) async {
-    // Marcar como leída si no lo está
-    if (!isRead) {
-      await _markAsRead(notificationId);
-    }
-
-    // Navegar según el payload
+      String notificationId, String? payload, bool isRead) async {
+    if (!isRead) await _markAsRead(notificationId);
     if (payload != null && payload.isNotEmpty) {
       if (payload.startsWith('ride:')) {
-        final rideId = payload.substring(5);
-        Navigator.pushNamed(
-          context,
-          '/shared/trip-details',
-          arguments: {'rideId': rideId},
-        );
+        Navigator.pushNamed(context, '/shared/trip-details',
+            arguments: {'rideId': payload.substring(5)});
       } else if (payload == 'driver_earnings') {
-        Navigator.pushNamed(context, '/driver/earnings');
+        Navigator.pushNamed(context, '/driver/earnings-details');
       } else if (payload == 'passenger_promotions') {
         Navigator.pushNamed(context, '/passenger/promotions');
       }
     }
   }
 
-  /// Marcar notificación como leída
   Future<void> _markAsRead(String notificationId) async {
     try {
-      await _firestore
-          .collection('notifications')
-          .doc(notificationId)
-          .update({'isRead': true});
+      await _api.markNotificationRead(notificationId);
+      if (!mounted) return;
+      setState(() {
+        final idx =
+            _notifications.indexWhere((n) => (n['id'] ?? '').toString() == notificationId);
+        if (idx != -1) {
+          _notifications[idx] = {..._notifications[idx], 'isRead': true};
+        }
+      });
     } catch (e) {
-      debugPrint('❌ Error marcando notificación como leída: $e');
+      debugPrint('Error marcando notificacion como leida: $e');
     }
   }
 
-  /// Marcar todas las notificaciones como leídas
-  Future<void> _markAllAsRead(String userId) async {
+  Future<void> _markAllAsRead() async {
     try {
-      final batch = _firestore.batch();
-      final unreadNotifications = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .where('isRead', isEqualTo: false)
-          .get();
-
-      for (var doc in unreadNotifications.docs) {
-        batch.update(doc.reference, {'isRead': true});
-      }
-
-      await batch.commit();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Todas las notificaciones marcadas como leídas'),
-            backgroundColor: ModernTheme.success,
-          ),
-        );
-      }
+      await _api.markAllNotificationsRead();
+      if (!mounted) return;
+      setState(() {
+        _notifications =
+            _notifications.map((n) => {...n, 'isRead': true}).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Todas las notificaciones marcadas como leidas'),
+          backgroundColor: Colors.green));
     } catch (e) {
-      debugPrint('❌ Error marcando todas como leídas: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      debugPrint('Error marcando todas como leidas: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
-  /// Confirmar eliminación
   Future<bool> _confirmDelete(BuildContext context) async {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Eliminar notificación'),
-            content: const Text('¿Estás seguro de que quieres eliminar esta notificación?'),
+            title: Text('Eliminar notificacion'),
+            content:
+                Text('Estas seguro de que deseas eliminar esta notificacion?'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
-              ),
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text('Cancelar')),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Eliminar'),
-              ),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text('Eliminar')),
             ],
           ),
         ) ??
         false;
   }
 
-  /// Eliminar notificación individual
   Future<void> _deleteNotification(String notificationId) async {
-    try {
-      await _firestore.collection('notifications').doc(notificationId).delete();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notificación eliminada')),
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ Error eliminando notificación: $e');
-    }
+    // TODO(node-migration): reemplazar con endpoint DELETE /api/notifications/:id
+    // cuando exista. Por ahora solo removemos localmente.
+    if (!mounted) return;
+    setState(() {
+      _notifications
+          .removeWhere((n) => (n['id'] ?? '').toString() == notificationId);
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Notificacion eliminada')));
   }
 
-  /// Eliminar todas las notificaciones
-  Future<void> _deleteAllNotifications(String userId) async {
+  Future<void> _deleteAllNotifications() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar todas las notificaciones'),
-        content: const Text('¿Estás seguro? Esta acción no se puede deshacer.'),
+        title: Text('Eliminar todas'),
+        content: Text(
+            'Se eliminaran todas tus notificaciones. Esta accion no se puede deshacer.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar todas'),
-          ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: Text('Eliminar todas')),
         ],
       ),
     );
-
     if (confirmed != true) return;
 
-    try {
-      final batch = _firestore.batch();
-      final notifications = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .get();
-
-      for (var doc in notifications.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Todas las notificaciones eliminadas'),
-            backgroundColor: ModernTheme.success,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ Error eliminando todas las notificaciones: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    }
+    // TODO(node-migration): reemplazar con endpoint DELETE /api/notifications
+    // cuando exista. Por ahora solo limpiamos localmente.
+    if (!mounted) return;
+    setState(() => _notifications.clear());
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Todas las notificaciones eliminadas'),
+        backgroundColor: Colors.green));
   }
 }

@@ -1,12 +1,13 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../utils/logger.dart';
 enum PromotionType { percentage, fixed, freeRide, loyalty }
 enum PromotionStatus { active, used, expired }
@@ -58,7 +59,6 @@ class PromotionsScreen extends StatefulWidget {
 
 class _PromotionsScreenState extends State<PromotionsScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _userId; // Se obtendrá del usuario actual
   bool _isLoading = true;
 
@@ -68,10 +68,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
 
   final TextEditingController _promoCodeController = TextEditingController();
 
-  // ✅ CORREGIDO: Suscripción a stream para sincronización en tiempo real
-  StreamSubscription<QuerySnapshot>? _promotionsSubscription;
-
-  // Lista de promociones desde Firebase
+  // Lista de promociones — hoy vacía hasta que el backend Node exponga /api/promotions.
   List<Promotion> _promotions = [];
   
   // Loyalty program data
@@ -106,16 +103,20 @@ class _PromotionsScreenState extends State<PromotionsScreen>
       vsync: this,
     )..forward();
     
-    _loadPromotionsFromFirebase();
+    _loadPromotionsFromApi();
   }
-  
-  // ✅ CORREGIDO: Usar stream en lugar de get() para sincronización en tiempo real
-  void _loadPromotionsFromFirebase() {
+
+  /// Carga las promociones del usuario desde el backend Node.
+  ///
+  /// TODO(node-migration): reemplazar con endpoint GET /api/promotions cuando
+  /// exista. Por ahora sólo garantizamos que la pantalla no rompa y muestre
+  /// el estado vacío correctamente.
+  Future<void> _loadPromotionsFromApi() async {
     try {
       setState(() => _isLoading = true);
 
-      // Obtener el ID del usuario autenticado desde Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.currentUser;
       if (currentUser == null) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -128,130 +129,21 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         }
         return;
       }
-      _userId = currentUser.uid;
+      _userId = currentUser.id;
 
-      // ✅ CORREGIDO: Usar snapshots() para sincronización en tiempo real
-      // Cuando admin crea una promoción, aparece automáticamente aquí
-      _promotionsSubscription = _firestore
-          .collection('promotions')
-          .where('isActive', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .limit(100) // Requerido por firestore.rules
-          .snapshots()
-          .listen(
-        (promotionsSnapshot) async {
-          await _processPromotionsSnapshot(promotionsSnapshot);
-        },
-        onError: (e) {
-          AppLogger.error('Error en stream de promociones: $e');
-          if (mounted) {
-            setState(() => _isLoading = false);
-            _showErrorSnackBar(e);
-          }
-        },
-      );
-    } catch (e) {
-      AppLogger.error('Error configurando stream de promociones: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  // ✅ NUEVO: Procesar snapshot de promociones (extraído para reutilizar)
-  Future<void> _processPromotionsSnapshot(QuerySnapshot promotionsSnapshot) async {
-    try {
-      List<Promotion> loadedPromotions = [];
-
-      for (var doc in promotionsSnapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-
-        // Determinar el tipo de promocion
-        PromotionType type = PromotionType.percentage;
-        if (data['type'] == 'fixed') {
-          type = PromotionType.fixed;
-        } else if (data['type'] == 'freeRide') {
-          type = PromotionType.freeRide;
-        } else if (data['type'] == 'loyalty') {
-          type = PromotionType.loyalty;
-        }
-
-        // Determinar el estado de la promoción
-        PromotionStatus status = PromotionStatus.active;
-        final validUntil = data['validUntil'] != null
-            ? (data['validUntil'] as Timestamp).toDate()
-            : DateTime.now().add(Duration(days: 30));
-
-        // Verificar si el usuario ya usó esta promoción
-        final userUsageDoc = await _firestore
-            .collection('users')
-            .doc(_userId)
-            .collection('used_promotions')
-            .doc(doc.id)
-            .get();
-
-        if (userUsageDoc.exists) {
-          final usageData = userUsageDoc.data()!;
-          final usedCount = usageData['usedCount'] ?? 0;
-          final maxUses = data['maxUses'] ?? 100;
-
-          if (usedCount >= maxUses) {
-            status = PromotionStatus.used;
-          }
-        }
-
-        if (validUntil.isBefore(DateTime.now())) {
-          status = PromotionStatus.expired;
-        }
-
-        // Determinar el color basado en el tipo
-        Color color = ModernTheme.primaryBlue;
-        if (type == PromotionType.fixed) {
-          color = ModernTheme.success;
-        } else if (type == PromotionType.freeRide) {
-          color = ModernTheme.warning;
-        } else if (type == PromotionType.loyalty) {
-          color = ModernTheme.rappiOrange;
-        }
-
-        loadedPromotions.add(Promotion(
-          id: doc.id,
-          code: data['code'] ?? '',
-          title: data['title'] ?? 'Promoción',
-          description: data['description'] ?? '',
-          type: type,
-          status: status,
-          value: (data['value'] ?? data['discount'] ?? 0).toDouble(),
-          validUntil: validUntil,
-          maxUses: data['maxUses'],
-          usedCount: data['usedCount'] ?? 0,
-          minAmount: data['minAmount']?.toDouble(),
-          validZones: data['validZones'] != null
-              ? List<String>.from(data['validZones'])
-              : null,
-          imageUrl: data['imageUrl'] ?? 'assets/promo.jpg',
-          color: color,
-        ));
-      }
-
-      // Actualizar estado
+      // Stub inocuo: lista vacía hasta que el backend Node exponga /api/promotions.
       if (mounted) {
         setState(() {
-          _promotions = loadedPromotions;
+          _promotions = <Promotion>[];
           _isLoading = false;
         });
       }
-
-      if (loadedPromotions.isEmpty) {
-        AppLogger.info('No hay promociones disponibles en Firebase');
-      } else {
-        AppLogger.info('✅ ${loadedPromotions.length} promociones cargadas en tiempo real');
-      }
+      AppLogger.info(
+          'Promociones — endpoint /api/promotions pendiente en backend Node');
     } catch (e) {
-      AppLogger.error('Error procesando promociones: $e');
+      AppLogger.error('Error cargando promociones: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        _showErrorSnackBar(e);
       }
     }
   }
@@ -280,8 +172,6 @@ class _PromotionsScreenState extends State<PromotionsScreen>
   
   @override
   void dispose() {
-    // ✅ CORREGIDO: Cancelar suscripción al stream para evitar memory leaks
-    _promotionsSubscription?.cancel();
     _tabController.dispose();
     _listAnimationController.dispose();
     _headerAnimationController.dispose();
@@ -985,12 +875,9 @@ class _PromotionsScreenState extends State<PromotionsScreen>
   }
   
   void _usePromotion(Promotion promotion) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1069,131 +956,112 @@ class _PromotionsScreenState extends State<PromotionsScreen>
   }
   
   void _showPromotionDetails(Promotion promotion) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      maxHeightFraction: 0.9,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.5,
         maxChildSize: 0.9,
         builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: ListView(
-              controller: scrollController,
-              padding: EdgeInsets.all(24),
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+          return ListView(
+            controller: scrollController,
+            padding: EdgeInsets.all(24),
+            children: [
+              // Header
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [promotion.color, promotion.color.withValues(alpha: 0.7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                
-                // Header
-                Container(
-                  padding: EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [promotion.color, promotion.color.withValues(alpha: 0.7)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _getPromotionValue(promotion),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.surface,
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                        ),
+                child: Column(
+                  children: [
+                    Text(
+                      _getPromotionValue(promotion),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.surface,
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
                       ),
-                      SizedBox(height: 8),
-                      Text(
-                        promotion.title,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.surface,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-                
-                SizedBox(height: 24),
-                
-                // Description
-                Text(
-                  'Descripción',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  promotion.description,
-                  style: TextStyle(
-                    color: context.secondaryText,
-                    fontSize: 14,
-                  ),
-                ),
-                
-                SizedBox(height: 24),
-                
-                // Terms and conditions
-                Text(
-                  'Términos y Condiciones',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 12),
-                
-                _buildTermItem('Válido hasta ${_formatDate(promotion.validUntil)}'),
-                if (promotion.maxUses != null)
-                  _buildTermItem('Máximo ${promotion.maxUses} usos por usuario'),
-                if (promotion.minAmount != null)
-                  _buildTermItem('Compra mínima de ${promotion.minAmount!.toCurrency()}'),
-                if (promotion.validZones != null)
-                  _buildTermItem('Válido solo en: ${promotion.validZones!.join(', ')}'),
-                _buildTermItem('No acumulable con otras promociones'),
-                _buildTermItem('Sujeto a disponibilidad de conductores'),
-                
-                SizedBox(height: 24),
-                
-                // Use button
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _usePromotion(promotion);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: promotion.color,
-                    minimumSize: Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                  child: Text('Usar Promoción'),
+                    SizedBox(height: 8),
+                    Text(
+                      promotion.title,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.surface,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+
+              SizedBox(height: 24),
+
+              // Description
+              Text(
+                'Descripción',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                promotion.description,
+                style: TextStyle(
+                  color: context.secondaryText,
+                  fontSize: 14,
+                ),
+              ),
+
+              SizedBox(height: 24),
+
+              // Terms and conditions
+              Text(
+                'Términos y Condiciones',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 12),
+
+              _buildTermItem('Válido hasta ${_formatDate(promotion.validUntil)}'),
+              if (promotion.maxUses != null)
+                _buildTermItem('Máximo ${promotion.maxUses} usos por usuario'),
+              if (promotion.minAmount != null)
+                _buildTermItem('Compra mínima de ${promotion.minAmount!.toCurrency()}'),
+              if (promotion.validZones != null)
+                _buildTermItem('Válido solo en: ${promotion.validZones!.join(', ')}'),
+              _buildTermItem('No acumulable con otras promociones'),
+              _buildTermItem('Sujeto a disponibilidad de conductores'),
+
+              SizedBox(height: 24),
+
+              // Use button
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _usePromotion(promotion);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: promotion.color,
+                  minimumSize: Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text('Usar Promoción'),
+              ),
+            ],
           );
         },
       ),

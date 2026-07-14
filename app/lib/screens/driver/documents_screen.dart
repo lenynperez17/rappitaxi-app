@@ -1,8 +1,5 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart'; // ✅ Para seleccionar archivos PDF/documentos
 import 'package:url_launcher/url_launcher.dart'; // ✅ AGREGADO: Para abrir/descargar documentos
@@ -10,7 +7,9 @@ import 'package:share_plus/share_plus.dart'; // ✅ AGREGADO: Para compartir/gua
 import 'package:path_provider/path_provider.dart'; // ✅ AGREGADO: Para obtener directorio temporal
 import 'dart:io';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
+import '../../services/rapi_api_client.dart';
 
 import '../../utils/logger.dart';
 class DocumentsScreen extends StatefulWidget {
@@ -32,11 +31,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   bool _isLoading = true;
   String _overallStatus = 'pending';
 
-  // Firebase instances
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  // API cliente y pickers
+  final RapiApiClient _api = RapiApiClient.instance;
   final ImagePicker _picker = ImagePicker();
-  String? _userId;
   
   @override
   void initState() {
@@ -76,25 +73,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     try {
       setState(() => _isLoading = true);
 
-      // ✅ Obtener el ID del usuario autenticado desde Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Usuario no autenticado. Por favor, inicia sesión.'),
-              backgroundColor: ModernTheme.error,
-            ),
-          );
-          Navigator.pop(context);
-        }
-        return;
-      }
-      _userId = currentUser.uid;
-
-      // ✅ Cargar documentos reales desde Firebase Firestore
-      // Primero definimos los tipos de documentos requeridos con sus categorías
+      // Tipos de documentos requeridos con sus categorías
       final requiredDocTypes = {
         'license': {'name': 'Licencia de Conducir', 'description': 'Licencia de conducir profesional vigente', 'category': DocumentCategory.license, 'required': true},
         'id_card': {'name': 'Documento de Identidad', 'description': 'DNI o Pasaporte vigente', 'category': DocumentCategory.identity, 'required': true},
@@ -105,17 +84,20 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         'bank_account': {'name': 'Certificación Bancaria', 'description': 'Certificado de cuenta bancaria para depósitos', 'category': DocumentCategory.financial, 'required': false},
       };
 
-      // Cargar documentos subidos desde la subcolección
-      final docsSnapshot = await _firestore
-          .collection('drivers')
-          .doc(_userId)
-          .collection('documents')
-          .get();
+      // Cargar documentos subidos desde el backend Node
+      final resp = await _api.myDocuments();
+      final rawList = resp['documents'];
 
-      // Mapear documentos subidos por su ID
-      final uploadedDocs = <String, QueryDocumentSnapshot>{};
-      for (var doc in docsSnapshot.docs) {
-        uploadedDocs[doc.id] = doc;
+      // Mapear documentos subidos por su docType/id
+      final uploadedDocs = <String, Map<String, dynamic>>{};
+      if (rawList is List) {
+        for (final entry in rawList) {
+          if (entry is! Map) continue;
+          final map = Map<String, dynamic>.from(entry);
+          final type = (map['docType'] ?? map['type'] ?? map['id'])?.toString();
+          if (type == null || type.isEmpty) continue;
+          uploadedDocs[type] = map;
+        }
       }
 
       // Crear lista de documentos con estado actual
@@ -125,33 +107,43 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         final docInfo = entry.value;
 
         if (uploadedDocs.containsKey(docId)) {
-          // Documento existe en Firebase
-          final data = uploadedDocs[docId]!.data() as Map<String, dynamic>;
+          final data = uploadedDocs[docId]!;
+
+          DateTime? expiryDate;
+          final expiryRaw = data['expiryDate']?.toString();
+          if (expiryRaw != null && expiryRaw.isNotEmpty) {
+            expiryDate = DateTime.tryParse(expiryRaw);
+          }
+
+          DateTime? uploadDate;
+          final uploadRaw = (data['uploadedAt'] ?? data['uploadDate'])?.toString();
+          if (uploadRaw != null && uploadRaw.isNotEmpty) {
+            uploadDate = DateTime.tryParse(uploadRaw);
+          }
 
           // Calcular estado basado en fechas y aprobación
           DocumentStatus status = DocumentStatus.pending;
-          if (data['status'] != null) {
-            switch (data['status']) {
-              case 'approved':
-                status = DocumentStatus.approved;
-                // Verificar si está por vencer
-                if (data['expiryDate'] != null) {
-                  final expiryDate = (data['expiryDate'] as Timestamp).toDate();
-                  final daysUntilExpiry = expiryDate.difference(DateTime.now()).inDays;
-                  if (daysUntilExpiry <= 30 && daysUntilExpiry > 0) {
-                    status = DocumentStatus.expiring;
-                  } else if (daysUntilExpiry <= 0) {
-                    status = DocumentStatus.rejected;
-                  }
+          final statusStr = data['status']?.toString();
+          switch (statusStr) {
+            case 'approved':
+            case 'verified':
+              status = DocumentStatus.approved;
+              if (expiryDate != null) {
+                final daysUntilExpiry = expiryDate.difference(DateTime.now()).inDays;
+                if (daysUntilExpiry <= 30 && daysUntilExpiry > 0) {
+                  status = DocumentStatus.expiring;
+                } else if (daysUntilExpiry <= 0) {
+                  status = DocumentStatus.rejected;
                 }
-                break;
-              case 'pending':
-                status = DocumentStatus.pending;
-                break;
-              case 'rejected':
-                status = DocumentStatus.rejected;
-                break;
-            }
+              }
+              break;
+            case 'rejected':
+              status = DocumentStatus.rejected;
+              break;
+            case 'pending':
+            default:
+              status = DocumentStatus.pending;
+              break;
           }
 
           loadedDocs.add(DocumentInfo(
@@ -159,12 +151,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             name: docInfo['name'] as String,
             description: docInfo['description'] as String,
             status: status,
-            expiryDate: data['expiryDate'] != null ? (data['expiryDate'] as Timestamp).toDate() : null,
-            uploadDate: data['uploadDate'] != null ? (data['uploadDate'] as Timestamp).toDate() : null,
-            fileUrl: data['fileUrl'] as String?,
+            expiryDate: expiryDate,
+            uploadDate: uploadDate,
+            fileUrl: (data['fileUrl'] ?? data['url'])?.toString(),
             isRequired: docInfo['required'] as bool,
             category: docInfo['category'] as DocumentCategory,
-            rejectionReason: data['rejectionReason'] as String?,
+            rejectionReason: data['rejectionReason']?.toString(),
           ));
         } else {
           // Documento no existe - marcarlo como faltante
@@ -1046,9 +1038,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   }
   
   void _uploadDocument(DocumentInfo document) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1177,35 +1169,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
 
-      // ✅ Subir imagen a Firebase Storage
+      // Subir archivo al backend Node y registrar el documento
       final file = File(image.path);
-      final storageRef = _storage
-          .ref()
-          .child('drivers')
-          .child(_userId!)
-          .child('documents')
-          .child('${document.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final fileUrl = uploaded['url']?.toString() ?? '';
+      if (fileUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL del archivo');
+      }
+      await _api.uploadDocument(docType: document.id, fileUrl: fileUrl);
 
-      await storageRef.putFile(file);
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      // ✅ Guardar metadata en Firestore
-      await _firestore
-          .collection('drivers')
-          .doc(_userId!)
-          .collection('documents')
-          .doc(document.id)
-          .set({
-        'name': document.name,
-        'description': document.description,
-        'status': 'pending', // Pendiente de aprobación
-        'uploadDate': FieldValue.serverTimestamp(),
-        'fileUrl': downloadUrl,
-        'category': document.category.toString(),
-        'isRequired': document.isRequired,
-      }, SetOptions(merge: true));
-
-      // Recargar documentos desde Firebase
       await _loadDocuments();
 
       if (mounted) {
@@ -1263,35 +1235,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
 
-      // ✅ Subir imagen a Firebase Storage
+      // Subir archivo al backend Node y registrar el documento
       final file = File(image.path);
-      final storageRef = _storage
-          .ref()
-          .child('drivers')
-          .child(_userId!)
-          .child('documents')
-          .child('${document.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final fileUrl = uploaded['url']?.toString() ?? '';
+      if (fileUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL del archivo');
+      }
+      await _api.uploadDocument(docType: document.id, fileUrl: fileUrl);
 
-      await storageRef.putFile(file);
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      // ✅ Guardar metadata en Firestore
-      await _firestore
-          .collection('drivers')
-          .doc(_userId!)
-          .collection('documents')
-          .doc(document.id)
-          .set({
-        'name': document.name,
-        'description': document.description,
-        'status': 'pending', // Pendiente de aprobación
-        'uploadDate': FieldValue.serverTimestamp(),
-        'fileUrl': downloadUrl,
-        'category': document.category.toString(),
-        'isRequired': document.isRequired,
-      }, SetOptions(merge: true));
-
-      // Recargar documentos desde Firebase
       await _loadDocuments();
 
       if (mounted) {
@@ -1366,39 +1318,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
 
-      // ✅ Subir archivo a Firebase Storage con extensión correcta
+      // Subir archivo al backend Node y registrar el documento
       final file = File(pickedFile.path!);
-      final fileExtension = pickedFile.extension ?? 'pdf';
-      final storageRef = _storage
-          .ref()
-          .child('drivers')
-          .child(_userId!)
-          .child('documents')
-          .child('${document.id}_${DateTime.now().millisecondsSinceEpoch}.$fileExtension');
+      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final fileUrl = uploaded['url']?.toString() ?? '';
+      if (fileUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL del archivo');
+      }
+      await _api.uploadDocument(docType: document.id, fileUrl: fileUrl);
 
-      await storageRef.putFile(file);
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      // ✅ Guardar metadata en Firestore
-      await _firestore
-          .collection('drivers')
-          .doc(_userId!)
-          .collection('documents')
-          .doc(document.id)
-          .set({
-        'name': document.name,
-        'description': document.description,
-        'status': 'pending', // Pendiente de aprobación
-        'uploadDate': FieldValue.serverTimestamp(),
-        'fileUrl': downloadUrl,
-        'fileName': pickedFile.name,
-        'fileExtension': fileExtension,
-        'fileSize': pickedFile.size,
-        'category': document.category.toString(),
-        'isRequired': document.isRequired,
-      }, SetOptions(merge: true));
-
-      // Recargar documentos desde Firebase
       await _loadDocuments();
 
       if (mounted) {

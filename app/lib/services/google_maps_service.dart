@@ -321,7 +321,7 @@ class GoogleMapsService {
           'input': input,
           'key': _googleMapsApiKey,
           'language': 'es',
-          'components': 'country:ar', // Solo Argentina
+          'components': 'country:pe', // Solo Perú
           'types': 'address',
         },
       );

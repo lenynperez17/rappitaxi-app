@@ -210,18 +210,18 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen> {
     );
   }
 
-  // UI: Instrucciones paso a paso con numeros
+  // UI: Instrucciones paso a paso con números
   Widget _buildStepByStepInstructions() {
     final steps = [
-      {'num': '1', 'title': 'Muestra tu codigo', 'desc': 'Ensenale al pasajero el codigo QR o el numero de 4 digitos'},
-      {'num': '2', 'title': 'Pasajero confirma', 'desc': 'El pasajero escanea tu codigo o ingresa el numero'},
-      {'num': '3', 'title': 'Tu confirmas', 'desc': 'Ingresa el codigo del pasajero para finalizar la verificacion'},
+      {'num': '1', 'title': 'Muestra tu código', 'desc': 'Enséñale al pasajero el código QR o el número de 4 dígitos'},
+      {'num': '2', 'title': 'Pasajero confirma', 'desc': 'El pasajero escanea tu código o ingresa el número'},
+      {'num': '3', 'title': 'Tú confirmas', 'desc': 'Ingresa el código del pasajero para finalizar la verificación'},
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Como funciona',
+          'Cómo funciona',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,

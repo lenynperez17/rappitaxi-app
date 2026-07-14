@@ -20,7 +20,7 @@ import '../../core/theme/modern_theme.dart';
 /// 
 /// Funcionalidades:
 /// ✅ Selección visual de método de pago
-/// 💰 Cálculo automático de comisiones (20% plataforma)
+/// 💰 Cálculo automático de comisiones (12% plataforma)
 /// 🧮 Desglose detallado de costos
 /// 📊 Verificación de estado de pago en tiempo real
 /// 🔄 Reintento automático de pagos fallidos
@@ -927,7 +927,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Comisión plataforma (20%):',
+                        'Comisión plataforma (12%):',
                         style: TextStyle(
                           fontSize: 14,
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),

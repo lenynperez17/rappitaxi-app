@@ -579,7 +579,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get preparingExperience => 'Preparando tu experiencia...';
 
   @override
-  String get appVersion => 'Versión 2.0.0';
+  String get appVersion => 'Versión 1.0.5';
 
   @override
   String get createAccount => 'Crear cuenta';

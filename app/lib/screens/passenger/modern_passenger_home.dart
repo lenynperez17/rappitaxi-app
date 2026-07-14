@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/config/app_config.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart'; // Para reverse geocoding (coordenadas → dirección)
@@ -11,6 +12,7 @@ import 'dart:convert';
 import 'dart:math'; // Para funciones matemáticas: sin, cos, sqrt, atan2 (fórmula Haversine)
 import '../../utils/map_marker_utils.dart';
 import 'package:http/http.dart' as http;
+import '../../services/rapi_api_client.dart';
 import '../../generated/l10n/app_localizations.dart'; // Import de localizaciones
 import '../../core/widgets/custom_place_text_field.dart'; // Widget custom que resuelve problema del teclado
 import '../../core/theme/modern_theme.dart';
@@ -31,20 +33,15 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../services/location_service.dart';
 
-import 'package:cloud_firestore/cloud_firestore.dart'; // Para verificar solicitudes de conductor pendientes
 import 'package:share_plus/share_plus.dart'; // Para compartir la app
 import 'passenger_negotiations_screen.dart'; // Pantalla de negociaciones
 import '../shared/map_picker_screen.dart'; // Map picker for selecting locations
 
 // Enum para tipos de servicio disponibles (Estilo inDrive)
 enum ServiceType {
-  viaje,        // Viaje estándar ciudad
-  mototaxi,     // Mototaxi económico
-  confort,      // Vehículo cómodo
-  xl,           // 5-6 pasajeros
-  entregas,     // Paquetes hasta 20kg
-  flete,        // Mudanzas/carga grande
-  ciudadACiudad, // Viajes interurbanos
+  express,        // Express - standard ride (base rate)
+  ejecutivo,      // Ejecutivo - premium sedan (+15%)
+  vip,            // VIP - luxury ride (+30%)
 }
 
 // ELIMINADO: TripModality - inDrive NO tiene viajes programados ni rideshare urbanos
@@ -132,10 +129,10 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   bool _isSearchingDestination = false;
   bool _showPriceNegotiation = false;
   bool _showDriverOffers = false;
-  double _offeredPrice = 15.0;
+  double _offeredPrice = 0.0; // Calculated from route distance
   bool _locationPermissionGranted = false; // Para habilitar myLocation en Maps
   bool _isManualPriceEntry = false; // true cuando el usuario quiere digitar el precio manualmente
-  ServiceType _selectedServiceType = ServiceType.viaje; // Tipo de servicio seleccionado (default: Viaje)
+  ServiceType _selectedServiceType = ServiceType.express; // Tipo de servicio seleccionado (default: Express)
   String _selectedPaymentMethod = 'Efectivo'; // Método de pago seleccionado (default: Efectivo)
   bool _isSelectingLocation = false; // true cuando el usuario está ingresando/seleccionando direcciones
   bool _isSearchingDriver = false; // true cuando se está buscando conductor
@@ -347,7 +344,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           _isWaitingForDriver = true;
           _showPriceNegotiation = true;
           _currentRideId = trip.id;
-          _offeredPrice = trip.finalFare ?? 15.0;
+          _offeredPrice = trip.finalFare ?? trip.estimatedFare;
           _suggestedPrice ??= _offeredPrice;
           _pickupController.text = trip.pickupAddress;
           _destinationController.text = trip.destinationAddress;
@@ -378,39 +375,41 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         return;
       }
 
-      final favoritesSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('favorites')
-          .get();
+      final favoritesResponse = await RapiApiClient.instance.listFavorites();
+      final favoritesList = (favoritesResponse['favorites'] as List?) ??
+          (favoritesResponse['data'] as List?) ??
+          const [];
 
-      if (mounted && favoritesSnapshot.docs.isNotEmpty) {
+      if (mounted && favoritesList.isNotEmpty) {
         final Map<String, Map<String, dynamic>> loadedFavorites = {};
 
-        for (final doc in favoritesSnapshot.docs) {
-          final data = doc.data();
-          final name = (data['name'] as String?)?.toLowerCase() ?? '';
+        for (final raw in favoritesList) {
+          if (raw is! Map) continue;
+          final data = Map<String, dynamic>.from(raw);
+          final label = (data['label'] as String?) ?? (data['name'] as String?) ?? '';
+          final labelLower = label.toLowerCase();
           final address = data['address'] as String?;
-          final lat = data['latitude'] as double?;
-          final lng = data['longitude'] as double?;
+          final lat = (data['latitude'] as num?)?.toDouble();
+          final lng = (data['longitude'] as num?)?.toDouble();
+          final icon = data['icon'] as String?;
 
           if (address != null && lat != null && lng != null) {
             String key;
-            if (name.contains('casa') || name.contains('home') || data['icon'] == 'home') {
+            if (labelLower.contains('casa') || labelLower.contains('home') || icon == 'home') {
               key = 'home';
-            } else if (name.contains('trabajo') || name.contains('work') || data['icon'] == 'work') {
+            } else if (labelLower.contains('trabajo') || labelLower.contains('work') || icon == 'work') {
               key = 'work';
-            } else if (name.contains('universidad') || name.contains('school') || name.contains('uni') || data['icon'] == 'school') {
+            } else if (labelLower.contains('universidad') || labelLower.contains('school') || labelLower.contains('uni') || icon == 'school') {
               key = 'university';
             } else {
-              key = doc.id;
+              key = (data['id'] as String?) ?? label;
             }
 
             loadedFavorites[key] = {
               'address': address,
               'lat': lat,
               'lng': lng,
-              'name': data['name'],
+              'name': label,
             };
           }
         }
@@ -420,23 +419,30 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         });
       }
 
-      final recentTrips = await FirebaseFirestore.instance
-          .collection('trips')
-          .where('userId', isEqualTo: userId)
-          .where('status', isEqualTo: 'completed')
-          .orderBy('completedAt', descending: true)
-          .limit(5)
-          .get();
+      final ridesResponse = await RapiApiClient.instance.listRides(
+        role: 'passenger',
+        status: 'completed',
+        pageSize: 5,
+      );
+      final ridesList = (ridesResponse['rides'] as List?) ??
+          (ridesResponse['data'] as List?) ??
+          const [];
 
       if (mounted) {
         final List<Map<String, dynamic>> places = [];
         final Set<String> seenAddresses = {};
 
-        for (final doc in recentTrips.docs) {
-          final data = doc.data();
+        for (final raw in ridesList) {
+          if (raw is! Map) continue;
+          final data = Map<String, dynamic>.from(raw);
           final destAddress = data['destinationAddress'] as String?;
-          final destLat = data['destinationLocation']?['latitude'] as double?;
-          final destLng = data['destinationLocation']?['longitude'] as double?;
+          final destLocation = data['destinationLocation'];
+          double? destLat;
+          double? destLng;
+          if (destLocation is Map) {
+            destLat = (destLocation['latitude'] as num?)?.toDouble();
+            destLng = (destLocation['longitude'] as num?)?.toDouble();
+          }
 
           if (destAddress != null && destLat != null && destLng != null) {
             final addressKey = destAddress.toLowerCase().trim();
@@ -472,8 +478,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     if (completedAt == null) return '';
 
     DateTime date;
-    if (completedAt is Timestamp) {
-      date = completedAt.toDate();
+    if (completedAt is String) {
+      try {
+        date = DateTime.parse(completedAt);
+      } catch (_) {
+        return '';
+      }
+    } else if (completedAt is DateTime) {
+      date = completedAt;
     } else {
       return '';
     }
@@ -571,15 +583,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             '/passenger/tracking',
             arguments: currentTrip.id,
           ).then((_) {
-            if (mounted) {
-              setState(() {
-                _isInTrackingScreen = false;
-                _isSearchingDriver = false;
-                _isWaitingForDriver = false;
-                _showDriverOffers = false;
-                _currentRideId = null;
-              });
-            }
+            if (mounted) _resetAfterTrip();
           });
         }
       } else if ((currentTrip.status == 'accepted' || currentTrip.status == 'arrived' || currentTrip.status == 'driver_arriving') && currentTrip.driverId != null) {
@@ -590,27 +594,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             '/passenger/tracking',
             arguments: currentTrip.id,
           ).then((_) {
-            if (mounted) {
-              setState(() {
-                _isInTrackingScreen = false;
-                _isSearchingDriver = false;
-                _isWaitingForDriver = false;
-                _showDriverOffers = false;
-                _currentRideId = null;
-              });
-            }
+            if (mounted) _resetAfterTrip();
           });
         }
       } else if (currentTrip.status == 'completed' || currentTrip.status == 'cancelled') {
         debugPrint('🔴 RESETTING STATE: trip ${currentTrip.id} has status ${currentTrip.status}');
-        setState(() {
-          _isInTrackingScreen = false;
-          _isWaitingForDriver = false;
-          _isSearchingDriver = false;
-          _showDriverOffers = false;
-          _isCancelling = false;
-          _currentRideId = null;
-        });
+        _resetAfterTrip();
       } else if (currentTrip.status == 'expired') {
         debugPrint('🔴 RESETTING STATE: trip ${currentTrip.id} expired');
         if (mounted) {
@@ -622,14 +611,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             ),
           );
         }
-        setState(() {
-          _isInTrackingScreen = false;
-          _isWaitingForDriver = false;
-          _isSearchingDriver = false;
-          _showDriverOffers = false;
-          _isCancelling = false;
-          _currentRideId = null;
-        });
+        _resetAfterTrip();
       }
     } else {
       // Only reset if waiting for driver, NOT if in tracking screen.
@@ -940,7 +922,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     _syncSimDriverMarkers();
 
     _driverAnimationTimer?.cancel();
-    _driverAnimationTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+    _driverAnimationTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted || _isDisposed) return;
       _tickSimDrivers();
     });
@@ -1060,36 +1042,28 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     _searchDebounceTimer = Timer(Duration(milliseconds: 400), () async {
       if (!mounted) return;
       try {
-        final locationBias = (_pickupCoordinates != null)
-            ? '&location=${_pickupCoordinates!.latitude},${_pickupCoordinates!.longitude}&radius=5000'
-            : '';
-        final url = Uri.parse(
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-          '?input=${Uri.encodeComponent(query)}'
-          '&key=${AppConfig.googleMapsApiKey}'
-          '&language=es'
-          '&components=country:pe'
-          '$locationBias',
+        // Nuevo: uso el backend Node (Google Places + fallback OSM Nominatim).
+        // Evita depender de billing Google + oculta la API key server-side.
+        final data = await RapiApiClient.instance.mapsAutocomplete(
+          query: query,
+          lat: _pickupCoordinates?.latitude,
+          lng: _pickupCoordinates?.longitude,
         );
-        final response = await http.get(url);
         if (!mounted) return;
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['status'] == 'OK') {
-            final results = (data['predictions'] as List)
-                .map((p) => PlacePrediction.fromJson(p))
-                .toList();
-            setState(() {
-              _destinationSearchResults = results;
-              _isSearchingPlaces = false;
-            });
-          } else {
-            setState(() {
-              _destinationSearchResults = [];
-              _isSearchingPlaces = false;
-            });
-          }
-        }
+        final preds = (data['predictions'] as List?) ?? const [];
+        final results = preds
+            .whereType<Map<String, dynamic>>()
+            .map((p) => PlacePrediction(
+                  placeId: (p['placeId'] as String?) ?? '',
+                  description: (p['description'] as String?) ?? '',
+                  mainText: (p['mainText'] as String?) ?? (p['description'] as String?) ?? '',
+                  secondaryText: (p['secondaryText'] as String?) ?? '',
+                ))
+            .toList();
+        setState(() {
+          _destinationSearchResults = results;
+          _isSearchingPlaces = false;
+        });
       } catch (e) {
         if (mounted) setState(() => _isSearchingPlaces = false);
       }
@@ -1364,9 +1338,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       // This is what drivers poll for (not 'rides')
       final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
 
+      // Use selected pickup coordinates (from address search), fallback to GPS
+      final pickupLat = _pickupCoordinates?.latitude ?? currentLocation.latitude;
+      final pickupLng = _pickupCoordinates?.longitude ?? currentLocation.longitude;
       final pickup = models.LocationPoint(
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
+        latitude: pickupLat,
+        longitude: pickupLng,
         address: _pickupController.text.isEmpty ? 'Mi ubicación' : _pickupController.text,
         reference: null,
       );
@@ -1381,13 +1358,19 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       // Map payment method string to enum
       models.PaymentMethod paymentMethodEnum;
       switch (_selectedPaymentMethod) {
+        case 'Yape':
+          paymentMethodEnum = models.PaymentMethod.yape;
+          break;
+        case 'Plin':
+          paymentMethodEnum = models.PaymentMethod.plin;
+          break;
         case 'card':
           paymentMethodEnum = models.PaymentMethod.card;
           break;
         case 'wallet':
           paymentMethodEnum = models.PaymentMethod.wallet;
           break;
-        default:
+        default: // 'Efectivo' and any other
           paymentMethodEnum = models.PaymentMethod.cash;
       }
 
@@ -1442,6 +1425,33 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     }
   }
 
+  void _resetAfterTrip() {
+    setState(() {
+      _isInTrackingScreen = false;
+      _isSearchingDriver = false;
+      _isWaitingForDriver = false;
+      _showDriverOffers = false;
+      _showPriceNegotiation = false;
+      _isCancelling = false;
+      _currentRideId = null;
+      _polylines.clear();
+      _markers.clear();
+      _pickupCoordinates = null;
+      _destinationCoordinates = null;
+      _pickupController.clear();
+      _destinationController.clear();
+      _priceController.clear();
+      _calculatedDistance = null;
+      _estimatedTime = null;
+      _suggestedPrice = null;
+      _offeredPrice = 0.0;
+      _isManualPriceEntry = false;
+    });
+    // Re-add simulated driver markers at current location
+    _requestLocationPermission();
+    AppLogger.info('Estado reseteado después de viaje completado/cancelado');
+  }
+
   void _cancelPriceNegotiation() {
     AppLogger.info('Cancelando negociación de precio - limpiando estado');
 
@@ -1461,7 +1471,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       _calculatedDistance = null;
       _estimatedTime = null;
       _suggestedPrice = null;
-      _offeredPrice = 15.0;
+      _offeredPrice = 0.0;
     });
 
     AppLogger.info('Estado reseteado completamente - usuario puede comenzar de nuevo');
@@ -1551,7 +1561,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             ),
             padding: EdgeInsets.only(
               bottom: _showPriceNegotiation
-                  ? MediaQuery.of(context).size.height * 0.62
+                  ? MediaQuery.sizeOf(context).height * 0.62
                   : 280,
               top: _showPriceNegotiation ? 120 : 0,
             ),
@@ -1560,6 +1570,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             onCameraMoveStarted: () {
               if (_isSnapping) return;
               if (_showPriceNegotiation) return;
+              if (_isWaitingForDriver) return;
               if (!_isSelectingLocation) {
                 setState(() => _isCameraMoving = true);
                 if (_sheetController.isAttached) {
@@ -1570,6 +1581,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             onCameraMove: (position) {
               _lastCameraTarget = position.target;
               if (_showPriceNegotiation) return;
+              if (_isWaitingForDriver) return;
               if (_isCameraMoving && !_isSelectingLocation) {
                 _updateActiveRefDot(position.target);
               }
@@ -1580,6 +1592,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                 return;
               }
               if (_showPriceNegotiation) return;
+              if (_isWaitingForDriver) return;
               if (!_isSelectingLocation) {
                 final wasDragging = _isCameraMoving;
                 setState(() => _isCameraMoving = false);
@@ -1675,7 +1688,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
           if (_showPriceNegotiation && !_isWaitingForDriver && !_showDriverOffers)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
+              top: MediaQuery.paddingOf(context).top + 8,
               left: 16,
               right: 16,
               child: _buildRouteAddressCard(),
@@ -1683,7 +1696,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
           if (_showPriceNegotiation && !_isWaitingForDriver && !_showDriverOffers)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 120,
+              top: MediaQuery.paddingOf(context).top + 120,
               left: 12,
               child: GestureDetector(
                 onTap: _cancelPriceNegotiation,
@@ -1711,12 +1724,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               right: 0,
               bottom: 0,
               top: (_isWaitingForDriver && false)
-                  ? MediaQuery.of(context).padding.top
+                  ? MediaQuery.paddingOf(context).top
                   : null,
               child: SizedBox(
                 height: (_isWaitingForDriver && false)
                     ? null
-                    : MediaQuery.of(context).size.height * (_isSelectingLocation ? 0.95 : 0.85),
+                    : MediaQuery.sizeOf(context).height * (_isSelectingLocation ? 0.95 : 0.85),
                 child: AnimatedBuilder(
                   animation: _bottomSheetAnimation,
                   builder: (context, child) {
@@ -1724,56 +1737,49 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                       offset: Offset(0, 400 * (1 - _bottomSheetAnimation.value)),
                       child: _isWaitingForDriver
                           ? Consumer2<RideProvider, PriceNegotiationProvider>(
-                              builder: (context, rp, negotiationProvider, child) {
+                              builder: (context, rp, negotiationProvider, _) {
                                 final driverOffers = negotiationProvider.currentNegotiation?.driverOffers
                                     .where((o) => o.status == models.OfferStatus.pending)
                                     .toList() ?? [];
                                 final hasOffers = driverOffers.isNotEmpty;
                                 return Align(
                                   alignment: hasOffers ? Alignment.topCenter : Alignment.bottomCenter,
-                                  child: child!,
-                                );
-                              },
-                              child: SearchingDriversSheet(
+                                  child: SearchingDriversSheet(
                               pickupAddress: _pickupController.text,
                               destinationAddress: _destinationController.text,
                               offeredPrice: _offeredPrice,
-                              suggestedPrice: _suggestedPrice ?? 15.0,
-                              minPrice: ((_suggestedPrice ?? 15.0) * 0.5).ceilToDouble().clamp(3.0, _suggestedPrice ?? 15.0),
-                              maxPrice: ((_suggestedPrice ?? 15.0) * 3.0).floorToDouble(),
+                              suggestedPrice: _suggestedPrice ?? _offeredPrice,
+                              minPrice: ((_suggestedPrice ?? _offeredPrice) * 0.5).ceilToDouble().clamp(3.0, _suggestedPrice ?? _offeredPrice),
+                              maxPrice: ((_suggestedPrice ?? _offeredPrice) * 3.0).floorToDouble(),
                               selectedPaymentMethod: _selectedPaymentMethod,
                               onPriceChanged: (price) {
+                                debugPrint('💰 onPriceChanged: old=$_offeredPrice new=$price');
                                 setState(() => _offeredPrice = price);
-                                final rid = _currentRideId;
-                                if (rid != null) {
-                                  FirebaseFirestore.instance.collection('rides').doc(rid).update({
-                                    'offeredFare': price,
-                                  });
-                                }
+                                // TODO(migration): backend Node no expone endpoint para actualizar
+                                // el precio ofrecido en tiempo real sobre una negociación existente.
+                                // El precio queda como estado local hasta enviar una nueva contraoferta
+                                // vía proposeNegotiation.
                               },
                               onRenewSearch: (newPrice) async {
-                                // TODO: implement renewSearch in RideProvider
-                                final renewed = false;
-                                if (!renewed) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Tiempo máximo de búsqueda alcanzado (10 min). Intenta solicitar otro viaje.'),
-                                        backgroundColor: Colors.orange,
-                                        duration: Duration(seconds: 4),
-                                      ),
-                                    );
-                                    setState(() {
-                                      _isWaitingForDriver = false;
-                                      _isSearchingDriver = false;
-                                      _showDriverOffers = false;
-                                      _currentRideId = null;
-                                    });
-                                  }
-                                  return;
-                                }
-                                if (newPrice != null) {
-                                  setState(() => _offeredPrice = newPrice);
+                                // Backend Node aún no soporta renovar la búsqueda
+                                // de un ride existente (habría que abrir otro).
+                                // Cerramos el flujo y le pedimos al usuario que
+                                // vuelva a solicitar — mensaje honesto.
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Tiempo máximo de búsqueda alcanzado (10 min). Intenta solicitar otro viaje.'),
+                                      backgroundColor: Colors.orange,
+                                      duration: Duration(seconds: 4),
+                                    ),
+                                  );
+                                  setState(() {
+                                    _isWaitingForDriver = false;
+                                    _isSearchingDriver = false;
+                                    _showDriverOffers = false;
+                                    _currentRideId = null;
+                                    if (newPrice != null) _offeredPrice = newPrice;
+                                  });
                                 }
                               },
                               onCancel: _cancelWaitingForDriver,
@@ -1782,9 +1788,13 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                               onCounterOffer: (offer) => _showCounterOfferDialog(offer, Provider.of<RideProvider>(context, listen: false)),
                               onGoToTracking: (trip) {
                                 setState(() { _isWaitingForDriver = false; });
-                                Navigator.pushNamed(context, '/passenger/tracking', arguments: trip.id);
+                                Navigator.pushNamed(context, '/passenger/tracking', arguments: trip.id).then((_) {
+                                  if (mounted) _resetAfterTrip();
+                                });
                               },
                             ),
+                                );
+                              },
                           )
                           : _showDriverOffers
                               ? _buildDriverOffersSheet()
@@ -1814,15 +1824,18 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                                         setState(() {
                                           _selectedServiceType = ServiceType.values.firstWhere(
                                             (e) => e.name == type,
-                                            orElse: () => ServiceType.viaje,
+                                            orElse: () => ServiceType.express,
                                           );
                                           const multipliers = {
-                                            'viaje': 1.0,
-                                            'mototaxi': 0.75,
-                                            'entregas': 0.85,
+                                            'express': 1.0,
+                                            'ejecutivo': 1.15,
+                                            'vip': 1.3,
+                                            'mototaxi': 0.7,
+                                            'entregas': 0.8,
+                                            'ciudadACiudad': 1.8,
                                           };
                                           final mult = multipliers[type] ?? 1.0;
-                                          final base = _suggestedPrice ?? 15.0;
+                                          final base = _suggestedPrice ?? _offeredPrice;
                                           _offeredPrice = (base * mult).roundToDouble();
                                           _priceController.text = _offeredPrice.toStringAsFixed(2);
                                         });
@@ -1840,7 +1853,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               !(_isWaitingForDriver && false))
             Positioned(
               right: 12,
-              bottom: MediaQuery.of(context).size.height * 0.60,
+              bottom: MediaQuery.sizeOf(context).height * 0.60,
               child: _buildLocationButton(),
             ),
         ],
@@ -2246,8 +2259,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                         );
                         if (result != null && mounted) {
                           final coords = LatLng(
-                            result['coordinates']['lat'] as double,
-                            result['coordinates']['lng'] as double,
+                            (result['coordinates']['lat'] as num).toDouble(),
+                            (result['coordinates']['lng'] as num).toDouble(),
                           );
                           final address = result['location'] as String?;
                           setState(() {
@@ -2379,8 +2392,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                   );
                   if (result != null && mounted) {
                     final coords = LatLng(
-                      result['coordinates']['lat'] as double,
-                      result['coordinates']['lng'] as double,
+                      (result['coordinates']['lat'] as num).toDouble(),
+                      (result['coordinates']['lng'] as num).toDouble(),
                     );
                     final address = result['location'] as String?;
                     setState(() {
@@ -2620,10 +2633,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
   Widget _buildInDriveServiceSelector() {
     const services = <(ServiceType, String, String, IconData)>[
-      (ServiceType.viaje, 'Viaje', 'assets/images/vehicles/sedan.png', Icons.local_taxi),
-      (ServiceType.mototaxi, 'Mototaxi', 'assets/images/vehicles/mototaxi.png', Icons.two_wheeler),
-      (ServiceType.entregas, 'Entregas', 'assets/images/vehicles/van_entregas.png', Icons.inventory_2),
-      (ServiceType.ciudadACiudad, 'Ciudad a Ciudad', 'assets/images/vehicles/suv_interurbano.png', Icons.route),
+      (ServiceType.express, 'Express', 'assets/images/vehicles/sedan.png', Icons.local_taxi),
+      (ServiceType.ejecutivo, 'Ejecutivo', 'assets/images/vehicles/sedan.png', Icons.directions_car),
+      (ServiceType.vip, 'VIP', 'assets/images/vehicles/sedan.png', Icons.star),
     ];
 
     return SizedBox(
@@ -2781,7 +2793,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
   
   Widget _buildDestinationSheet() {
-    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final bool isKeyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final double sheetInitial = _isSelectingLocation
         ? 0.75
         : 0.68;
@@ -2944,7 +2956,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
               if (isKeyboardOpen)
                 SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+                  child: SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
                 ),
             ],
           ),
@@ -3133,10 +3145,10 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                           runSpacing: 8,
                           alignment: WrapAlignment.center,
                           children: [
-                            _buildPriceSuggestionButton((_suggestedPrice ?? 15.0) * 0.9),
-                            _buildPriceSuggestionButton(_suggestedPrice ?? 15.0),
-                            _buildPriceSuggestionButton((_suggestedPrice ?? 15.0) * 1.1),
-                            _buildPriceSuggestionButton((_suggestedPrice ?? 15.0) * 1.2),
+                            _buildPriceSuggestionButton((_suggestedPrice ?? _offeredPrice) * 0.9),
+                            _buildPriceSuggestionButton(_suggestedPrice ?? _offeredPrice),
+                            _buildPriceSuggestionButton((_suggestedPrice ?? _offeredPrice) * 1.1),
+                            _buildPriceSuggestionButton((_suggestedPrice ?? _offeredPrice) * 1.2),
                           ],
                         ),
                         SizedBox(height: 8),
@@ -3203,7 +3215,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                                     if (!mounted) return;
                                     setState(() {
                                       _isManualPriceEntry = false;
-                                      _offeredPrice = _suggestedPrice ?? 15.0;
+                                      _offeredPrice = _suggestedPrice ?? _offeredPrice;
                                     });
                                   },
                                 ),
@@ -3262,467 +3274,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     );
   }
 
-  Widget _buildWaitingForDriverSheet() {
-    return Consumer<RideProvider>(
-      builder: (context, rideProvider, _) {
-        final offers = <Map<String, dynamic>>[];
-        final hasOffers = offers.isNotEmpty;
-        final currentTrip = rideProvider.currentTrip;
-        final hasDirectAcceptance = currentTrip?.status == 'accepted' &&
-            currentTrip?.driverId != null &&
-            !hasOffers;
+  // NOTE: _buildWaitingForDriverSheet was removed — it was dead code with
+  // hardcoded empty offers. The real searching UI uses SearchingDriversSheet
+  // which reads offers from PriceNegotiationProvider via Consumer2.
 
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.getSurface(context),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-            boxShadow: AppColors.getCardShadow(),
-          ),
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: EdgeInsets.only(bottom: 20),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.getBorder(context),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-
-                if (hasDirectAcceptance) ...[
-                  _buildAcceptedDriverCard(currentTrip!, rideProvider),
-                ] else if (hasOffers) ...[
-                  Row(
-                    children: [
-                      Icon(Icons.local_offer, color: Colors.green, size: 24),
-                      SizedBox(width: 8),
-                      Text(
-                        'Ofertas de conductores',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.getTextPrimary(context),
-                        ),
-                      ),
-                      Spacer(),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${offers.length}',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: 250),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: offers.length,
-                      itemBuilder: (context, index) {
-                        final offer = offers[index];
-                        return _buildRealTimeDriverOfferCard(offer, rideProvider);
-                      },
-                    ),
-                  ),
-                ] else ...[
-                  SizedBox(
-                    width: 100,
-                    height: 100,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.8, end: 1.2),
-                          duration: Duration(milliseconds: 1000),
-                          curve: Curves.easeInOut,
-                          builder: (context, value, child) {
-                            return Transform.scale(
-                              scale: value,
-                              child: Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.rappiOrange.withValues(alpha: 0.2),
-                                ),
-                              ),
-                            );
-                          },
-                          onEnd: () {
-                            if (mounted && _isWaitingForDriver) {
-                              setState(() {});
-                            }
-                          },
-                        ),
-                        Icon(
-                          Icons.local_taxi,
-                          size: 50,
-                          color: AppColors.rappiOrange,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  SizedBox(height: 24),
-
-                  Text(
-                    'Buscando conductor',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.getTextPrimary(context),
-                    ),
-                  ),
-
-                  SizedBox(height: 12),
-
-                  Text(
-                    'Notificando conductores cercanos...',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.getTextSecondary(context),
-                      height: 1.5,
-                    ),
-                  ),
-
-                  SizedBox(height: 8),
-
-                  LinearProgressIndicator(
-                    backgroundColor: AppColors.getInputFill(context),
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange),
-                  ),
-                ],
-
-                SizedBox(height: 24),
-
-                Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.getInputFill(context),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.circle, size: 12, color: Colors.green),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _pickupController.text.isNotEmpty
-                                ? _pickupController.text
-                                : 'Mi ubicación',
-                              style: TextStyle(fontSize: 14),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: EdgeInsets.only(left: 5),
-                        child: Container(
-                          width: 2,
-                          height: 20,
-                          color: AppColors.getBorder(context),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on, size: 12, color: AppColors.rappiOrange),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _destinationController.text,
-                              style: TextStyle(fontSize: 14),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: _cancelWaitingForDriver,
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      side: BorderSide(color: Colors.red.shade300),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                    ),
-                    child: Text(
-                      'Cancelar búsqueda',
-                      style: TextStyle(
-                        color: Colors.red.shade400,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAcceptedDriverCard(dynamic trip, RideProvider rideProvider) {
-    final vehicleInfo = trip.vehicleInfo as Map<String, dynamic>?;
-    final driverName = vehicleInfo?['driverName'] ?? 'Conductor';
-    final driverPhoto = vehicleInfo?['driverPhoto'] as String?;
-    final plate = vehicleInfo?['plate'] ?? '';
-    final model = vehicleInfo?['model'] ?? '';
-    final brand = vehicleInfo?['brand'] ?? '';
-    final acceptedPrice = trip.finalFare ?? 0.0;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.check_circle, color: Colors.green, size: 48),
-        SizedBox(height: 12),
-        Text(
-          'Viaje aceptado',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        SizedBox(height: 16),
-        Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.getInputFill(context),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: AppColors.rappiOrange.withValues(alpha: 0.1),
-                backgroundImage: driverPhoto != null && driverPhoto.isNotEmpty
-                    ? NetworkImage(driverPhoto)
-                    : null,
-                child: driverPhoto == null || driverPhoto.isEmpty
-                    ? Icon(Icons.person, size: 28, color: AppColors.rappiOrange)
-                    : null,
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      driverName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppColors.getTextPrimary(context),
-                      ),
-                    ),
-                    if (model.isNotEmpty || brand.isNotEmpty)
-                      Text(
-                        '$brand $model'.trim(),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                    if (plate.isNotEmpty)
-                      Text(
-                        plate,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.getTextSecondary(context),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (acceptedPrice > 0)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'S/ ${acceptedPrice.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              setState(() { _isWaitingForDriver = false; });
-              Navigator.pushNamed(
-                context,
-                '/passenger/tracking',
-                arguments: trip.id,
-              );
-            },
-            icon: Icon(Icons.navigation),
-            label: Text('Ir a Tracking'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.rappiOrange,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRealTimeDriverOfferCard(Map<String, dynamic> offer, RideProvider rideProvider) {
-    final driverName = offer['driverName'] ?? 'Conductor';
-    final driverPhoto = offer['driverPhoto'] as String?;
-    final offeredPrice = (offer['offeredPrice'] as num?)?.toDouble() ?? 0.0;
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.getInputFill(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.getBorder(context)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 25,
-                backgroundColor: AppColors.rappiOrange.withValues(alpha: 0.2),
-                backgroundImage: driverPhoto != null && driverPhoto.isNotEmpty
-                    ? NetworkImage(driverPhoto)
-                    : null,
-                child: driverPhoto == null || driverPhoto.isEmpty
-                    ? Icon(Icons.person, color: AppColors.rappiOrange)
-                    : null,
-              ),
-              SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      driverName,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.getTextPrimary(context),
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'S/ ${offeredPrice.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          SizedBox(height: 12),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    onPressed: () => _rejectDriverOffer(offer, rideProvider),
-                    icon: Icon(Icons.close, color: Colors.red),
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.red.withValues(alpha: 0.1),
-                      minimumSize: Size(36, 36),
-                      padding: EdgeInsets.zero,
-                    ),
-                    tooltip: 'Rechazar',
-                  ),
-                  SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _showCounterOfferDialog(offer, rideProvider),
-                    icon: Icon(Icons.edit, size: 16),
-                    label: Text('Ofertar'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      minimumSize: Size(0, 36),
-                      textStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              ElevatedButton(
-                onPressed: () => _acceptDriverOffer(offer, rideProvider),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'Aceptar S/${offeredPrice.toStringAsFixed(0)}',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // _buildAcceptedDriverCard and _buildRealTimeDriverOfferCard were removed
+  // as they were only used by _buildWaitingForDriverSheet (dead code).
+  // The SearchingDriversSheet widget handles offer display via its own
+  // Consumer2<RideProvider, PriceNegotiationProvider> and DriverOfferCard.
 
   Future<void> _acceptDriverOffer(Map<String, dynamic> offer, RideProvider rideProvider) async {
     final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
@@ -3753,7 +3312,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           context,
           '/passenger/tracking',
           arguments: rideId,
-        );
+        ).then((_) {
+          if (mounted) _resetAfterTrip();
+        });
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -3845,25 +3406,17 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             onPressed: () async {
               Navigator.pop(dialogContext);
 
-              // Send counter-offer
-              const success = true;
-
+              // Contraoferta desde el passenger aún no tiene endpoint dedicado
+              // en el backend Node (solo el driver puede enviar `offers`).
+              // Mostramos mensaje honesto en lugar de fingir éxito.
               if (mounted) {
-                if (success) {
-                  scaffoldMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Contraoferta enviada al conductor'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } else {
-                  scaffoldMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Error al enviar contraoferta. Intenta de nuevo.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+                scaffoldMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Función próximamente. Puedes aceptar o rechazar la oferta actual.'),
+                    backgroundColor: Colors.orange,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
               }
             },
             child: Text('Enviar'),
@@ -3880,23 +3433,22 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
     _isCancelling = true;
 
-    // Stop listening for negotiation updates
+    // Read current negotiation BEFORE stopping listeners (which clears it)
     final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
-    negotiationProvider.stopPassengerListeners();
-
-    // Cancel the negotiation in Firestore if there is an active one
     final currentNegotiation = negotiationProvider.currentNegotiation;
+
+    // Now stop listeners
+    negotiationProvider.stopPassengerListeners();
     if (currentNegotiation != null) {
       try {
-        await FirebaseFirestore.instance
-            .collection('negotiations')
-            .doc(currentNegotiation.id)
-            .update({'status': 'cancelled'});
-        AppLogger.info('🗑️ Negotiation ${currentNegotiation.id} cancelled in Firestore');
+        final ok = await negotiationProvider.cancelNegotiation(currentNegotiation.id);
+        AppLogger.info('🗑️ Negotiation ${currentNegotiation.id} cancel result: $ok');
       } catch (e) {
         AppLogger.error('Error cancelling negotiation: $e');
       }
     }
+
+    if (!mounted) return;
 
     final rideProvider = Provider.of<RideProvider>(context, listen: false);
     final cancelled = await rideProvider.cancelRide();
@@ -3993,7 +3545,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           ),
           
           SizedBox(
-            height: 300,
+            height: MediaQuery.sizeOf(context).height * 0.35,
             child: ListView.builder(
               padding: EdgeInsets.symmetric(horizontal: 20),
               itemCount: _currentNegotiation?.driverOffers.length ?? 0,
@@ -4119,9 +3671,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
 
         if (hasFavorite) {
-          final address = favoriteData['address'] as String;
-          final lat = favoriteData['lat'] as double?;
-          final lng = favoriteData['lng'] as double?;
+          final address = favoriteData['address'] as String? ?? '';
+          final rawLat = favoriteData['lat'];
+          final rawLng = favoriteData['lng'];
+          final lat = rawLat is num ? rawLat.toDouble() : null;
+          final lng = rawLng is num ? rawLng.toDouble() : null;
 
           if (lat != null && lng != null) {
             _destinationController.text = address;
@@ -4358,53 +3912,22 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
   void _showServiceDetailsIfNeeded(ServiceType type) {
     switch (type) {
-      case ServiceType.viaje:
-      case ServiceType.mototaxi:
-      case ServiceType.confort:
-        break;
-      case ServiceType.xl:
-        _showXLDetailsModal();
-        break;
-      case ServiceType.entregas:
-        _showDeliveryDetailsModal();
-        break;
-      case ServiceType.flete:
-        _showFreightDetailsModal();
-        break;
-      case ServiceType.ciudadACiudad:
-        _showIntercityDetailsModal();
+      case ServiceType.express:
+      case ServiceType.ejecutivo:
+      case ServiceType.vip:
         break;
     }
   }
 
   void _showXLDetailsModal() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
+      builder: (context) => SingleChildScrollView(
         padding: EdgeInsets.all(20),
-        child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            SizedBox(height: 20),
             Row(
               children: [
                 Icon(Icons.airport_shuttle, color: AppColors.rappiOrange, size: 28),
@@ -4468,9 +3991,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                 child: Text('Confirmar', style: TextStyle(fontSize: 16, color: Colors.white)),
               ),
             ),
-            SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
           ],
-        ),
         ),
       ),
     );
@@ -4523,90 +4044,71 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     final recipientPhoneController = TextEditingController(text: _deliveryRecipientPhone);
     String selectedWeight = _deliveryWeight;
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-        height: MediaQuery.of(context).size.height * 0.85,
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40, height: 4,
-                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  Row(children: [
-                    Icon(Icons.inventory_2, color: AppColors.rappiOrange, size: 28),
-                    SizedBox(width: 12),
-                    Text('Servicio de Entregas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  ]),
-                  SizedBox(height: 8),
-                  Text('El conductor recogerá tu paquete', style: TextStyle(color: AppColors.getTextSecondary(context))),
-                ],
-              ),
+      maxHeightFraction: 0.85,
+      builder: (context) => Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.inventory_2, color: AppColors.rappiOrange, size: 28),
+                  SizedBox(width: 12),
+                  Text('Servicio de Entregas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ]),
+                SizedBox(height: 8),
+                Text('El conductor recogerá tu paquete', style: TextStyle(color: AppColors.getTextSecondary(context))),
+              ],
             ),
-            Divider(height: 1),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(20),
-                child: StatefulBuilder(
-                  builder: (context, setModalState) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('¿Qué envías?', style: TextStyle(fontWeight: FontWeight.w600)),
-                      SizedBox(height: 8),
-                      TextField(controller: descController, decoration: InputDecoration(hintText: 'Ej: Documentos, ropa, comida...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
-                      SizedBox(height: 20),
-                      Text('Peso aproximado', style: TextStyle(fontWeight: FontWeight.w600)),
-                      SizedBox(height: 8),
-                      Row(children: ['<5kg', '5-10kg', '10-20kg'].map((weight) {
-                        final isSelected = selectedWeight == weight;
-                        return Expanded(child: GestureDetector(
-                          onTap: () => setModalState(() => selectedWeight = weight),
-                          child: Container(
-                            margin: EdgeInsets.symmetric(horizontal: 4), padding: EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(color: isSelected ? AppColors.rappiOrange : AppColors.getSurface(context), borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected ? AppColors.rappiOrange : AppColors.getBorder(context))),
-                            child: Center(child: Text(weight, style: TextStyle(color: isSelected ? Colors.white : AppColors.getTextPrimary(context), fontWeight: FontWeight.w600))),
-                          ),
-                        ));
-                      }).toList()),
-                      SizedBox(height: 20),
-                      Text('Datos del destinatario', style: TextStyle(fontWeight: FontWeight.w600)),
-                      SizedBox(height: 8),
-                      TextField(controller: recipientNameController, decoration: InputDecoration(hintText: 'Nombre del destinatario', prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
-                      SizedBox(height: 12),
-                      TextField(controller: recipientPhoneController, keyboardType: TextInputType.phone, decoration: InputDecoration(hintText: 'Teléfono del destinatario', prefixIcon: Icon(Icons.phone_outlined), prefixText: '+51 ', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
-                      SizedBox(height: 20),
-                      Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
-                        child: Row(children: [Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20), SizedBox(width: 12), Expanded(child: Text('Máximo 20kg. Para cargas mayores usa Flete.', style: TextStyle(color: Colors.orange.shade700, fontSize: 13)))])),
-                    ],
-                  ),
+          ),
+          Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(20),
+              child: StatefulBuilder(
+                builder: (context, setModalState) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('¿Qué envías?', style: TextStyle(fontWeight: FontWeight.w600)),
+                    SizedBox(height: 8),
+                    TextField(controller: descController, decoration: InputDecoration(hintText: 'Ej: Documentos, ropa, comida...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
+                    SizedBox(height: 20),
+                    Text('Peso aproximado', style: TextStyle(fontWeight: FontWeight.w600)),
+                    SizedBox(height: 8),
+                    Row(children: ['<5kg', '5-10kg', '10-20kg'].map((weight) {
+                      final isSelected = selectedWeight == weight;
+                      return Expanded(child: GestureDetector(
+                        onTap: () => setModalState(() => selectedWeight = weight),
+                        child: Container(
+                          margin: EdgeInsets.symmetric(horizontal: 4), padding: EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(color: isSelected ? AppColors.rappiOrange : AppColors.getSurface(context), borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected ? AppColors.rappiOrange : AppColors.getBorder(context))),
+                          child: Center(child: Text(weight, style: TextStyle(color: isSelected ? Colors.white : AppColors.getTextPrimary(context), fontWeight: FontWeight.w600))),
+                        ),
+                      ));
+                    }).toList()),
+                    SizedBox(height: 20),
+                    Text('Datos del destinatario', style: TextStyle(fontWeight: FontWeight.w600)),
+                    SizedBox(height: 8),
+                    TextField(controller: recipientNameController, decoration: InputDecoration(hintText: 'Nombre del destinatario', prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
+                    SizedBox(height: 12),
+                    TextField(controller: recipientPhoneController, keyboardType: TextInputType.phone, decoration: InputDecoration(hintText: 'Teléfono del destinatario', prefixIcon: Icon(Icons.phone_outlined), prefixText: '+51 ', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: AppColors.getInputFill(context))),
+                    SizedBox(height: 20),
+                    Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
+                      child: Row(children: [Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20), SizedBox(width: 12), Expanded(child: Text('Máximo 20kg. Para cargas mayores usa Flete.', style: TextStyle(color: Colors.orange.shade700, fontSize: 13)))])),
+                  ],
                 ),
               ),
             ),
-            Padding(padding: EdgeInsets.all(20), child: SizedBox(width: double.infinity, child: ElevatedButton(
-              onPressed: () { setState(() { _deliveryDescription = descController.text; _deliveryWeight = selectedWeight; _deliveryRecipientName = recipientNameController.text; _deliveryRecipientPhone = recipientPhoneController.text; }); Navigator.pop(context); },
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange, padding: EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: Text('Confirmar detalles', style: TextStyle(fontSize: 16, color: Colors.white)),
-            ))),
-          ],
-        ),
-      ),
+          ),
+          Padding(padding: EdgeInsets.all(20), child: SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: () { setState(() { _deliveryDescription = descController.text; _deliveryWeight = selectedWeight; _deliveryRecipientName = recipientNameController.text; _deliveryRecipientPhone = recipientPhoneController.text; }); Navigator.pop(context); },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange, padding: EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text('Confirmar detalles', style: TextStyle(fontSize: 16, color: Colors.white)),
+          ))),
+        ],
       ),
     );
   }
@@ -4616,17 +4118,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     String selectedType = _freightType;
     bool needsHelper = _freightNeedsHelper;
 
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
-        decoration: BoxDecoration(color: AppColors.getSurface(context), borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        child: SingleChildScrollView(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+    showResponsiveBottomSheet(
+      context: context,
+      maxHeightFraction: 0.75,
+      builder: (context) => SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(padding: EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-            SizedBox(height: 20),
             Row(children: [Icon(Icons.local_shipping, color: AppColors.rappiOrange, size: 28), SizedBox(width: 12), Text('Servicio de Flete', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
             SizedBox(height: 8),
             Text('Mudanzas y carga grande', style: TextStyle(color: AppColors.getTextSecondary(context))),
@@ -4666,7 +4163,6 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             child: Text('Confirmar detalles', style: TextStyle(fontSize: 16, color: Colors.white)),
           ))),
         ]),
-        ),
       ),
     );
   }
@@ -4676,17 +4172,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     String selectedLuggage = _intercityLuggage;
     TimeOfDay? selectedTime = _intercityDepartureTime;
 
-    showModalBottomSheet(
-      context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
-        decoration: BoxDecoration(color: AppColors.getSurface(context), borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        child: SingleChildScrollView(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+    showResponsiveBottomSheet(
+      context: context,
+      maxHeightFraction: 0.75,
+      builder: (context) => SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(padding: EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-            SizedBox(height: 20),
             Row(children: [Icon(Icons.route, color: AppColors.rappiOrange, size: 28), SizedBox(width: 12), Text('Ciudad a Ciudad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))]),
             SizedBox(height: 8),
             Text('Viajes interurbanos - precio negociable', style: TextStyle(color: AppColors.getTextSecondary(context))),
@@ -4740,7 +4231,6 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             child: Text('Confirmar detalles', style: TextStyle(fontSize: 16, color: Colors.white)),
           ))),
         ]),
-        ),
       ),
     );
   }
@@ -5029,23 +4519,25 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
+    // TODO(migration): el backend Node aún no expone un endpoint dedicado para
+    // consultar solicitudes de conductor pendientes. Se infiere a partir del
+    // perfil de conductor: si existe y está en estado pending/under_review,
+    // se considera solicitud pendiente. Si no hay perfil, no hay solicitud.
     try {
       AppLogger.info('Verificando solicitud de conductor pendiente para userId: $userId');
-      final snapshot = await FirebaseFirestore.instance
-          .collection('driver_applications')
-          .where('userId', isEqualTo: userId)
-          .where('status', whereIn: ['pending', 'under_review'])
-          .limit(1)
-          .get();
-      if (snapshot.docs.isNotEmpty) {
-        final data = snapshot.docs.first.data();
-        AppLogger.info('Solicitud pendiente encontrada: ${snapshot.docs.first.id}');
-        return data;
+      final profile = await RapiApiClient.instance.myDriverProfile();
+      final data = (profile['driver'] as Map?) ??
+          (profile['profile'] as Map?) ??
+          profile;
+      final status = (data['status'] ?? data['verificationStatus'])?.toString();
+      if (status == 'pending' || status == 'under_review') {
+        AppLogger.info('Solicitud pendiente encontrada (status=$status)');
+        return Map<String, dynamic>.from(data);
       }
-      AppLogger.info('No se encontró solicitud pendiente');
+      AppLogger.info('No se encontró solicitud pendiente (status=$status)');
       return null;
     } catch (e) {
-      AppLogger.error('Error verificando solicitud pendiente: $e');
+      AppLogger.info('No hay perfil de conductor / solicitud pendiente: $e');
       return null;
     }
   }
@@ -5163,9 +4655,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   double _calculatePrice(double distanceKm) {
-    final double baseFare = _fareConfig?.baseFare ?? 5.0;
-    final double ratePerKm = _fareConfig?.perKm ?? 2.0;
-    final double minimumFare = _fareConfig?.minimumFare ?? 6.0;
+    final double baseFare = _fareConfig?.baseFare ?? 3.5;
+    final double ratePerKm = _fareConfig?.perKm ?? 1.8;
+    final double minimumFare = _fareConfig?.minimumFare ?? 5.0;
     final double maximumFare = _fareConfig?.maximumFare ?? 200.0;
 
     double serviceMultiplier;
@@ -5173,13 +4665,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     double? serviceMinPrice;
 
     switch (_selectedServiceType) {
-      case ServiceType.viaje: serviceMultiplier = 1.0; serviceName = 'Viaje'; break;
-      case ServiceType.mototaxi: serviceMultiplier = 0.7; serviceName = 'Mototaxi'; break;
-      case ServiceType.confort: serviceMultiplier = 1.3; serviceName = 'Confort'; break;
-      case ServiceType.xl: serviceMultiplier = 1.5; serviceName = 'XL'; break;
-      case ServiceType.entregas: serviceMultiplier = 0.8; serviceName = 'Entregas'; break;
-      case ServiceType.flete: serviceMultiplier = 2.0; serviceName = 'Flete'; break;
-      case ServiceType.ciudadACiudad: serviceMultiplier = 1.8; serviceName = 'Ciudad a Ciudad'; break;
+      case ServiceType.express: serviceMultiplier = 1.0; serviceName = 'Express'; break;
+      case ServiceType.ejecutivo: serviceMultiplier = 1.15; serviceName = 'Ejecutivo'; break;
+      case ServiceType.vip: serviceMultiplier = 1.3; serviceName = 'VIP'; break;
     }
 
     final double basePrice = baseFare + (distanceKm * ratePerKm);
@@ -5226,17 +4714,43 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     final Polyline routePolyline = Polyline(
       polylineId: PolylineId('route'),
       points: routePoints,
-      color: const Color(0xFF4285F4),
+      color: AppColors.rappiOrange,
       width: 5,
       startCap: Cap.roundCap,
       endCap: Cap.roundCap,
     );
+    // Calculate distance by summing route segments
+    double totalDistance = 0.0;
+    for (int i = 0; i < routePoints.length - 1; i++) {
+      totalDistance += _haversineDistance(routePoints[i], routePoints[i + 1]);
+    }
+
+    final estimatedTime = _estimateTime(totalDistance);
+    final suggestedPrice = _calculatePrice(totalDistance);
+    final shouldUpdatePrice = !_isManualPriceEntry && (_offeredPrice == 0.0 || _suggestedPrice == null);
+
     if (!mounted) return;
     setState(() {
       _polylines.clear();
       _polylines.add(routePolyline);
+      _calculatedDistance = totalDistance;
+      _estimatedTime = estimatedTime;
+      _suggestedPrice = suggestedPrice;
+      if (shouldUpdatePrice) {
+        _offeredPrice = suggestedPrice;
+      }
     });
-    AppLogger.info('Polilínea de ruta REAL dibujada con ${routePoints.length} puntos');
+    AppLogger.info('Ruta: ${totalDistance.toStringAsFixed(1)} km, ~$estimatedTime min, precio sugerido: S/. ${suggestedPrice.toStringAsFixed(2)}');
+  }
+
+  double _haversineDistance(LatLng a, LatLng b) {
+    const double R = 6371.0; // Earth radius in km
+    final dLat = (b.latitude - a.latitude) * (3.141592653589793 / 180.0);
+    final dLon = (b.longitude - a.longitude) * (3.141592653589793 / 180.0);
+    final lat1 = a.latitude * (3.141592653589793 / 180.0);
+    final lat2 = b.latitude * (3.141592653589793 / 180.0);
+    final h = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+    return 2 * R * asin(sqrt(h));
   }
 }
 

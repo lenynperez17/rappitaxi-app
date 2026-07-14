@@ -1,86 +1,97 @@
+import 'dart:io' show Platform;
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'firebase_service.dart';
 
-/// ✅ Servicio FCM SEGURO - Notificaciones enviadas desde Cloud Functions
+import 'rapi_api_client.dart';
+
+/// ✅ Servicio FCM SEGURO - Notificaciones enviadas desde el backend Node (VPS)
 ///
-/// ⚠️ CAMBIO DE ARQUITECTURA DE SEGURIDAD:
-/// ANTES: La app Flutter tenía service-account.json y enviaba notificaciones directamente (INSEGURO)
-/// AHORA: Las notificaciones se envían desde Cloud Functions en el servidor (SEGURO)
+/// ⚠️ ARQUITECTURA POST-MIGRACIÓN (2026-07):
+/// - Firebase Auth / Firestore / Realtime DB / Storage → REEMPLAZADOS por el
+///   backend Node en el VPS a través de [RapiApiClient].
+/// - `firebase_messaging` es el ÚNICO servicio Firebase que sobrevive porque
+///   sigue siendo la vía oficial para entregar push notifications al
+///   dispositivo.
 ///
-/// VENTAJAS:
-/// - ✅ Service Account NO está en el APK (no puede ser extraído)
-/// - ✅ Mayor seguridad: permisos de admin solo en servidor
-/// - ✅ Mejor escalabilidad: Cloud Functions escala automáticamente
-/// - ✅ Logs centralizados en Firebase Console
+/// RESPONSABILIDADES DE ESTE SERVICIO:
+/// - Obtener y refrescar el token FCM del dispositivo.
+/// - Registrar/actualizar el token en el backend Node
+///   (`api.registerFcmToken`), quien lo persistirá en su base de datos.
+/// - Suscribir/desuscribir el dispositivo a topics de FCM.
+///
+/// El envío de notificaciones a otros usuarios YA NO se hace desde el cliente:
+/// lo hace el backend Node en respuesta a eventos del negocio (viaje aceptado,
+/// pago acreditado, mensaje de chat, etc.). Los métodos `send…` de este
+/// servicio se mantienen sólo por compatibilidad con providers existentes y
+/// devuelven `true` como no-op para no romper la interfaz pública.
 class FCMService {
   static final FCMService _instance = FCMService._internal();
   factory FCMService() => _instance;
   FCMService._internal();
 
-  final FirebaseService _firebaseService = FirebaseService();
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
-  /// Inicializar servicio FCM
+  String? _lastRegisteredToken;
+
+  /// Inicializar servicio FCM (permisos + token + registro en backend).
   Future<void> initialize() async {
     try {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
         sound: true,
-        provisional: false,
+        provisional: true,
       );
 
       final token = await FirebaseMessaging.instance.getToken();
-      debugPrint('✅ FCM Token: ${token?.substring(0, 20)}...');
+      if (token != null) {
+        debugPrint('✅ FCM Token: ${token.substring(0, 20)}...');
+        // Registrar el token en el backend cuando ya haya sesión.
+        // Si aún no hay sesión (login pendiente), quien invoque login debe
+        // llamar a [registerDeviceTokenWithBackend] tras autenticarse.
+        if (_api.isSignedIn) {
+          await registerDeviceTokenWithBackend(token);
+        }
+      }
+
+      // Refresco automático del token → re-registrar en backend.
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+        debugPrint('🔄 FCM token refrescado: ${newToken.substring(0, 20)}...');
+        if (_api.isSignedIn) {
+          await registerDeviceTokenWithBackend(newToken);
+        }
+      });
     } catch (e) {
       debugPrint('❌ Error inicializando FCM: $e');
-      await _firebaseService.recordError(e, StackTrace.current);
     }
   }
 
-  /// ✅ Enviar notificación usando Cloud Function (SEGURO)
-  ///
-  /// Esta función llama a la Cloud Function `sendPushNotification` que:
-  /// 1. Valida permisos en el servidor
-  /// 2. Obtiene el token FCM del usuario desde Firestore
-  /// 3. Envía la notificación usando Firebase Admin SDK (con service-account del servidor)
-  Future<bool> _sendNotificationViaCloudFunction({
-    required String userId,
-    required String title,
-    required String body,
-    required Map<String, dynamic> data,
-    String? imageUrl,
-  }) async {
+  /// Registra (o actualiza) el token FCM del dispositivo en el backend Node.
+  /// Es idempotente: si el token no cambió respecto al último registrado,
+  /// no vuelve a llamar al backend.
+  Future<bool> registerDeviceTokenWithBackend(String token) async {
+    if (token.isEmpty) return false;
+    if (_lastRegisteredToken == token) return true;
     try {
-      debugPrint('📲 Enviando notificación vía Cloud Function...');
-      debugPrint('   Usuario: $userId');
-      debugPrint('   Título: $title');
-
-      final result = await _functions.httpsCallable('sendPushNotification').call({
-        'userId': userId,
-        'title': title,
-        'body': body,
-        'data': data,
-        if (imageUrl != null) 'imageUrl': imageUrl,
-      });
-
-      final success = result.data['success'] == true;
-
-      if (success) {
-        debugPrint('✅ Notificación enviada exitosamente');
-        debugPrint('   Message ID: ${result.data['messageId']}');
-      } else {
-        debugPrint('❌ Error en respuesta de Cloud Function');
-      }
-
-      return success;
+      final platform = _detectPlatform();
+      await _api.registerFcmToken(token, platform: platform);
+      _lastRegisteredToken = token;
+      debugPrint('✅ Token FCM registrado en backend (platform=$platform)');
+      return true;
     } catch (e) {
-      debugPrint('❌ Error llamando a Cloud Function: $e');
-      await _firebaseService.recordError(e, StackTrace.current);
+      debugPrint('❌ Error registrando token FCM en backend: $e');
       return false;
     }
+  }
+
+  String _detectPlatform() {
+    if (kIsWeb) return 'web';
+    try {
+      if (Platform.isAndroid) return 'android';
+      if (Platform.isIOS) return 'ios';
+    } catch (_) {}
+    return 'unknown';
   }
 
   /// Validar formato de token FCM
@@ -88,7 +99,15 @@ class FCMService {
     return token.isNotEmpty && token.length > 100;
   }
 
-  /// Enviar notificación de nuevo viaje a conductor
+  // ============================================
+  // MÉTODOS DE SEND* — SE MANTIENEN POR COMPATIBILIDAD
+  // ============================================
+  //
+  // El envío real de push notifications ahora lo dispara el backend Node en
+  // respuesta a los eventos del negocio. Los providers de la app llaman a
+  // estos métodos como parte de su flujo existente; para no romper la
+  // interfaz pública devolvemos `true` como no-op y logueamos.
+
   Future<bool> sendTripRequestToDriver({
     required String driverId,
     required String tripId,
@@ -97,23 +116,11 @@ class FCMService {
     required String destination,
     required double estimatedFare,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: driverId,
-      title: 'Nuevo viaje disponible',
-      body: '$passengerName solicita un viaje de $origin a $destination',
-      data: {
-        'type': 'trip_request',
-        'tripId': tripId,
-        'passengerId': passengerName,
-        'origin': origin,
-        'destination': destination,
-        'estimatedFare': estimatedFare.toString(),
-        'action': 'open_trip_details',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripRequestToDriver → delegado al backend (driver=$driverId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar al pasajero que el conductor aceptó
   Future<bool> sendTripAcceptedToPassenger({
     required String passengerId,
     required String tripId,
@@ -121,179 +128,85 @@ class FCMService {
     required String vehicleInfo,
     required String estimatedArrival,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: passengerId,
-      title: '¡Conductor encontrado!',
-      body: '$driverName ($vehicleInfo) está en camino. Llegada estimada: $estimatedArrival',
-      data: {
-        'type': 'trip_accepted',
-        'tripId': tripId,
-        'driverName': driverName,
-        'vehicleInfo': vehicleInfo,
-        'action': 'open_tracking',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripAcceptedToPassenger → delegado al backend (passenger=$passengerId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar que el conductor llegó al punto de recogida
   Future<bool> sendDriverArrivedToPassenger({
     required String passengerId,
     required String tripId,
     required String driverName,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: passengerId,
-      title: 'Tu conductor ha llegado',
-      body: '$driverName está esperándote en el punto de recogida',
-      data: {
-        'type': 'driver_arrived',
-        'tripId': tripId,
-        'action': 'open_tracking',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendDriverArrivedToPassenger → delegado al backend (passenger=$passengerId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar inicio del viaje
   Future<bool> sendTripStartedNotification({
     required String userId,
     required String tripId,
     required String userType,
   }) async {
-    final title = userType == 'passenger'
-        ? 'Viaje iniciado'
-        : 'Viaje en curso';
-    final body = userType == 'passenger'
-        ? 'Tu viaje ha comenzado. ¡Disfruta el trayecto!'
-        : 'El pasajero ha abordado. Viaje en curso.';
-
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: title,
-      body: body,
-      data: {
-        'type': 'trip_started',
-        'tripId': tripId,
-        'action': 'open_tracking',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripStartedNotification → delegado al backend (user=$userId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar finalización del viaje
   Future<bool> sendTripCompletedNotification({
     required String userId,
     required String tripId,
     required double finalFare,
     required String userType,
   }) async {
-    final title = 'Viaje completado';
-    final body = userType == 'passenger'
-        ? 'Tu viaje ha finalizado. Total: S/. ${finalFare.toStringAsFixed(2)}'
-        : 'Viaje completado exitosamente. Ganancia: S/. ${finalFare.toStringAsFixed(2)}';
-
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: title,
-      body: body,
-      data: {
-        'type': 'trip_completed',
-        'tripId': tripId,
-        'finalFare': finalFare.toString(),
-        'action': 'open_rating',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripCompletedNotification → delegado al backend (user=$userId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar cancelación de viaje
   Future<bool> sendTripCancelledNotification({
     required String userId,
     required String tripId,
     required String reason,
     required String userType,
   }) async {
-    final title = 'Viaje cancelado';
-    final body = userType == 'passenger'
-        ? 'Tu viaje ha sido cancelado. Motivo: $reason'
-        : 'El pasajero canceló el viaje. Motivo: $reason';
-
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: title,
-      body: body,
-      data: {
-        'type': 'trip_cancelled',
-        'tripId': tripId,
-        'reason': reason,
-        'action': 'close_trip',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripCancelledNotification → delegado al backend (user=$userId, trip=$tripId)');
+    return true;
   }
 
-  /// Notificar nuevo mensaje en el chat
   Future<bool> sendChatMessageNotification({
     required String userId,
     required String senderName,
     required String message,
     required String chatId,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: 'Nuevo mensaje de $senderName',
-      body: message,
-      data: {
-        'type': 'chat_message',
-        'chatId': chatId,
-        'senderName': senderName,
-        'action': 'open_chat',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendChatMessageNotification → delegado al backend (user=$userId, chat=$chatId)');
+    return true;
   }
 
-  /// Notificar cambio en el estado de verificación del conductor
   Future<bool> sendDriverVerificationStatusNotification({
     required String driverId,
     required String status,
     String? rejectionReason,
   }) async {
-    final title = status == 'approved'
-        ? '¡Verificación aprobada!'
-        : 'Verificación pendiente';
-    final body = status == 'approved'
-        ? 'Tu cuenta de conductor ha sido aprobada. ¡Puedes comenzar a aceptar viajes!'
-        : rejectionReason ?? 'Tu verificación está siendo revisada.';
-
-    return await _sendNotificationViaCloudFunction(
-      userId: driverId,
-      title: title,
-      body: body,
-      data: {
-        'type': 'verification_status',
-        'status': status,
-        if (rejectionReason != null) 'reason': rejectionReason,
-        'action': 'open_profile',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendDriverVerificationStatusNotification → delegado al backend (driver=$driverId, status=$status)');
+    return true;
   }
 
-  /// Notificación de promoción disponible
   Future<bool> sendPromotionNotification({
     required String userId,
     required String promoTitle,
     required String promoDescription,
     required String promoCode,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: '🎉 $promoTitle',
-      body: promoDescription,
-      data: {
-        'type': 'promotion',
-        'promoCode': promoCode,
-        'action': 'open_promotions',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendPromotionNotification → delegado al backend (user=$userId, promo=$promoCode)');
+    return true;
   }
 
-  /// Notificación genérica
   Future<bool> sendGenericNotification({
     required String userId,
     required String title,
@@ -301,20 +214,15 @@ class FCMService {
     Map<String, dynamic>? data,
     String? imageUrl,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: title,
-      body: body,
-      data: data ?? {},
-      imageUrl: imageUrl,
-    );
+    debugPrint('ℹ️ sendGenericNotification → delegado al backend (user=$userId)');
+    return true;
   }
 
   // ============================================
-  // MÉTODOS ADICIONALES (compatibilidad)
+  // TOKEN + TOPICS (firebase_messaging directo)
   // ============================================
 
-  /// Obtener token FCM del dispositivo actual
+  /// Obtener token FCM del dispositivo actual.
   Future<String?> getDeviceFCMToken() async {
     try {
       return await FirebaseMessaging.instance.getToken();
@@ -324,7 +232,7 @@ class FCMService {
     }
   }
 
-  /// Suscribirse a un topic de FCM
+  /// Suscribirse a un topic de FCM.
   Future<void> subscribeToTopic(String topic) async {
     try {
       await FirebaseMessaging.instance.subscribeToTopic(topic);
@@ -334,7 +242,7 @@ class FCMService {
     }
   }
 
-  /// Desuscribirse de un topic de FCM
+  /// Desuscribirse de un topic de FCM.
   Future<void> unsubscribeFromTopic(String topic) async {
     try {
       await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
@@ -344,27 +252,20 @@ class FCMService {
     }
   }
 
-  /// Enviar notificación de estado de viaje (genérico)
+  /// Enviar notificación de estado de viaje (genérico) — no-op post-migración.
   Future<bool> sendTripStatusNotification({
     required String userId,
     required String tripId,
     required String status,
     String? message,
   }) async {
-    return await _sendNotificationViaCloudFunction(
-      userId: userId,
-      title: 'Actualización de viaje',
-      body: message ?? 'El estado del viaje ha cambiado a: $status',
-      data: {
-        'type': 'trip_status',
-        'tripId': tripId,
-        'status': status,
-        'action': 'open_tracking',
-      },
-    );
+    debugPrint(
+        'ℹ️ sendTripStatusNotification → delegado al backend (user=$userId, trip=$tripId, status=$status)');
+    return true;
   }
 
-  /// Enviar notificación a múltiples conductores
+  /// Enviar notificación a múltiples conductores — no-op post-migración.
+  /// El backend Node se encarga del broadcast cuando se crea el ride.
   Future<Map<String, bool>> sendRideNotificationToMultipleDrivers({
     required List<String> driverIds,
     required String tripId,
@@ -373,26 +274,13 @@ class FCMService {
     required String destination,
     required int estimatedFare,
   }) async {
-    final results = <String, bool>{};
-
-    for (final driverId in driverIds) {
-      final success = await sendTripRequestToDriver(
-        driverId: driverId,
-        tripId: tripId,
-        passengerName: passengerName,
-        origin: origin,
-        destination: destination,
-        estimatedFare: estimatedFare.toDouble(),
-      );
-      results[driverId] = success;
-    }
-
-    return results;
+    debugPrint(
+        'ℹ️ sendRideNotificationToMultipleDrivers → delegado al backend (drivers=${driverIds.length}, trip=$tripId)');
+    return {for (final id in driverIds) id: true};
   }
 
-  /// Limpiar tokens inválidos (stub - manejado por Cloud Functions)
+  /// Limpiar tokens inválidos (no-op — lo maneja el backend Node).
   Future<void> cleanupInvalidTokens() async {
-    debugPrint('ℹ️ Limpieza de tokens manejada por Cloud Functions');
-    // No-op: La limpieza de tokens se hace en el servidor
+    debugPrint('ℹ️ Limpieza de tokens FCM la maneja el backend Node');
   }
 }

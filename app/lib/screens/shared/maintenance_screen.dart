@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/modern_theme.dart';
 
 /// Pantalla de mantenimiento del sistema
@@ -20,40 +19,14 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
   Future<void> _checkMaintenanceStatus() async {
     setState(() => _isChecking = true);
 
-    try {
-      final configDoc = await FirebaseFirestore.instance
-          .collection('settings')
-          .doc('app_config')
-          .get()
-          .timeout(const Duration(seconds: 5));
+    // TODO(node-migration): reemplazar con endpoint /api/config/app cuando exista.
+    // Por ahora simplemente reintentamos volviendo al splash — este decidira si
+    // hay que volver a mostrar la pantalla de mantenimiento o continuar al app.
+    await Future<void>.delayed(const Duration(milliseconds: 400));
 
-      final isMaintenanceMode = configDoc.data()?['maintenanceMode'] ?? false;
-
-      if (!isMaintenanceMode && mounted) {
-        // Mantenimiento terminó, volver al splash para redirigir correctamente
-        Navigator.pushReplacementNamed(context, '/');
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('El sistema aún está en mantenimiento'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error verificando estado: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isChecking = false);
-      }
-    }
+    if (!mounted) return;
+    setState(() => _isChecking = false);
+    Navigator.pushReplacementNamed(context, '/');
   }
 
   @override
@@ -108,7 +81,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                     ),
                     child: Column(
                       children: [
-                        // Titulo
+                        // Título
                         Text(
                           'Sistema en Mantenimiento',
                           style: TextStyle(
@@ -121,7 +94,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                         const SizedBox(height: 16),
 
-                        // Descripcion
+                        // Descripción
                         Text(
                           'Estamos realizando mejoras para brindarte una mejor experiencia.\n\nPor favor, intenta de nuevo más tarde.',
                           style: TextStyle(
@@ -134,7 +107,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                         const SizedBox(height: 32),
 
-                        // Boton reintentar
+                        // Botón reintentar
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(

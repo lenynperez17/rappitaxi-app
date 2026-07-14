@@ -6,12 +6,10 @@ import 'dart:convert'; // ✅ Para exportar datos en JSON
 import 'package:image_picker/image_picker.dart'; // ✅ Para seleccionar fotos
 import 'package:path_provider/path_provider.dart'; // ✅ Para obtener directorios del sistema
 import 'package:permission_handler/permission_handler.dart'; // ✅ Para abrir configuración de permisos
-import 'package:firebase_storage/firebase_storage.dart'; // ✅ Para subir fotos a Firebase Storage
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Para actualizar Firestore
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
-import '../../widgets/animated/modern_animated_widgets.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../providers/locale_provider.dart'; // ✅ NUEVO: Para cambio de idioma
 import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Textos localizados
@@ -171,7 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
   
-  /// ✅ IMPLEMENTADO: Guardar perfil REAL en Firestore
+  /// Guarda el perfil llamando a `PATCH /api/auth/me` vía AuthProvider.
   Future<void> _saveProfile() async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -182,37 +180,24 @@ class _ProfileScreenState extends State<ProfileScreen>
         return;
       }
 
-      // Mostrar loading
       _showLoadingSnackBar('Guardando cambios...');
 
-      // Preparar datos a actualizar
-      final updates = <String, dynamic>{
-        'fullName': _nameController.text.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      // ✅ NUEVO: Agregar birthDate si tiene valor
-      if (_birthDateController.text.isNotEmpty) {
-        updates['birthDate'] = _birthDateController.text.trim();
-      }
-
-      // Actualizar en Firestore
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.id) // ✅ CORREGIDO: usar .id en lugar de .uid
-          .update(updates);
-
-      // ✅ NOTA: No necesitamos recargar manualmente - Consumer<AuthProvider> se actualizará automáticamente
+      final ok = await authProvider.updateProfile(
+        fullName: _nameController.text.trim(),
+        birthDate: _birthDateController.text.trim().isEmpty
+            ? null
+            : _birthDateController.text.trim(),
+      );
 
       if (!mounted) return;
-
-      // Ocultar loading y mostrar éxito
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      _showSuccessSnackBar(AppLocalizations.of(context)!.profileUpdated);
 
-      // Salir del modo edición
-      setState(() => _isEditing = false);
-
+      if (ok) {
+        _showSuccessSnackBar(AppLocalizations.of(context)!.profileUpdated);
+        setState(() => _isEditing = false);
+      } else {
+        _showError(authProvider.errorMessage ?? 'Error al guardar perfil');
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -324,10 +309,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  /// ✅ NUEVO: Navegar a verificación de teléfono
+  /// Navegar a verificación de teléfono con el phone actual del user.
   void _navigateToPhoneVerification() {
-    // Navegar a la pantalla de verificación de teléfono existente
-    Navigator.of(context).pushNamed('/phone-verification');
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final phone = auth.currentUser?.phone ?? '';
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tienes un número asociado a tu cuenta.')),
+      );
+      return;
+    }
+    Navigator.of(context).pushNamed('/phone-verification', arguments: phone);
   }
 
   /// ✅ IMPLEMENTADO: Seleccionar foto de perfil desde cámara o galería
@@ -424,13 +416,12 @@ class _ProfileScreenState extends State<ProfileScreen>
         _imageFile = File(image.path);
       });
 
-      // ✅ IMPLEMENTADO: Subir foto a Firebase Storage y actualizar Firestore
+      // Sube la foto al backend Node vía RapiApiClient.uploadFile y actualiza el perfil.
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final userId = authProvider.currentUser?.id;
 
         if (userId != null && _imageFile != null) {
-          // Mostrar indicador de carga
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -454,39 +445,21 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           );
 
-          AppLogger.debug('🚕 RappiTeam [DEBUG] Subiendo foto de perfil a Firebase Storage...');
-          // Crear referencia única con timestamp
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final storage = FirebaseStorage.instance;
-          final profilePhotoRef = storage.ref('profile_photos/$userId/profile_$timestamp.jpg');
-
-          // Subir con metadata
-          final metadata = SettableMetadata(
-            contentType: 'image/jpeg',
-            customMetadata: {
-              'uploadedBy': userId,
-              'type': 'profile_photo',
-            },
+          AppLogger.debug('🚕 RappiTeam [DEBUG] Subiendo foto de perfil al backend Node...');
+          final uploadResp = await RapiApiClient.instance.uploadFile(
+            file: _imageFile!,
+            scope: 'profile',
           );
+          final profileImageUrl = uploadResp['url'] as String?;
 
-          final uploadTask = await profilePhotoRef.putFile(_imageFile!, metadata);
-          final profileImageUrl = await uploadTask.ref.getDownloadURL();
+          if (profileImageUrl == null || profileImageUrl.isEmpty) {
+            throw Exception('El backend no devolvió la URL de la foto');
+          }
 
-          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Foto de perfil subida exitosamente: $profileImageUrl');
-          // Actualizar Firestore con la URL de la foto
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userId)
-              .update({
-            'profilePhotoUrl': profileImageUrl,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Foto de perfil subida: $profileImageUrl');
+          await authProvider.updateProfile(profilePhotoUrl: profileImageUrl);
+          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Perfil actualizado con nueva foto');
 
-          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Firestore actualizado con nueva foto de perfil');
-          // Actualizar AuthProvider para reflejar el cambio en la UI
-          await authProvider.updateProfile({'profilePhotoUrl': profileImageUrl});
-
-          // Mostrar confirmación de éxito
           if (!mounted) return;
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1053,15 +1026,14 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
 
-            AnimatedPulseButton(
-              text: AppLocalizations.of(context)!.changePassword,
-              icon: Icons.lock,
-              onPressed: () {
-                _showChangePasswordDialog();
-              },
-              color: ModernTheme.primaryBlue,
-            ),
-            SizedBox(height: 12),
+            // Botón "Cambiar contraseña" oculto — el login es SMS/OAuth,
+            // no hay contraseña que cambiar. En caso de perder acceso el
+            // user re-verifica por SMS.
+            //
+            // AnimatedPulseButton(
+            //   text: AppLocalizations.of(context)!.changePassword,
+            //   ...
+            // ),
             OutlinedButton.icon(
               onPressed: () {
                 _showDeleteAccountDialog();
@@ -2234,6 +2206,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     try {
       await AccountDeletionService.deleteCurrentUserAccount();
+      if (!mounted) return;
       try {
         await Provider.of<AuthProvider>(context, listen: false).logout();
       } catch (_) {/* el server ya borró el user; ignore */}
@@ -2258,189 +2231,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           backgroundColor: ModernTheme.error,
         ),
       );
-    }
-  }
-
-  /// ✅ IMPLEMENTADO: Eliminar cuenta completa con Firebase
-  /// Sigue las mejores prácticas de seguridad y limpieza de datos
-  Future<void> _deleteAccount(String password) async {
-    // Mostrar loading
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Eliminando cuenta...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final userModel = authProvider.currentUser;
-
-      if (userModel == null) {
-        throw Exception('No hay usuario autenticado');
-      }
-
-      // 1️⃣ Re-autenticar usuario (REQUISITO DE FIREBASE para operaciones sensibles)
-      final email = userModel.email;
-      if (email.isEmpty) {
-        throw Exception('Usuario sin email, no se puede re-autenticar');
-      }
-
-      await authProvider.reauthenticateWithPassword(email, password);
-
-      // 2️⃣ Eliminar foto de perfil de Storage (si existe)
-      if (userModel.profilePhotoUrl.isNotEmpty && userModel.profilePhotoUrl.contains('firebase')) {
-        try {
-          final photoRef = FirebaseStorage.instance.refFromURL(userModel.profilePhotoUrl);
-          await photoRef.delete();
-        } catch (e) {
-          // Si falla, continuar igual (la foto puede no existir)
-          debugPrint('Error eliminando foto de perfil: $e');
-        }
-      }
-
-      // 3️⃣ Eliminar documentos del usuario de Firestore
-      final userId = userModel.id;
-      final firestore = FirebaseFirestore.instance;
-
-      // Eliminar datos del usuario
-      final batch = firestore.batch();
-
-      // Usuario principal
-      batch.delete(firestore.collection('users').doc(userId));
-
-      // Favoritos (subcolección)
-      final favoritesSnapshot = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('favorites')
-          .get();
-      for (var doc in favoritesSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      // Métodos de pago (subcolección)
-      final paymentMethodsSnapshot = await firestore
-          .collection('users')
-          .doc(userId)
-          .collection('payment_methods')
-          .get();
-      for (var doc in paymentMethodsSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      // Notificaciones del usuario
-      final notificationsSnapshot = await firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: userId)
-          .get();
-      for (var doc in notificationsSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      // ⚠️ NOTA: NO eliminamos viajes (rides) porque pueden estar compartidos con conductores
-      // Solo marcamos como "usuario eliminado" para mantener historial del conductor
-      final ridesSnapshot = await firestore
-          .collection('rides')
-          .where('passengerId', isEqualTo: userId)
-          .get();
-      for (var doc in ridesSnapshot.docs) {
-        batch.update(doc.reference, {
-          'passengerDeleted': true,
-          'passengerName': '[Usuario eliminado]',
-        });
-      }
-
-      // Ejecutar todas las eliminaciones
-      await batch.commit();
-
-      // 4️⃣ Eliminar cuenta de Firebase Auth (ÚLTIMA ACCIÓN)
-      await authProvider.deleteAccount();
-
-      // 5️⃣ Cerrar diálogo de loading
-      if (mounted) {
-        Navigator.pop(context);
-
-        // 6️⃣ Mostrar mensaje de éxito
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text('Cuenta eliminada correctamente'),
-                ),
-              ],
-            ),
-            backgroundColor: ModernTheme.success,
-            duration: Duration(seconds: 3),
-          ),
-        );
-
-        // 7️⃣ Redirigir al login después de 1 segundo
-        await Future.delayed(Duration(seconds: 1));
-        if (mounted) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/login',
-            (route) => false,
-          );
-        }
-      }
-    } catch (e) {
-      // Cerrar diálogo de loading
-      if (mounted) {
-        Navigator.pop(context);
-
-        // Mostrar error
-        String errorMessage = 'Error al eliminar la cuenta';
-
-        if (e.toString().contains('wrong-password')) {
-          errorMessage = 'Contraseña incorrecta';
-        } else if (e.toString().contains('requires-recent-login')) {
-          errorMessage = 'Por seguridad, inicia sesión nuevamente';
-        } else if (e.toString().contains('network')) {
-          errorMessage = 'Error de conexión. Verifica tu internet';
-        }
-
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: Row(
-              children: [
-                Icon(Icons.error_outline, color: ModernTheme.error),
-                SizedBox(width: 12),
-                Text('Error'),
-              ],
-            ),
-            content: Text(errorMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Entendido'),
-              ),
-            ],
-          ),
-        );
-      }
-
-      debugPrint('❌ Error eliminando cuenta: $e');
     }
   }
 

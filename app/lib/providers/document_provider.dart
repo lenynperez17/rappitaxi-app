@@ -1,14 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
-import '../services/firebase_service.dart';
+import '../services/rapi_api_client.dart';
 
 class DocumentProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseService().firestore;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
 
   // Estados
   bool _isLoading = false;
@@ -81,25 +78,15 @@ class DocumentProvider extends ChangeNotifier {
     },
   ];
 
-  // Cargar documentos del conductor
+  // Cargar documentos del conductor desde el backend
   Future<void> loadDriverDocuments(String driverId) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final doc = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('documents')
-          .doc('info')
-          .get();
-
-      if (doc.exists) {
-        _driverDocuments = doc.data();
-      } else {
-        _driverDocuments = {};
-      }
+      final response = await _api.myDocuments();
+      _driverDocuments = _parseDocumentsResponse(response);
 
       // Cargar estado de verificación
       await loadVerificationStatus(driverId);
@@ -111,50 +98,37 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Cargar estado de verificación
-  // ✅ FIX 2026-01-05: Leer de 'users' (fuente de verdad) en lugar de 'drivers'
+  // Cargar estado de verificación desde el perfil del conductor
   Future<void> loadVerificationStatus(String driverId) async {
     try {
       debugPrint('📄 DocumentProvider: Cargando estado de verificación para: $driverId');
 
-      // Leer de 'users' que es la fuente de verdad (admin panel también lee de aquí)
-      final doc = await _firestore
-          .collection('users')
-          .doc(driverId)
-          .get();
+      final profile = await _api.myDriverProfile();
+      debugPrint('📄 DocumentProvider: isVerified=${profile['isVerified']}, driverStatus=${profile['driverStatus']}');
 
-      if (doc.exists) {
-        final data = doc.data();
-        debugPrint('📄 DocumentProvider: Documento encontrado en users/$driverId');
-        debugPrint('📄 DocumentProvider: isVerified=${data?['isVerified']}, driverStatus=${data?['driverStatus']}');
+      final isVerified = profile['isVerified'] == true;
+      final driverStatus = (profile['driverStatus'] ?? 'pending_approval').toString();
 
-        // Mapear campos de 'users' al formato esperado
-        final isVerified = data?['isVerified'] == true;
-        final driverStatus = data?['driverStatus'] ?? 'pending_approval';
-
-        // Determinar verificationStatus basado en driverStatus
-        String verificationStatus;
-        if (isVerified || driverStatus == 'approved') {
-          verificationStatus = 'approved';
-        } else if (driverStatus == 'rejected') {
-          verificationStatus = 'rejected';
-        } else {
-          verificationStatus = 'pending';
-        }
-
-        _verificationStatus = {
-          'isVerified': isVerified,
-          'verificationStatus': verificationStatus,
-          'verificationDate': data?['approvedAt'],
-          'rejectionReason': data?['rejectionReason'],
-        };
-
-        debugPrint('📄 DocumentProvider: Estado final: $_verificationStatus');
+      // Determinar verificationStatus basado en driverStatus
+      String verificationStatus;
+      if (isVerified || driverStatus == 'approved') {
+        verificationStatus = 'approved';
+      } else if (driverStatus == 'rejected') {
+        verificationStatus = 'rejected';
+      } else if (driverStatus == 'under_review' || driverStatus == 'pending_verification') {
+        verificationStatus = 'under_review';
       } else {
-        debugPrint('📄 DocumentProvider: ⚠️ Documento NO existe en users/$driverId');
-        // Si no existe documento de usuario, no mostrar banner
-        _verificationStatus = null;
+        verificationStatus = 'pending';
       }
+
+      _verificationStatus = {
+        'isVerified': isVerified,
+        'verificationStatus': verificationStatus,
+        'verificationDate': profile['approvedAt'],
+        'rejectionReason': profile['rejectionReason'],
+      };
+
+      debugPrint('📄 DocumentProvider: Estado final: $_verificationStatus');
     } catch (e) {
       debugPrint('📄 DocumentProvider: ❌ Error: $e');
       _error = 'Error al cargar estado de verificación: $e';
@@ -162,7 +136,7 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Subir documento
+  // Subir documento al backend Node (uploadFile + uploadDocument)
   Future<bool> uploadDocument({
     required String driverId,
     required String documentType,
@@ -174,52 +148,30 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Crear referencia en Storage
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = '${documentType}_$timestamp.jpg';
-      final ref = _storage
-          .ref()
-          .child('drivers')
-          .child(driverId)
-          .child('documents')
-          .child(fileName);
+      // Paso 1: subir archivo a storage y obtener URL pública
+      _uploadProgress = 0.3;
+      notifyListeners();
 
-      // Subir archivo con progreso
-      final uploadTask = ref.putFile(file);
-      
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        _uploadProgress = snapshot.bytesTransferred / snapshot.totalBytes;
-        notifyListeners();
-      });
+      final uploaded = await _api.uploadFile(file: file, scope: 'documents');
+      final fileUrl = uploaded['url']?.toString() ?? '';
+      if (fileUrl.isEmpty) {
+        throw Exception('El servidor no devolvió URL del archivo');
+      }
 
-      // Esperar a que termine la subida
-      await uploadTask;
+      _uploadProgress = 0.7;
+      notifyListeners();
 
-      // Obtener URL de descarga
-      final downloadUrl = await ref.getDownloadURL();
+      // Paso 2: registrar el documento asociado al conductor
+      await _api.uploadDocument(docType: documentType, fileUrl: fileUrl);
 
-      // Guardar información en Firestore
-      await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('documents')
-          .doc('info')
-          .set({
-        documentType: {
-          'url': downloadUrl,
-          'uploadedAt': FieldValue.serverTimestamp(),
-          'fileName': fileName,
-          'status': 'pending',
-          'verified': false,
-        }
-      }, SetOptions(merge: true));
+      _uploadProgress = 1.0;
 
       // Actualizar estado local
       _driverDocuments ??= {};
       _driverDocuments![documentType] = {
-        'url': downloadUrl,
+        'url': fileUrl,
         'uploadedAt': DateTime.now(),
-        'fileName': fileName,
+        'fileName': (uploaded['key'] ?? file.path.split('/').last).toString(),
         'status': 'pending',
         'verified': false,
       };
@@ -237,7 +189,9 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
-  // Eliminar documento
+  // Eliminar documento (el backend no expone endpoint de eliminación por
+  // tipo actualmente; se limpia solamente el estado local para reflejar la
+  // intención del usuario)
   Future<bool> deleteDocument({
     required String driverId,
     required String documentType,
@@ -247,31 +201,7 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Obtener información del documento
-      final docInfo = _driverDocuments?[documentType];
-      if (docInfo != null && docInfo['fileName'] != null) {
-        // Eliminar de Storage
-        final ref = _storage
-            .ref()
-            .child('drivers')
-            .child(driverId)
-            .child('documents')
-            .child(docInfo['fileName']);
-        
-        await ref.delete();
-      }
-
-      // Eliminar de Firestore
-      await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('documents')
-          .doc('info')
-          .update({
-        documentType: FieldValue.delete(),
-      });
-
-      // Actualizar estado local
+      // Actualizar estado local (backend Node aún no expone DELETE por docType)
       _driverDocuments?.remove(documentType);
 
       _isLoading = false;
@@ -304,7 +234,7 @@ class DocumentProvider extends ChangeNotifier {
     if (_driverDocuments == null || !_driverDocuments!.containsKey(documentType)) {
       return 'not_uploaded';
     }
-    
+
     final doc = _driverDocuments![documentType];
     if (doc['verified'] == true) {
       return 'verified';
@@ -315,7 +245,9 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
-  // Solicitar verificación
+  // Solicitar verificación — el backend evalúa automáticamente al subir todos
+  // los documentos requeridos. Aquí solo actualizamos el estado local a
+  // "under_review" para reflejar la UI.
   Future<bool> requestVerification(String driverId) async {
     if (!areAllDocumentsComplete()) {
       _error = 'Por favor sube todos los documentos requeridos';
@@ -328,23 +260,18 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _firestore.collection('drivers').doc(driverId).update({
-        'verificationStatus': 'under_review',
-        'verificationRequestedAt': FieldValue.serverTimestamp(),
-      });
+      // Refrescar perfil para leer el estado real del backend
+      await loadVerificationStatus(driverId);
 
-      // Crear notificación para admin
-      await _firestore.collection('admin_notifications').add({
-        'type': 'verification_request',
-        'driverId': driverId,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
-
-      _verificationStatus = {
-        ..._verificationStatus ?? {},
-        'verificationStatus': 'under_review',
-      };
+      // Si el backend todavía no cambió de estado, marcarlo localmente
+      // como under_review para que la pantalla muestre el estado correcto.
+      final currentStatus = _verificationStatus?['verificationStatus']?.toString();
+      if (currentStatus == 'pending') {
+        _verificationStatus = {
+          ..._verificationStatus ?? const {},
+          'verificationStatus': 'under_review',
+        };
+      }
 
       _isLoading = false;
       notifyListeners();
@@ -357,31 +284,66 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
-  // Cargar documentos del vehículo
+  // Cargar documentos del vehículo (mismo endpoint /me/documents)
   Future<void> loadVehicleDocuments(String driverId, String vehicleId) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final snapshot = await _firestore
-          .collection('drivers')
-          .doc(driverId)
-          .collection('vehicles')
-          .doc(vehicleId)
-          .collection('documents')
-          .get();
-
-      _vehicleDocuments = snapshot.docs.map((doc) => {
-        'id': doc.id,
-        ...doc.data(),
-      }).toList();
+      final response = await _api.myDocuments();
+      final docs = response['documents'];
+      if (docs is List) {
+        _vehicleDocuments = docs.whereType<Map>().map<Map<String, dynamic>>((d) {
+          final map = Map<String, dynamic>.from(d);
+          return {
+            'id': (map['id'] ?? map['docType'] ?? '').toString(),
+            ...map,
+          };
+        }).toList();
+      } else {
+        _vehicleDocuments = [];
+      }
     } catch (e) {
       _error = 'Error al cargar documentos del vehículo: $e';
     }
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  // Convierte la respuesta del endpoint /api/drivers/me/documents en el mapa
+  // por docType que usan las pantallas existentes.
+  Map<String, dynamic> _parseDocumentsResponse(Map<String, dynamic> response) {
+    final Map<String, dynamic> mapped = {};
+    final docs = response['documents'];
+    if (docs is List) {
+      for (final entry in docs) {
+        if (entry is! Map) continue;
+        final map = Map<String, dynamic>.from(entry);
+        final type = (map['docType'] ?? map['type'])?.toString();
+        if (type == null || type.isEmpty) continue;
+
+        final uploadedIso = map['uploadedAt']?.toString();
+        DateTime? uploadedAt;
+        if (uploadedIso != null && uploadedIso.isNotEmpty) {
+          uploadedAt = DateTime.tryParse(uploadedIso);
+        }
+
+        final status = (map['status'] ?? 'pending').toString();
+
+        mapped[type] = {
+          'url': (map['fileUrl'] ?? map['url'])?.toString(),
+          'uploadedAt': uploadedAt,
+          'fileName': map['fileName']?.toString(),
+          'status': status,
+          'verified': map['verified'] == true || status == 'approved' || status == 'verified',
+        };
+      }
+    } else if (docs is Map) {
+      mapped.addAll(Map<String, dynamic>.from(docs));
+    }
+    return mapped;
   }
 
   // Limpiar error

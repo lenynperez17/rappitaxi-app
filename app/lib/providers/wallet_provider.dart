@@ -1,12 +1,31 @@
-import 'dart:async'; // Para TimeoutException
+import 'dart:async'; // Para TimeoutException + StreamSubscription
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/logger.dart';
-import '../services/firebase_service.dart';
+import '../services/rapi_api_client.dart';
+import '../services/rapi_sse_client.dart';
 import '../services/payment_service.dart';
 import '../widgets/mercadopago_checkout_pro_widget.dart';
 import '../core/constants/credit_constants.dart';
+
+// Helper: parse ISO8601 date strings desde la respuesta del backend Node.
+// Acepta tanto Strings como null (defaults a DateTime.now()).
+DateTime _parseDate(dynamic value) {
+  if (value == null) return DateTime.now();
+  if (value is DateTime) return value;
+  if (value is String) {
+    return DateTime.tryParse(value) ?? DateTime.now();
+  }
+  return DateTime.now();
+}
+
+DateTime? _parseDateOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  if (value is String) {
+    return DateTime.tryParse(value);
+  }
+  return null;
+}
 
 // Modelo para billetera
 class Wallet {
@@ -44,18 +63,25 @@ class Wallet {
   });
 
   factory Wallet.fromMap(Map<String, dynamic> map, String id) {
+    // Compatibilidad con la respuesta del backend Node:
+    // - GET /api/wallet/balance devuelve un único `balance` numérico que
+    //   representa el saldo unificado (créditos de servicio y saldo son
+    //   lo mismo en el backend).
+    // - Los campos extendidos (pendingBalance, totalEarnings...) se rellenan
+    //   con defaults 0 si el backend no los envía.
+    final rawBalance = (map['balance'] ?? map['serviceCredits'] ?? 0).toDouble();
     return Wallet(
       id: id,
-      userId: map['userId'] ?? '',
-      balance: (map['balance'] ?? 0).toDouble(),
+      userId: map['userId'] ?? id,
+      balance: rawBalance,
       pendingBalance: (map['pendingBalance'] ?? 0).toDouble(),
       totalEarnings: (map['totalEarnings'] ?? 0).toDouble(),
       totalWithdrawals: (map['totalWithdrawals'] ?? 0).toDouble(),
       currency: map['currency'] ?? 'PEN',
       isActive: map['isActive'] ?? true,
-      lastActivityDate: (map['lastActivityDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      lastActivityDate: _parseDate(map['lastActivityDate']),
       bankAccount: map['bankAccount'],
-      serviceCredits: (map['serviceCredits'] ?? 0).toDouble(),
+      serviceCredits: (map['serviceCredits'] ?? rawBalance).toDouble(),
       totalCreditsRecharged: (map['totalCreditsRecharged'] ?? 0).toDouble(),
       totalCreditsUsed: (map['totalCreditsUsed'] ?? 0).toDouble(),
       isFirstRecharge: map['isFirstRecharge'] ?? true,
@@ -71,13 +97,12 @@ class Wallet {
       'totalWithdrawals': totalWithdrawals,
       'currency': currency,
       'isActive': isActive,
-      'lastActivityDate': Timestamp.fromDate(lastActivityDate),
+      'lastActivityDate': lastActivityDate.toIso8601String(),
       'bankAccount': bankAccount,
       'serviceCredits': serviceCredits,
       'totalCreditsRecharged': totalCreditsRecharged,
       'totalCreditsUsed': totalCreditsUsed,
       'isFirstRecharge': isFirstRecharge,
-      'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 
@@ -91,7 +116,7 @@ class Wallet {
 class WalletTransaction {
   final String id;
   final String walletId;
-  final String type; // 'earning', 'withdrawal', 'commission', 'bonus', 'penalty'
+  final String type; // 'earning', 'withdrawal', 'commission', 'bonus', 'penalty', 'recharge', 'debit', 'refund'
   final double amount;
   final double balanceBefore;
   final double balanceAfter;
@@ -120,17 +145,17 @@ class WalletTransaction {
   factory WalletTransaction.fromMap(Map<String, dynamic> map, String id) {
     return WalletTransaction(
       id: id,
-      walletId: map['walletId'] ?? '',
+      walletId: map['walletId'] ?? map['userId'] ?? '',
       type: map['type'] ?? 'earning',
       amount: (map['amount'] ?? 0).toDouble(),
       balanceBefore: (map['balanceBefore'] ?? 0).toDouble(),
       balanceAfter: (map['balanceAfter'] ?? 0).toDouble(),
       status: map['status'] ?? 'pending',
-      tripId: map['tripId'],
+      tripId: map['tripId'] ?? map['rideId'],
       description: map['description'],
       metadata: map['metadata'],
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      processedAt: (map['processedAt'] as Timestamp?)?.toDate(),
+      createdAt: _parseDate(map['createdAt']),
+      processedAt: _parseDateOrNull(map['processedAt'] ?? map['completedAt']),
     );
   }
 
@@ -145,8 +170,8 @@ class WalletTransaction {
       'tripId': tripId,
       'description': description,
       'metadata': metadata,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'processedAt': processedAt != null ? Timestamp.fromDate(processedAt!) : null,
+      'createdAt': createdAt.toIso8601String(),
+      'processedAt': processedAt?.toIso8601String(),
     };
   }
 }
@@ -180,27 +205,27 @@ class WithdrawalRequest {
   factory WithdrawalRequest.fromMap(Map<String, dynamic> map, String id) {
     return WithdrawalRequest(
       id: id,
-      walletId: map['walletId'] ?? '',
+      walletId: map['walletId'] ?? map['userId'] ?? '',
       amount: (map['amount'] ?? 0).toDouble(),
       status: map['status'] ?? 'pending',
       bankAccountId: map['bankAccountId'],
-      bankDetails: map['bankDetails'],
+      bankDetails: map['bankDetails'] ?? map['accountDetails'],
       rejectionReason: map['rejectionReason'],
-      requestedAt: (map['requestedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      approvedAt: (map['approvedAt'] as Timestamp?)?.toDate(),
-      completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
+      requestedAt: _parseDate(map['requestedAt'] ?? map['createdAt']),
+      approvedAt: _parseDateOrNull(map['approvedAt']),
+      completedAt: _parseDateOrNull(map['completedAt']),
     );
   }
 }
 
 class WalletProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseService().firestore;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
+
   // Estado
   Wallet? _wallet;
   List<WalletTransaction> _transactions = [];
-  List<WithdrawalRequest> _withdrawalRequests = [];
+  final List<WithdrawalRequest> _withdrawalRequests = [];
   Map<String, double> _earnings = {
     'today': 0,
     'week': 0,
@@ -209,21 +234,15 @@ class WalletProvider extends ChangeNotifier {
   };
   bool _isLoading = false;
   String? _error;
-  
+
   // Campos adicionales para retiros
   List<Map<String, dynamic>> _withdrawalHistory = [];
   final double _totalWithdrawn = 0.0;
   double _pendingWithdrawals = 0.0;
-  
-  // Streams
-  Stream<DocumentSnapshot>? _walletStream;
-  Stream<QuerySnapshot>? _transactionsStream;
-  Stream<QuerySnapshot>? _withdrawalsStream;
 
-  // Subscriptions para evitar memory leaks
-  StreamSubscription<DocumentSnapshot>? _walletSubscription;
-  StreamSubscription<QuerySnapshot>? _transactionsSubscription;
-  StreamSubscription<QuerySnapshot>? _withdrawalsSubscription;
+  // Subscriptions SSE — para reactividad en tiempo real (reemplaza snapshots).
+  StreamSubscription<Map<String, dynamic>>? _notificationsSub;
+  StreamSubscription<Map<String, dynamic>>? _rideUpdatesSub;
 
   // Getters
   Wallet? get wallet => _wallet;
@@ -232,9 +251,9 @@ class WalletProvider extends ChangeNotifier {
   Map<String, double> get earnings => _earnings;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  double get availableBalance => (_wallet?.balance ?? 0.0) - (_wallet?.pendingBalance ?? 0.0);
+  // Unified balance: serviceCredits is the single source of truth
+  double get availableBalance => (_wallet?.serviceCredits ?? 0.0) - (_wallet?.pendingBalance ?? 0.0);
 
-  // Getters de créditos de servicio
   double get serviceCredits => _wallet?.serviceCredits ?? 0.0;
   double get totalCreditsRecharged => _wallet?.totalCreditsRecharged ?? 0.0;
   double get totalCreditsUsed => _wallet?.totalCreditsUsed ?? 0.0;
@@ -244,101 +263,82 @@ class WalletProvider extends ChangeNotifier {
     _initializeWallet();
   }
 
-  // Inicializar billetera
+  // Inicializar billetera — carga inicial HTTP + suscripción SSE.
   Future<void> _initializeWallet() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+    if (!_api.isSignedIn) return;
 
-    // Stream de billetera
-    _walletStream = _firestore
-        .collection('wallets')
-        .doc(user.uid)
-        .snapshots();
+    // 1) Estado inicial via HTTP
+    await _refreshBalance();
 
-    _walletSubscription = _walletStream?.handleError((error) {
-      // Error en stream de wallet
-    }).listen((snapshot) async {
-      if (snapshot.exists) {
-        _wallet = Wallet.fromMap(snapshot.data() as Map<String, dynamic>? ?? {}, snapshot.id);
-      } else {
-        // Crear billetera si no existe
-        await _createWallet();
+    // 2) Reactividad en tiempo real via SSE:
+    //    - notifications: el backend emite notificaciones para eventos
+    //      wallet.recharge_approved, wallet.debit, wallet.refund, etc.
+    //    - ride_update: al completar/aceptar un viaje se recalcula saldo.
+    _notificationsSub = _sse.notifications.listen((event) {
+      final type = (event['type'] ?? '').toString();
+      if (type.startsWith('wallet') ||
+          type == 'recharge_approved' ||
+          type == 'credit_added' ||
+          type == 'credit_used') {
+        // Refrescar balance ante eventos de billetera
+        _refreshBalance();
       }
+    });
+
+    _rideUpdatesSub = _sse.rideUpdates.listen((event) {
+      final status = (event['status'] ?? '').toString();
+      // Cambios de viaje que afectan saldo/créditos del conductor
+      if (status == 'accepted' || status == 'completed' || status == 'cancelled') {
+        _refreshBalance();
+      }
+    });
+  }
+
+  /// Refresca balance + transacciones recientes desde el backend.
+  Future<void> _refreshBalance() async {
+    try {
+      if (!_api.isSignedIn) return;
+
+      final data = await _api.walletBalance();
+
+      // Construir Wallet a partir de la respuesta del backend Node.
+      // El backend expone un solo balance unificado; lo mapeamos a
+      // serviceCredits + balance en el modelo cliente.
+      final balance = (data['balance'] ?? 0).toDouble();
+      final currency = (data['currency'] ?? 'PEN').toString();
+
+      _wallet = Wallet(
+        id: _wallet?.id ?? 'me',
+        userId: _wallet?.userId ?? 'me',
+        balance: balance,
+        pendingBalance: 0,
+        totalEarnings: _wallet?.totalEarnings ?? 0,
+        totalWithdrawals: _wallet?.totalWithdrawals ?? 0,
+        currency: currency,
+        isActive: true,
+        lastActivityDate: DateTime.now(),
+        bankAccount: _wallet?.bankAccount,
+        serviceCredits: balance,
+        totalCreditsRecharged: _wallet?.totalCreditsRecharged ?? 0,
+        totalCreditsUsed: _wallet?.totalCreditsUsed ?? 0,
+        isFirstRecharge: _wallet?.isFirstRecharge ?? (balance == 0),
+      );
+
+      // Parsear transacciones incluidas en la respuesta.
+      final txList = (data['transactions'] as List?) ?? const [];
+      _transactions = txList
+          .whereType<Map<String, dynamic>>()
+          .map((m) => WalletTransaction.fromMap(m, (m['id'] ?? '').toString()))
+          .toList();
 
       await _calculateEarnings();
       notifyListeners();
-    });
-
-    // Stream de transacciones
-    _transactionsStream = _firestore
-        .collection('walletTransactions')
-        .where('walletId', isEqualTo: user.uid)
-        .orderBy('createdAt', descending: true)
-        .limit(50)
-        .snapshots()
-        .handleError((error) {
-          // Error en stream de walletTransactions (ej: índice creándose)
-        });
-
-    _transactionsSubscription = _transactionsStream?.listen((snapshot) {
-      _transactions = snapshot.docs
-          .map((doc) => WalletTransaction.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-          .toList();
-      notifyListeners();
-    });
-
-    // Stream de solicitudes de retiro
-    _withdrawalsStream = _firestore
-        .collection('withdrawalRequests')
-        .where('walletId', isEqualTo: user.uid)
-        .orderBy('requestedAt', descending: true)
-        .limit(20)
-        .snapshots()
-        .handleError((error) {
-          // Error en stream de withdrawalRequests
-        });
-
-    _withdrawalsSubscription = _withdrawalsStream?.listen((snapshot) {
-      _withdrawalRequests = snapshot.docs
-          .map((doc) => WithdrawalRequest.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-          .toList();
-      notifyListeners();
-    });
-  }
-
-  // Crear billetera nueva
-  Future<void> _createWallet() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      final wallet = Wallet(
-        id: user.uid,
-        userId: user.uid,
-        balance: 0,
-        pendingBalance: 0,
-        totalEarnings: 0,
-        totalWithdrawals: 0,
-        currency: 'PEN',
-        isActive: true,
-        lastActivityDate: DateTime.now(),
-      );
-
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .set({
-        ...wallet.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      _wallet = wallet;
     } catch (e) {
-      AppLogger.error('Error creando billetera', e);
+      AppLogger.error('Error refrescando balance de wallet', e);
     }
   }
 
-  // Calcular ganancias por período
+  // Calcular ganancias por período — usa las transacciones locales cargadas.
   Future<void> _calculateEarnings() async {
     if (_wallet == null) return;
 
@@ -348,19 +348,21 @@ class WalletProvider extends ChangeNotifier {
       final weekStart = now.subtract(Duration(days: now.weekday - 1));
       final monthStart = DateTime(now.year, now.month, 1);
 
-      // Ganancias de hoy
-      final todayEarnings = await _getEarningsByPeriod(todayStart, now);
-      
-      // Ganancias de la semana
-      final weekEarnings = await _getEarningsByPeriod(weekStart, now);
-      
-      // Ganancias del mes
-      final monthEarnings = await _getEarningsByPeriod(monthStart, now);
+      double sumEarningsBetween(DateTime start, DateTime end) {
+        double sum = 0;
+        for (final t in _transactions) {
+          final isEarning = (t.type == 'earning' || t.type == 'recharge') && t.status == 'completed';
+          if (!isEarning) continue;
+          if (t.createdAt.isBefore(start) || t.createdAt.isAfter(end)) continue;
+          sum += t.amount;
+        }
+        return sum;
+      }
 
       _earnings = {
-        'today': todayEarnings,
-        'week': weekEarnings,
-        'month': monthEarnings,
+        'today': sumEarningsBetween(todayStart, now),
+        'week': sumEarningsBetween(weekStart, now),
+        'month': sumEarningsBetween(monthStart, now),
         'total': _wallet!.totalEarnings,
       };
 
@@ -370,34 +372,14 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Obtener ganancias por período
-  Future<double> _getEarningsByPeriod(DateTime start, DateTime end) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return 0;
-
-      final query = await _firestore
-          .collection('walletTransactions')
-          .where('walletId', isEqualTo: user.uid)
-          .where('type', isEqualTo: 'earning')
-          .where('status', isEqualTo: 'completed')
-          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-          .where('createdAt', isLessThanOrEqualTo: Timestamp.fromDate(end))
-          .get();
-
-      double total = 0;
-      for (var doc in query.docs) {
-        total += (doc.data()['amount'] ?? 0).toDouble();
-      }
-
-      return total;
-    } catch (e) {
-      AppLogger.error('Error obteniendo ganancias por período', e);
-      return 0;
-    }
+  /// Refresh público — para pantallas que quieran forzar recarga manual.
+  Future<void> refresh() async {
+    await _refreshBalance();
   }
 
-  // Agregar ganancia por viaje
+  // Agregar ganancia por viaje — el backend Node ya registra ganancias
+  // server-side cuando se completa un viaje (endpoint completeRide).
+  // Este método legacy simplemente refresca el balance para actualizar UI.
   Future<bool> addTripEarning({
     required String tripId,
     required double amount,
@@ -406,52 +388,8 @@ class WalletProvider extends ChangeNotifier {
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      if (_wallet == null) {
-        await _createWallet();
-      }
-
-      final netEarning = amount - commission;
-      final balanceBefore = _wallet!.balance;
-      final balanceAfter = balanceBefore + netEarning;
-
-      // Crear transacción
-      final transaction = WalletTransaction(
-        id: '',
-        walletId: user.uid,
-        type: 'earning',
-        amount: netEarning,
-        balanceBefore: balanceBefore,
-        balanceAfter: balanceAfter,
-        status: 'completed',
-        tripId: tripId,
-        description: description ?? 'Ganancia por viaje',
-        metadata: {
-          'grossAmount': amount,
-          'commission': commission,
-          'commissionRate': (commission / amount * 100).toStringAsFixed(2),
-        },
-        createdAt: DateTime.now(),
-        processedAt: DateTime.now(),
-      );
-
-      // Guardar transacción
-      await _firestore
-          .collection('walletTransactions')
-          .add(transaction.toMap());
-
-      // Actualizar billetera
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .update({
-        'balance': FieldValue.increment(netEarning),
-        'totalEarnings': FieldValue.increment(netEarning),
-        'lastActivityDate': FieldValue.serverTimestamp(),
-      });
-
+      // El accounting real ocurre en /api/rides/:id/complete. Aquí solo refrescamos.
+      await _refreshBalance();
       _setLoading(false);
       return true;
     } catch (e) {
@@ -461,76 +399,54 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Solicitar retiro
+  /// Solicitar retiro contra una cuenta bancaria registrada del conductor.
+  /// [bankDetails] debe contener `bankAccountId` (uuid de la cuenta creada
+  /// previamente via addBankAccount). Si no viene, se toma la default.
   Future<bool> requestWithdrawal({
     required double amount,
     required Map<String, dynamic> bankDetails,
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      if (_wallet == null) throw Exception('Billetera no encontrada');
-
-      // Validar monto
       if (amount > availableBalance) {
         throw Exception('Monto excede el balance disponible');
       }
-
-      if (amount < 50) {
-        throw Exception('El monto mínimo de retiro es S/. 50.00');
+      if (amount < 20) {
+        throw Exception('El monto mínimo de retiro es S/. 20.00');
+      }
+      String? bankAccountId = bankDetails['bankAccountId'] as String?;
+      // Si no vino explícito, buscar la default cargando la lista.
+      if (bankAccountId == null || bankAccountId.isEmpty) {
+        final accountsResp = await _api.listBankAccounts();
+        final accounts = (accountsResp['accounts'] as List?) ?? const [];
+        final def = accounts
+            .whereType<Map<String, dynamic>>()
+            .firstWhere((a) => a['isDefault'] == true,
+                orElse: () => accounts.isNotEmpty
+                    ? Map<String, dynamic>.from(accounts.first as Map)
+                    : <String, dynamic>{});
+        bankAccountId = def['id'] as String?;
+      }
+      if (bankAccountId == null || bankAccountId.isEmpty) {
+        throw Exception('Primero debes agregar una cuenta bancaria');
       }
 
-      // Crear solicitud de retiro
-      final withdrawal = {
-        'walletId': user.uid,
-        'amount': amount,
-        'status': 'pending',
-        'bankDetails': bankDetails,
-        'requestedAt': FieldValue.serverTimestamp(),
-        'metadata': {
-          'balanceAtRequest': _wallet!.balance,
-          'currency': 'PEN',
-        },
-      };
-
-      final docRef = await _firestore
-          .collection('withdrawalRequests')
-          .add(withdrawal);
-
-      // Actualizar balance pendiente
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .update({
-        'pendingBalance': FieldValue.increment(amount),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Crear transacción pendiente
-      final transaction = WalletTransaction(
-        id: '',
-        walletId: user.uid,
-        type: 'withdrawal',
+      final resp = await _api.requestWithdrawal(
+        bankAccountId: bankAccountId,
         amount: amount,
-        balanceBefore: _wallet!.balance,
-        balanceAfter: _wallet!.balance,
-        status: 'pending',
-        description: 'Solicitud de retiro',
-        metadata: {
-          'withdrawalRequestId': docRef.id,
-          'bankDetails': bankDetails,
-        },
-        createdAt: DateTime.now(),
       );
-
-      await _firestore
-          .collection('walletTransactions')
-          .add(transaction.toMap());
-
+      final w = resp['withdrawal'] as Map<String, dynamic>?;
+      if (w != null) {
+        _pendingWithdrawals += amount;
+        _withdrawalHistory.insert(0, w);
+      }
+      await _refreshBalance();
       _setLoading(false);
       return true;
+    } on RapiApiException catch (e) {
+      _setError('Error al solicitar retiro: ${e.message ?? e.code}');
+      _setLoading(false);
+      return false;
     } catch (e) {
       _setError('Error al solicitar retiro: $e');
       _setLoading(false);
@@ -538,49 +454,19 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Cancelar solicitud de retiro
+  /// Cancelar retiro pendiente.
   Future<bool> cancelWithdrawal(String withdrawalId) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      // Obtener solicitud
-      final withdrawalDoc = await _firestore
-          .collection('withdrawalRequests')
-          .doc(withdrawalId)
-          .get();
-
-      if (!withdrawalDoc.exists) {
-        throw Exception('Solicitud no encontrada');
-      }
-
-      final withdrawal = WithdrawalRequest.fromMap(withdrawalDoc.data()!, withdrawalId);
-
-      if (withdrawal.status != 'pending') {
-        throw Exception('Solo se pueden cancelar solicitudes pendientes');
-      }
-
-      // Actualizar solicitud
-      await _firestore
-          .collection('withdrawalRequests')
-          .doc(withdrawalId)
-          .update({
-        'status': 'cancelled',
-        'cancelledAt': FieldValue.serverTimestamp(),
-      });
-
-      // Liberar balance pendiente
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .update({
-        'pendingBalance': FieldValue.increment(-withdrawal.amount),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
+      await _api.cancelWithdrawal(withdrawalId);
+      _withdrawalHistory.removeWhere((w) => w['id'] == withdrawalId);
+      await _refreshBalance();
       _setLoading(false);
       return true;
+    } on RapiApiException catch (e) {
+      _setError('Error al cancelar retiro: ${e.message ?? e.code}');
+      _setLoading(false);
+      return false;
     } catch (e) {
       _setError('Error al cancelar retiro: $e');
       _setLoading(false);
@@ -588,23 +474,37 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Agregar cuenta bancaria
+  /// Agregar cuenta bancaria del conductor para poder recibir retiros.
   Future<bool> addBankAccount(Map<String, dynamic> bankAccount) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      final bankName = (bankAccount['bankName'] ?? bankAccount['bank']) as String?;
+      final accountType = (bankAccount['accountType'] ?? 'savings') as String;
+      final accountNumber = (bankAccount['accountNumber'] ?? bankAccount['number']) as String?;
+      final holderName = (bankAccount['holderName'] ?? bankAccount['holder']) as String?;
+      final holderDocument = (bankAccount['holderDocument'] ?? bankAccount['dni']) as String?;
+      final cci = bankAccount['cci'] as String?;
+      final isDefault = (bankAccount['isDefault'] ?? true) as bool;
 
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .update({
-        'bankAccount': bankAccount,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      if (bankName == null || accountNumber == null || holderName == null || holderDocument == null) {
+        throw Exception('Faltan datos de la cuenta bancaria');
+      }
 
+      await _api.addBankAccount(
+        bankName: bankName,
+        accountType: accountType,
+        accountNumber: accountNumber,
+        holderName: holderName,
+        holderDocument: holderDocument,
+        cci: cci,
+        isDefault: isDefault,
+      );
       _setLoading(false);
       return true;
+    } on RapiApiException catch (e) {
+      _setError('Error al agregar cuenta bancaria: ${e.message ?? e.code}');
+      _setLoading(false);
+      return false;
     } catch (e) {
       _setError('Error al agregar cuenta bancaria: $e');
       _setLoading(false);
@@ -612,38 +512,39 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  // Obtener estadísticas
+  // Obtener estadísticas — se calcula sobre transacciones locales cargadas.
   Future<Map<String, dynamic>> getStatistics() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return {};
+      // Cargar historial extendido si es necesario
+      final txResp = await _api.listWalletTransactions(page: 1, pageSize: 200);
+      final txList = (txResp['transactions'] as List?) ?? const [];
 
       final now = DateTime.now();
       final lastMonth = now.subtract(const Duration(days: 30));
-
-      // Obtener todas las transacciones del último mes
-      final query = await _firestore
-          .collection('walletTransactions')
-          .where('walletId', isEqualTo: user.uid)
-          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(lastMonth))
-          .get();
 
       int totalTrips = 0;
       double totalEarnings = 0;
       double totalCommissions = 0;
       double totalWithdrawals = 0;
 
-      for (var doc in query.docs) {
-        final data = doc.data();
-        final type = data['type'];
-        final amount = (data['amount'] ?? 0).toDouble();
+      for (final raw in txList) {
+        if (raw is! Map) continue;
+        final map = Map<String, dynamic>.from(raw);
+        final createdAt = _parseDate(map['createdAt']);
+        if (createdAt.isBefore(lastMonth)) continue;
 
-        if (type == 'earning') {
+        final type = map['type'];
+        final amount = (map['amount'] ?? 0).toDouble();
+
+        if (type == 'earning' || type == 'recharge') {
           totalTrips++;
-          totalEarnings += amount;
-          totalCommissions += (data['metadata']?['commission'] ?? 0).toDouble();
-        } else if (type == 'withdrawal' && data['status'] == 'completed') {
-          totalWithdrawals += amount;
+          totalEarnings += amount.abs();
+          final md = map['metadata'];
+          if (md is Map) {
+            totalCommissions += (md['commission'] ?? 0).toDouble();
+          }
+        } else if (type == 'withdrawal' && map['status'] == 'completed') {
+          totalWithdrawals += amount.abs();
         }
       }
 
@@ -679,27 +580,23 @@ class WalletProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cargar historial de retiros
+  /// Cargar historial de retiros — usa listWalletTransactions(type: 'withdrawal').
   Future<void> loadWithdrawalHistory(String userId) async {
     try {
       _isLoading = true;
       notifyListeners();
-      
-      final snapshot = await FirebaseFirestore.instance
-          .collection('withdrawals')
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-      
-      _withdrawalHistory = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          ...data,
-        };
-      }).toList();
-      
+
+      final resp = await _api.listWalletTransactions(
+        type: 'withdrawal',
+        page: 1,
+        pageSize: 50,
+      );
+
+      final list = (resp['transactions'] as List?) ?? const [];
+      _withdrawalHistory = list
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
     } catch (e) {
       AppLogger.error('Error cargando historial de retiros', e);
       _error = 'Error al cargar historial';
@@ -709,7 +606,10 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// Procesar retiro
+  /// Procesar retiro — atajo que:
+  ///   1) asegura que exista una cuenta bancaria (crea una nueva con
+  ///      `accountDetails` si el driver aún no tiene ninguna),
+  ///   2) solicita el retiro contra esa cuenta.
   Future<bool> processWithdrawal({
     required String userId,
     required double amount,
@@ -719,35 +619,35 @@ class WalletProvider extends ChangeNotifier {
     try {
       _isLoading = true;
       notifyListeners();
-      
-      // Verificar saldo disponible
       if (amount > availableBalance) {
         throw Exception('Saldo insuficiente');
       }
-      
-      // Crear documento de retiro
-      await FirebaseFirestore.instance.collection('withdrawals').add({
-        'userId': userId,
-        'amount': amount,
-        'method': method,
-        'accountDetails': accountDetails,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      
-      // Actualizar saldo pendiente de retiro
-      _pendingWithdrawals += amount;
-      
-      // Actualizar en Firestore
-      await FirebaseFirestore.instance
-          .collection('wallets')
-          .doc(userId)
-          .update({
-        'pendingBalance': FieldValue.increment(amount),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
-      return true;
+
+      // Asegurar cuenta bancaria
+      final accountsResp = await _api.listBankAccounts();
+      final accounts = (accountsResp['accounts'] as List?) ?? const [];
+      String? bankAccountId;
+      if (accounts.isEmpty) {
+        final added = await addBankAccount({...accountDetails, 'isDefault': true});
+        if (!added) throw Exception('No se pudo registrar la cuenta bancaria');
+        final refresh = await _api.listBankAccounts();
+        final list = (refresh['accounts'] as List?) ?? const [];
+        bankAccountId = list.isNotEmpty
+            ? (list.first as Map<String, dynamic>)['id'] as String?
+            : null;
+      } else {
+        final def = accounts.whereType<Map<String, dynamic>>().firstWhere(
+          (a) => a['isDefault'] == true,
+          orElse: () => Map<String, dynamic>.from(accounts.first as Map),
+        );
+        bankAccountId = def['id'] as String?;
+      }
+      if (bankAccountId == null) throw Exception('No hay cuenta bancaria registrada');
+
+      return await requestWithdrawal(
+        amount: amount,
+        bankDetails: {'bankAccountId': bankAccountId},
+      );
     } catch (e) {
       AppLogger.error('Error procesando retiro', e);
       _error = 'Error al procesar retiro: ${e.toString()}';
@@ -765,265 +665,147 @@ class WalletProvider extends ChangeNotifier {
 
   // ============ SISTEMA DE CRÉDITOS PARA CONDUCTORES ============
 
-  /// Verificar si el conductor tiene créditos suficientes para aceptar un servicio
+  /// Verificar si el conductor tiene créditos suficientes para aceptar un servicio.
+  /// Consulta el backend para el balance más reciente.
   Future<bool> hasEnoughCreditsForService() async {
     try {
-      // Reutilizar getCreditConfig() que ya tiene timeout y fallback a defaults
       final config = await getCreditConfig();
       final serviceFee = (config['serviceFee'] as num).toDouble();
       final minCredits = (config['minServiceCredits'] as num).toDouble();
 
-      // Si wallet aún no cargó del stream, leer directamente de Firestore
+      // Si wallet aún no cargó, refrescar directamente del backend.
       double credits = serviceCredits;
       if (credits <= 0) {
-        final user = _auth.currentUser;
-        if (user != null) {
-          try {
-            final walletDoc = await _firestore
-                .collection('wallets').doc(user.uid).get()
-                .timeout(const Duration(seconds: 10));
-            if (walletDoc.exists) {
-              credits = (walletDoc.data()?['serviceCredits'] ?? 0.0).toDouble();
-            }
-          } catch (walletError) {
-            AppLogger.warning('No se pudo leer wallet directamente: $walletError');
-          }
+        try {
+          final data = await _api.walletBalance()
+              .timeout(const Duration(seconds: 10));
+          credits = (data['balance'] ?? 0).toDouble();
+        } catch (walletError) {
+          AppLogger.warning('No se pudo leer wallet del backend: $walletError');
         }
       }
 
       final hasEnough = credits >= serviceFee && credits >= minCredits;
       if (!hasEnough) {
-        AppLogger.warning('Créditos insuficientes: S/. $credits (necesita >= S/. $serviceFee y >= S/. $minCredits)');
+        AppLogger.warning(
+          'Créditos insuficientes: S/. $credits (necesita >= S/. $serviceFee y >= S/. $minCredits)',
+        );
       }
       return hasEnough;
     } catch (e) {
       AppLogger.error('Error verificando créditos: $e');
-      // En caso de error, permitir y dejar que consumeCreditsForService() valide
+      // En caso de error, permitir y dejar que el backend valide en accept.
       return true;
     }
   }
 
-  /// Obtener configuración de créditos desde Firestore
+  /// Obtener configuración de créditos.
+  /// El backend Node aún no expone /api/settings/credits — devolvemos defaults.
   Future<Map<String, dynamic>> getCreditConfig() async {
-    try {
-      // ✅ FIX: Agregar timeout para evitar congelamiento
-      final settingsDoc = await _firestore
-          .collection('settings')
-          .doc('admin')
-          .get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout obteniendo config de créditos');
-          });
-
-      return {
-        'serviceFee': (settingsDoc.data()?['serviceFee'] ?? 1.0).toDouble(),
-        'minServiceCredits': (settingsDoc.data()?['minServiceCredits'] ?? CreditConstants.minServiceCredits).toDouble(),
-        'bonusCreditsOnFirstRecharge': (settingsDoc.data()?['bonusCreditsOnFirstRecharge'] ?? 5.0).toDouble(),
-        'creditPackages': settingsDoc.data()?['creditPackages'] ?? [],
-      };
-    } on TimeoutException {
-      AppLogger.warning('⏱️ Timeout obteniendo config, usando valores por defecto');
-      return {
-        'serviceFee': 1.0,
-        'minServiceCredits': CreditConstants.minServiceCredits,
-        'bonusCreditsOnFirstRecharge': 5.0,
-        'creditPackages': [],
-      };
-    } catch (e) {
-      AppLogger.error('Error obteniendo config de créditos', e);
-      return {
-        'serviceFee': 1.0,
-        'minServiceCredits': CreditConstants.minServiceCredits,
-        'bonusCreditsOnFirstRecharge': 5.0,
-        'creditPackages': [],
-      };
-    }
+    // Sin endpoint público todavía. Retornamos configuración por defecto
+    // (mismos valores que la config previa en Firestore settings/admin).
+    return {
+      'serviceFee': 1.0,
+      'minServiceCredits': CreditConstants.minServiceCredits,
+      'creditPackages': const [],
+    };
   }
 
-  /// Consumir créditos al aceptar un servicio
-  /// ✅ CORREGIDO: Ahora usa Firestore Transaction para operación ATÓMICA
-  /// Si falla cualquier parte, la operación completa se revierte automáticamente
+  /// Consumir créditos al aceptar un servicio.
+  /// En el backend Node, el débito ocurre server-side al llamar acceptRide().
+  /// Este método mantiene la interfaz pública y refresca el balance local.
   Future<bool> consumeCreditsForService({
     required String tripId,
     String? negotiationId,
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      // Obtener costo del servicio
-      final config = await getCreditConfig();
-      final serviceFee = (config['serviceFee'] as num).toDouble();
-      // ignore: unused_local_variable - se usa en código comentado para validación opcional
-      final minCredits = CreditConstants.minServiceCredits;
-
-      // ✅ TRANSACTION ATÓMICA: Verificar, descontar y registrar en una sola operación
-      await _firestore.runTransaction((transaction) async {
-        // 1. Leer wallet actual DENTRO de la transacción
-        final walletRef = _firestore.collection('wallets').doc(user.uid);
-        final walletDoc = await transaction.get(walletRef);
-
-        if (!walletDoc.exists) {
-          throw Exception('Billetera no encontrada');
-        }
-
-        final currentCredits = (walletDoc.data()?['serviceCredits'] ?? 0.0).toDouble();
-
-        // 2. Verificar saldo suficiente (dentro de transacción para evitar race condition)
-        if (currentCredits < serviceFee) {
-          throw Exception('Créditos insuficientes. Tienes S/. ${currentCredits.toStringAsFixed(2)}, necesitas S/. ${serviceFee.toStringAsFixed(2)}');
-        }
-
-        // 3. Verificar que después de descontar no quede bajo el mínimo requerido
-        // (opcional - comentar si se permite operar con saldo bajo)
-        // final newBalance = currentCredits - serviceFee;
-        // if (newBalance < minCredits) {
-        //   AppLogger.warning('⚠️ Después de este servicio, saldo será menor al mínimo');
-        // }
-
-        // 4. Actualizar wallet (ATÓMICO)
-        transaction.update(walletRef, {
-          'serviceCredits': FieldValue.increment(-serviceFee),
-          'totalCreditsUsed': FieldValue.increment(serviceFee),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        // 5. Crear registro de transacción (ATÓMICO)
-        final txRef = _firestore.collection('creditTransactions').doc();
-        transaction.set(txRef, {
-          'userId': user.uid,
-          'amount': -serviceFee,
-          'type': 'service_fee',
-          'tripId': tripId,
-          'negotiationId': negotiationId,
-          'balanceBefore': currentCredits,
-          'balanceAfter': currentCredits - serviceFee,
-          'description': 'Cobro por servicio aceptado',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      });
-
-      AppLogger.info('✅ Créditos consumidos atómicamente: S/. $serviceFee para viaje $tripId');
+      // El backend descuenta atómicamente al aceptar el viaje.
+      // Aquí solo refrescamos para reflejar el nuevo saldo en UI.
+      await _refreshBalance();
+      AppLogger.info('Créditos consumidos server-side para viaje $tripId');
       _setLoading(false);
       return true;
     } catch (e) {
       _setError('Error al consumir créditos: $e');
-      AppLogger.error('❌ Error en consumo atómico de créditos', e);
+      AppLogger.error('Error refrescando saldo tras consumo de créditos', e);
       _setLoading(false);
       return false;
     }
   }
 
-  /// Recargar créditos de servicio
+  /// Recargar créditos de servicio — legacy, ahora los pagos aprobados por
+  /// MercadoPago llegan por webhook al backend y se acreditan server-side.
+  /// Este método solo refresca el balance tras un pago exitoso.
   Future<bool> rechargeServiceCredits({
     required double amount,
     required String paymentMethod,
     String? paymentId,
-    double bonus = 0,
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      // Verificar si es primera recarga para bonificación
-      double actualBonus = bonus;
-      if (isFirstRecharge) {
-        final config = await getCreditConfig();
-        actualBonus += (config['bonusCreditsOnFirstRecharge'] as num).toDouble();
-      }
-
-      final totalCredits = amount + actualBonus;
-
-      // Actualizar wallet
-      final Map<String, Object> updateData = {
-        'serviceCredits': FieldValue.increment(totalCredits),
-        'totalCreditsRecharged': FieldValue.increment(amount),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      // Si es primera recarga, marcar como ya no primera
-      if (isFirstRecharge) {
-        updateData['isFirstRecharge'] = false;
-      }
-
-      await _firestore
-          .collection('wallets')
-          .doc(user.uid)
-          .update(updateData);
-
-      // Registrar transacción de crédito
-      await _firestore.collection('creditTransactions').add({
-        'userId': user.uid,
-        'amount': totalCredits,
-        'paidAmount': amount,
-        'bonus': actualBonus,
-        'type': 'recharge',
-        'paymentMethod': paymentMethod,
-        'paymentId': paymentId,
-        'balanceBefore': serviceCredits,
-        'balanceAfter': serviceCredits + totalCredits,
-        'isFirstRecharge': isFirstRecharge,
-        'description': isFirstRecharge
-            ? 'Primera recarga de créditos (+ S/. ${actualBonus.toStringAsFixed(2)} de bonificación)'
-            : 'Recarga de créditos',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      AppLogger.info('✅ Créditos recargados: S/. $amount + S/. $actualBonus bonificación');
+      // La acreditación ocurre en el webhook del backend
+      // (/api/payments/mercadopago/webhook). Aquí solo refrescamos.
+      await _refreshBalance();
+      AppLogger.info(
+        'Recarga procesada (paymentId=$paymentId): saldo actual ${_wallet?.serviceCredits}',
+      );
       _setLoading(false);
       return true;
     } catch (e) {
-      _setError('Error al recargar créditos: $e');
+      _setError('Error al refrescar créditos tras recarga: $e');
       _setLoading(false);
       return false;
     }
   }
 
-  /// Procesar recarga con MercadoPago Checkout Pro (hosted page with Yape, Plin, cards, etc.)
+  /// Procesar recarga con MercadoPago Checkout Pro.
+  /// Ahora llama al backend Node para crear la preferencia (ya no a Cloud Functions).
   Future<Map<String, dynamic>> processRechargeWithMercadoPago({
     required double amount,
-    required double bonus,
     required BuildContext context,
   }) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
+      if (!_api.isSignedIn) {
         return {'success': false, 'message': 'Usuario no autenticado'};
       }
 
-      debugPrint('💳 WalletProvider: Iniciando recarga con MercadoPago Checkout Pro - S/. ${amount.toStringAsFixed(2)}');
-
-      // Get user data for MercadoPago preference
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data() ?? {};
-      final userName = userData['name'] ?? userData['displayName'] ?? userData['fullName'] ?? 'Usuario';
-      final userEmail = user.email ?? userData['email'] ?? 'usuario@rapiteam.app';
-
-      final rechargeId = 'recharge_${user.uid}_${DateTime.now().millisecondsSinceEpoch}';
-
-      // Create MercadoPago preference via Cloud Functions
-      final paymentService = PaymentService();
-      await paymentService.initialize(isProduction: true);
-
-      final preferenceResult = await paymentService.createMercadoPagoPreference(
-        rideId: rechargeId,
-        amount: amount,
-        payerEmail: userEmail,
-        payerName: userName,
-        description: 'Recarga de créditos Rappi Team - S/. ${amount.toStringAsFixed(2)}',
+      debugPrint(
+        '💳 WalletProvider: Iniciando recarga con MercadoPago Checkout Pro - S/. ${amount.toStringAsFixed(2)}',
       );
 
-      if (!preferenceResult.success || preferenceResult.initPoint == null) {
-        return {'success': false, 'message': preferenceResult.error ?? 'No se pudo crear la preferencia de pago'};
+      // 1) Crear preferencia via backend Node.
+      Map<String, dynamic> preference;
+      try {
+        preference = await _api.createRechargeCheckout(amount);
+      } on RapiApiException catch (e) {
+        return {
+          'success': false,
+          'message': e.message ?? 'No se pudo crear la preferencia de pago',
+        };
       }
 
-      if (!context.mounted) return {'success': false, 'message': 'Contexto no disponible'};
+      final initPoint = preference['initPoint'] as String?;
+      final rechargeId = (preference['externalReference'] ?? '').toString();
+      if (initPoint == null || initPoint.isEmpty) {
+        return {'success': false, 'message': 'Backend no devolvió URL de pago'};
+      }
+
+      // 2) Inicializar PaymentService para tracking (compat con analytics/logs).
+      try {
+        final paymentService = PaymentService();
+        await paymentService.initialize(isProduction: true);
+      } catch (_) {
+        // Falla no bloqueante — el checkout puede seguir sin él.
+      }
+
+      if (!context.mounted) {
+        return {'success': false, 'message': 'Contexto no disponible'};
+      }
 
       debugPrint('💳 Abriendo MercadoPago Checkout Pro...');
 
-      // Track payment result from the checkout
+      // 3) Abrir el widget de checkout con la initPoint devuelta.
       String? resultStatus;
       final completer = Completer<String?>();
 
@@ -1031,7 +813,7 @@ class WalletProvider extends ChangeNotifier {
         context,
         MaterialPageRoute(
           builder: (ctx) => MercadoPagoCheckoutProWidget(
-            initPoint: preferenceResult.initPoint!,
+            initPoint: initPoint,
             transactionId: rechargeId,
             amount: amount,
             onPaymentComplete: (status, transactionId) {
@@ -1049,28 +831,29 @@ class WalletProvider extends ChangeNotifier {
         ),
       );
 
-      // If Navigator.push returned without callback (back button), treat as cancel
       if (!completer.isCompleted) completer.complete(resultStatus);
       final finalStatus = await completer.future;
 
       if (finalStatus == 'approved') {
-        // Payment approved - add credits
-        debugPrint('💳 Pago aprobado, agregando créditos...');
+        // 4) Pago aprobado: refrescar balance (el webhook ya acreditó server-side).
+        debugPrint('💳 Pago aprobado, refrescando balance...');
         final credited = await rechargeServiceCredits(
           amount: amount,
           paymentMethod: 'mercadopago',
           paymentId: rechargeId,
-          bonus: bonus,
         );
 
         if (credited) {
-          debugPrint('✅ Créditos agregados exitosamente');
+          debugPrint('✅ Balance actualizado');
           return {'success': true, 'message': 'Créditos agregados exitosamente'};
         } else {
-          return {'success': false, 'message': 'Error agregando créditos después del pago'};
+          return {'success': false, 'message': 'Error refrescando balance tras el pago'};
         }
       } else if (finalStatus == 'pending') {
-        return {'success': false, 'message': 'Pago en proceso. Tu saldo se actualizará cuando sea confirmado.'};
+        return {
+          'success': false,
+          'message': 'Pago en proceso. Tu saldo se actualizará cuando sea confirmado.',
+        };
       } else {
         return {'success': false, 'message': 'Pago cancelado o no completado'};
       }
@@ -1081,23 +864,15 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  /// Obtener historial de transacciones de créditos
+  /// Obtener historial de transacciones de créditos.
   Future<List<Map<String, dynamic>>> getCreditTransactionsHistory({int limit = 50}) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return [];
-
-      final snapshot = await _firestore
-          .collection('creditTransactions')
-          .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .limit(limit)
-          .get();
-
-      return snapshot.docs.map((doc) => {
-        'id': doc.id,
-        ...doc.data(),
-      }).toList();
+      final resp = await _api.listWalletTransactions(page: 1, pageSize: limit);
+      final list = (resp['transactions'] as List?) ?? const [];
+      return list
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
     } catch (e) {
       AppLogger.error('Error cargando historial de créditos', e);
       return [];
@@ -1106,18 +881,16 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _walletSubscription?.cancel();
-    _transactionsSubscription?.cancel();
-    _withdrawalsSubscription?.cancel();
+    _notificationsSub?.cancel();
+    _rideUpdatesSub?.cancel();
     super.dispose();
   }
 
-  /// Verificar estado de créditos y devolver información detallada
-  /// ✅ CORREGIDO: Lee directamente de Firestore para garantizar data fresca
+  /// Verificar estado de créditos y devolver información detallada.
+  /// Consulta directamente al backend para tener el saldo más fresco.
   Future<Map<String, dynamic>> checkCreditStatus() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
+      if (!_api.isSignedIn) {
         return {
           'currentCredits': 0.0,
           'hasEnoughCredits': false,
@@ -1125,22 +898,46 @@ class WalletProvider extends ChangeNotifier {
         };
       }
 
-      // ✅ FIX: Agregar timeout para evitar congelamiento
-      final walletDoc = await _firestore.collection('wallets').doc(user.uid).get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout verificando estado de créditos');
-          });
-      double currentCredits = 0;
-      if (walletDoc.exists) {
-        currentCredits = (walletDoc.data()?['serviceCredits'] ?? 0).toDouble();
+      final data = await _api.walletBalance().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw TimeoutException('Timeout verificando estado de créditos');
+        },
+      );
+
+      final currentCredits = (data['balance'] ?? 0).toDouble();
+
+      // Sincronizar estado local con lo que devolvió el backend.
+      if (_wallet != null || currentCredits > 0) {
+        _wallet = Wallet(
+          id: _wallet?.id ?? 'me',
+          userId: _wallet?.userId ?? 'me',
+          balance: currentCredits,
+          pendingBalance: _wallet?.pendingBalance ?? 0,
+          totalEarnings: _wallet?.totalEarnings ?? 0,
+          totalWithdrawals: _wallet?.totalWithdrawals ?? 0,
+          currency: (data['currency'] ?? 'PEN').toString(),
+          isActive: true,
+          lastActivityDate: DateTime.now(),
+          bankAccount: _wallet?.bankAccount,
+          serviceCredits: currentCredits,
+          totalCreditsRecharged: _wallet?.totalCreditsRecharged ?? 0,
+          totalCreditsUsed: _wallet?.totalCreditsUsed ?? 0,
+          isFirstRecharge: _wallet?.isFirstRecharge ?? (currentCredits == 0),
+        );
+        notifyListeners();
       }
 
       final config = await getCreditConfig();
       final serviceFee = (config['serviceFee'] as num).toDouble();
       final minCredits = (config['minServiceCredits'] as num).toDouble();
 
-      final hasEnough = currentCredits >= serviceFee && currentCredits >= minCredits;
-      final servicesAvailable = hasEnough ? (currentCredits / serviceFee).floor() : 0;
+      final hasEnough = serviceFee <= 0
+          ? true
+          : (currentCredits >= serviceFee && currentCredits >= minCredits);
+      final servicesAvailable = (serviceFee <= 0)
+          ? 999
+          : (hasEnough ? (currentCredits / serviceFee).floor() : 0);
 
       return {
         'currentCredits': currentCredits,
@@ -1155,16 +952,16 @@ class WalletProvider extends ChangeNotifier {
       AppLogger.warning('⏱️ Timeout verificando créditos');
       return {
         'currentCredits': 0.0,
-        'hasEnoughCredits': false,
-        'needsRecharge': true,
+        'hasEnoughCredits': true,
+        'needsRecharge': false,
         'error': 'timeout',
       };
     } catch (e) {
       AppLogger.error('Error verificando estado de créditos', e);
       return {
         'currentCredits': 0.0,
-        'hasEnoughCredits': false,
-        'needsRecharge': true,
+        'hasEnoughCredits': true,
+        'needsRecharge': false,
       };
     }
   }

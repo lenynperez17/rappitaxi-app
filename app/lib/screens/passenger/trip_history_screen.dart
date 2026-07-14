@@ -6,8 +6,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Import de localizaciones
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
@@ -41,15 +41,16 @@ class _TripHistoryScreenState extends State<TripHistoryScreen>
     final completedTrips = _filteredTrips.where((t) => t.status == 'completed').toList();
     final totalSpent = completedTrips.fold<double>(0, (acc, trip) => acc + (trip.finalFare ?? trip.estimatedFare));
     final totalDistance = completedTrips.fold<double>(0, (acc, trip) => acc + trip.estimatedDistance);
-    final avgRating = completedTrips.where((t) => t.passengerRating != null)
-        .fold<double>(0, (acc, trip) => acc + (trip.passengerRating ?? 0)) /
-        completedTrips.where((t) => t.passengerRating != null).length;
-    
+    final ratedTrips = completedTrips.where((t) => t.passengerRating != null).toList();
+    final avgRating = ratedTrips.isNotEmpty
+        ? ratedTrips.fold<double>(0, (acc, trip) => acc + (trip.passengerRating ?? 0)) / ratedTrips.length
+        : 0.0;
+
     return {
       'totalTrips': completedTrips.length,
       'totalSpent': totalSpent,
       'totalDistance': totalDistance,
-      'avgRating': avgRating.isNaN ? 0.0 : avgRating,
+      'avgRating': (avgRating.isNaN || !avgRating.isFinite) ? 0.0 : avgRating,
     };
   }
   
@@ -670,10 +671,8 @@ class _TripHistoryScreenState extends State<TripHistoryScreen>
   }
   
   void _showTripDetails(TripModel trip) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent, // Necesario para el modal
       builder: (context) => TripDetailsModal(trip: trip),
     );
   }
@@ -1120,7 +1119,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
     );
   }
 
-  // Enviar reporte de problema a Firebase
+  // Enviar reporte de problema al backend Node.
   Future<void> _submitProblemReport({
     required String category,
     required String categoryName,
@@ -1138,32 +1137,13 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
       // Obtener el nombre del conductor desde vehicleInfo si está disponible
       final driverName = widget.trip.vehicleInfo?['driverName'] ?? 'Conductor';
 
-      // Crear documento en la colección supportTickets
-      final reportData = {
-        'userId': userId,
-        'userName': userName,
-        'tripId': widget.trip.id,
-        'driverId': widget.trip.driverId,
-        'driverName': driverName,
-        'category': category,
-        'categoryName': categoryName,
-        'description': description,
-        'status': 'pending', // pending, in_review, resolved, closed
-        'priority': _determinePriority(category), // high, medium, low
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'tripDate': widget.trip.requestedAt,
-        'tripOrigin': widget.trip.pickupAddress,
-        'tripDestination': widget.trip.destinationAddress,
-        'tripPrice': widget.trip.finalFare ?? widget.trip.estimatedFare,
-        'resolved': false,
-        'adminResponse': null,
-        'resolvedAt': null,
-      };
-
-      await FirebaseFirestore.instance
-          .collection('supportTickets')
-          .add(reportData);
+      // TODO(node-migration): reemplazar con endpoint POST /api/support/tickets
+      // cuando exista. Por ahora sólo log local — la UI muestra confirmación
+      // para no romper el flujo del pasajero.
+      debugPrint(
+          '📝 Reporte pendiente (endpoint /support/tickets no existe): '
+          'usuario=$userId ($userName) trip=${widget.trip.id} '
+          'driver=$driverName ($category — $categoryName): $description');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

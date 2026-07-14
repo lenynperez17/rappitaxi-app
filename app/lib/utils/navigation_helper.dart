@@ -9,7 +9,9 @@ class NavigationHelper {
     try {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        Navigator.of(context).pushNamed('/ride-request');
+        // Los conductores reciben ofertas por notificación push + SSE stream.
+        // Al abrir la app, van al home donde ven las ofertas activas.
+        Navigator.of(context).pushNamed('/driver/home');
         AppLogger.info('Navegando a solicitud de viaje');
       }
     } catch (e) {
@@ -22,7 +24,7 @@ class NavigationHelper {
     try {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        Navigator.of(context).pushNamed('/trip-tracking');
+        Navigator.of(context).pushNamed('/shared/trip-tracking');
         AppLogger.info('Navegando a seguimiento de viaje');
       }
     } catch (e) {
@@ -35,7 +37,7 @@ class NavigationHelper {
     try {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        Navigator.of(context).pushNamed('/trip-history');
+        Navigator.of(context).pushNamed('/passenger/trip-history');
         AppLogger.info('Navegando a historial de viajes');
       }
     } catch (e) {
@@ -48,7 +50,7 @@ class NavigationHelper {
     try {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        Navigator.of(context).pushNamed('/earnings');
+        Navigator.of(context).pushNamed('/driver/earnings-details');
         AppLogger.info('Navegando a ganancias');
       }
     } catch (e) {
@@ -61,7 +63,7 @@ class NavigationHelper {
     try {
       final context = navigatorKey.currentContext;
       if (context != null) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
         AppLogger.info('Navegando a inicio');
       }
     } catch (e) {

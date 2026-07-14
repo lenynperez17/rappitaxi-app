@@ -3,16 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
-import 'dart:ui' as ui;
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/logger.dart';
 import '../../generated/l10n/app_localizations.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import '../../services/maps_service.dart';
+import '../../services/rapi_api_client.dart';
+import '../../services/rapi_sse_client.dart';
 import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
 
@@ -67,10 +65,11 @@ class _NavigationScreenState extends State<NavigationScreen>
   Timer? _locationTimer;
   StreamSubscription<Position>? _positionStream;
 
-  // Firebase
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Backend Node/SSE (reemplaza Firebase)
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
   String? _tripId;
-  StreamSubscription<DocumentSnapshot>? _tripSubscription;
+  StreamSubscription<Map<String, dynamic>>? _tripSubscription;
 
   // Flag para evitar multiples llamadas a la API de rutas
   bool _isFetchingRoute = false;
@@ -201,18 +200,19 @@ class _NavigationScreenState extends State<NavigationScreen>
         debugPrint('Pickup desde pickupLat/pickupLng: $_pickupLocation');
       }
 
-      // Fallback con 'pickupLocation', 'origin' o 'pickup'
+      // Fallback con 'pickupLocation', 'origin' o 'pickup' (mapa {lat, lng}).
+      // El backend Node siempre envía coordenadas como objetos JSON, no como
+      // GeoPoint de Firestore.
       if (_pickupLocation == null) {
         final originData = data['pickupLocation'] ?? data['origin'] ?? data['pickup'];
-        if (originData != null) {
-          if (originData is GeoPoint) {
-            _pickupLocation = LatLng(originData.latitude, originData.longitude);
-          } else if (originData is Map) {
-            final lat = originData['latitude'] ?? originData['lat'];
-            final lng = originData['longitude'] ?? originData['lng'];
-            if (lat != null && lng != null) {
-              _pickupLocation = LatLng(lat.toDouble(), lng.toDouble());
-            }
+        if (originData is Map) {
+          final lat = originData['latitude'] ?? originData['lat'];
+          final lng = originData['longitude'] ?? originData['lng'];
+          if (lat != null && lng != null) {
+            _pickupLocation = LatLng(
+              (lat as num).toDouble(),
+              (lng as num).toDouble(),
+            );
           }
         }
         debugPrint('Pickup desde pickupLocation/origin/pickup: $_pickupLocation');
@@ -229,18 +229,17 @@ class _NavigationScreenState extends State<NavigationScreen>
         debugPrint('Destino desde destinationLat/destinationLng: $_finalDestination');
       }
 
-      // Fallback con 'destinationLocation'
+      // Fallback con 'destinationLocation' (mapa {lat, lng} desde el backend).
       if (_finalDestination == null) {
         final destinationData = data['destinationLocation'] ?? data['destination'] ?? data['dropoff'];
-        if (destinationData != null) {
-          if (destinationData is GeoPoint) {
-            _finalDestination = LatLng(destinationData.latitude, destinationData.longitude);
-          } else if (destinationData is Map) {
-            final lat = destinationData['latitude'] ?? destinationData['lat'];
-            final lng = destinationData['longitude'] ?? destinationData['lng'];
-            if (lat != null && lng != null) {
-              _finalDestination = LatLng(lat.toDouble(), lng.toDouble());
-            }
+        if (destinationData is Map) {
+          final lat = destinationData['latitude'] ?? destinationData['lat'];
+          final lng = destinationData['longitude'] ?? destinationData['lng'];
+          if (lat != null && lng != null) {
+            _finalDestination = LatLng(
+              (lat as num).toDouble(),
+              (lng as num).toDouble(),
+            );
           }
         }
         debugPrint('Destino desde destinationLocation/destination: $_finalDestination');
@@ -283,57 +282,58 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   void _listenToTripChanges() {
     _tripSubscription?.cancel();
-    _tripSubscription = _firestore
-        .collection('rides')
-        .doc(_tripId)
-        .snapshots()
-        .listen((snapshot) {
+
+    // Suscribimos al stream global SSE de rides. Cada evento puede traer
+    // un `ride` completo, o campos parciales como `rideId` + `status`.
+    // Filtramos por _tripId antes de procesar.
+    _sse.start();
+    _tripSubscription = _sse.rideUpdates.listen((event) {
       if (!mounted || _isDisposed) return;
 
-      if (snapshot.exists) {
-        final data = snapshot.data() as Map<String, dynamic>;
-        final status = data['status'] as String?;
+      // Determinar rideId del evento (puede venir en distintas ubicaciones).
+      final String? eventRideId = (event['rideId'] as String?) ??
+          (event['id'] as String?) ??
+          ((event['ride'] as Map<String, dynamic>?)?['id'] as String?);
+      if (eventRideId == null || eventRideId != _tripId) return;
 
-        debugPrint('Status del viaje: $status');
+      // Extraer los datos del ride (puede venir anidado como `ride`).
+      final Map<String, dynamic> data =
+          (event['ride'] as Map<String, dynamic>?) ?? event;
+      final status = data['status'] as String?;
 
-        if (status == 'in_progress' && !_isTripInProgress) {
-          setState(() {
-            _isWaitingForPassenger = false;
-            _isTripInProgress = true;
-            _isNavigatingToPickup = false;
-            _hasArrivedAtPickup = true;
-            if (_finalDestination != null) {
-              _destination = _finalDestination!;
-              debugPrint('Destino actualizado al destino final: $_destination');
-            }
-          });
-          _waitingTimer?.cancel();
-          _isRouteInitialized = false;
-          _initializeRoute(AppLocalizations.of(context)!);
-        }
+      debugPrint('Status del viaje: $status');
 
-        // Handle cancellation by passenger
-        if (status == 'cancelled' || status == 'expired') {
-          debugPrint('Ride cancelled/expired by passenger. Returning to home.');
-          _tripSubscription?.cancel();
-          _tripSubscription = null;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('El pasajero canceló el viaje'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-            Navigator.of(context).pop();
+      if (status == 'in_progress' && !_isTripInProgress) {
+        setState(() {
+          _isWaitingForPassenger = false;
+          _isTripInProgress = true;
+          _isNavigatingToPickup = false;
+          _hasArrivedAtPickup = true;
+          if (_finalDestination != null) {
+            _destination = _finalDestination!;
+            debugPrint('Destino actualizado al destino final: $_destination');
           }
-        }
-      } else {
-        // Ride document was deleted
-        debugPrint('Ride document deleted. Returning to home.');
+        });
+        _waitingTimer?.cancel();
+        _isRouteInitialized = false;
+        _initializeRoute(AppLocalizations.of(context)!);
+      }
+
+      // Handle cancellation by passenger
+      if (status == 'cancelled' || status == 'expired') {
+        debugPrint('Ride cancelled/expired by passenger. Returning to home.');
         _tripSubscription?.cancel();
         _tripSubscription = null;
-        if (mounted) Navigator.of(context).pop();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('El pasajero canceló el viaje'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          Navigator.of(context).pop();
+        }
       }
     });
   }
@@ -770,26 +770,21 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   Future<void> _updateDriverLocationInFirebase(Position position) async {
+    // Nombre conservado por compatibilidad con las llamadas existentes.
+    // Ahora reporta la posición del conductor al backend Node vía heartbeat.
+    // El endpoint /api/drivers/presence acepta activeRideId para asociar la
+    // localización al viaje activo (equivalente al `driverLocation` viejo).
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) return;
-
-      await _firestore.collection('drivers').doc(userId).update({
-        'currentLocation': GeoPoint(position.latitude, position.longitude),
-        'lastLocationUpdate': FieldValue.serverTimestamp(),
-        'heading': position.heading,
-        'speed': position.speed,
-      });
-
-      if (_tripId != null) {
-        await _firestore.collection('rides').doc(_tripId).update({
-          'driverLocation': GeoPoint(position.latitude, position.longitude),
-          'driverHeading': position.heading,
-          'lastDriverUpdate': FieldValue.serverTimestamp(),
-        });
-      }
+      await _api.heartbeat(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        heading: position.heading,
+        accuracy: position.accuracy,
+        speed: position.speed,
+        activeRideId: _tripId,
+      );
     } catch (e) {
-      Logger.error('Error actualizando ubicación en Firebase', e);
+      Logger.error('Error enviando heartbeat al backend', e);
     }
   }
 
@@ -898,10 +893,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (_tripId == null) return;
 
     try {
-      await _firestore.collection('rides').doc(_tripId).update({
-        'status': 'arrived',
-        'driverArrivedAt': FieldValue.serverTimestamp(),
-      });
+      await _api.markRideArrived(_tripId!);
     } catch (e) {
       Logger.error('Error actualizando llegada al punto de recogida', e);
     }
@@ -925,10 +917,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (_tripId == null) return;
 
     try {
-      await _firestore.collection('rides').doc(_tripId).update({
-        'status': 'arrived',
-        'arrivedAt': FieldValue.serverTimestamp(),
-      });
+      await _api.markRideArrived(_tripId!);
     } catch (e) {
       Logger.error('Error actualizando llegada del viaje', e);
     }
@@ -965,10 +954,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     await HapticFeedback.mediumImpact();
 
     try {
-      await _firestore.collection('rides').doc(_tripId).update({
-        'status': 'arrived',
-        'driverArrivedAt': FieldValue.serverTimestamp(),
-      });
+      await _api.markRideArrived(_tripId!);
 
       if (!mounted) return;
 
@@ -1005,11 +991,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       _waitingTimer?.cancel();
       _waitingTimer = null;
 
-      await _firestore.collection('rides').doc(_tripId).update({
-        'status': 'in_progress',
-        'startedAt': FieldValue.serverTimestamp(),
-        'waitingTimeSeconds': _waitingSeconds,
-      });
+      // TODO(node-migration): reemplazar con endpoint que reciba waitingTimeSeconds
+      // cuando el backend acepte ese campo. Por ahora sólo iniciamos el viaje.
+      await _api.startRide(_tripId!);
 
       if (!mounted) return;
 
@@ -1048,10 +1032,12 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (_tripId == null) return;
 
     try {
-      await _firestore.collection('rides').doc(_tripId).update({
-        'status': 'completed',
-        'completedAt': FieldValue.serverTimestamp(),
-      });
+      await _api.completeRide(
+        _tripId!,
+        finalFare: _fare,
+        distanceMeters: _totalDistance.round(),
+        durationSeconds: _totalTime * 60,
+      );
 
       if (!mounted) return;
 
@@ -1300,11 +1286,17 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     final mainNav = Navigator.of(context);
 
                                     if (_tripId != null) {
-                                      await _firestore.collection('rides').doc(_tripId).update({
-                                        'driverRating': rating,
-                                        'driverRatedAt': FieldValue.serverTimestamp(),
-                                        if (selectedTag.isNotEmpty) 'driverRatingTag': selectedTag,
-                                      });
+                                      // El conductor califica al pasajero mediante el endpoint /rate.
+                                      // El backend distingue quién califica por el JWT (role=driver).
+                                      try {
+                                        await _api.rateRide(
+                                          _tripId!,
+                                          stars: rating.toDouble(),
+                                          comment: selectedTag.isNotEmpty ? selectedTag : null,
+                                        );
+                                      } catch (e) {
+                                        Logger.error('Error enviando calificación', e);
+                                      }
                                     }
                                     if (!mounted) return;
                                     dialogNav.pop();

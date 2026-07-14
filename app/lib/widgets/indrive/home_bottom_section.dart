@@ -122,6 +122,10 @@ class HomeBottomSection extends StatelessWidget {
                   ],
                 ),
               ),
+              // Bottom safe area padding for navigation bar
+              SliverToBoxAdapter(
+                child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
+              ),
             ],
           ),
         );
@@ -271,7 +275,7 @@ class _RecentPlaces extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Text(
-                'Aun no tienes viajes recientes',
+                'Aún no tienes viajes recientes',
                 style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 14),
               ),
             )

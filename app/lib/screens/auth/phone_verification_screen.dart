@@ -138,10 +138,20 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
   
   Future<void> _startPhoneVerification() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     setState(() => _isLoading = true);
-    
-    final success = await authProvider.startPhoneVerification(widget.phoneNumber);
+
+    // El backend valida E.164 (con "+51" al inicio). Normalizamos.
+    String phone = widget.phoneNumber.replaceAll(' ', '');
+    if (phone.startsWith('+51')) {
+      // ya en E.164
+    } else if (phone.startsWith('51')) {
+      phone = '+$phone';
+    } else {
+      phone = '+51$phone';
+    }
+
+    final success = await authProvider.startPhoneVerification(phone);
     
     if (!mounted) return;
     
@@ -280,7 +290,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          // Padding horizontal de 32 para layout mas espacioso
+          // Padding horizontal de 32 para layout más espacioso
           padding: EdgeInsets.fromLTRB(32, 16, 32, MediaQuery.of(context).viewInsets.bottom + 16),
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -319,7 +329,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 32),
 
-                  // Titulo
+                  // Título
                   Text(
                     'Verificación de Teléfono',
                     style: TextStyle(
@@ -332,7 +342,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 12),
 
-                  // Subtitulo
+                  // Subtítulo
                   Text(
                     'Ingresa el código de 6 dígitos\nenviado al',
                     textAlign: TextAlign.center,
@@ -344,7 +354,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 12),
 
-                  // Numero de telefono
+                  // Número de teléfono
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     decoration: BoxDecoration(
@@ -363,7 +373,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 40),
 
-                  // Campo OTP mas grande: height 64, width 56, spacing 16
+                  // Campo OTP más grande: height 64, width 56, spacing 16
                   PinCodeTextField(
                     appContext: context,
                     length: 6,
@@ -380,7 +390,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
                     pinTheme: PinTheme(
                       shape: PinCodeFieldShape.box,
                       borderRadius: BorderRadius.circular(14),
-                      // Campos OTP mas grandes
+                      // Campos OTP más grandes
                       fieldHeight: 64,
                       fieldWidth: 56,
                       activeFillColor: Theme.of(context).colorScheme.surface,
@@ -424,7 +434,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 36),
 
-                  // Boton verificar
+                  // Botón verificar
                   AnimatedPulseButton(
                     text: 'Verificar Código',
                     icon: Icons.check_circle,
@@ -439,7 +449,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
 
                   const SizedBox(height: 36),
 
-                  // Informacion de seguridad
+                  // Información de seguridad
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -497,7 +507,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
     return Column(
       children: [
         if (!_canResend) ...[
-          // Circulo con progreso del timer
+          // Círculo con progreso del timer
           Stack(
             alignment: Alignment.center,
             children: [

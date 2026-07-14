@@ -1,8 +1,8 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -10,6 +10,8 @@ import '../../widgets/animated/modern_animated_widgets.dart';
 import '../shared/chat_screen.dart';
 import '../shared/rating_dialog.dart';
 import '../../services/sound_service.dart';
+import '../../services/rapi_api_client.dart';
+import '../../services/rapi_sse_client.dart';
 
 class TrackingScreen extends StatefulWidget {
   final String tripId;
@@ -73,9 +75,11 @@ class _TrackingScreenState extends State<TrackingScreen>
   late LatLng _passengerPosition;
   late LatLng _destinationPosition;
 
-  // Firestore subscription for real-time sync
-  StreamSubscription<DocumentSnapshot>? _tripSubscription;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Subscripciones al backend Node (SSE + polling ligero para el snapshot inicial)
+  StreamSubscription<Map<String, dynamic>>? _rideUpdatesSub;
+  StreamSubscription<Map<String, dynamic>>? _driverLocationSub;
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
 
   Timer? _etaTimer;
   bool _mapInitialized = false;
@@ -121,13 +125,14 @@ class _TrackingScreenState extends State<TrackingScreen>
       vsync: this,
     )..repeat(reverse: true);
 
-    // Start Firestore sync
+    // Start real-time sync vía backend (SSE + fetch inicial)
     _listenToTripChanges();
   }
 
   @override
   void dispose() {
-    _tripSubscription?.cancel();
+    _rideUpdatesSub?.cancel();
+    _driverLocationSub?.cancel();
 
     // Release MapController to avoid ImageReader buffer warnings
     _mapController?.dispose();
@@ -140,62 +145,124 @@ class _TrackingScreenState extends State<TrackingScreen>
     super.dispose();
   }
 
-  /// Listen to real-time trip changes from Firestore
+  /// Escucha cambios del viaje en tiempo real usando el SSE del backend Node.
+  /// Sustituye la suscripción previa a Firestore.
   void _listenToTripChanges() {
-    _tripSubscription = _firestore
-        .collection('rides')
-        .doc(widget.tripId)
-        .snapshots()
-        .listen((snapshot) {
+    // Fetch inicial para tener el estado sin esperar el próximo evento SSE.
+    _api.getRide(widget.tripId).then((data) {
       if (!mounted) return;
+      final ride = _extractRide(data);
+      _applyRideSnapshot(ride);
+    }).catchError((error) {
+      debugPrint('TrackingScreen: Error fetching ride: $error');
+    });
 
-      if (!snapshot.exists) {
-        debugPrint('TrackingScreen: Trip does not exist, exiting...');
-        Navigator.of(context).pop();
-        return;
-      }
+    _sse.start();
 
-      final data = snapshot.data()!;
-      final status = data['status'] as String? ?? 'accepted';
-      final driverLoc = data['driverLocation'] as GeoPoint?;
-
-      setState(() {
-        // Map Firestore status to local state
-        _tripStatus = _mapFirestoreStatus(status);
-
-        // Update driver location if available
-        if (driverLoc != null) {
-          _driverPosition = LatLng(driverLoc.latitude, driverLoc.longitude);
-          _updateDriverMarker();
-          _updateRoute();
-        }
-
-        // Calculate distance and estimated time
-        if (driverLoc != null) {
-          _distanceRemaining = _calculateDistanceKm(
-            _driverPosition,
-            _tripStatus == 'ontrip' ? _destinationPosition : _passengerPosition,
-          );
-          _minutesRemaining = (_distanceRemaining * 2).ceil();
-        }
-      });
-
-      // Show notification if driver arrived
-      if (status == 'arrived' || status == 'driver_arrived') {
-        _showArrivedNotification();
-      }
-
-      // If trip completed, show rating dialog
-      if (status == 'completed' && !_isCompleting) {
-        _showRatingDialog();
-      }
+    _rideUpdatesSub = _sse.rideUpdates.listen((event) {
+      if (!mounted) return;
+      final rideId = (event['rideId'] as String?) ??
+          (event['id'] as String?) ??
+          ((event['ride'] as Map<String, dynamic>?)?['id'] as String?);
+      if (rideId != widget.tripId) return;
+      _applyRideSnapshot(_extractRide(event));
     }, onError: (error) {
-      debugPrint('TrackingScreen: Error listening to trip: $error');
+      debugPrint('TrackingScreen: Error listening ride updates: $error');
+    });
+
+    _driverLocationSub = _sse.driverLocations.listen((event) {
+      if (!mounted) return;
+      final rideId = (event['rideId'] as String?) ?? (event['ride_id'] as String?);
+      if (rideId != null && rideId != widget.tripId) return;
+      final lat = (event['latitude'] ?? event['lat']) as num?;
+      final lng = (event['longitude'] ?? event['lng']) as num?;
+      if (lat == null || lng == null) return;
+      setState(() {
+        final oldPos = _driverPosition;
+        _driverPosition = LatLng(lat.toDouble(), lng.toDouble());
+        _updateDriverMarker();
+        _updateRoute();
+        if ((oldPos.latitude - _driverPosition.latitude).abs() > 0.001 ||
+            (oldPos.longitude - _driverPosition.longitude).abs() > 0.001) {
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngBounds(_getBounds(), 50),
+          );
+        }
+        _distanceRemaining = _calculateDistanceKm(
+          _driverPosition,
+          _tripStatus == 'ontrip' ? _destinationPosition : _passengerPosition,
+        );
+        _minutesRemaining = (_distanceRemaining * 2).ceil();
+      });
     });
   }
 
-  /// Map Firestore status to local UI state
-  String _mapFirestoreStatus(String status) {
+  /// Extrae el objeto `ride` de una respuesta HTTP o de un evento SSE
+  /// (puede venir como `{ ride: {...} }` o directamente el mapa raíz).
+  Map<String, dynamic> _extractRide(Map<String, dynamic> payload) {
+    final nested = payload['ride'];
+    if (nested is Map<String, dynamic>) return nested;
+    return payload;
+  }
+
+  /// Aplica al estado de la pantalla un snapshot del ride devuelto por el
+  /// backend (HTTP o SSE).
+  void _applyRideSnapshot(Map<String, dynamic> ride) {
+    if (ride.isEmpty) {
+      debugPrint('TrackingScreen: ride payload vacío, saliendo...');
+      Navigator.of(context).pop();
+      return;
+    }
+    final status = (ride['status'] as String?) ?? 'accepted';
+
+    // La ubicación del conductor puede venir de varias formas.
+    final rawDriverLoc = ride['driverLocation'] ?? ride['driver_location'];
+    double? driverLat;
+    double? driverLng;
+    if (rawDriverLoc is Map) {
+      final lat = rawDriverLoc['lat'] ?? rawDriverLoc['latitude'];
+      final lng = rawDriverLoc['lng'] ?? rawDriverLoc['longitude'];
+      if (lat is num && lng is num) {
+        driverLat = lat.toDouble();
+        driverLng = lng.toDouble();
+      }
+    } else if (ride['driverLat'] is num && ride['driverLng'] is num) {
+      driverLat = (ride['driverLat'] as num).toDouble();
+      driverLng = (ride['driverLng'] as num).toDouble();
+    }
+
+    setState(() {
+      _tripStatus = _mapBackendStatus(status);
+
+      if (driverLat != null && driverLng != null) {
+        final oldPos = _driverPosition;
+        _driverPosition = LatLng(driverLat, driverLng);
+        _updateDriverMarker();
+        _updateRoute();
+        if ((oldPos.latitude - _driverPosition.latitude).abs() > 0.001 ||
+            (oldPos.longitude - _driverPosition.longitude).abs() > 0.001) {
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngBounds(_getBounds(), 50),
+          );
+        }
+        _distanceRemaining = _calculateDistanceKm(
+          _driverPosition,
+          _tripStatus == 'ontrip' ? _destinationPosition : _passengerPosition,
+        );
+        _minutesRemaining = (_distanceRemaining * 2).ceil();
+      }
+    });
+
+    if (status == 'arrived' || status == 'driver_arrived') {
+      _showArrivedNotification();
+    }
+    if (status == 'completed' && !_isCompleting) {
+      _showRatingDialog();
+    }
+  }
+
+  /// Mapea el `status` que viene del backend Node al estado interno de la UI.
+  String _mapBackendStatus(String status) {
     switch (status) {
       case 'accepted':
       case 'driver_arriving':
@@ -231,7 +298,7 @@ class _TrackingScreenState extends State<TrackingScreen>
 
     // Center map if controller is available
     _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(_getBounds(), 100),
+      CameraUpdate.newLatLngBounds(_getBounds(), 50),
     );
   }
 
@@ -255,7 +322,7 @@ class _TrackingScreenState extends State<TrackingScreen>
       Polyline(
         polylineId: const PolylineId('route'),
         points: routePoints,
-        color: Colors.blue,
+        color: AppColors.rappiOrange,
         width: 5,
       ),
     );
@@ -299,7 +366,7 @@ class _TrackingScreenState extends State<TrackingScreen>
         position: _passengerPosition,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
         infoWindow: InfoWindow(
-          title: 'Tu ubicacion',
+          title: 'Tu ubicación',
           snippet: widget.pickupAddress,
         ),
       ),
@@ -402,12 +469,14 @@ class _TrackingScreenState extends State<TrackingScreen>
               target: _driverPosition,
               zoom: 15,
             ),
+            // Bottom sheet covers ~55% of screen, so add extra bottom padding
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.5),
             onMapCreated: (controller) {
               _mapController = controller;
-              // Center on markers
-              Future.delayed(const Duration(milliseconds: 500), () {
+              // Center on markers with delay so padding is applied
+              Future.delayed(const Duration(milliseconds: 800), () {
                 _mapController?.animateCamera(
-                  CameraUpdate.newLatLngBounds(_getBounds(), 100),
+                  CameraUpdate.newLatLngBounds(_getBounds(), 40),
                 );
               });
             },
@@ -905,7 +974,7 @@ class _TrackingScreenState extends State<TrackingScreen>
   void _shareLocation() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Compartiendo ubicacion en vivo'),
+        content: Text('Compartiendo ubicación en vivo'),
         backgroundColor: AppColors.info,
       ),
     );
@@ -916,7 +985,7 @@ class _TrackingScreenState extends State<TrackingScreen>
     if (widget.driverPhone == null || widget.driverPhone!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Telefono no disponible'),
+          content: Text('Teléfono no disponible'),
           backgroundColor: AppColors.warning,
         ),
       );
@@ -967,14 +1036,9 @@ class _TrackingScreenState extends State<TrackingScreen>
   }
 
   void _showEmergencyOptions() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      builder: (context) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -998,7 +1062,7 @@ class _TrackingScreenState extends State<TrackingScreen>
             ),
             ListTile(
               leading: const Icon(Icons.share_location, color: AppColors.warning),
-              title: const Text('Compartir ubicacion con contactos'),
+              title: const Text('Compartir ubicación con contactos'),
               onTap: () {
                 Navigator.pop(context);
                 // Share location
@@ -1045,17 +1109,16 @@ class _TrackingScreenState extends State<TrackingScreen>
               Navigator.pop(dialogContext);
 
               try {
-                // Update status in Firestore
-                await _firestore.collection('rides').doc(widget.tripId).update({
-                  'status': 'cancelled',
-                  'cancelledAt': FieldValue.serverTimestamp(),
-                  'cancelledBy': 'passenger',
-                });
+                // Cancelar en el backend Node
+                await _api.cancelRide(widget.tripId, reason: 'passenger_cancelled');
 
+                // Cancelar suscripción SSE antes de navegar para evitar
+                // double-pop cuando llegue el evento de ride cancelado.
+                await _rideUpdatesSub?.cancel();
+                _rideUpdatesSub = null;
+                await _driverLocationSub?.cancel();
+                _driverLocationSub = null;
                 if (mounted) {
-                  // Cancel Firestore listener before navigating to prevent double-pop
-                  _tripSubscription?.cancel();
-                  _tripSubscription = null;
                   Navigator.pop(context);
                 }
               } catch (e) {
@@ -1080,19 +1143,18 @@ class _TrackingScreenState extends State<TrackingScreen>
     );
   }
 
-  /// Complete trip and update Firestore
+  /// Marca el viaje como completado en el backend Node.
+  /// Nota: solo el conductor debería llegar a este flujo (finalizar viaje).
+  /// El pasajero verá el estado `completed` vía SSE cuando el driver lo dispare.
   Future<void> _completeTrip() async {
     if (_isCompleting) return;
     _isCompleting = true;
 
     try {
-      // Update status in Firestore
-      await _firestore.collection('rides').doc(widget.tripId).update({
-        'status': 'completed',
-        'completedAt': FieldValue.serverTimestamp(),
-      });
-
-      debugPrint('Trip completed in Firestore');
+      // La tarifa final la calcula el driver — aquí replicamos el precio
+      // mostrado como fallback. El backend recalcula/valida.
+      await _api.completeRide(widget.tripId, finalFare: widget.tripPrice);
+      debugPrint('Trip completed vía backend Node');
     } catch (e) {
       _isCompleting = false;
       debugPrint('Error completing trip: $e');

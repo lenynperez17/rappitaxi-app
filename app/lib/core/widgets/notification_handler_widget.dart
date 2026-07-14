@@ -1,10 +1,9 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter
 // ignore_for_file: library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../services/notification_service.dart';
-import '../../shared/providers/user_provider.dart';
+import '../../providers/auth_provider.dart';
 import 'dart:async';
 
 class NotificationHandlerWidget extends StatefulWidget {
@@ -22,8 +21,7 @@ class NotificationHandlerWidget extends StatefulWidget {
 class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
   final NotificationService _notificationService = NotificationService();
   StreamSubscription? _notificationStreamSubscription;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   @override
   void initState() {
     super.initState();
@@ -54,22 +52,12 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
     // Manejar la navegación según el payload
     if (payload.startsWith('ride:')) {
       final rideId = payload.substring(5);
-      // Navegar según el tipo de usuario real
-      final userType = _getUserType();
-      
-      if (userType == 'driver') {
-        Navigator.pushNamed(
-          context,
-          '/driver/ride-details',
-          arguments: {'rideId': rideId},
-        );
-      } else {
-        Navigator.pushNamed(
-          context,
-          '/passenger/ride-details',
-          arguments: {'rideId': rideId},
-        );
-      }
+      // Ambos roles usan la ruta shared para ver detalle del viaje.
+      Navigator.pushNamed(
+        context,
+        '/shared/trip-details',
+        arguments: {'rideId': rideId},
+      );
       
       debugPrint('Navegando al viaje: $rideId');
     } else if (payload == 'ride_request') {
@@ -87,36 +75,32 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
     } else if (payload == 'payment_received') {
       // Pago recibido para conductores
       _navigateToDriverEarnings();
-    } else if (payload == 'emergency') {
-      // Notificación de emergencia
-      _handleEmergencyNotification();
+    } else if (payload == 'emergency' || payload.startsWith('emergency:')) {
+      // Notificación de emergencia — payload puede ser 'emergency' (sin id)
+      // o 'emergency:<uuid>' con id de la emergencia específica.
+      final emergencyId = payload.startsWith('emergency:')
+        ? payload.substring('emergency:'.length)
+        : null;
+      _handleEmergencyNotification(emergencyId);
     } else if (payload == 'price_negotiation') {
       // Nueva negociación de precio
       _handlePriceNegotiation();
     }
   }
   
-  /// Obtener tipo de usuario real desde Firebase Auth y Provider
+  /// Obtener tipo de usuario real desde AuthProvider (backend Node/Postgres)
   String _getUserType() {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return 'guest';
-      
       // Verificar si el widget sigue montado antes de acceder al context
       if (!mounted) return 'passenger';
-      
-      // Obtener desde UserProvider si está disponible
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      if (userProvider.currentUser != null) {
-        // ✅ DUAL-ACCOUNT: Usar activeMode en lugar de userType
-        // activeMode retorna el modo actual ('driver' o 'passenger') incluso para cuentas dual
-        return userProvider.currentUser!.activeMode;
-      }
-      
-      // Fallback: determinar por claims personalizados
-      // En producción, esto vendría de Firebase Auth Custom Claims
-      return 'passenger'; // Default
-      
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user == null) return 'guest';
+
+      // ✅ DUAL-ACCOUNT: Usar activeMode en lugar de userType
+      // activeMode retorna el modo actual ('driver' o 'passenger') incluso para cuentas dual
+      return user.activeMode;
     } catch (e) {
       debugPrint('Error obteniendo tipo de usuario: $e');
       return 'passenger';
@@ -180,21 +164,20 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
   
   void _navigateToTripHistory() {
     if (!mounted) return;
-    
+
     final userType = _getUserType();
-    final routeName = userType == 'driver' 
-      ? '/driver/trip-history' 
+    final routeName = userType == 'driver'
+      ? '/driver/order-history'
       : '/passenger/trip-history';
     Navigator.pushNamed(context, routeName);
   }
-  
+
   void _navigateToDriverEarnings() {
     if (!mounted) return;
-    
-    Navigator.pushNamed(context, '/driver/earnings');
+    Navigator.pushNamed(context, '/driver/earnings-details');
   }
   
-  void _handleEmergencyNotification() {
+  void _handleEmergencyNotification([String? emergencyId]) {
     if (!mounted) return;
 
     showDialog(
@@ -216,7 +199,12 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               Navigator.pop(context);
-              Navigator.pushNamed(context, '/emergency/details');
+              // Solo navegar si tenemos un ID concreto — sin él la pantalla
+              // de detalle no puede cargar nada.
+              if (emergencyId != null && emergencyId.isNotEmpty) {
+                Navigator.pushNamed(context, '/shared/emergency-details',
+                  arguments: emergencyId);
+              }
             },
             child: Text(
               'Ver Emergencia',

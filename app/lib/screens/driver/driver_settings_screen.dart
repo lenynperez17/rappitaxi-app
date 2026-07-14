@@ -1,8 +1,7 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
@@ -29,28 +28,25 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     _loadSavedSettings();
   }
 
+  // Las preferencias de servicio del conductor (navegador, unidades de distancia)
+  // se guardan localmente en SharedPreferences hasta que el backend exponga
+  // un endpoint dedicado. No son sensibles y se recuperan por dispositivo.
   Future<void> _loadSavedSettings() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
     try {
-      final doc = await FirebaseFirestore.instance.collection('drivers').doc(uid).get();
-      final prefs = doc.data()?['servicePreferences'] ?? {};
+      final sp = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
-          _selectedNav = prefs['navigator'] ?? 'Google Maps';
-          _selectedUnits = prefs['distanceUnits'] ?? 'km';
+          _selectedNav = sp.getString('driver_pref_navigator') ?? 'Google Maps';
+          _selectedUnits = sp.getString('driver_pref_distanceUnits') ?? 'km';
         });
       }
     } catch (_) {}
   }
 
   Future<void> _saveDriverPref(String key, String value) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
     try {
-      await FirebaseFirestore.instance.collection('drivers').doc(uid).set({
-        'servicePreferences': {key: value},
-      }, SetOptions(merge: true));
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString('driver_pref_$key', value);
     } catch (_) {}
   }
 
@@ -278,9 +274,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                                   final authProvider = Provider.of<app.AuthProvider>(context, listen: false);
                                   Navigator.pop(ctx); // cierra dialog
                                   try {
-                                    await FirebaseAuth.instance.signOut();
-                                  } catch (_) {}
-                                  try {
                                     await authProvider.logout();
                                   } catch (_) {}
                                   rootNav.pushNamedAndRemoveUntil('/login', (route) => false);
@@ -406,10 +399,7 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
 
     try {
       await AccountDeletionService.deleteCurrentUserAccount();
-      // Logout local + navegación a login
-      try {
-        await FirebaseAuth.instance.signOut();
-      } catch (_) {/* el server ya borró el user, signOut puede fallar */}
+      // El servicio de eliminación ya limpia la sesión del backend Node.
       if (!context.mounted) return;
       navigator.pop(); // cierra spinner
       navigator.pushNamedAndRemoveUntil('/login', (_) => false);

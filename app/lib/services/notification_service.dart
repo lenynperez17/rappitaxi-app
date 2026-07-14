@@ -28,16 +28,80 @@ class NotificationService {
   /// Stream para escuchar notificaciones seleccionadas
   Stream<String>? get onNotificationSelected => _notificationSelectedController.stream;
   
-  /// Canal de notificaciones para Android
-  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'rappi_team_channel',
-    'Rappi Team Notifications',
-    description: 'Notificaciones de Rappi Team',
-    importance: Importance.max,
-    playSound: true,
-    enableLights: true,
-    enableVibration: true,
-  );
+  // Vibration pattern of 5 seconds (alternating buzzes)
+  // Format: [wait, vibrate, wait, vibrate, ...]
+  static final Int64List _longVibrationPattern =
+      Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000]);
+
+  /// Android notification channels - each with its own custom 5-second sound.
+  /// Sound files are in android/app/src/main/res/raw/ (without extension).
+  static final List<AndroidNotificationChannel> _channels = [
+    AndroidNotificationChannel(
+      'rappi_rides',
+      'Solicitudes de viaje',
+      description: 'Nuevas solicitudes de viaje y actualizaciones de estado',
+      importance: Importance.max,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('ride_request'),
+      enableLights: true,
+      ledColor: const Color(0xFFE31E24),
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+    ),
+    AndroidNotificationChannel(
+      'rappi_payments',
+      'Pagos y ganancias',
+      description: 'Notificaciones sobre pagos, ganancias y transacciones',
+      importance: Importance.max,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('trip_completed'),
+      enableLights: true,
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+    ),
+    AndroidNotificationChannel(
+      'rappi_emergency',
+      'Alertas de emergencia',
+      description: 'Alertas SOS y notificaciones de seguridad',
+      importance: Importance.max,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('emergency_alert'),
+      enableLights: true,
+      ledColor: const Color(0xFFFF0000),
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+    ),
+    AndroidNotificationChannel(
+      'rappi_chat',
+      'Mensajes',
+      description: 'Mensajes de chat con conductores y pasajeros',
+      importance: Importance.high,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('chat_message'),
+      enableLights: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 400, 200, 400]),
+    ),
+    AndroidNotificationChannel(
+      'rappi_promotions',
+      'Promociones',
+      description: 'Ofertas y promociones especiales',
+      importance: Importance.defaultImportance,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('ride_accepted'),
+      enableVibration: true,
+    ),
+    AndroidNotificationChannel(
+      'rappi_general',
+      'Notificaciones generales',
+      description: 'Notificaciones generales de Rappi Team',
+      importance: Importance.high,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('ride_accepted'),
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+    ),
+  ];
 
   /// Inicializar servicio de notificaciones
   Future<void> initialize() async {
@@ -48,9 +112,9 @@ class NotificationService {
     
     // Configuración iOS
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
 
     // Configuración general
@@ -65,12 +129,19 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Crear canal de notificaciones Android (solo si no es web)
+    // Crear TODOS los canales de notificaciones Android
     if (!kIsWeb && Platform.isAndroid) {
-      await _flutterLocalNotificationsPlugin
+      final androidPlugin = _flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(_channel);
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        // Request POST_NOTIFICATIONS permission (Android 13+)
+        await androidPlugin.requestNotificationsPermission();
+        // Create every channel with its own custom sound
+        for (final channel in _channels) {
+          await androidPlugin.createNotificationChannel(channel);
+        }
+      }
     }
 
     // Configurar handlers de Firebase Messaging
@@ -102,12 +173,14 @@ class NotificationService {
   /// Handler para mensajes en primer plano
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📱 Mensaje recibido en primer plano: ${message.messageId}');
-    
-    // Mostrar notificación local
+
+    // Mostrar notificación local con canal apropiado segun el tipo
     await showNotification(
       title: message.notification?.title ?? 'Nueva notificación',
       body: message.notification?.body ?? '',
       payload: json.encode(message.data),
+      type: message.data['type'] as String?,
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
   }
 
@@ -117,34 +190,121 @@ class NotificationService {
     _handleNotificationClick(message.data);
   }
 
+  /// Get the channel ID based on notification type
+  String _channelIdForType(String? type) {
+    switch (type) {
+      case 'ride':
+      case 'rideRequest':
+      case 'tripRequest':
+      case 'tripAccepted':
+      case 'tripStarted':
+      case 'driverArrived':
+        return 'rappi_rides';
+      case 'payment':
+      case 'paymentSuccess':
+      case 'paymentFailed':
+      case 'tripCompleted':
+        return 'rappi_payments';
+      case 'emergency':
+      case 'securityAlert':
+      case 'sos':
+        return 'rappi_emergency';
+      case 'chat':
+      case 'chatMessage':
+      case 'message':
+        return 'rappi_chat';
+      case 'promotion':
+      case 'discount':
+      case 'offer':
+        return 'rappi_promotions';
+      default:
+        return 'rappi_general';
+    }
+  }
+
+  /// iOS sound filename by notification type (with extension)
+  String _iosSoundForType(String? type) {
+    switch (type) {
+      case 'ride':
+      case 'rideRequest':
+      case 'tripRequest':
+      case 'tripAccepted':
+      case 'tripStarted':
+      case 'driverArrived':
+        return 'ride_request.wav';
+      case 'payment':
+      case 'paymentSuccess':
+      case 'paymentFailed':
+      case 'tripCompleted':
+        return 'trip_completed.wav';
+      case 'emergency':
+      case 'securityAlert':
+      case 'sos':
+        return 'emergency_alert.wav';
+      case 'chat':
+      case 'chatMessage':
+      case 'message':
+        return 'chat_message.wav';
+      case 'promotion':
+      case 'discount':
+      case 'offer':
+        return 'ride_accepted.wav';
+      default:
+        return 'ride_accepted.wav';
+    }
+  }
+
+  /// Build AndroidNotificationDetails for the given channel id
+  AndroidNotificationDetails _androidDetailsForChannel(String channelId) {
+    final channel = _channels.firstWhere(
+      (c) => c.id == channelId,
+      orElse: () => _channels.last,
+    );
+    return AndroidNotificationDetails(
+      channel.id,
+      channel.name,
+      channelDescription: channel.description,
+      importance: channel.importance,
+      priority: Priority.max,
+      ticker: 'Rappi Team',
+      icon: '@mipmap/ic_launcher',
+      color: const Color(0xFFE31E24),
+      playSound: true,
+      sound: channel.sound,
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+      enableLights: true,
+      ledColor: const Color(0xFFE31E24),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+      fullScreenIntent: channelId == 'rappi_rides' || channelId == 'rappi_emergency',
+      category: channelId == 'rappi_emergency'
+          ? AndroidNotificationCategory.alarm
+          : AndroidNotificationCategory.call,
+      visibility: NotificationVisibility.public,
+    );
+  }
+
   /// Mostrar notificación local
   Future<void> showNotification({
     required String title,
     required String body,
     String? payload,
     int id = 0,
+    String? type,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
-      'rappi_team_channel',
-      'Rappi Team Notifications',
-      channelDescription: 'Notificaciones de Rappi Team',
-      importance: Importance.max,
-      priority: Priority.high,
-      ticker: 'ticker',
-      icon: '@mipmap/ic_launcher',
-      color: Color(0xFF4CAF50),
-      playSound: true,
-      enableVibration: true,
-      enableLights: true,
-    );
+    final channelId = _channelIdForType(type);
+    final androidDetails = _androidDetailsForChannel(channelId);
 
-    const iosDetails = DarwinNotificationDetails(
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      sound: _iosSoundForType(type),
+      interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
-    const notificationDetails = NotificationDetails(
+    final notificationDetails = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -172,6 +332,7 @@ class NotificationService {
         'data': rideData,
       }),
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      type: 'rideRequest',
     );
   }
 
@@ -189,6 +350,7 @@ class NotificationService {
         'chatId': chatId,
       }),
       id: chatId.hashCode,
+      type: 'chatMessage',
     );
   }
 
@@ -206,6 +368,37 @@ class NotificationService {
         'code': promoCode,
       }),
       id: promoCode.hashCode,
+      type: 'promotion',
+    );
+  }
+
+  /// Mostrar notificación de emergencia / SOS
+  Future<void> showEmergencyNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    await showNotification(
+      title: title,
+      body: body,
+      payload: json.encode({'type': 'emergency', 'data': data ?? {}}),
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      type: 'emergency',
+    );
+  }
+
+  /// Mostrar notificación de pago
+  Future<void> showPaymentNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? data,
+  }) async {
+    await showNotification(
+      title: title,
+      body: body,
+      payload: json.encode({'type': 'payment', 'data': data ?? {}}),
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      type: 'payment',
     );
   }
 
@@ -241,7 +434,10 @@ class NotificationService {
     
     switch (type) {
       case 'ride':
-        final rideId = data['data']['rideId'] ?? '';
+        // Backend puede enviar payload plano `{type:"ride", rideId:"..."}` o
+        // anidado `{type:"ride", data:{rideId:"..."}}`. Aceptar ambos sin crash.
+        final nested = data['data'];
+        final rideId = (nested is Map ? (nested['rideId'] ?? '') : (data['rideId'] ?? '')).toString();
         payload = 'ride:$rideId';
         debugPrint('Navegar a viaje: $rideId');
         break;

@@ -8,9 +8,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:csv/csv.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart'; // ✅ NUEVO
 import '../../providers/auth_provider.dart'; // ✅ NUEVO
+import '../../services/rapi_api_client.dart'; // ✅ Backend Node
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 
@@ -195,25 +195,31 @@ class _MetricsScreenState extends State<MetricsScreen>
           startDate = now.subtract(Duration(days: 7));
       }
 
-      // Consultar viajes completados en Firebase (sin índice requerido)
-      // NOTA: Esta query NO requiere índice compuesto porque solo filtra por driverId y status
-      // ✅ IMPORTANTE: limit(100) requerido por reglas de Firestore
-      final ridesSnapshot = await FirebaseFirestore.instance
-          .collection('rides')
-          .where('driverId', isEqualTo: driverId)
-          .where('status', isEqualTo: 'completed')
-          .limit(100)
-          .get();
+      // Consultar viajes completados desde el backend Node.
+      // El backend infiere el conductor a partir del JWT (role='driver').
+      final ridesResponse = await RapiApiClient.instance.listRides(
+        role: 'driver',
+        status: 'completed',
+        pageSize: 100,
+      );
+      final ridesRaw = (ridesResponse['rides'] ??
+              ridesResponse['items'] ??
+              ridesResponse['data']) as List?;
+      final ridesList = ridesRaw?.whereType<Map<String, dynamic>>().toList() ?? const <Map<String, dynamic>>[];
 
-      // Filtrar por fecha en memoria (para evitar crear más índices)
-      // Usar completedAt o requestedAt como fallback
-      final filteredRides = ridesSnapshot.docs.where((doc) {
-        final data = doc.data();
-        final completedAt = data['completedAt'] as Timestamp?;
-        final requestedAt = data['requestedAt'] as Timestamp?;
+      // Helper local para parsear timestamps ISO 8601 provenientes del backend.
+      DateTime? parseIsoDate(dynamic value) {
+        if (value is String) return DateTime.tryParse(value);
+        return null;
+      }
+
+      // Filtrar por fecha en memoria (usar completedAt o requestedAt como fallback).
+      final filteredRides = ridesList.where((data) {
+        final completedAt = parseIsoDate(data['completedAt']);
+        final requestedAt = parseIsoDate(data['requestedAt']);
         final dateToCheck = completedAt ?? requestedAt;
         if (dateToCheck == null) return false;
-        return dateToCheck.toDate().isAfter(startDate);
+        return dateToCheck.isAfter(startDate);
       }).toList();
 
       // Calcular métricas generales
@@ -246,12 +252,11 @@ class _MetricsScreenState extends State<MetricsScreen>
       final Map<String, Map<String, dynamic>> zonesMap = {};
 
       // Procesar cada viaje
-      for (var doc in filteredRides) {
-        final data = doc.data();
+      for (final data in filteredRides) {
         final fare = (data['fare'] as num?)?.toDouble() ?? 0.0;
         final distance = (data['distance'] as num?)?.toDouble() ?? 0.0;
         final rating = (data['rating'] as num?)?.toDouble();
-        final completedAt = (data['completedAt'] as Timestamp?)?.toDate();
+        final completedAt = parseIsoDate(data['completedAt']);
 
         totalEarnings += fare;
         totalDistance += distance;
@@ -386,7 +391,7 @@ class _MetricsScreenState extends State<MetricsScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Mis Metricas',
+              'Mis Métricas',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
             ),
             Text(
@@ -450,8 +455,8 @@ class _MetricsScreenState extends State<MetricsScreen>
   Widget _buildMiniChartsGrid() {
     final metrics = [
       {'label': 'Viajes', 'value': _currentMetrics['totalTrips'], 'max': 50, 'color': ModernTheme.primaryBlue, 'icon': Icons.route},
-      {'label': 'Calificacion', 'value': _currentMetrics['avgRating'], 'max': 5.0, 'color': ModernTheme.accentYellow, 'icon': Icons.star},
-      {'label': 'Aceptacion', 'value': _currentMetrics['acceptanceRate'], 'max': 100, 'color': Colors.purple, 'icon': Icons.check_circle},
+      {'label': 'Calificación', 'value': _currentMetrics['avgRating'], 'max': 5.0, 'color': ModernTheme.accentYellow, 'icon': Icons.star},
+      {'label': 'Aceptación', 'value': _currentMetrics['acceptanceRate'], 'max': 100, 'color': Colors.purple, 'icon': Icons.check_circle},
       {'label': 'Horas online', 'value': _currentMetrics['onlineHours'], 'max': 12, 'color': ModernTheme.rappiOrange, 'icon': Icons.timer},
     ];
     return Padding(

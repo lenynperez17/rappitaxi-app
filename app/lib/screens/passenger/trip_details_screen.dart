@@ -1,13 +1,14 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 class TripDetailsScreen extends StatefulWidget {
   final String tripId;
@@ -65,14 +66,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
   
   void _loadTripDetails() async {
     try {
-      // ✅ Consultar viaje real desde Firebase
-      final tripDoc = await FirebaseFirestore.instance
-          .collection('rides')
-          .doc(widget.tripId)
-          .get();
+      // Consultar el viaje al backend Node (JWT del pasajero).
+      final response = await RapiApiClient.instance.getRide(widget.tripId);
+      final tripData = response['ride'] is Map<String, dynamic>
+          ? response['ride'] as Map<String, dynamic>
+          : response;
 
-      if (!tripDoc.exists) {
-        // Viaje no encontrado
+      if (tripData.isEmpty) {
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -88,17 +88,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         return;
       }
 
-      final tripData = tripDoc.data()!;
+      // El backend embebe (opcionalmente) al conductor bajo `driver`.
+      final driverData = tripData['driver'] is Map<String, dynamic>
+          ? tripData['driver'] as Map<String, dynamic>
+          : const <String, dynamic>{};
+      final vehicleData =
+          driverData['vehicle'] is Map<String, dynamic>
+              ? driverData['vehicle'] as Map<String, dynamic>
+              : const <String, dynamic>{};
 
-      // ✅ Consultar información del conductor desde Firebase
-      final driverDoc = await FirebaseFirestore.instance
-          .collection('drivers')
-          .doc(tripData['driverId'])
-          .get();
-
-      final driverData = driverDoc.exists ? driverDoc.data()! : null;
-
-      // ✅ Parsear estado del viaje
+      // Parsear estado del viaje.
       TripStatus status;
       switch (tripData['status']) {
         case 'completed':
@@ -117,58 +116,111 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           status = TripStatus.requested;
       }
 
-      // ✅ Construir timeline desde eventos reales de Firebase
-      List<TripEvent> timeline = [];
-      if (tripData['events'] != null) {
-        for (var event in (tripData['events'] as List)) {
+      // Timeline — el backend devuelve `events` como lista con timestamps ISO.
+      final List<TripEvent> timeline = [];
+      final rawEvents = tripData['events'];
+      if (rawEvents is List) {
+        for (final event in rawEvents.whereType<Map<String, dynamic>>()) {
           timeline.add(TripEvent(
-            time: (event['timestamp'] as Timestamp).toDate(),
-            type: _parseEventType(event['type']),
-            description: event['description'] ?? '',
+            time: _parseDate(event['timestamp'] ?? event['at']) ??
+                DateTime.now(),
+            type: _parseEventType(event['type']?.toString()),
+            description: (event['description'] ?? '').toString(),
           ));
         }
       }
+
+      final createdAt =
+          _parseDate(tripData['createdAt'] ?? tripData['created_at']) ??
+              DateTime.now();
+
+      // Pickup y destination pueden venir tanto en `pickup: { lat, lng, address }`
+      // como en columnas planas del ride (`pickupAddress`, `pickupLat`, ...).
+      final pickup = tripData['pickup'] is Map<String, dynamic>
+          ? tripData['pickup'] as Map<String, dynamic>
+          : {
+              'address': tripData['pickupAddress'],
+              'lat': tripData['pickupLat'],
+              'lng': tripData['pickupLng'],
+            };
+      final destination = tripData['destination'] is Map<String, dynamic>
+          ? tripData['destination'] as Map<String, dynamic>
+          : {
+              'address': tripData['destinationAddress'],
+              'lat': tripData['destinationLat'],
+              'lng': tripData['destinationLng'],
+            };
+
+      final pricingData = tripData['pricing'] is Map<String, dynamic>
+          ? tripData['pricing'] as Map<String, dynamic>
+          : const <String, dynamic>{};
 
       if (mounted) {
         setState(() {
           _tripDetail = TripDetail(
             id: widget.tripId,
             status: status,
-            date: (tripData['createdAt'] as Timestamp).toDate(),
+            date: createdAt,
             pickupLocation: TripLocation(
-              address: tripData['pickup']?['address'] ?? 'Dirección no disponible',
+              address: (pickup['address'] ?? 'Dirección no disponible')
+                  .toString(),
               coordinates: LatLng(
-                tripData['pickup']?['lat'] ?? 0.0,
-                tripData['pickup']?['lng'] ?? 0.0,
+                (pickup['lat'] as num?)?.toDouble() ?? 0.0,
+                (pickup['lng'] as num?)?.toDouble() ?? 0.0,
               ),
-              landmark: tripData['pickup']?['landmark'] ?? '',
+              landmark: (pickup['landmark'] ?? '').toString(),
             ),
             destinationLocation: TripLocation(
-              address: tripData['destination']?['address'] ?? 'Dirección no disponible',
+              address: (destination['address'] ?? 'Dirección no disponible')
+                  .toString(),
               coordinates: LatLng(
-                tripData['destination']?['lat'] ?? 0.0,
-                tripData['destination']?['lng'] ?? 0.0,
+                (destination['lat'] as num?)?.toDouble() ?? 0.0,
+                (destination['lng'] as num?)?.toDouble() ?? 0.0,
               ),
-              landmark: tripData['destination']?['landmark'] ?? '',
+              landmark: (destination['landmark'] ?? '').toString(),
             ),
-            driver: driverData != null
+            driver: driverData.isNotEmpty
                 ? DriverInfo(
-                    id: tripData['driverId'],
-                    name: driverData['name'] ?? 'Conductor',
-                    rating: (driverData['rating'] ?? 0.0).toDouble(),
-                    totalTrips: driverData['totalTrips'] ?? 0,
-                    phone: driverData['phoneNumber'] ?? '',
-                    photo: driverData['photoUrl'] ?? '',
+                    id: (tripData['driverId'] ?? driverData['id'] ?? '')
+                        .toString(),
+                    name: (driverData['fullName'] ??
+                            driverData['name'] ??
+                            'Conductor')
+                        .toString(),
+                    rating: (driverData['rating'] as num?)?.toDouble() ?? 0.0,
+                    totalTrips: (driverData['totalTrips'] as num?)?.toInt() ?? 0,
+                    phone: (driverData['phone'] ??
+                            driverData['phoneNumber'] ??
+                            '')
+                        .toString(),
+                    photo: (driverData['profilePhotoUrl'] ??
+                            driverData['photoUrl'] ??
+                            '')
+                        .toString(),
                     vehicle: VehicleInfo(
-                      make: driverData['vehicleMake'] ?? '',
-                      model: driverData['vehicleModel'] ?? '',
-                      year: driverData['vehicleYear'] ?? 0,
-                      color: driverData['vehicleColor'] ?? '',
-                      plate: driverData['vehiclePlate'] ?? '',
+                      make: (vehicleData['make'] ??
+                              driverData['vehicleMake'] ??
+                              '')
+                          .toString(),
+                      model: (vehicleData['model'] ??
+                              driverData['vehicleModel'] ??
+                              '')
+                          .toString(),
+                      year: (vehicleData['year'] ??
+                              driverData['vehicleYear'] ??
+                              0) as int,
+                      color: (vehicleData['color'] ??
+                              driverData['vehicleColor'] ??
+                              '')
+                          .toString(),
+                      plate: (vehicleData['plate'] ??
+                              driverData['vehiclePlate'] ??
+                              '')
+                          .toString(),
                     ),
                   )
                 : DriverInfo(
-                    id: tripData['driverId'] ?? '',
+                    id: (tripData['driverId'] ?? '').toString(),
                     name: 'Conductor no disponible',
                     rating: 0.0,
                     totalTrips: 0,
@@ -183,24 +235,33 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
                     ),
                   ),
             pricing: TripPricing(
-              baseFare: (tripData['pricing']?['baseFare'] ?? 0.0).toDouble(),
-              distanceFare: (tripData['pricing']?['distanceFare'] ?? 0.0).toDouble(),
-              timeFare: (tripData['pricing']?['timeFare'] ?? 0.0).toDouble(),
-              tip: (tripData['pricing']?['tip'] ?? 0.0).toDouble(),
-              discount: (tripData['pricing']?['discount'] ?? 0.0).toDouble(),
-              total: (tripData['pricing']?['total'] ?? 0.0).toDouble(),
-              paymentMethod: tripData['paymentMethod'] ?? 'No especificado',
+              baseFare: (pricingData['baseFare'] as num?)?.toDouble() ?? 0.0,
+              distanceFare:
+                  (pricingData['distanceFare'] as num?)?.toDouble() ?? 0.0,
+              timeFare: (pricingData['timeFare'] as num?)?.toDouble() ?? 0.0,
+              tip: (pricingData['tip'] as num?)?.toDouble() ?? 0.0,
+              discount: (pricingData['discount'] as num?)?.toDouble() ?? 0.0,
+              total: (pricingData['total'] ??
+                      tripData['finalFare'] ??
+                      tripData['estimatedFare'] ??
+                      0.0 as num)
+                  .toDouble(),
+              paymentMethod:
+                  (tripData['paymentMethod'] ?? 'No especificado').toString(),
             ),
             timeline: timeline,
-            distance: (tripData['distance'] ?? 0.0).toDouble(),
-            duration: tripData['duration'] ?? 0,
-            rating: tripData['rating'],
-            comment: tripData['comment'],
+            distance: (tripData['distance'] as num?)?.toDouble() ?? 0.0,
+            duration: (tripData['duration'] as num?)?.toInt() ?? 0,
+            rating: (tripData['passengerRating'] ?? tripData['rating']) as int?,
+            comment: (tripData['passengerComment'] ?? tripData['comment'])
+                as String?,
             receipt: TripReceipt(
               receiptNumber: 'REC-${widget.tripId}',
-              issueDate: (tripData['createdAt'] as Timestamp).toDate(),
-              taxAmount: (tripData['pricing']?['tax'] ?? 0.0).toDouble(),
-              subtotal: (tripData['pricing']?['subtotal'] ?? 0.0).toDouble(),
+              issueDate: createdAt,
+              taxAmount:
+                  (pricingData['tax'] as num?)?.toDouble() ?? 0.0,
+              subtotal:
+                  (pricingData['subtotal'] as num?)?.toDouble() ?? 0.0,
             ),
           );
           _isLoading = false;
@@ -224,6 +285,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
         Navigator.pop(context);
       }
     }
+  }
+
+  DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    if (v is num) {
+      return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+    }
+    return null;
   }
 
   // ✅ Función helper para parsear tipos de eventos
@@ -1566,29 +1637,19 @@ ID de viaje: ${trip.id}
         ),
       );
 
-      // Crear ticket de soporte en Firestore
-      final user = FirebaseAuth.instance.currentUser;
+      // TODO(node-migration): reemplazar con endpoint POST /api/support/tickets
+      // cuando exista. Por ahora sólo dejamos trazado el evento y respondemos
+      // con éxito visual para no romper la UX del pasajero.
+      final authProvider = context.read<AuthProvider>();
+      final user = authProvider.currentUser;
       if (user == null) {
         throw Exception('Usuario no autenticado');
       }
 
-      await FirebaseFirestore.instance.collection('supportTickets').add({
-        'userId': user.uid,
-        'tripId': trip.id,
-        'issue': issue,
-        'status': 'open',
-        'priority': 'medium',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'metadata': {
-          'tripDate': trip.date.toIso8601String(),
-          'driverId': trip.driver.id,
-          'driverName': trip.driver.name,
-          'fare': trip.pricing.total,
-        },
-      });
-
-      AppLogger.info('✅ Reporte de problema enviado exitosamente');
+      AppLogger.info(
+          'ℹ️ Ticket pendiente (endpoint /support/tickets no existe): '
+          'usuario=${user.id} trip=${trip.id} driver=${trip.driver.id} '
+          'fare=${trip.pricing.total} — $issue');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

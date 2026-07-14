@@ -1,12 +1,14 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../../generated/l10n/app_localizations.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 
+import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 class RatingsHistoryScreen extends StatefulWidget {
   const RatingsHistoryScreen({super.key});
 
@@ -16,7 +18,7 @@ class RatingsHistoryScreen extends StatefulWidget {
 
 class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
   String? _userId; // Se obtendrá del usuario actual
   bool _isLoading = true;
   
@@ -67,16 +69,17 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
       duration: Duration(milliseconds: 1000),
       vsync: this,
     )..forward();
-    
-    _loadRatingsFromFirebase();
+
+    _loadRatingsFromApi();
   }
-  
-  Future<void> _loadRatingsFromFirebase() async {
+
+  Future<void> _loadRatingsFromApi() async {
     try {
       setState(() => _isLoading = true);
 
-      // ✅ Obtener el ID del usuario autenticado desde Firebase Auth
-      final currentUser = FirebaseAuth.instance.currentUser;
+      // El pasajero autenticado sale del JWT vía AuthProvider.
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.currentUser;
       if (currentUser == null) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -89,49 +92,44 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
         }
         return;
       }
-      _userId = currentUser.uid;
-      
-      // Cargar calificaciones del usuario desde Firebase
-      final ridesSnapshot = await _firestore
-          .collection('rides')
-          .where('passengerId', isEqualTo: _userId)
-          .where('rating', isNotEqualTo: null)
-          .orderBy('rating')
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-      
-      List<RatingData> loadedRatings = [];
-      
-      for (var doc in ridesSnapshot.docs) {
-        final data = doc.data();
-        
-        // Obtener información del conductor
-        String driverName = 'Conductor';
-        String driverPhoto = '';
-        
-        if (data['driverId'] != null) {
-          try {
-            final driverDoc = await _firestore
-                .collection('users')
-                .doc(data['driverId'])
-                .get();
-            
-            if (driverDoc.exists) {
-              final driverData = driverDoc.data()!;
-              driverName = '${driverData['firstName'] ?? ''} ${driverData['lastName'] ?? ''}'.trim();
-              if (driverName.isEmpty) driverName = 'Conductor';
-              driverPhoto = driverData['profileImage'] ?? '';
-            }
-          } catch (e) {
-            AppLogger.error('Error obteniendo datos del conductor: $e');
-          }
-        }
-        
-        // Generar tags basados en la calificación
-        // NOTA: Los tags se guardan como claves de traducción, se traducirán al mostrarlos
-        List<String> tags = [];
-        final rating = data['rating'] ?? 0;
+      _userId = currentUser.id;
+
+      // Historial de viajes completados del pasajero — filtramos en cliente
+      // por los que tienen calificación asignada.
+      final response = await _api.listRides(
+        role: 'passenger',
+        status: 'completed',
+        pageSize: 50,
+      );
+      final rides = _extractList(response, ['rides', 'items', 'data']);
+
+      final List<RatingData> loadedRatings = [];
+      for (final data in rides) {
+        final rawRating = data['passengerRating'] ?? data['rating'];
+        if (rawRating == null) continue;
+        final rating = (rawRating as num).toInt();
+        if (rating <= 0) continue;
+
+        // Información del conductor puede venir embebida en el ride
+        // (`driver: { fullName, profilePhotoUrl }`).
+        final driver = data['driver'] is Map<String, dynamic>
+            ? data['driver'] as Map<String, dynamic>
+            : const <String, dynamic>{};
+        String driverName = (driver['fullName'] ??
+                driver['full_name'] ??
+                data['driverName'] ??
+                'Conductor')
+            .toString()
+            .trim();
+        if (driverName.isEmpty) driverName = 'Conductor';
+        final driverPhoto = (driver['profilePhotoUrl'] ??
+                driver['profile_photo_url'] ??
+                data['driverPhoto'] ??
+                '')
+            .toString();
+
+        // Tags derivados de la calificación (misma lógica de UX previa).
+        List<String> tags;
         if (rating >= 5) {
           tags = ['excellentService', 'verySatisfied'];
         } else if (rating >= 4) {
@@ -141,34 +139,38 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
         } else {
           tags = ['needsImprovement', 'dissatisfied'];
         }
-        
+
+        final createdAt = _parseDate(data['createdAt'] ?? data['created_at']) ??
+            DateTime.now();
+
+        final rideId = (data['id'] ?? '').toString();
         loadedRatings.add(RatingData(
-          id: doc.id,
-          tripId: doc.id,
+          id: rideId,
+          tripId: rideId,
           driverName: driverName,
           driverPhoto: driverPhoto,
-          date: data['createdAt'] != null 
-              ? (data['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
-          rating: data['rating'] ?? 0,
-          comment: data['ratingComment'] ?? '',
+          date: createdAt,
+          rating: rating,
+          comment: (data['passengerComment'] ?? data['ratingComment'] ?? '')
+              .toString(),
           tags: tags,
-          route: '${data['pickupAddress'] ?? 'Origen'} → ${data['destinationAddress'] ?? 'Destino'}',
-          tripAmount: (data['fare'] ?? 0.0).toDouble(),
+          route:
+              '${data['pickupAddress'] ?? data['pickup_address'] ?? 'Origen'} → ${data['destinationAddress'] ?? data['destination_address'] ?? 'Destino'}',
+          tripAmount:
+              (data['finalFare'] ?? data['fare'] ?? 0.0 as num).toDouble(),
         ));
       }
-      
-      // Si no hay calificaciones, mostrar lista vacía (sin crear datos de ejemplo)
-      
+
+      if (!mounted) return;
       setState(() {
         _ratings = loadedRatings;
         _isLoading = false;
       });
-      
     } catch (e) {
       AppLogger.error('Error cargando calificaciones: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -178,6 +180,29 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
         );
       }
     }
+  }
+
+  /// Extrae una lista desde una respuesta HTTP buscando alguna de las llaves
+  /// más comunes que devuelve el backend.
+  List<Map<String, dynamic>> _extractList(
+      Map<String, dynamic> response, List<String> keys) {
+    for (final key in keys) {
+      final v = response[key];
+      if (v is List) {
+        return v.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return const [];
+  }
+
+  DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    if (v is num) {
+      return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+    }
+    return null;
   }
   
   
@@ -651,10 +676,8 @@ class _RatingsHistoryScreenState extends State<RatingsHistoryScreen>
   }
   
   void _showRatingDetails(RatingData rating) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (context) => RatingDetailsModal(rating: rating),
     );
   }

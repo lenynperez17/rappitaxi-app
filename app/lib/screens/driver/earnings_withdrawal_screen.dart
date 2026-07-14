@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 // ignore_for_file: library_private_types_in_public_api
 import 'package:flutter/services.dart';
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/payment_service.dart';
 import '../../services/firebase_service.dart';
+import '../../services/rapi_api_client.dart';
 import '../../widgets/loading_overlay.dart';
 
 import '../../utils/logger.dart';
@@ -131,57 +131,66 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
 
   Future<void> _loadDriverEarnings() async {
     try {
-      // En un escenario real, esto vendría del backend
-      final driverDoc = await _firebaseService.firestore
-          .collection('drivers')
-          .doc(widget.driverId)
-          .get();
+      // Balance disponible en la billetera del driver.
+      final w = await RapiApiClient.instance.walletBalance();
+      final balance = (w['balance'] ?? w['available'] ?? 0);
+      final total = (w['totalEarnings'] ?? w['total_earnings'] ?? balance);
+      final pending = (w['pendingWithdrawals'] ?? w['pending_withdrawals'] ?? 0);
+      final withdrawn = (w['totalWithdrawn'] ?? w['total_withdrawn'] ?? 0);
 
-      if (driverDoc.exists) {
-        final data = driverDoc.data() ?? {};
-        setState(() {
-          _totalEarnings = (data['totalEarnings'] ?? 0.0).toDouble();
-          _availableForWithdrawal = (data['availableForWithdrawal'] ?? 0.0).toDouble();
-          _pendingWithdrawals = (data['pendingWithdrawals'] ?? 0.0).toDouble();
-          _totalWithdrawn = (data['totalWithdrawn'] ?? 0.0).toDouble();
-        });
-      }
+      setState(() {
+        _totalEarnings = (total is num ? total : 0).toDouble();
+        _availableForWithdrawal = (balance is num ? balance : 0).toDouble();
+        _pendingWithdrawals = (pending is num ? pending : 0).toDouble();
+        _totalWithdrawn = (withdrawn is num ? withdrawn : 0).toDouble();
+      });
     } catch (e) {
       _showErrorSnackBar('Error cargando ganancias: $e');
     }
   }
 
-  // ✅ Cargar historial de ganancias real desde Firebase
+  // ✅ Cargar historial de ganancias desde el backend Node.
   Future<void> _loadEarningsHistory() async {
     try {
-      // ✅ Consultar rides completados agrupados por período
+      // Traer los rides completados una sola vez y agregar por semana.
+      final resp = await RapiApiClient.instance.listRides(
+        role: 'driver',
+        status: 'completed',
+        pageSize: 500,
+      );
+      final rawList = (resp['rides'] as List?) ?? const [];
+
+      DateTime? _parseIso(dynamic v) {
+        if (v is String) return DateTime.tryParse(v);
+        return null;
+      }
+
       final now = DateTime.now();
       final periods = <String, EarningsPeriod>{};
 
-      // Últimas 4 semanas
       for (int i = 0; i < 4; i++) {
         final weekStart = now.subtract(Duration(days: (i + 1) * 7));
         final weekEnd = now.subtract(Duration(days: i * 7));
 
-        final ridesSnapshot = await FirebaseFirestore.instance
-            .collection('rides')
-            .where('driverId', isEqualTo: widget.driverId)
-            .where('status', isEqualTo: 'completed')
-            .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
-            .where('completedAt', isLessThan: Timestamp.fromDate(weekEnd))
-            .get();
-
         double weekEarnings = 0.0;
         double weekHours = 0.0;
+        int weekTrips = 0;
 
-        for (var doc in ridesSnapshot.docs) {
-          final data = doc.data();
-          final fare = (data['fare'] ?? data['estimatedFare'] ?? 0.0) as num;
-          weekEarnings += fare.toDouble();
+        for (final raw in rawList) {
+          if (raw is! Map) continue;
+          final data = Map<String, dynamic>.from(raw);
+          final completedAt =
+              _parseIso(data['completedAt'] ?? data['completed_at']);
+          if (completedAt == null) continue;
+          if (completedAt.isBefore(weekStart) || !completedAt.isBefore(weekEnd)) {
+            continue;
+          }
+          weekTrips++;
+          final fare = (data['finalFare'] ?? data['fare'] ?? data['final_fare'] ?? 0);
+          if (fare is num) weekEarnings += fare.toDouble();
 
-          if (data['startedAt'] != null && data['completedAt'] != null) {
-            final startedAt = (data['startedAt'] as Timestamp).toDate();
-            final completedAt = (data['completedAt'] as Timestamp).toDate();
+          final startedAt = _parseIso(data['startedAt'] ?? data['started_at']);
+          if (startedAt != null) {
             final duration = completedAt.difference(startedAt);
             weekHours += duration.inMinutes / 60.0;
           }
@@ -196,7 +205,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
         periods[periodName] = EarningsPeriod(
           period: periodName,
           earnings: weekEarnings,
-          trips: ridesSnapshot.docs.length,
+          trips: weekTrips,
           hours: weekHours,
         );
       }
@@ -210,31 +219,34 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
     }
   }
 
-  // ✅ Cargar historial de retiros real desde Firebase
+  // ✅ Historial de retiros — usa /api/wallet/transactions filtrando withdrawals.
   Future<void> _loadWithdrawalHistory() async {
     try {
-      // ✅ Consultar colección withdrawals filtrada por driverId
-      final withdrawalsSnapshot = await FirebaseFirestore.instance
-          .collection('withdrawals')
-          .where('driverId', isEqualTo: widget.driverId)
-          .orderBy('createdAt', descending: true)
-          .limit(50) // Últimos 50 retiros
-          .get();
+      // TODO(node-migration): reemplazar con endpoint /api/wallet/withdrawals
+      // cuando exista. Por ahora leemos las transacciones de tipo withdrawal.
+      final resp = await RapiApiClient.instance
+          .listWalletTransactions(type: 'withdrawal', pageSize: 50);
+      final rawList = (resp['transactions'] as List?) ?? const [];
+
+      DateTime? _parseIso(dynamic v) {
+        if (v is String) return DateTime.tryParse(v);
+        return null;
+      }
 
       final withdrawals = <WithdrawalHistory>[];
-
-      for (var doc in withdrawalsSnapshot.docs) {
-        final data = doc.data();
+      for (final raw in rawList) {
+        if (raw is! Map) continue;
+        final data = Map<String, dynamic>.from(raw);
         withdrawals.add(WithdrawalHistory(
-          id: doc.id,
-          amount: (data['amount'] ?? 0.0).toDouble(),
-          fee: (data['fee'] ?? 0.0).toDouble(),
-          netAmount: (data['netAmount'] ?? 0.0).toDouble(),
-          method: data['method'] ?? 'bank_transfer',
-          destination: data['destination'] ?? '',
-          status: data['status'] ?? 'Procesando',
-          createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          processedAt: (data['processedAt'] as Timestamp?)?.toDate(),
+          id: (data['id'] ?? '').toString(),
+          amount: ((data['amount'] as num?) ?? 0).toDouble(),
+          fee: ((data['fee'] as num?) ?? 0).toDouble(),
+          netAmount: ((data['netAmount'] as num?) ?? (data['net_amount'] as num?) ?? 0).toDouble(),
+          method: (data['method'] ?? 'bank_transfer') as String,
+          destination: (data['destination'] ?? '') as String,
+          status: (data['status'] ?? 'Procesando') as String,
+          createdAt: _parseIso(data['createdAt'] ?? data['created_at']) ?? DateTime.now(),
+          processedAt: _parseIso(data['processedAt'] ?? data['processed_at']),
         ));
       }
 

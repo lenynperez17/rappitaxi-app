@@ -1,9 +1,25 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-// ignore_for_file: unnecessary_cast
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/rapi_api_client.dart';
+import '../services/rapi_sse_client.dart';
 import '../utils/logger.dart';
+
+// ---------------------------------------------------------------------------
+// Helpers de parseo (reemplazan Firebase Timestamp → ISO 8601 string)
+// ---------------------------------------------------------------------------
+
+DateTime? _parseDate(dynamic v) {
+  if (v == null) return null;
+  if (v is DateTime) return v;
+  if (v is String) return DateTime.tryParse(v);
+  if (v is int) {
+    // Puede venir en segundos o milisegundos
+    return v > 1000000000000
+        ? DateTime.fromMillisecondsSinceEpoch(v)
+        : DateTime.fromMillisecondsSinceEpoch(v * 1000);
+  }
+  return null;
+}
 
 // Modelo para mensaje de chat
 class ChatMessage {
@@ -38,13 +54,17 @@ class ChatMessage {
   factory ChatMessage.fromMap(Map<String, dynamic> map, String id) {
     return ChatMessage(
       id: id,
-      senderId: map['senderId'] ?? '',
-      senderName: map['senderName'] ?? '',
-      senderRole: map['senderRole'] ?? 'passenger',
-      receiverId: map['receiverId'] ?? '',
-      tripId: map['tripId'] ?? '',
-      message: map['message'] ?? '',
-      imageUrl: map['imageUrl'],
+      senderId: (map['senderId'] ?? map['sender_id'] ?? '').toString(),
+      senderName: (map['senderName'] ?? map['sender_name'] ?? '').toString(),
+      senderRole:
+          (map['senderRole'] ?? map['sender_role'] ?? 'passenger').toString(),
+      receiverId: (map['receiverId'] ?? map['receiver_id'] ?? '').toString(),
+      tripId: (map['tripId'] ?? map['rideId'] ?? map['ride_id'] ?? '')
+          .toString(),
+      message: (map['message'] ?? map['body'] ?? '').toString(),
+      imageUrl: (map['imageUrl'] ??
+              map['attachmentUrl'] ??
+              map['attachment_url']) as String?,
       type: MessageType.values.firstWhere(
         (e) => e.toString() == 'MessageType.${map['type']}',
         orElse: () => MessageType.text,
@@ -53,8 +73,11 @@ class ChatMessage {
         (e) => e.toString() == 'MessageStatus.${map['status']}',
         orElse: () => MessageStatus.sent,
       ),
-      timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      metadata: map['metadata'],
+      timestamp: _parseDate(map['timestamp'] ??
+              map['createdAt'] ??
+              map['created_at']) ??
+          DateTime.now(),
+      metadata: map['metadata'] as Map<String, dynamic>?,
     );
   }
 
@@ -69,7 +92,7 @@ class ChatMessage {
       'imageUrl': imageUrl,
       'type': type.toString().split('.').last,
       'status': status.toString().split('.').last,
-      'timestamp': Timestamp.fromDate(timestamp),
+      'timestamp': timestamp.toIso8601String(),
       'metadata': metadata,
     };
   }
@@ -106,20 +129,22 @@ class ChatConversation {
     final participantsMap = <String, ParticipantInfo>{};
     if (map['participants'] != null) {
       (map['participants'] as Map<String, dynamic>).forEach((key, value) {
-        participantsMap[key] = ParticipantInfo.fromMap(value);
+        participantsMap[key] =
+            ParticipantInfo.fromMap(value as Map<String, dynamic>);
       });
     }
 
     return ChatConversation(
       id: id,
-      tripId: map['tripId'] ?? '',
-      participantIds: List<String>.from(map['participantIds'] ?? []),
+      tripId: (map['tripId'] ?? map['rideId'] ?? map['ride_id'] ?? '')
+          .toString(),
+      participantIds: List<String>.from(map['participantIds'] ?? const []),
       participants: participantsMap,
-      lastMessage: map['lastMessage'],
-      lastMessageTime: (map['lastMessageTime'] as Timestamp?)?.toDate(),
-      unreadCount: map['unreadCount'] ?? 0,
-      isActive: map['isActive'] ?? true,
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      lastMessage: map['lastMessage'] as String?,
+      lastMessageTime: _parseDate(map['lastMessageTime']),
+      unreadCount: (map['unreadCount'] as num?)?.toInt() ?? 0,
+      isActive: map['isActive'] as bool? ?? true,
+      createdAt: _parseDate(map['createdAt']) ?? DateTime.now(),
     );
   }
 }
@@ -141,40 +166,38 @@ class ParticipantInfo {
 
   factory ParticipantInfo.fromMap(Map<String, dynamic> map) {
     return ParticipantInfo(
-      name: map['name'] ?? '',
-      role: map['role'] ?? '',
-      photoUrl: map['photoUrl'],
-      isOnline: map['isOnline'] ?? false,
-      lastSeen: (map['lastSeen'] as Timestamp?)?.toDate(),
+      name: (map['name'] ?? '').toString(),
+      role: (map['role'] ?? '').toString(),
+      photoUrl: map['photoUrl'] as String?,
+      isOnline: map['isOnline'] as bool? ?? false,
+      lastSeen: _parseDate(map['lastSeen']),
     );
   }
 }
 
 class ChatProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
+
   // Estado
   List<ChatMessage> _messages = [];
-  List<ChatConversation> _conversations = [];
+  final List<ChatConversation> _conversations = [];
   ChatConversation? _activeConversation;
   bool _isLoading = false;
   String? _error;
   bool _isTyping = false;
   String? _typingUserId;
-  final bool _isSendingMessage = false;
-  
-  // Controladores para streams
-  Stream<QuerySnapshot>? _messagesStream;
-  Stream<QuerySnapshot>? _conversationsStream;
-  Stream<DocumentSnapshot>? _typingStream;
+  bool _isSendingMessage = false;
 
-  // Subscriptions para evitar memory leaks
-  StreamSubscription<QuerySnapshot>? _messagesSubscription;
-  StreamSubscription<DocumentSnapshot>? _typingSubscription;
-  StreamSubscription<QuerySnapshot>? _conversationsSubscription;
-  
-  // Getters
+  // Datos del usuario autenticado (cacheados al inicializar el chat)
+  String? _currentUserId;
+  String? _currentUserName;
+  String? _currentUserRole;
+
+  // Subscriptions al stream SSE — cancelar en dispose
+  StreamSubscription<Map<String, dynamic>>? _messagesSubscription;
+
+  // Getters (interfaz publica identica a la version Firebase)
   List<ChatMessage> get messages => _messages;
   List<ChatConversation> get conversations => _conversations;
   ChatConversation? get activeConversation => _activeConversation;
@@ -184,84 +207,67 @@ class ChatProvider extends ChangeNotifier {
   String? get typingUserId => _typingUserId;
   bool get isSendingMessage => _isSendingMessage;
 
+  // ---------------------------------------------------------------------------
   // Inicializar chat para un viaje
-  Future<void> initializeChatForTrip(String tripId, String otherUserId, String otherUserName, String otherUserRole) async {
+  // ---------------------------------------------------------------------------
+
+  Future<void> initializeChatForTrip(
+    String tripId,
+    String otherUserId,
+    String otherUserName,
+    String otherUserRole,
+  ) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      // Obtener info del usuario autenticado desde el backend
+      final me = await _api.me();
+      if (me == null) throw Exception('Usuario no autenticado');
 
-      // Buscar conversación existente
-      final existingConversation = await _firestore
-          .collection('conversations')
-          .where('tripId', isEqualTo: tripId)
-          .where('participantIds', arrayContains: user.uid)
-          .limit(1)
-          .get();
+      _currentUserId = (me['id'] ?? me['uid'] ?? me['userId'] ?? '').toString();
+      _currentUserName =
+          (me['name'] ?? me['fullName'] ?? me['displayName'] ?? 'Usuario')
+              .toString();
+      _currentUserRole = (me['role'] ?? 'passenger').toString();
 
-      String conversationId;
-
-      if (existingConversation.docs.isNotEmpty) {
-        // Usar conversación existente
-        conversationId = existingConversation.docs.first.id;
-        _activeConversation = ChatConversation.fromMap(
-          existingConversation.docs.first.data(),
-          conversationId,
-        );
-      } else {
-        // Crear nueva conversación
-        final currentUserDoc = await _firestore.collection('users').doc(user.uid).get();
-        final currentUserData = currentUserDoc.data() ?? {};
-
-        final conversationData = {
-          'tripId': tripId,
-          'participantIds': [user.uid, otherUserId],
-          'participants': {
-            user.uid: {
-              'name': currentUserData['name'] ?? 'Usuario',
-              'role': currentUserData['role'] ?? 'passenger',
-              'photoUrl': currentUserData['photoUrl'],
-              'isOnline': true,
-              'lastSeen': FieldValue.serverTimestamp(),
-            },
-            otherUserId: {
-              'name': otherUserName,
-              'role': otherUserRole,
-              'photoUrl': null,
-              'isOnline': false,
-              'lastSeen': FieldValue.serverTimestamp(),
-            },
-          },
-          'lastMessage': null,
-          'lastMessageTime': null,
-          'unreadCount': 0,
-          'isActive': true,
-          'createdAt': FieldValue.serverTimestamp(),
-        };
-
-        final docRef = await _firestore.collection('conversations').add(conversationData);
-        conversationId = docRef.id;
-        
-        _activeConversation = ChatConversation(
-          id: conversationId,
-          tripId: tripId,
-          participantIds: [user.uid, otherUserId],
-          participants: {},
-          unreadCount: 0,
-          isActive: true,
-          createdAt: DateTime.now(),
-        );
+      if (_currentUserId!.isEmpty) {
+        throw Exception('No se pudo determinar el ID del usuario');
       }
 
-      // Configurar stream de mensajes
-      _setupMessageStream(conversationId);
-      
-      // Configurar stream de estado de escritura
-      _setupTypingStream(conversationId);
-      
-      // Marcar mensajes como leídos
-      await markMessagesAsRead(conversationId);
-      
+      // Construir la conversacion en memoria. En el backend, chat esta
+      // enlazado a rides — no existe una colección conversations separada.
+      // Se usa el rideId como identificador de la conversación.
+      _activeConversation = ChatConversation(
+        id: tripId,
+        tripId: tripId,
+        participantIds: [_currentUserId!, otherUserId],
+        participants: {
+          _currentUserId!: ParticipantInfo(
+            name: _currentUserName!,
+            role: _currentUserRole!,
+            photoUrl: me['photoUrl'] as String?,
+            isOnline: true,
+            lastSeen: DateTime.now(),
+          ),
+          otherUserId: ParticipantInfo(
+            name: otherUserName,
+            role: otherUserRole,
+            isOnline: false,
+          ),
+        },
+        unreadCount: 0,
+        isActive: true,
+        createdAt: DateTime.now(),
+      );
+
+      // Estado inicial: cargar mensajes desde el endpoint HTTP
+      await _loadInitialMessages(tripId);
+
+      // Configurar suscripcion SSE para mensajes nuevos
+      _setupMessageStream(tripId);
+
+      // Marcar mensajes como leidos
+      await markMessagesAsRead(tripId);
+
       _setLoading(false);
     } catch (e) {
       _setError('Error al inicializar chat: $e');
@@ -269,60 +275,65 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  // Configurar stream de mensajes
-  void _setupMessageStream(String conversationId) {
-    _messagesStream = _firestore
-        .collection('conversations')
-        .doc(conversationId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .limit(100)
-        .snapshots();
-
-    _messagesSubscription?.cancel();
-    _messagesSubscription = _messagesStream?.handleError((error) {
-      // Error en stream de mensajes
-    }).listen((snapshot) {
-      _messages = snapshot.docs
-          .map((doc) => ChatMessage.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-          .toList();
+  // Carga inicial de mensajes via HTTP
+  Future<void> _loadInitialMessages(String tripId) async {
+    try {
+      final resp = await _api.listRideMessages(tripId);
+      final raw = resp['messages'] ?? resp['data'] ?? resp['items'] ?? const [];
+      final List list = raw is List ? raw : const [];
+      _messages = list
+          .whereType<Map<String, dynamic>>()
+          .map((m) => ChatMessage.fromMap(
+                m,
+                (m['id'] ?? m['messageId'] ?? '').toString(),
+              ))
+          .toList()
+        // El API generalmente ordena ASC; la UI antigua esperaba DESC
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       notifyListeners();
-    });
+    } catch (e) {
+      AppLogger.error('Error cargando mensajes iniciales', e);
+    }
   }
 
-  // Configurar stream de estado de escritura
-  void _setupTypingStream(String conversationId) {
-    _typingStream = _firestore
-        .collection('conversations')
-        .doc(conversationId)
-        .snapshots();
+  // Configurar stream de mensajes (SSE)
+  void _setupMessageStream(String tripId) {
+    _messagesSubscription?.cancel();
+    _messagesSubscription = _sse.newMessages.listen((event) {
+      // Filtrar por rideId — el stream es global
+      final eventRideId =
+          (event['rideId'] ?? event['tripId'] ?? event['ride_id'] ?? '')
+              .toString();
+      if (eventRideId != tripId) return;
 
-    _typingSubscription?.cancel();
-    _typingSubscription = _typingStream?.handleError((error) {
-      // Error en stream de typing
-    }).listen((snapshot) {
-      if (snapshot.exists) {
-        final data = snapshot.data();
-        final typingData = data is Map<String, dynamic> ? data['typing'] : null;
+      // El evento puede traer el mensaje anidado en 'message' o inline
+      final Map<String, dynamic> raw = (event['message'] is Map)
+          ? Map<String, dynamic>.from(event['message'] as Map)
+          : event;
 
-        if (typingData != null) {
-          final user = _auth.currentUser;
-          typingData.forEach((userId, isTyping) {
-            if (userId != user?.uid && isTyping == true) {
-              _isTyping = true;
-              _typingUserId = userId;
-            } else {
-              _isTyping = false;
-              _typingUserId = null;
-            }
-          });
-        }
+      final msgId = (raw['id'] ?? raw['messageId'] ?? '').toString();
+      if (msgId.isEmpty) return;
+
+      // Evitar duplicados si el mensaje ya esta en la lista (p. ej. si fue
+      // agregado optimisticamente al enviar)
+      final existingIndex = _messages.indexWhere((m) => m.id == msgId);
+      final message = ChatMessage.fromMap(raw, msgId);
+      if (existingIndex >= 0) {
+        _messages[existingIndex] = message;
+      } else {
+        // Insertar al inicio (lista ordenada DESC por timestamp)
+        _messages.insert(0, message);
       }
       notifyListeners();
+    }, onError: (Object e) {
+      AppLogger.error('Error en stream de mensajes SSE', e);
     });
   }
 
+  // ---------------------------------------------------------------------------
   // Enviar mensaje
+  // ---------------------------------------------------------------------------
+
   Future<bool> sendMessage({
     required String message,
     String? imageUrl,
@@ -334,140 +345,140 @@ class ChatProvider extends ChangeNotifier {
       return false;
     }
 
+    _isSendingMessage = true;
+    notifyListeners();
+
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      final rideId = _activeConversation!.tripId;
 
-      final currentUserDoc = await _firestore.collection('users').doc(user.uid).get();
-      final currentUserData = currentUserDoc.data() ?? {};
-
-      // Determinar receptor
-      final receiverId = _activeConversation!.participantIds
-          .firstWhere((id) => id != user.uid);
-
-      final chatMessage = ChatMessage(
-        id: '',
-        senderId: user.uid,
-        senderName: currentUserData['name'] ?? 'Usuario',
-        senderRole: currentUserData['role'] ?? 'passenger',
-        receiverId: receiverId,
-        tripId: _activeConversation!.tripId,
-        message: message,
-        imageUrl: imageUrl,
-        type: type,
-        status: MessageStatus.sending,
-        timestamp: DateTime.now(),
-        metadata: metadata,
+      // Enviar al backend. El endpoint acepta body y attachmentUrl.
+      final resp = await _api.sendRideMessage(
+        rideId,
+        body: message,
+        attachmentUrl: imageUrl,
       );
 
-      // Agregar mensaje a la colección
-      final messageRef = await _firestore
-          .collection('conversations')
-          .doc(_activeConversation!.id)
-          .collection('messages')
-          .add(chatMessage.toMap());
+      // Insertar el mensaje devuelto localmente (el SSE tambien lo emitira,
+      // pero el dedupe por id evita duplicados)
+      final Map<String, dynamic> raw =
+          (resp['message'] is Map) ? Map<String, dynamic>.from(resp['message'] as Map) : resp;
+      final msgId = (raw['id'] ?? raw['messageId'] ?? '').toString();
+      if (msgId.isNotEmpty) {
+        final chatMessage = ChatMessage.fromMap(raw, msgId);
+        final idx = _messages.indexWhere((m) => m.id == msgId);
+        if (idx >= 0) {
+          _messages[idx] = chatMessage;
+        } else {
+          _messages.insert(0, chatMessage);
+        }
+      }
 
-      // Actualizar conversación
-      await _firestore
-          .collection('conversations')
-          .doc(_activeConversation!.id)
-          .update({
-        'lastMessage': message,
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'unreadCount': FieldValue.increment(1),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Actualizar estado del mensaje
-      await messageRef.update({'status': 'sent'});
-
-      // Enviar notificación push al receptor
-      await _sendPushNotification(receiverId, message, currentUserData['name'] ?? 'Usuario');
-
+      _isSendingMessage = false;
+      notifyListeners();
       return true;
     } catch (e) {
+      _isSendingMessage = false;
       _setError('Error al enviar mensaje: $e');
       return false;
     }
   }
 
-  // Marcar mensajes como leídos
+  // ---------------------------------------------------------------------------
+  // Marcar mensajes como leidos
+  // ---------------------------------------------------------------------------
+
   Future<void> markMessagesAsRead(String conversationId) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
+      // conversationId == rideId (equivalencia en el nuevo modelo)
+      final rideId = _activeConversation?.tripId ?? conversationId;
+      await _api.markMessagesRead(rideId);
 
-      // Obtener mensajes no leídos
-      final unreadMessages = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .collection('messages')
-          .where('receiverId', isEqualTo: user.uid)
-          .where('status', isNotEqualTo: 'read')
-          .get();
-
-      // Batch update
-      final batch = _firestore.batch();
-      
-      for (var doc in unreadMessages.docs) {
-        batch.update(doc.reference, {'status': 'read'});
+      // Actualizar estado local: marcar mensajes recibidos como read
+      final myId = _currentUserId;
+      if (myId != null) {
+        _messages = _messages.map((m) {
+          if (m.receiverId == myId && m.status != MessageStatus.read) {
+            return ChatMessage(
+              id: m.id,
+              senderId: m.senderId,
+              senderName: m.senderName,
+              senderRole: m.senderRole,
+              receiverId: m.receiverId,
+              tripId: m.tripId,
+              message: m.message,
+              imageUrl: m.imageUrl,
+              type: m.type,
+              status: MessageStatus.read,
+              timestamp: m.timestamp,
+              metadata: m.metadata,
+            );
+          }
+          return m;
+        }).toList();
+        notifyListeners();
       }
-
-      // Resetear contador de no leídos
-      batch.update(
-        _firestore.collection('conversations').doc(conversationId),
-        {'unreadCount': 0},
-      );
-
-      await batch.commit();
     } catch (e) {
       AppLogger.error('Error marcando mensajes como leídos', e);
     }
   }
 
+  // ---------------------------------------------------------------------------
   // Actualizar estado de escritura
+  // ---------------------------------------------------------------------------
+
   Future<void> updateTypingStatus(bool isTyping) async {
     if (_activeConversation == null) return;
-
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      await _firestore
-          .collection('conversations')
-          .doc(_activeConversation!.id)
-          .update({
-        'typing.${user.uid}': isTyping,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      AppLogger.error('Error actualizando estado de escritura', e);
-    }
+    // El backend actual no expone un endpoint de "typing indicator".
+    // Se mantiene la firma publica para no romper llamadas existentes.
+    // Cuando el backend lo soporte, aqui se enviara al server.
+    _isTyping = isTyping;
+    notifyListeners();
   }
 
+  // ---------------------------------------------------------------------------
   // Cargar conversaciones del usuario
+  // ---------------------------------------------------------------------------
+
   Future<void> loadUserConversations() async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      // El backend no tiene una coleccion "conversations" — el chat esta
+      // enlazado a rides. Se derivan las conversaciones de los rides recientes.
+      final resp = await _api.listRides(pageSize: 50);
+      final raw = resp['rides'] ?? resp['data'] ?? resp['items'] ?? const [];
+      final List list = raw is List ? raw : const [];
 
-      _conversationsStream = _firestore
-          .collection('conversations')
-          .where('participantIds', arrayContains: user.uid)
-          .orderBy('lastMessageTime', descending: true)
-          .snapshots();
+      _conversations.clear();
+      for (final item in list.whereType<Map<String, dynamic>>()) {
+        final rideId = (item['id'] ?? item['rideId'] ?? '').toString();
+        if (rideId.isEmpty) continue;
+        final participants = <String>[];
+        final passengerId =
+            (item['passengerId'] ?? item['passenger_id'] ?? '').toString();
+        final driverId =
+            (item['driverId'] ?? item['driver_id'] ?? '').toString();
+        if (passengerId.isNotEmpty) participants.add(passengerId);
+        if (driverId.isNotEmpty) participants.add(driverId);
 
-      _conversationsSubscription?.cancel();
-      _conversationsSubscription = _conversationsStream?.handleError((error) {
-        // Error en stream de conversaciones
-      }).listen((snapshot) {
-        _conversations = snapshot.docs
-            .map((doc) => ChatConversation.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-            .toList();
-        notifyListeners();
-      });
+        _conversations.add(ChatConversation(
+          id: rideId,
+          tripId: rideId,
+          participantIds: participants,
+          participants: const {},
+          lastMessage: item['lastMessage'] as String?,
+          lastMessageTime: _parseDate(item['lastMessageTime'] ??
+              item['updatedAt'] ??
+              item['updated_at']),
+          unreadCount: (item['unreadCount'] as num?)?.toInt() ?? 0,
+          isActive:
+              (item['status'] as String? ?? '').toLowerCase() != 'completed' &&
+                  (item['status'] as String? ?? '').toLowerCase() != 'cancelled',
+          createdAt: _parseDate(item['createdAt'] ?? item['created_at']) ??
+              DateTime.now(),
+        ));
+      }
 
+      notifyListeners();
       _setLoading(false);
     } catch (e) {
       _setError('Error al cargar conversaciones: $e');
@@ -475,7 +486,10 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  // ---------------------------------------------------------------------------
   // Enviar mensaje predefinido
+  // ---------------------------------------------------------------------------
+
   Future<bool> sendQuickMessage(String template) async {
     final quickMessages = {
       'arrived': 'He llegado al punto de recogida',
@@ -490,7 +504,10 @@ class ChatProvider extends ChangeNotifier {
     return await sendMessage(message: message);
   }
 
-  // Enviar ubicación
+  // ---------------------------------------------------------------------------
+  // Enviar ubicacion
+  // ---------------------------------------------------------------------------
+
   Future<bool> sendLocation(double lat, double lng, String address) async {
     return await sendMessage(
       message: address,
@@ -503,52 +520,38 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
-  // Finalizar conversación
+  // ---------------------------------------------------------------------------
+  // Finalizar conversacion
+  // ---------------------------------------------------------------------------
+
   Future<void> endConversation() async {
     if (_activeConversation == null) return;
 
     try {
-      await _firestore
-          .collection('conversations')
-          .doc(_activeConversation!.id)
-          .update({
-        'isActive': false,
-        'endedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Enviar mensaje del sistema
+      // Enviar mensaje del sistema al backend (opcional, best-effort)
       await sendMessage(
         message: 'La conversación ha finalizado',
         type: MessageType.system,
       );
-
+    } catch (e) {
+      AppLogger.error('Error al finalizar conversación', e);
+    } finally {
+      // Limpiar suscripcion y estado local
+      await _messagesSubscription?.cancel();
+      _messagesSubscription = null;
       _activeConversation = null;
       _messages.clear();
       notifyListeners();
-    } catch (e) {
-      AppLogger.error('Error al finalizar conversación', e);
     }
   }
 
-  // Enviar notificación push
-  Future<void> _sendPushNotification(String userId, String message, String senderName) async {
-    try {
-      // Aquí integrarías con tu servicio de notificaciones push
-      // Por ejemplo, FCM o OneSignal
-      AppLogger.info('Enviando notificación push a $userId: $message');
-    } catch (e) {
-      AppLogger.error('Error enviando notificación push', e);
-    }
-  }
-
+  // ---------------------------------------------------------------------------
   // Limpiar chat
+  // ---------------------------------------------------------------------------
+
   void clearChat() {
     _messagesSubscription?.cancel();
     _messagesSubscription = null;
-    _typingSubscription?.cancel();
-    _typingSubscription = null;
-    _conversationsSubscription?.cancel();
-    _conversationsSubscription = null;
     _messages.clear();
     _activeConversation = null;
     _isTyping = false;

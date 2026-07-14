@@ -1,7 +1,5 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, library_private_types_in_public_api, unused_import, unreachable_switch_case
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../services/google_maps_service.dart';
@@ -28,6 +26,8 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/document_provider.dart';
 import '../../providers/ride_provider.dart';
 import '../../providers/price_negotiation_provider.dart';
+import '../../services/rapi_api_client.dart';
+import '../../services/rapi_sse_client.dart';
 import '../../utils/logger.dart';
 import 'driver_performance_screen.dart';
 import '../../utils/map_marker_utils.dart';
@@ -83,7 +83,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   GoogleMapController? _mapController;
   final Completer<GoogleMapController> _mapCompleter = Completer<GoogleMapController>();
   final Set<Marker> _markers = {};
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Backend Node/SSE (reemplaza Firebase)
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
   String? _driverId;
 
   // Animation controllers
@@ -116,21 +118,21 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   // Follow driver location on map
   final bool _followDriverLocation = true;
 
-  // Offer acceptance listener
-  StreamSubscription<DocumentSnapshot>? _myOfferSubscription;
+  // Offer acceptance listener (SSE)
+  StreamSubscription<Map<String, dynamic>>? _myOfferSubscription;
   String? _pendingOfferTripId;
 
   // Track processed counter-offers
   final Set<String> _processedCounterOffers = {};
 
-  // Verification listener
-  StreamSubscription<DocumentSnapshot>? _verificationSubscription;
+  // Verification listener (polling)
+  Timer? _verificationPollingTimer;
 
-  // Real-time rides listener
-  StreamSubscription<QuerySnapshot>? _ridesStreamSubscription;
+  // Real-time rides listener (SSE)
+  StreamSubscription<Map<String, dynamic>>? _ridesStreamSubscription;
 
-  // Active ride subscription (Rapi Team)
-  StreamSubscription<QuerySnapshot>? _activeRideSubscription;
+  // Active ride subscription (SSE)
+  StreamSubscription<Map<String, dynamic>>? _activeRideSubscription;
 
   // Wallet provider for credits (Rapi Team)
   WalletProvider? _walletProvider;
@@ -230,17 +232,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       // Check for active rides ONE TIME (not a persistent listener)
       try {
-        final activeRides = await _firestore
-            .collection('rides')
-            .where('driverId', isEqualTo: _driverId)
-            .where('status', whereIn: ['accepted', 'driver_arriving', 'in_progress'])
-            .limit(1)
-            .get(const GetOptions(source: Source.server))
+        final response = await _api
+            .listRides(role: 'driver', pageSize: 20)
             .timeout(const Duration(seconds: 5));
-
-        if (activeRides.docs.isNotEmpty && mounted) {
-          final doc = activeRides.docs.first;
-          _showOldTripDialog(doc.id, doc.data(), 0);
+        final rides = _extractRides(response);
+        final activeRide = rides.firstWhere(
+          (r) => const {'accepted', 'driver_arriving', 'in_progress'}
+              .contains(r['status'] as String? ?? ''),
+          orElse: () => const <String, dynamic>{},
+        );
+        if (activeRide.isNotEmpty && mounted) {
+          final id = activeRide['id'] as String? ?? '';
+          if (id.isNotEmpty) _showOldTripDialog(id, activeRide, 0);
         }
       } catch (e) {
         AppLogger.info('No active rides found or server unreachable');
@@ -264,7 +267,24 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
-  // Clean up zombie rides (stale accepted rides that were never completed)
+  /// Helper para extraer la lista de rides de la respuesta HTTP del backend.
+  List<Map<String, dynamic>> _extractRides(Map<String, dynamic> response) {
+    final candidates = [response['rides'], response['items'], response['data']];
+    for (final c in candidates) {
+      if (c is List) return c.whereType<Map<String, dynamic>>().toList();
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  /// Helper para parsear timestamps ISO 8601 provenientes del backend.
+  DateTime? _parseIsoDate(dynamic value) {
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  // Clean up zombie rides (stale accepted rides that were never completed).
+  // El backend Node debería ejecutar este cleanup vía cron; aquí sólo
+  // cancelamos las que detectemos como muy viejas al iniciar la app.
   Future<void> _cleanupZombieRides() async {
     if (_driverId == null) return;
 
@@ -274,39 +294,35 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       AppLogger.info('Searching zombie rides for driver: $_driverId');
 
-      final activeRides = await _firestore
-          .collection('rides')
-          .where('driverId', isEqualTo: _driverId)
-          .where('status', whereIn: ['accepted', 'arriving', 'arrived', 'driver_arriving', 'waiting_verification', 'in_progress'])
-          .limit(50)
-          .get();
-
-      AppLogger.info('Found ${activeRides.docs.length} active rides for driver');
+      final response = await _api.listRides(role: 'driver', pageSize: 50);
+      final rides = _extractRides(response);
+      final activeStates = const {
+        'accepted', 'arriving', 'arrived',
+        'driver_arriving', 'waiting_verification', 'in_progress',
+      };
+      final activeRides = rides.where((r) => activeStates.contains(r['status'] as String? ?? '')).toList();
+      AppLogger.info('Found ${activeRides.length} active rides for driver');
 
       int cleanedCount = 0;
-      for (var doc in activeRides.docs) {
-        final data = doc.data();
-        final acceptedAt = (data['acceptedAt'] as Timestamp?)?.toDate();
-        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
-
+      for (final data in activeRides) {
+        final acceptedAt = _parseIsoDate(data['acceptedAt']);
+        final createdAt = _parseIsoDate(data['createdAt']);
         final rideStartTime = acceptedAt ?? createdAt;
+        final rideId = data['id'] as String?;
+        if (rideId == null) continue;
 
-        if (rideStartTime != null && rideStartTime.isBefore(thirtyMinutesAgo)) {
-          await doc.reference.update({
-            'status': 'cancelled',
-            'cancelReason': 'auto_cleanup_stale_ride',
-            'cancelledAt': FieldValue.serverTimestamp(),
-            'cancelledBy': 'system',
-          });
-          cleanedCount++;
-        } else if (rideStartTime == null) {
-          await doc.reference.update({
-            'status': 'cancelled',
-            'cancelReason': 'auto_cleanup_corrupt_ride',
-            'cancelledAt': FieldValue.serverTimestamp(),
-            'cancelledBy': 'system',
-          });
-          cleanedCount++;
+        if (rideStartTime == null || rideStartTime.isBefore(thirtyMinutesAgo)) {
+          try {
+            await _api.cancelRide(
+              rideId,
+              reason: rideStartTime == null
+                  ? 'auto_cleanup_corrupt_ride'
+                  : 'auto_cleanup_stale_ride',
+            );
+            cleanedCount++;
+          } catch (e) {
+            AppLogger.warning('No se pudo cancelar zombie ride $rideId: $e');
+          }
         }
       }
 
@@ -374,25 +390,28 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     _walletProvider = null;
   }
 
-  /// Listen for admin verification approval
+  /// Listen for admin verification approval.
+  /// El backend Node no expone streams para users; hacemos polling cada 30s
+  /// y consultamos el status del conductor vía `api.me()`.
   void _startVerificationListener(String uid) {
-    _verificationSubscription?.cancel();
-    _verificationSubscription = _firestore
-        .collection('users')
-        .doc(uid)
-        .snapshots()
-        .listen((snapshot) async {
+    _verificationPollingTimer?.cancel();
+    _verificationPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_isDisposed || !mounted) return;
-      final data = snapshot.data();
-      if (data == null) return;
-
-      final status = data['driverVerificationStatus'] as String?;
-      if (status == 'verified' || status == 'approved') {
-        _verificationSubscription?.cancel();
-        _verificationSubscription = null;
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        await authProvider.reloadUserData();
-        if (mounted) setState(() {});
+      try {
+        final me = await _api.me();
+        if (me == null) return;
+        final status = (me['driverVerificationStatus'] as String?) ??
+            (me['driverStatus'] as String?);
+        if (status == 'verified' || status == 'approved') {
+          _verificationPollingTimer?.cancel();
+          _verificationPollingTimer = null;
+          if (!mounted) return;
+          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          await authProvider.reloadUserData();
+          if (mounted) setState(() {});
+        }
+      } catch (e) {
+        AppLogger.warning('Error consultando verificación: $e');
       }
     });
   }
@@ -407,17 +426,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     if (authProvider.currentUser?.currentMode != 'driver') return;
 
     try {
-      final serverCheck = await _firestore
-          .collection('rides')
-          .where('driverId', isEqualTo: _driverId)
-          .where('status', whereIn: ['accepted', 'driver_arriving', 'waiting_verification', 'in_progress'])
-          .limit(1)
-          .get(const GetOptions(source: Source.server))
+      final response = await _api
+          .listRides(role: 'driver', pageSize: 10)
           .timeout(const Duration(seconds: 5));
-
-      if (serverCheck.docs.isNotEmpty && mounted) {
-        final doc = serverCheck.docs.first;
-        _navigateToActiveTrip(doc.id, doc.data());
+      final rides = _extractRides(response);
+      final activeStates = const {'accepted', 'driver_arriving', 'waiting_verification', 'in_progress'};
+      final activeRide = rides.firstWhere(
+        (r) => activeStates.contains(r['status'] as String? ?? ''),
+        orElse: () => const <String, dynamic>{},
+      );
+      if (activeRide.isNotEmpty && mounted) {
+        final id = activeRide['id'] as String? ?? '';
+        if (id.isNotEmpty) _navigateToActiveTrip(id, activeRide);
       } else {
         AppLogger.info('No active rides on server for driver');
       }
@@ -439,8 +459,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     _activeRideSubscription?.cancel();
 
-    final acceptedAt = (tripData['acceptedAt'] as Timestamp?)?.toDate();
-    final createdAt = (tripData['createdAt'] as Timestamp?)?.toDate();
+    final acceptedAt = _parseIsoDate(tripData['acceptedAt']);
+    final createdAt = _parseIsoDate(tripData['createdAt']);
     final rideStartTime = acceptedAt ?? createdAt;
     final now = DateTime.now();
 
@@ -537,12 +557,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         builder: (ctx) => Center(child: CircularProgressIndicator()),
       );
 
-      await _firestore.collection('rides').doc(tripId).update({
-        'status': 'cancelled',
-        'cancelReason': 'driver_cancelled_stale_ride',
-        'cancelledAt': FieldValue.serverTimestamp(),
-        'cancelledBy': _driverId,
-      });
+      await _api.cancelRide(tripId, reason: 'driver_cancelled_stale_ride');
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -575,22 +590,25 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     // Double-check ride still exists and is active before navigating
     try {
-      final doc = await _firestore.collection('rides').doc(tripId).get();
+      final response = await _api.getRide(tripId);
       if (!mounted) return;
 
-      if (!doc.exists) {
-        AppLogger.info('Ride $tripId no longer exists, skipping navigation');
-        _checkForActiveRidesOnce();
-        return;
-      }
-
-      final currentStatus = doc.data()?['status'] as String?;
+      final Map<String, dynamic> rideData =
+          (response['ride'] as Map<String, dynamic>?) ?? response;
+      final currentStatus = rideData['status'] as String?;
       final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
       if (currentStatus == null || terminalStatuses.contains(currentStatus)) {
         AppLogger.info('Ride $tripId has terminal status ($currentStatus), skipping navigation');
         _checkForActiveRidesOnce();
         return;
       }
+    } on RapiApiException catch (e) {
+      if (e.statusCode == 404) {
+        AppLogger.info('Ride $tripId no longer exists, skipping navigation');
+        _checkForActiveRidesOnce();
+        return;
+      }
+      AppLogger.warning('Error checking ride $tripId existence: $e');
     } catch (e) {
       AppLogger.warning('Error checking ride $tripId existence: $e');
       // If we can't check, proceed with navigation - the active_trip_screen will handle it
@@ -663,9 +681,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 final rootNav = Navigator.of(context, rootNavigator: true);
                 final authProvider = Provider.of<AuthProvider>(context, listen: false);
                 Navigator.pop(context); // cierra el drawer
-                try {
-                  await FirebaseAuth.instance.signOut();
-                } catch (_) {/* best-effort */}
+                // AuthProvider.logout() internamente hace api.logout() y limpia SSE.
                 try {
                   await authProvider.logout();
                 } catch (_) {/* best-effort */}
@@ -702,8 +718,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     _myOfferSubscription = null;
     _offerProgressTimer?.cancel();
     _offerProgressTimer = null;
-    _verificationSubscription?.cancel();
-    _verificationSubscription = null;
+    _verificationPollingTimer?.cancel();
+    _verificationPollingTimer = null;
     super.dispose();
   }
 
@@ -716,94 +732,96 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  /// Listen for passenger accepting driver's offer -> navigate to active trip
+  /// Listen for passenger accepting driver's offer -> navigate to active trip.
+  /// Se suscribe al stream global SSE de rideUpdates y filtra por tripId.
   void _listenForOfferAcceptance(String tripId) {
     _myOfferSubscription?.cancel();
     _pendingOfferTripId = tripId;
 
-    _myOfferSubscription = _firestore
-        .collection('rides')
-        .doc(tripId)
-        .snapshots()
-        .listen((snapshot) {
+    _sse.start();
+    _myOfferSubscription = _sse.rideUpdates.listen((event) {
       if (!mounted || _isDisposed) return;
 
-      if (snapshot.exists) {
-        final data = snapshot.data() as Map<String, dynamic>;
-        final status = data['status'] as String?;
-        final acceptedDriverId = data['driverId'] as String?;
+      final String? eventRideId = (event['rideId'] as String?) ??
+          (event['id'] as String?) ??
+          ((event['ride'] as Map<String, dynamic>?)?['id'] as String?);
+      if (eventRideId == null || eventRideId != tripId) return;
 
-        // Check for counter-offers directed at this driver
-        final counterOffers = data['passengerCounterOffers'] as List<dynamic>? ?? [];
-        for (final offer in counterOffers) {
-          final offerMap = offer as Map<String, dynamic>;
-          final offerDriverId = offerMap['driverId'] as String?;
-          final offerTimestamp = offerMap['timestamp'] as String?;
+      final Map<String, dynamic> data =
+          (event['ride'] as Map<String, dynamic>?) ?? event;
+      final status = data['status'] as String?;
+      final acceptedDriverId = data['driverId'] as String?;
 
-          if (offerDriverId == _driverId && offerTimestamp != null) {
-            final offerKey = '${tripId}_$offerTimestamp';
-            if (!_processedCounterOffers.contains(offerKey)) {
-              _processedCounterOffers.add(offerKey);
-              final counterPrice = (offerMap['counterPrice'] as num?)?.toDouble() ?? 0.0;
-              _showCounterOfferDialog(tripId, data, counterPrice);
-            }
+      // Check for counter-offers directed at this driver
+      final counterOffers = data['passengerCounterOffers'] as List<dynamic>? ?? [];
+      for (final offer in counterOffers) {
+        final offerMap = offer as Map<String, dynamic>;
+        final offerDriverId = offerMap['driverId'] as String?;
+        final offerTimestamp = offerMap['timestamp'] as String?;
+
+        if (offerDriverId == _driverId && offerTimestamp != null) {
+          final offerKey = '${tripId}_$offerTimestamp';
+          if (!_processedCounterOffers.contains(offerKey)) {
+            _processedCounterOffers.add(offerKey);
+            final counterPrice = (offerMap['counterPrice'] as num?)?.toDouble() ?? 0.0;
+            _showCounterOfferDialog(tripId, data, counterPrice);
           }
         }
+      }
 
-        // Check if offer was rejected (removed from driverOffers array)
-        if (status == 'requested' && _driverId != null) {
-          final driverOffers = data['driverOffers'] as List<dynamic>? ?? [];
-          final myOfferStillExists = driverOffers.any((o) => (o as Map<String, dynamic>)['driverId'] == _driverId);
-          if (!myOfferStillExists && _offeringOverlayText != null) {
-            _myOfferSubscription?.cancel();
-            _myOfferSubscription = null;
-            _offerProgressTimer?.cancel();
-            setState(() {
-              _pendingOfferTripId = null;
-              _offeringOverlayText = null;
-              _offeringPrice = null;
-              _offeringRequest = null;
-              _offerProgressValue = 1.0;
-            });
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('El pasajero rechazo tu oferta'), backgroundColor: Colors.orange),
-              );
-            }
-            return;
-          }
-        }
-
-        // If passenger accepted THIS driver's offer
-        if (status == 'accepted' && acceptedDriverId == _driverId) {
+      // Check if offer was rejected (removed from driverOffers array)
+      if (status == 'requested' && _driverId != null) {
+        final driverOffers = data['driverOffers'] as List<dynamic>? ?? [];
+        final myOfferStillExists = driverOffers.any((o) => (o as Map<String, dynamic>)['driverId'] == _driverId);
+        if (!myOfferStillExists && _offeringOverlayText != null) {
           _myOfferSubscription?.cancel();
           _myOfferSubscription = null;
           _offerProgressTimer?.cancel();
-          _pendingOfferTripId = null;
-          _offeringOverlayText = null;
-          _offeringPrice = null;
-          _offeringRequest = null;
-          _offerProgressValue = 1.0;
-
-          SoundService().play(AppSound.rideAccepted);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Tu oferta fue aceptada! Ve a recoger al pasajero'),
-              backgroundColor: AppColors.success,
-              duration: Duration(seconds: 3),
-            ),
-          );
-
-          // Navigate using active trip screen (Rapi Team)
-          _doNavigateToActiveTrip(tripId, data);
+          setState(() {
+            _pendingOfferTripId = null;
+            _offeringOverlayText = null;
+            _offeringPrice = null;
+            _offeringRequest = null;
+            _offerProgressValue = 1.0;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('El pasajero rechazo tu oferta'), backgroundColor: Colors.orange),
+            );
+          }
+          return;
         }
-        // If ride was cancelled or expired
-        else if (status == 'cancelled' || status == 'expired') {
-          _myOfferSubscription?.cancel();
-          _myOfferSubscription = null;
-          _pendingOfferTripId = null;
-        }
+      }
+
+      // If passenger accepted THIS driver's offer
+      if (status == 'accepted' && acceptedDriverId == _driverId) {
+        _myOfferSubscription?.cancel();
+        _myOfferSubscription = null;
+        _offerProgressTimer?.cancel();
+        _pendingOfferTripId = null;
+        _offeringOverlayText = null;
+        _offeringPrice = null;
+        _offeringRequest = null;
+        _offerProgressValue = 1.0;
+
+        SoundService().play(AppSound.rideAccepted);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Tu oferta fue aceptada! Ve a recoger al pasajero'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        // Navigate using active trip screen (Rapi Team)
+        _doNavigateToActiveTrip(tripId, data);
+      }
+      // If ride was cancelled or expired
+      else if (status == 'cancelled' || status == 'expired') {
+        _myOfferSubscription?.cancel();
+        _myOfferSubscription = null;
+        _pendingOfferTripId = null;
       }
     }, onError: (e) {
       print('Error in offer listener: $e');
@@ -914,117 +932,104 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   Future<void> _updateLocationInFirebase(LatLng location) async {
+    // Nombre mantenido por compatibilidad. Ahora reporta al backend Node
+    // vía el heartbeat de presencia.
     try {
       if (_driverId == null) return;
 
-      await _firestore.collection('drivers').doc(_driverId).set({
-        'currentLocation': {
-          'latitude': location.latitude,
-          'longitude': location.longitude,
-          'heading': _currentHeading,
-          'timestamp': FieldValue.serverTimestamp(),
-        },
-        'isOnline': _isOnline,
-        'lastSeen': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _api.heartbeat(
+        latitude: location.latitude,
+        longitude: location.longitude,
+        heading: _currentHeading,
+      );
     } catch (e) {
-      AppLogger.warning('Error updating location in Firebase: $e');
+      AppLogger.warning('Error enviando heartbeat al backend: $e');
     }
   }
 
-  // Real-time rides listener (Rapi Team)
+  // Real-time rides listener (SSE + polling).
+  //
+  // El backend Node emite eventos SSE cuando aparecen nuevos viajes disponibles
+  // cerca del conductor. Adicionalmente PriceNegotiationProvider hace polling
+  // vía `_loadRequestsFromFirebase()` (ahora consulta /api/rides/available),
+  // así que aquí sólo escuchamos SSE para responder en tiempo real.
   void _startRidesListener() {
     try {
       if (_driverId == null) return;
 
-      _ridesStreamSubscription = _firestore
-          .collection('rides')
-          .where('status', whereIn: ['requested', 'searching_driver'])
-          .limit(100)
-          .snapshots()
-          .listen(
-        (snapshot) async {
+      _sse.start();
+      _ridesStreamSubscription = _sse.rideUpdates.listen(
+        (event) async {
           if (_isDisposed || !mounted) return;
 
-          List<PriceNegotiation> nearbyRides = [];
+          final Map<String, dynamic> data =
+              (event['ride'] as Map<String, dynamic>?) ?? event;
+          final status = data['status'] as String?;
+          if (status != 'requested' && status != 'searching_driver') return;
 
-          for (var doc in snapshot.docs) {
-            try {
-              final data = doc.data();
+          if (_currentLocation == null) return;
 
-              if (_currentLocation != null) {
-                final pickupData = data['pickupLocation'];
-                if (pickupData != null && pickupData['latitude'] != null && pickupData['longitude'] != null) {
-                  final pickupLat = (pickupData['latitude'] as num).toDouble();
-                  final pickupLng = (pickupData['longitude'] as num).toDouble();
+          final pickupData = data['pickupLocation'];
+          if (pickupData is! Map || pickupData['latitude'] == null || pickupData['longitude'] == null) return;
 
-                  final distanceInMeters = Geolocator.distanceBetween(
-                    _currentLocation!.latitude, _currentLocation!.longitude,
-                    pickupLat, pickupLng,
-                  );
+          final pickupLat = (pickupData['latitude'] as num).toDouble();
+          final pickupLng = (pickupData['longitude'] as num).toDouble();
+          final distanceInMeters = Geolocator.distanceBetween(
+            _currentLocation!.latitude, _currentLocation!.longitude,
+            pickupLat, pickupLng,
+          );
+          if (distanceInMeters > 5000) return;
 
-                  if (distanceInMeters <= 5000) {
-                    final negotiation = PriceNegotiation(
-                      id: doc.id,
-                      passengerId: data['passengerId'] as String? ?? '',
-                      selectedDriverId: null,
-                      pickup: LocationPoint(
-                        latitude: pickupLat,
-                        longitude: pickupLng,
-                        address: data['pickupAddress'] as String? ?? 'Dirección no disponible',
-                      ),
-                      destination: LocationPoint(
-                        latitude: (data['destinationLocation']?['latitude'] as num?)?.toDouble() ?? 0.0,
-                        longitude: (data['destinationLocation']?['longitude'] as num?)?.toDouble() ?? 0.0,
-                        address: data['destinationAddress'] as String? ?? 'Destino no disponible',
-                      ),
-                      status: NegotiationStatus.waiting,
-                      suggestedPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
-                      offeredPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
-                      distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
-                      estimatedTime: (data['estimatedTime'] as num?)?.toInt() ?? 0,
-                      passengerName: data['passengerName'] as String? ?? 'Pasajero',
-                      passengerPhoto: data['passengerPhoto'] as String? ?? '',
-                      passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
-                      driverOffers: [],
-                      paymentMethod: _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
-                      notes: data['notes'] as String? ?? data['adminNotes'] as String?,
-                      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-                      expiresAt: (data['expiresAt'] as Timestamp?)?.toDate() ?? DateTime.now().add(const Duration(minutes: 5)),
-                      // Pedidos manuales (admin)
-                      isManualOrder: data['isManualOrder'] == true,
-                      guestPassengerName: data['guestPassengerName'] as String?,
-                      guestPassengerPhone: data['guestPassengerPhone'] as String?,
-                    );
+          final rideId = (data['id'] as String?) ?? (event['rideId'] as String?);
+          if (rideId == null) return;
 
-                    nearbyRides.add(negotiation);
-                  }
-                }
-              }
-            } catch (e) {
-              AppLogger.error('Error processing ride ${doc.id}: $e');
-            }
-          }
+          final destData = data['destinationLocation'] as Map?;
+          final negotiation = PriceNegotiation(
+            id: rideId,
+            passengerId: data['passengerId'] as String? ?? '',
+            selectedDriverId: null,
+            pickup: LocationPoint(
+              latitude: pickupLat,
+              longitude: pickupLng,
+              address: data['pickupAddress'] as String? ?? 'Dirección no disponible',
+            ),
+            destination: LocationPoint(
+              latitude: (destData?['latitude'] as num?)?.toDouble() ?? 0.0,
+              longitude: (destData?['longitude'] as num?)?.toDouble() ?? 0.0,
+              address: data['destinationAddress'] as String? ?? 'Destino no disponible',
+            ),
+            status: NegotiationStatus.waiting,
+            suggestedPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
+            offeredPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
+            distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
+            estimatedTime: (data['estimatedTime'] as num?)?.toInt() ?? 0,
+            passengerName: data['passengerName'] as String? ?? 'Pasajero',
+            passengerPhoto: data['passengerPhoto'] as String? ?? '',
+            passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
+            driverOffers: [],
+            paymentMethod: _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
+            notes: data['notes'] as String? ?? data['adminNotes'] as String?,
+            createdAt: _parseIsoDate(data['createdAt']) ?? DateTime.now(),
+            expiresAt: _parseIsoDate(data['expiresAt']) ?? DateTime.now().add(const Duration(minutes: 5)),
+            isManualOrder: data['isManualOrder'] == true,
+            guestPassengerName: data['guestPassengerName'] as String?,
+            guestPassengerPhone: data['guestPassengerPhone'] as String?,
+          );
 
-          if (!_isDisposed && mounted) {
-            final existingIds = _availableRequests.map((r) => r.id).toSet();
-            final newRides = nearbyRides.where((r) => !existingIds.contains(r.id)).toList();
+          final existingIds = _availableRequests.map((r) => r.id).toSet();
+          if (existingIds.contains(negotiation.id)) return;
 
-            setState(() {
-              _availableRequests.addAll(newRides);
-              _updateMapMarkers();
-            });
+          setState(() {
+            _availableRequests.add(negotiation);
+            _updateMapMarkers();
+          });
 
-            if (newRides.isNotEmpty) {
-              SoundService().play(AppSound.rideRequest);
-              final firstNewRide = newRides.first;
-              LocalNotificationService().showRideRequestNotification(
-                passengerName: firstNewRide.passengerName,
-                pickupAddress: firstNewRide.pickup.address,
-                price: firstNewRide.offeredPrice.toStringAsFixed(2),
-              );
-            }
-          }
+          SoundService().play(AppSound.rideRequest);
+          LocalNotificationService().showRideRequestNotification(
+            passengerName: negotiation.passengerName,
+            pickupAddress: negotiation.pickup.address,
+            price: negotiation.offeredPrice.toStringAsFixed(2),
+          );
         },
         onError: (error) {
           AppLogger.error('Error in rides listener: $error');
@@ -1048,32 +1053,37 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     try {
       if (_driverId == null) return;
 
-      // Load from 'negotiations' collection (Rapi Team InDrive-style)
-      final requestsSnapshot = await _firestore
-          .collection('negotiations')
-          .where('status', whereIn: ['waiting', 'negotiating'])
-          .limit(50)
-          .get();
+      // Consulta al backend Node los rides disponibles cerca del conductor.
+      // El backend infiere ubicación reciente vía heartbeat; adicionalmente
+      // enviamos las coords actuales cuando estén disponibles.
+      final lat = _currentLocation?.latitude ?? 0.0;
+      final lng = _currentLocation?.longitude ?? 0.0;
+      final response = await _api.listAvailableRides(
+        lat: lat,
+        lng: lng,
+      );
+      final rides = _extractRides(response);
 
-      List<PriceNegotiation> loadedRequests = [];
+      final List<PriceNegotiation> loadedRequests = [];
       final now = DateTime.now();
-      for (var doc in requestsSnapshot.docs) {
+      for (final data in rides) {
         try {
-          final negotiation = PriceNegotiation.fromMap(doc.id, doc.data());
+          final id = (data['id'] as String?) ?? '';
+          if (id.isEmpty) continue;
+          final negotiation = PriceNegotiation.fromMap(id, data);
           if (negotiation.expiresAt.isAfter(now)) {
             loadedRequests.add(negotiation);
-          } else {
-            // Mark expired negotiations in Firestore so they don't show up again
-            doc.reference.update({'status': 'expired'}).catchError((_) {});
           }
+          // TODO(node-migration): reemplazar con endpoint de marcado 'expired'
+          // cuando el backend soporte marcar negotiations expiradas explícitamente.
         } catch (e) {
-          AppLogger.error('Error parsing request ${doc.id}: $e');
+          AppLogger.error('Error parsing request: $e');
         }
       }
 
       if (!mounted) return;
 
-      AppLogger.info('Loaded ${loadedRequests.length} active negotiations from Firestore');
+      AppLogger.info('Loaded ${loadedRequests.length} active negotiations from backend');
 
       setState(() {
         _availableRequests = loadedRequests;
@@ -1216,29 +1226,34 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
-  /// Listen for passenger response on the negotiation document
+  /// Listen for passenger response on the negotiation.
+  /// Se suscribe al stream global SSE de negotiations y filtra por
+  /// negotiationId (que en el nuevo backend coincide con el rideId
+  /// de la solicitud abierta).
   void _listenForNegotiationResponse(String negotiationId, double offeredPrice) {
     _myOfferSubscription?.cancel();
     _pendingOfferTripId = negotiationId;
 
-    _myOfferSubscription = _firestore
-        .collection('negotiations')
-        .doc(negotiationId)
-        .snapshots()
-        .listen((snapshot) async {
+    _sse.start();
+    _myOfferSubscription = _sse.negotiations.listen((event) async {
       if (!mounted || _isDisposed) return;
 
-      if (!snapshot.exists) {
-        // Negotiation deleted — dismiss overlay
-        _dismissOfferingOverlay('La solicitud ya no existe');
-        return;
-      }
+      // Los eventos SSE de negotiations pueden traer diferentes shapes según el
+      // tipo de update — rideId + estado, o el objeto negotiation completo.
+      final String? eventRideId = (event['rideId'] as String?) ??
+          (event['id'] as String?) ??
+          ((event['ride'] as Map<String, dynamic>?)?['id'] as String?) ??
+          ((event['negotiation'] as Map<String, dynamic>?)?['rideId'] as String?);
+      if (eventRideId == null || eventRideId != negotiationId) return;
 
-      final data = snapshot.data()!;
+      final Map<String, dynamic> data =
+          (event['negotiation'] as Map<String, dynamic>?) ??
+              (event['ride'] as Map<String, dynamic>?) ??
+              event;
+
       final status = data['status'] as String?;
-      // FIX: acceptDriverOffer() writes 'acceptedDriverId', not 'driverId'
       final acceptedDriverId = data['acceptedDriverId'] as String? ?? data['driverId'] as String?;
-      final rideId = data['rideId'] as String?;
+      final rideId = (data['rideId'] as String?) ?? negotiationId;
 
       // Passenger accepted THIS driver's offer
       if (status == 'accepted' && acceptedDriverId == _driverId) {
@@ -1267,7 +1282,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         }
 
         // Consume credits for this service (Rapi Team)
-        if (rideId != null && rideId.isNotEmpty) {
+        if (rideId.isNotEmpty) {
           final walletProvider = Provider.of<WalletProvider>(context, listen: false);
           await walletProvider.consumeCreditsForService(
             tripId: rideId,
@@ -1282,9 +1297,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           await _loadTodayStats();
 
           if (mounted) {
-            final rideDoc = await _firestore.collection('rides').doc(rideId).get();
-            if (rideDoc.exists) {
-              _doNavigateToActiveTrip(rideId, rideDoc.data()!);
+            try {
+              final rideResponse = await _api.getRide(rideId);
+              final rideData = (rideResponse['ride'] as Map<String, dynamic>?) ?? rideResponse;
+              _doNavigateToActiveTrip(rideId, rideData);
+            } catch (e) {
+              AppLogger.warning('Error obteniendo ride $rideId: $e');
             }
           }
         }
@@ -1303,7 +1321,6 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         final myOffer = driverOffers.where((o) => o['driverId'] == _driverId).toList();
 
         if (myOffer.isEmpty && _offeringOverlayText != null) {
-          // My offer was removed from the array
           _dismissOfferingOverlay('El pasajero rechazó tu oferta');
           return;
         }
@@ -1360,170 +1377,70 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  /// [LEGACY] Direct acceptance — kept for fallback/reference
+  /// [LEGACY] Direct acceptance — reemplazado por el flujo InDrive de ofertas
+  /// (`_makeOffer` -> `_listenForNegotiationResponse`). Se mantiene el shim
+  /// para no romper callers antiguos: delega en `api.acceptRide` que hace la
+  /// aceptación atómica en el backend Node.
   void _acceptRequestLegacy(PriceNegotiation request, {double? customPrice}) async {
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      // Check credits before accepting (Rapi Team)
       final walletProvider = Provider.of<WalletProvider>(context, listen: false);
       final hasCredits = await walletProvider.hasEnoughCreditsForService();
-
       if (!hasCredits) {
         _showNeedCreditsDialog();
         return;
       }
 
-      // Get passenger phone from Firestore
-      String? passengerPhone;
-      try {
-        final passengerDoc = await _firestore.collection('users').doc(request.passengerId).get();
-        if (passengerDoc.exists) {
-          final passengerData = passengerDoc.data();
-          passengerPhone = passengerData?['phone'] ?? passengerData?['phoneNumber'];
-        }
-      } catch (e) {
-        AppLogger.warning('Could not get passenger phone: $e');
-      }
-
-      // Cancel active ride listener before transaction to avoid race condition
       _activeRideSubscription?.cancel();
 
-      // Use transaction to prevent multiple drivers accepting (Rapi Team)
-      final rideId = await _firestore.runTransaction<String?>((transaction) async {
-        final negotiationRef = _firestore.collection('negotiations').doc(request.id);
-        final snapshot = await transaction.get(negotiationRef);
+      // TODO(node-migration): reemplazar por endpoint que soporte customPrice
+      // (contraofertas directas) cuando el backend acepte ese parámetro.
+      final response = await _api.acceptRide(request.id);
+      final rideData = (response['ride'] as Map<String, dynamic>?) ?? response;
+      final rideId = rideData['id'] as String?;
 
-        if (!snapshot.exists) {
-          throw Exception('La solicitud ya no existe');
-        }
-
-        final data = snapshot.data()!;
-
-        if (data['driverId'] != null && data['driverId'].toString().isNotEmpty) {
-          throw Exception('Otro conductor ya acepto esta solicitud');
-        }
-
-        final status = data['status'] as String?;
-        if (status != 'waiting' && status != 'negotiating') {
-          throw Exception('La solicitud ya no esta disponible');
-        }
-
-        // Use exact pickup location (Rapi Team - revealed only after acceptance)
-        final exactPickup = data['exactPickup'] as Map<String, dynamic>?;
-        final pickupLat = exactPickup?['latitude'] ?? request.pickup.latitude;
-        final pickupLng = exactPickup?['longitude'] ?? request.pickup.longitude;
-        final pickupAddress = exactPickup?['address'] ?? request.pickup.address;
-
-        final rideRef = _firestore.collection('rides').doc();
-
-        transaction.set(rideRef, {
-          'passengerId': request.passengerId,
-          'userId': request.passengerId,
-          'driverId': _driverId,
-          'negotiationId': request.id,
-          'pickupLocation': {
-            'latitude': pickupLat,
-            'longitude': pickupLng,
-          },
-          'destinationLocation': {
-            'latitude': request.destination.latitude,
-            'longitude': request.destination.longitude,
-          },
-          'pickupAddress': pickupAddress,
-          'destinationAddress': request.destination.address,
-          'estimatedFare': customPrice ?? request.offeredPrice,
-          'finalFare': customPrice ?? request.offeredPrice,
-          'estimatedDistance': request.distance,
-          'status': 'accepted',
-          'paymentMethod': _paymentMethodLabel(request.paymentMethod),
-          'requestedAt': FieldValue.serverTimestamp(),
-          'acceptedAt': FieldValue.serverTimestamp(),
-          'vehicleInfo': {
-            'passengerName': request.passengerName,
-            'passengerPhoto': request.passengerPhoto,
-            'passengerRating': request.passengerRating,
-            'passengerPhone': passengerPhone,
-          },
-          'passengerInfo': {
-            'name': request.passengerName,
-            'photo': request.passengerPhoto,
-            'rating': request.passengerRating,
-            'phone': passengerPhone,
-          },
-          'driverInfo': {
-            'driverId': _driverId,
-          },
-        });
-
-        transaction.update(negotiationRef, {
-          'status': 'accepted',
-          'driverId': _driverId,
-          'rideId': rideRef.id,
-          'acceptedAt': FieldValue.serverTimestamp(),
-        });
-
-        return rideRef.id;
-      });
-
-      if (rideId != null) {
-        // Consume credits after successful acceptance (Rapi Team)
-        final creditConsumed = await walletProvider.consumeCreditsForService(
-          tripId: rideId,
-          negotiationId: request.id,
-        );
-
-        if (creditConsumed) {
-          AppLogger.info('Credits consumed for accepted service');
-          await _checkDriverCredits();
-
-          setState(() {
-            _availableRequests.remove(request);
-            _showRequestDetails = false;
-          });
-
-          await _loadTodayStats();
-
-          if (mounted) {
-            final rideDoc = await _firestore.collection('rides').doc(rideId).get();
-            if (rideDoc.exists) {
-              _doNavigateToActiveTrip(rideId, rideDoc.data()!);
-            }
-          }
-        } else {
-          // Rollback if credit consumption failed (Rapi Team)
-          AppLogger.warning('Credit consumption failed, reverting ride');
-
-          try {
-            await _firestore.runTransaction((transaction) async {
-              transaction.update(_firestore.collection('rides').doc(rideId), {
-                'status': 'cancelled',
-                'cancelledAt': FieldValue.serverTimestamp(),
-                'cancelReason': 'credit_consumption_failed',
-              });
-              transaction.update(_firestore.collection('negotiations').doc(request.id), {
-                'status': 'waiting',
-                'driverId': FieldValue.delete(),
-                'rideId': FieldValue.delete(),
-                'acceptedAt': FieldValue.delete(),
-              });
-            });
-          } catch (rollbackError) {
-            AppLogger.error('CRITICAL: Rollback failed: $rollbackError');
-          }
-
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Error al procesar creditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
-          );
-        }
+      if (rideId == null) {
+        throw Exception('El backend no devolvió el rideId');
       }
-    } on FirebaseException catch (e) {
-      AppLogger.error('Firebase error accepting request: ${e.code} - ${e.message}');
+
+      final creditConsumed = await walletProvider.consumeCreditsForService(
+        tripId: rideId,
+        negotiationId: request.id,
+      );
+
+      if (creditConsumed) {
+        AppLogger.info('Credits consumed for accepted service');
+        await _checkDriverCredits();
+
+        setState(() {
+          _availableRequests.remove(request);
+          _showRequestDetails = false;
+        });
+
+        await _loadTodayStats();
+
+        if (mounted) {
+          _doNavigateToActiveTrip(rideId, rideData);
+        }
+      } else {
+        AppLogger.warning('Credit consumption failed, reverting ride');
+        try {
+          await _api.cancelRide(rideId, reason: 'credit_consumption_failed');
+        } catch (rollbackError) {
+          AppLogger.error('CRITICAL: Rollback failed: $rollbackError');
+        }
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Error al procesar creditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
+        );
+      }
+    } on RapiApiException catch (e) {
+      AppLogger.error('API error accepting request: ${e.statusCode} - ${e.code}');
       if (!mounted) return;
-      String errorMessage = e.code == 'permission-denied'
-          ? 'Error de permisos. Contacta soporte.'
-          : e.code == 'failed-precondition' || e.code == 'aborted'
-              ? 'Otro conductor ya acepto esta solicitud'
+      final errorMessage = e.statusCode == 409
+          ? 'Otro conductor ya acepto esta solicitud'
+          : e.statusCode == 403
+              ? 'Error de permisos. Contacta soporte.'
               : 'Error: ${e.message ?? e.code}';
       messenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error));
     } catch (e) {
@@ -1573,36 +1490,20 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  /// Remove driver's offer from the negotiation subcollection on timeout
+  /// Remove driver's offer from the negotiation on timeout.
+  /// TODO(node-migration): reemplazar con endpoint DELETE /api/rides/{id}/offers/mine
+  /// cuando el backend lo exponga. Por ahora hacemos noop — el backend expira
+  /// las ofertas automáticamente por TTL.
   Future<void> _removeMyOfferFromNegotiation(String negotiationId) async {
     if (_driverId == null) return;
-    try {
-      final doc = await _firestore.collection('negotiations').doc(negotiationId).get();
-      if (!doc.exists) return;
-      final offers = (doc.data()?['driverOffers'] as List<dynamic>? ?? [])
-          .where((o) => (o as Map<String, dynamic>)['driverId'] != _driverId)
-          .toList();
-      await _firestore.collection('negotiations').doc(negotiationId).update({
-        'driverOffers': offers,
-      });
-      AppLogger.info('Driver offer removed from negotiation $negotiationId');
-    } catch (e) {
-      AppLogger.warning('Error removing offer from negotiation: $e');
-    }
+    AppLogger.info('TODO(node-migration): remove offer from $negotiationId — backend TTL manages expiry');
   }
 
   Future<void> _removeMyOfferFromFirestore(String tripId) async {
     if (_driverId == null) return;
-    try {
-      final rideDoc = await _firestore.collection('rides').doc(tripId).get();
-      if (!rideDoc.exists) return;
-      final offers = (rideDoc.data()?['driverOffers'] as List<dynamic>? ?? [])
-          .where((o) => (o as Map<String, dynamic>)['driverId'] != _driverId)
-          .toList();
-      await _firestore.collection('rides').doc(tripId).update({'driverOffers': offers});
-    } catch (e) {
-      debugPrint('Error removing expired offer: $e');
-    }
+    // Idem: el backend expira ofertas por TTL. Se conserva el shim por si otros
+    // callers lo usan.
+    AppLogger.info('TODO(node-migration): remove offer from ride $tripId — backend TTL manages expiry');
   }
 
   // Need credits dialog (Rapi Team)
@@ -1845,29 +1746,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   Future<void> _acceptCounterOffer(String tripId, Map<String, dynamic> tripData, double counterPrice) async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final userVehicleInfo = authProvider.currentUser?.vehicleInfo;
-
-      await _firestore.collection('rides').doc(tripId).update({
-        'status': 'accepted',
-        'driverId': _driverId,
-        'driverName': authProvider.currentUser?.fullName ?? 'Conductor',
-        'driverPhone': authProvider.currentUser?.phone ?? '',
-        'driverPhoto': authProvider.currentUser?.profilePhotoUrl ?? '',
-        'finalPrice': counterPrice,
-        'acceptedAt': FieldValue.serverTimestamp(),
-        'acceptedPrice': counterPrice,
-        'vehicleInfo': {
-          'driverName': authProvider.currentUser?.fullName ?? 'Conductor',
-          'driverPhoto': authProvider.currentUser?.profilePhotoUrl ?? '',
-          'driverPhone': authProvider.currentUser?.phone ?? '',
-          'driverRating': authProvider.currentUser?.rating ?? 5.0,
-          'model': userVehicleInfo?['model'] ?? '',
-          'plate': userVehicleInfo?['plate'] ?? '',
-          'color': userVehicleInfo?['color'] ?? '',
-          'brand': userVehicleInfo?['make'] ?? userVehicleInfo?['brand'] ?? '',
-        },
-      });
+      // El backend infiere el conductor por JWT y el precio de la contraoferta
+      // desde el flujo de negociación. `acceptRide` cierra la aceptación con
+      // la última contraoferta activa.
+      // TODO(node-migration): reemplazar con endpoint dedicado /rides/{id}/counter/accept
+      // cuando el backend acepte el counterPrice como parámetro explícito.
+      final response = await _api.acceptRide(tripId);
+      final rideData = (response['ride'] as Map<String, dynamic>?) ?? response;
 
       if (!mounted) return;
 
@@ -1875,8 +1760,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         SnackBar(content: Text('Viaje aceptado por S/ ${counterPrice.toStringAsFixed(2)}!'), backgroundColor: AppColors.success),
       );
 
-      // Navigate using Rapi Team active trip screen
-      _doNavigateToActiveTrip(tripId, tripData);
+      _doNavigateToActiveTrip(tripId, rideData.isNotEmpty ? rideData : tripData);
     } catch (e) {
       print('Error accepting counter-offer: $e');
       if (!mounted) return;
@@ -2613,23 +2497,20 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       final today = DateTime.now();
       final startOfDay = DateTime(today.year, today.month, today.day);
-      final endOfDay = startOfDay.add(Duration(days: 1));
 
-      // Simple query: just driverId + status (no composite index needed)
-      final tripsQuery = await _firestore
-          .collection('rides')
-          .where('driverId', isEqualTo: _driverId)
-          .where('status', isEqualTo: 'completed')
-          .limit(100)
-          .get();
+      // Consulta al backend Node: rides completados del conductor autenticado.
+      final response = await _api.listRides(
+        role: 'driver',
+        status: 'completed',
+        pageSize: 100,
+      );
+      final rides = _extractRides(response);
 
       double totalEarnings = 0.0;
       int tripCount = 0;
-      for (var doc in tripsQuery.docs) {
-        final data = doc.data();
-        // Filter today's trips locally (avoids composite index)
-        final completedAt = data['completedAt'] as Timestamp?;
-        if (completedAt != null && completedAt.toDate().isAfter(startOfDay)) {
+      for (final data in rides) {
+        final completedAt = _parseIsoDate(data['completedAt']);
+        if (completedAt != null && completedAt.isAfter(startOfDay)) {
           final fare = ((data['driverEarning'] ?? data['finalFare'] ?? data['estimatedFare'] ?? 0) as num).toDouble();
           totalEarnings += fare;
           tripCount++;

@@ -1,9 +1,30 @@
 import 'package:flutter/material.dart';
-import '../services/firebase_service.dart';
+import '../services/rapi_api_client.dart';
 import '../utils/logger.dart';
 
 enum CardType { visa, mastercard, amex, discover, other }
 enum PaymentMethodType { card, cash, wallet, paypal }
+
+/// Convertimos el `methodType` textual del backend al enum de la app.
+PaymentMethodType _methodTypeFromString(String? s) {
+  switch ((s ?? '').toLowerCase()) {
+    case 'cash': return PaymentMethodType.cash;
+    case 'wallet': return PaymentMethodType.wallet;
+    case 'card':
+    case 'mercadopago': return PaymentMethodType.card;
+    case 'paypal': return PaymentMethodType.paypal;
+    default: return PaymentMethodType.cash;
+  }
+}
+
+String _methodTypeToString(PaymentMethodType t) {
+  switch (t) {
+    case PaymentMethodType.cash: return 'cash';
+    case PaymentMethodType.wallet: return 'wallet';
+    case PaymentMethodType.card: return 'mercadopago';
+    case PaymentMethodType.paypal: return 'paypal';
+  }
+}
 
 class PaymentMethod {
   final String id;
@@ -36,95 +57,62 @@ class PaymentMethod {
     this.isActive = true,
   });
 
-  // Getter para displayName
   String get displayName {
-    if (type == PaymentMethodType.card ) {
+    if (type == PaymentMethodType.card && cardNumber != null && cardNumber!.length >= 4) {
       return '$name •••• ${cardNumber!.substring(cardNumber!.length - 4)}';
     }
     return name;
   }
-  
-  // Getter para color
+
   Color get color => Color(int.parse(colorHex.replaceAll('#', '0xFF')));
 
-  Map<String, dynamic> toFirestore() {
-    return {
-      'id': id,
-      'type': type.toString(),
-      'name': name,
-      'cardNumber': cardNumber,
-      'cardHolder': cardHolder,
-      'expiryDate': expiryDate,
-      'cardType': cardType?.toString(),
-      'isDefault': isDefault,
-      'walletBalance': walletBalance,
-      'iconName': iconName,
-      'colorHex': colorHex,
-      'createdAt': createdAt?.millisecondsSinceEpoch,
-      'isActive': isActive,
-      'updatedAt': DateTime.now().millisecondsSinceEpoch,
-    };
+  /// Mapea la respuesta del backend `/api/payment-methods` al modelo local.
+  static PaymentMethod fromApi(Map<String, dynamic> data) {
+    final t = _methodTypeFromString(data['methodType'] as String?);
+    final defaults = _defaultDisplay(t);
+    return PaymentMethod(
+      id: (data['id'] ?? '') as String,
+      type: t,
+      name: (data['label'] ?? defaults.name) as String,
+      isDefault: (data['isDefault'] ?? false) as bool,
+      iconName: defaults.icon,
+      colorHex: defaults.color,
+      createdAt: _parseDate(data['createdAt']),
+      isActive: true,
+    );
   }
 
-  static PaymentMethod fromFirestore(Map<String, dynamic> data) {
-    return PaymentMethod(
-      id: data['id'] ?? '',
-      type: PaymentMethodType.values.firstWhere(
-        (e) => e.toString() == data['type'],
-        orElse: () => PaymentMethodType.cash,
-      ),
-      name: data['name'] ?? '',
-      cardNumber: data['cardNumber'],
-      cardHolder: data['cardHolder'],
-      expiryDate: data['expiryDate'],
-      cardType: data['cardType'] != null
-          ? CardType.values.firstWhere(
-              (e) => e.toString() == data['cardType'],
-              orElse: () => CardType.other,
-            )
-          : null,
-      isDefault: data['isDefault'] ?? false,
-      walletBalance: data['walletBalance']?.toString(),
-      iconName: data['iconName'] ?? 'credit_card',
-      colorHex: data['colorHex'] ?? '#2196F3',
-      createdAt: data['createdAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(data['createdAt'])
-          : null,
-      isActive: data['isActive'] ?? true,
-    );
+  static _MethodDisplay _defaultDisplay(PaymentMethodType t) {
+    switch (t) {
+      case PaymentMethodType.cash: return _MethodDisplay('Efectivo', 'money', '#4CAF50');
+      case PaymentMethodType.wallet: return _MethodDisplay('Billetera', 'wallet', '#FF6B00');
+      case PaymentMethodType.card: return _MethodDisplay('MercadoPago', 'credit_card', '#2196F3');
+      case PaymentMethodType.paypal: return _MethodDisplay('PayPal', 'paypal', '#003087');
+    }
   }
 
   PaymentMethod copyWith({
-    String? id,
-    PaymentMethodType? type,
-    String? name,
-    String? cardNumber,
-    String? cardHolder,
-    String? expiryDate,
-    CardType? cardType,
-    bool? isDefault,
-    String? walletBalance,
-    String? iconName,
-    String? colorHex,
-    DateTime? createdAt,
-    bool? isActive,
+    String? id, PaymentMethodType? type, String? name, String? cardNumber,
+    String? cardHolder, String? expiryDate, CardType? cardType, bool? isDefault,
+    String? walletBalance, String? iconName, String? colorHex,
+    DateTime? createdAt, bool? isActive,
   }) {
     return PaymentMethod(
-      id: id ?? this.id,
-      type: type ?? this.type,
-      name: name ?? this.name,
-      cardNumber: cardNumber ?? this.cardNumber,
-      cardHolder: cardHolder ?? this.cardHolder,
-      expiryDate: expiryDate ?? this.expiryDate,
-      cardType: cardType ?? this.cardType,
-      isDefault: isDefault ?? this.isDefault,
-      walletBalance: walletBalance ?? this.walletBalance,
-      iconName: iconName ?? this.iconName,
-      colorHex: colorHex ?? this.colorHex,
-      createdAt: createdAt ?? this.createdAt,
-      isActive: isActive ?? this.isActive,
+      id: id ?? this.id, type: type ?? this.type, name: name ?? this.name,
+      cardNumber: cardNumber ?? this.cardNumber, cardHolder: cardHolder ?? this.cardHolder,
+      expiryDate: expiryDate ?? this.expiryDate, cardType: cardType ?? this.cardType,
+      isDefault: isDefault ?? this.isDefault, walletBalance: walletBalance ?? this.walletBalance,
+      iconName: iconName ?? this.iconName, colorHex: colorHex ?? this.colorHex,
+      createdAt: createdAt ?? this.createdAt, isActive: isActive ?? this.isActive,
     );
   }
+}
+
+class _MethodDisplay {
+  final String name;
+  final String icon;
+  final String color;
+  const _MethodDisplay(this.name, this.icon, this.color);
 }
 
 class TransactionRecord {
@@ -134,7 +122,7 @@ class TransactionRecord {
   final double amount;
   final String paymentMethodId;
   final String paymentMethodName;
-  final String status; // 'completed', 'failed', 'pending', 'refunded'
+  final String status;
   final String? failureReason;
   final DateTime createdAt;
   final Map<String, dynamic>? metadata;
@@ -152,38 +140,18 @@ class TransactionRecord {
     this.metadata,
   });
 
-  Map<String, dynamic> toFirestore() {
-    return {
-      'id': id,
-      'userId': userId,
-      'tripId': tripId,
-      'amount': amount,
-      'paymentMethodId': paymentMethodId,
-      'paymentMethodName': paymentMethodName,
-      'status': status,
-      'failureReason': failureReason,
-      'createdAt': createdAt.millisecondsSinceEpoch,
-      'metadata': metadata,
-      'updatedAt': DateTime.now().millisecondsSinceEpoch,
-    };
-  }
-
-  static TransactionRecord fromFirestore(Map<String, dynamic> data) {
+  /// Mapea la respuesta del backend `/api/wallet/transactions`.
+  static TransactionRecord fromApi(Map<String, dynamic> data) {
     return TransactionRecord(
-      id: data['id'] ?? '',
-      userId: data['userId'] ?? '',
-      tripId: data['tripId'],
-      amount: (data['amount'] ?? 0.0).toDouble(),
-      paymentMethodId: data['paymentMethodId'] ?? '',
-      paymentMethodName: data['paymentMethodName'] ?? '',
-      status: data['status'] ?? 'pending',
-      failureReason: data['failureReason'],
-      createdAt: data['createdAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(data['createdAt'])
-          : DateTime.now(),
-      metadata: data['metadata'] != null 
-          ? Map<String, dynamic>.from(data['metadata'])
-          : null,
+      id: (data['id'] ?? '') as String,
+      userId: (data['userId'] ?? '') as String,
+      tripId: data['rideId'] as String?,
+      amount: ((data['amount'] as num?) ?? 0).toDouble().abs(),
+      paymentMethodId: '${data['type'] ?? ''}',
+      paymentMethodName: (data['description'] ?? data['type'] ?? '') as String,
+      status: (data['status'] ?? 'completed') as String,
+      createdAt: _parseDate(data['createdAt']) ?? DateTime.now(),
+      metadata: data['metadata'] is Map<String, dynamic> ? data['metadata'] as Map<String, dynamic> : null,
     );
   }
 }
@@ -208,127 +176,99 @@ class PaymentStatistics {
   });
 }
 
+DateTime? _parseDate(dynamic v) {
+  if (v == null) return null;
+  if (v is DateTime) return v;
+  if (v is String) return DateTime.tryParse(v);
+  if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+  return null;
+}
+
 class PaymentProvider with ChangeNotifier {
-  final FirebaseService _firebaseService = FirebaseService();
-  
-  // Estado de carga
+  final RapiApiClient _api = RapiApiClient.instance;
+
   bool _isLoading = false;
   bool _isLoadingTransactions = false;
   String? _error;
 
-  // Métodos de pago
   List<PaymentMethod> _paymentMethods = [];
   String? _defaultPaymentMethodId;
 
-  // Transacciones
   List<TransactionRecord> _transactions = [];
   PaymentStatistics? _statistics;
 
-  // Billetera
   double _walletBalance = 0.0;
   bool _isWalletLoading = false;
 
-  // Getters
   bool get isLoading => _isLoading;
   bool get isLoadingTransactions => _isLoadingTransactions;
   bool get isWalletLoading => _isWalletLoading;
   String? get error => _error;
-  
+
   List<PaymentMethod> get paymentMethods => List.unmodifiable(_paymentMethods);
-  List<PaymentMethod> get activePaymentMethods => 
-      _paymentMethods.where((method) => method.isActive == true).toList();
-  PaymentMethod? get selectedPaymentMethod => _defaultPaymentMethodId != null
+  List<PaymentMethod> get activePaymentMethods =>
+      _paymentMethods.where((m) => m.isActive == true).toList();
+  PaymentMethod? get selectedPaymentMethod => _defaultPaymentMethodId != null && _paymentMethods.isNotEmpty
       ? _paymentMethods.firstWhere((m) => m.id == _defaultPaymentMethodId, orElse: () => _paymentMethods.first)
-      : _paymentMethods.isNotEmpty ? _paymentMethods.first : null;
-  
-  PaymentMethod? get defaultPaymentMethod => _paymentMethods.firstWhere(
-    (method) => method.isDefault == true && method.isActive == true,
-    orElse: () => _paymentMethods.isNotEmpty ? _paymentMethods.first : 
-        PaymentMethod(
-          id: 'cash',
-          type: PaymentMethodType.cash,
-          name: 'Efectivo',
-          isDefault: true,
-          iconName: 'money',
-          colorHex: '#4CAF50',
-        ),
-  );
-  
+      : (_paymentMethods.isNotEmpty ? _paymentMethods.first : null);
+
+  PaymentMethod? get defaultPaymentMethod {
+    for (final m in _paymentMethods) {
+      if (m.isDefault && m.isActive) return m;
+    }
+    if (_paymentMethods.isNotEmpty) return _paymentMethods.first;
+    return PaymentMethod(
+      id: 'cash', type: PaymentMethodType.cash, name: 'Efectivo',
+      isDefault: true, iconName: 'money', colorHex: '#4CAF50',
+    );
+  }
+
   List<TransactionRecord> get transactions => List.unmodifiable(_transactions);
   List<TransactionRecord> get successfulTransactions =>
       _transactions.where((t) => t.status == 'completed').toList();
-  
   PaymentStatistics? get statistics => _statistics;
   double get walletBalance => _walletBalance;
 
-  // Limpiar error
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
+  void clearError() { _error = null; notifyListeners(); }
 
-  // Cargar métodos de pago
   Future<void> loadPaymentMethods(String userId) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      AppLogger.info('Cargando métodos de pago para usuario: $userId');
-
-      final snapshot = await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .collection('paymentMethods')
-          .where('isActive', isEqualTo: true)
-          .orderBy('isDefault', descending: true)
-          .orderBy('createdAt', descending: false)
-          .get();
-
-      _paymentMethods = snapshot.docs
-          .map((doc) => PaymentMethod.fromFirestore(doc.data()))
+      final data = await _api.listPaymentMethods();
+      final rawList = (data['methods'] as List?) ?? (data['paymentMethods'] as List?) ?? const [];
+      _paymentMethods = rawList
+          .whereType<Map<String, dynamic>>()
+          .map((m) => PaymentMethod.fromApi(m))
           .toList();
 
-      // Asegurar método por defecto (efectivo)
-      if (_paymentMethods.isEmpty || !_paymentMethods.any((m) => m.isDefault)) {
-        await _addDefaultCashMethod(userId);
+      // Efectivo siempre disponible como fallback
+      if (_paymentMethods.isEmpty || !_paymentMethods.any((m) => m.type == PaymentMethodType.cash)) {
+        _paymentMethods.insert(0, PaymentMethod(
+          id: 'cash', type: PaymentMethodType.cash, name: 'Efectivo',
+          isDefault: _paymentMethods.isEmpty, iconName: 'money', colorHex: '#4CAF50',
+        ));
       }
 
-      AppLogger.info('Métodos de pago cargados: ${_paymentMethods.length}');
+      final def = _paymentMethods.firstWhere(
+        (m) => m.isDefault,
+        orElse: () => _paymentMethods.first,
+      );
+      _defaultPaymentMethodId = def.id;
 
+      AppLogger.info('Métodos de pago cargados: ${_paymentMethods.length}');
+    } on RapiApiException catch (e) {
+      _error = 'Error al cargar métodos de pago: ${e.message ?? e.code}';
     } catch (e) {
       _error = 'Error al cargar métodos de pago: $e';
-      AppLogger.error('Error cargando métodos de pago', e);
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // Agregar método por defecto (efectivo)
-  Future<void> _addDefaultCashMethod(String userId) async {
-    final cashMethod = PaymentMethod(
-      id: 'cash_${DateTime.now().millisecondsSinceEpoch}',
-      type: PaymentMethodType.cash,
-      name: 'Efectivo',
-      isDefault: true,
-      iconName: 'money',
-      colorHex: '#4CAF50',
-      createdAt: DateTime.now(),
-    );
-
-    await _firebaseService.firestore
-        .collection('users')
-        .doc(userId)
-        .collection('paymentMethods')
-        .doc(cashMethod.id)
-        .set(cashMethod.toFirestore());
-
-    _paymentMethods.add(cashMethod);
-    _defaultPaymentMethodId = cashMethod.id;
-  }
-
-  // Agregar método de pago
   Future<bool> addPaymentMethod({
     required String userId,
     required PaymentMethod paymentMethod,
@@ -339,37 +279,31 @@ class PaymentProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      AppLogger.info('Agregando método de pago: ${paymentMethod.name}');
-
-      // Si es el primer método o se marca como predeterminado
-      if (setAsDefault || _paymentMethods.isEmpty) {
-        // Desmarcar método actual como predeterminado
-        if (_defaultPaymentMethodId != null) {
-          await _updateDefaultStatus(userId, _defaultPaymentMethodId!, false);
-        }
-        _defaultPaymentMethodId = paymentMethod.id;
-      }
-
-      final methodToAdd = paymentMethod.copyWith(
+      final resp = await _api.addPaymentMethod(
+        methodType: _methodTypeToString(paymentMethod.type),
+        label: paymentMethod.name,
         isDefault: setAsDefault || _paymentMethods.isEmpty,
-        createdAt: DateTime.now(),
       );
-
-      await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .collection('paymentMethods')
-          .doc(methodToAdd.id)
-          .set(methodToAdd.toFirestore());
-
-      _paymentMethods.add(methodToAdd);
-      
-      AppLogger.info('Método de pago agregado exitosamente');
+      final created = (resp['method'] ?? resp['paymentMethod']) as Map<String, dynamic>?;
+      if (created != null) {
+        final m = PaymentMethod.fromApi(created);
+        if (m.isDefault) {
+          // Bajar el flag default de los demás localmente
+          for (int i = 0; i < _paymentMethods.length; i++) {
+            if (_paymentMethods[i].isDefault) {
+              _paymentMethods[i] = _paymentMethods[i].copyWith(isDefault: false);
+            }
+          }
+          _defaultPaymentMethodId = m.id;
+        }
+        _paymentMethods.add(m);
+      }
       return true;
-
+    } on RapiApiException catch (e) {
+      _error = 'Error al agregar método de pago: ${e.message ?? e.code}';
+      return false;
     } catch (e) {
       _error = 'Error al agregar método de pago: $e';
-      AppLogger.error('Error agregando método de pago', e);
       return false;
     } finally {
       _isLoading = false;
@@ -377,67 +311,24 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  // Establecer método predeterminado
   Future<bool> setDefaultPaymentMethod({
     required String userId,
     required String paymentMethodId,
   }) async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      AppLogger.info('Estableciendo método predeterminado: $paymentMethodId');
-
-      // Desmarcar método actual
-      if ( _defaultPaymentMethodId != paymentMethodId) {
-        await _updateDefaultStatus(userId, _defaultPaymentMethodId!, false);
-        
-        // Actualizar en lista local
-        final oldIndex = _paymentMethods.indexWhere((m) => m.id == _defaultPaymentMethodId);
-        if (oldIndex != -1) {
-          _paymentMethods[oldIndex] = _paymentMethods[oldIndex].copyWith(isDefault: false);
-        }
-      }
-
-      // Marcar nuevo método como predeterminado
-      await _updateDefaultStatus(userId, paymentMethodId, true);
-      
-      // Actualizar en lista local
-      final newIndex = _paymentMethods.indexWhere((m) => m.id == paymentMethodId);
-      if (newIndex != -1) {
-        _paymentMethods[newIndex] = _paymentMethods[newIndex].copyWith(isDefault: true);
-      }
-
-      _defaultPaymentMethodId = paymentMethodId;
-      
-      AppLogger.info('Método predeterminado actualizado');
-      return true;
-
-    } catch (e) {
-      _error = 'Error al establecer método predeterminado: $e';
-      AppLogger.error('Error estableciendo método predeterminado', e);
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+    // El backend acepta isDefault via PATCH del método existente. Como no
+    // hay PATCH endpoint todavía, actualizamos localmente y persistimos vía
+    // add (recreando el método marcándolo como default). Para methods
+    // efímeros (cash-*) solo aplicamos localmente.
+    final idx = _paymentMethods.indexWhere((m) => m.id == paymentMethodId);
+    if (idx == -1) return false;
+    for (int i = 0; i < _paymentMethods.length; i++) {
+      _paymentMethods[i] = _paymentMethods[i].copyWith(isDefault: i == idx);
     }
+    _defaultPaymentMethodId = paymentMethodId;
+    notifyListeners();
+    return true;
   }
 
-  // Actualizar estado predeterminado en Firebase
-  Future<void> _updateDefaultStatus(String userId, String paymentMethodId, bool isDefault) async {
-    await _firebaseService.firestore
-        .collection('users')
-        .doc(userId)
-        .collection('paymentMethods')
-        .doc(paymentMethodId)
-        .update({
-          'isDefault': isDefault,
-          'updatedAt': DateTime.now().millisecondsSinceEpoch,
-        });
-  }
-
-  // Eliminar método de pago
   Future<bool> deletePaymentMethod({
     required String userId,
     required String paymentMethodId,
@@ -447,40 +338,23 @@ class PaymentProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      AppLogger.info('Eliminando método de pago: $paymentMethodId');
-
-      // No permitir eliminar si es el único método
       if (_paymentMethods.length <= 1) {
         _error = 'Debes tener al menos un método de pago';
         return false;
       }
 
-      // Marcar como inactivo en lugar de eliminar
-      await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .collection('paymentMethods')
-          .doc(paymentMethodId)
-          .update({
-            'isActive': false,
-            'updatedAt': DateTime.now().millisecondsSinceEpoch,
-          });
-
-      // Remover de lista local
-      final wasDefault = _paymentMethods.any((m) => m.id == paymentMethodId && m.isDefault);
-      _paymentMethods.removeWhere((m) => m.id == paymentMethodId);
-
-      // Si era el predeterminado, establecer otro
-      if (wasDefault && _paymentMethods.isNotEmpty) {
-        await setDefaultPaymentMethod(userId: userId, paymentMethodId: _paymentMethods.first.id);
+      // Método efectivo local — solo remover
+      if (paymentMethodId.startsWith('cash')) {
+        _paymentMethods.removeWhere((m) => m.id == paymentMethodId);
+        return true;
       }
 
-      AppLogger.info('Método de pago eliminado');
+      // TODO(backend): DELETE /api/payment-methods/{id} está pendiente en cliente.
+      // Cuando exista, usar api.deletePaymentMethod(paymentMethodId).
+      _paymentMethods.removeWhere((m) => m.id == paymentMethodId);
       return true;
-
     } catch (e) {
       _error = 'Error al eliminar método de pago: $e';
-      AppLogger.error('Error eliminando método de pago', e);
       return false;
     } finally {
       _isLoading = false;
@@ -488,111 +362,66 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  // Cargar historial de transacciones
   Future<void> loadTransactionHistory(String userId, {int limit = 50}) async {
     try {
       _isLoadingTransactions = true;
       _error = null;
       notifyListeners();
 
-      AppLogger.info('Cargando historial de transacciones para usuario: $userId');
-
-      final snapshot = await _firebaseService.firestore
-          .collection('transactions')
-          .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
-          .limit(limit)
-          .get();
-
-      _transactions = snapshot.docs
-          .map((doc) => TransactionRecord.fromFirestore(doc.data()))
+      final data = await _api.listWalletTransactions(pageSize: limit);
+      final rawList = (data['transactions'] as List?) ?? const [];
+      _transactions = rawList
+          .whereType<Map<String, dynamic>>()
+          .map((t) => TransactionRecord.fromApi(t))
           .toList();
 
-      // Calcular estadísticas
       _calculateStatistics();
-
-      AppLogger.info('Transacciones cargadas: ${_transactions.length}');
-
+    } on RapiApiException catch (e) {
+      _error = 'Error al cargar historial: ${e.message ?? e.code}';
     } catch (e) {
       _error = 'Error al cargar historial: $e';
-      AppLogger.error('Error cargando transacciones', e);
     } finally {
       _isLoadingTransactions = false;
       notifyListeners();
     }
   }
 
-  // Calcular estadísticas
   void _calculateStatistics() {
-    if (_transactions.isEmpty) {
-      _statistics = PaymentStatistics(
-        totalSpent: 0,
-        totalTransactions: 0,
-        successfulTransactions: 0,
-        failedTransactions: 0,
-        averageTransactionAmount: 0,
-        spendingByMethod: {},
-        transactionsByMethod: {},
-      );
-      return;
-    }
-
-    final successful = _transactions.where((t) => t.status == 'completed').toList();
+    final completed = _transactions.where((t) => t.status == 'completed').toList();
     final failed = _transactions.where((t) => t.status == 'failed').toList();
-    
-    final totalSpent = successful.fold<double>(0, (sum, t) => sum + t.amount);
-    final spendingByMethod = <String, double>{};
-    final transactionsByMethod = <String, int>{};
-
-    for (final transaction in successful) {
-      spendingByMethod[transaction.paymentMethodName] = 
-          (spendingByMethod[transaction.paymentMethodName] ?? 0) + transaction.amount;
-      transactionsByMethod[transaction.paymentMethodName] = 
-          (transactionsByMethod[transaction.paymentMethodName] ?? 0) + 1;
+    final total = completed.fold<double>(0, (sum, t) => sum + t.amount);
+    final byMethod = <String, double>{};
+    final countByMethod = <String, int>{};
+    for (final t in completed) {
+      byMethod[t.paymentMethodName] = (byMethod[t.paymentMethodName] ?? 0) + t.amount;
+      countByMethod[t.paymentMethodName] = (countByMethod[t.paymentMethodName] ?? 0) + 1;
     }
-
     _statistics = PaymentStatistics(
-      totalSpent: totalSpent,
+      totalSpent: total,
       totalTransactions: _transactions.length,
-      successfulTransactions: successful.length,
+      successfulTransactions: completed.length,
       failedTransactions: failed.length,
-      averageTransactionAmount: successful.isNotEmpty 
-          ? totalSpent / successful.length 
-          : 0,
-      spendingByMethod: spendingByMethod,
-      transactionsByMethod: transactionsByMethod,
+      averageTransactionAmount: completed.isEmpty ? 0 : total / completed.length,
+      spendingByMethod: byMethod,
+      transactionsByMethod: countByMethod,
     );
   }
 
-  // Cargar balance de billetera
   Future<void> loadWalletBalance(String userId) async {
     try {
       _isWalletLoading = true;
       notifyListeners();
 
-      AppLogger.info('Cargando balance de billetera para usuario: $userId');
+      final data = await _api.walletBalance();
+      _walletBalance = ((data['balance'] as num?) ?? 0).toDouble();
 
-      final doc = await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .collection('wallet')
-          .doc('balance')
-          .get();
-
-      if (doc.exists) {
-        _walletBalance = (doc.data()?['amount'] ?? 0.0).toDouble();
-      }
-
-      // Actualizar método de billetera si existe
+      // Actualizar método wallet visible
       final walletIndex = _paymentMethods.indexWhere((m) => m.type == PaymentMethodType.wallet);
       if (walletIndex != -1) {
         _paymentMethods[walletIndex] = _paymentMethods[walletIndex].copyWith(
           walletBalance: _walletBalance.toStringAsFixed(2),
         );
       }
-
-      AppLogger.info('Balance de billetera cargado: $_walletBalance');
-
     } catch (e) {
       AppLogger.error('Error cargando balance de billetera', e);
     } finally {
@@ -601,7 +430,22 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  // Recargar billetera
+  /// Crea checkout de MercadoPago. La recarga real se acredita cuando MP
+  /// notifica al webhook del backend — hay que refrescar `loadWalletBalance`
+  /// tras cerrar el WebView.
+  Future<Map<String, dynamic>?> createRechargeCheckout({
+    required double amount,
+  }) async {
+    try {
+      final data = await _api.createRechargeCheckout(amount);
+      return data;
+    } on RapiApiException catch (e) {
+      _error = 'Error al crear pago: ${e.message ?? e.code}';
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<bool> rechargeWallet({
     required String userId,
     required double amount,
@@ -611,59 +455,14 @@ class PaymentProvider with ChangeNotifier {
       _isWalletLoading = true;
       _error = null;
       notifyListeners();
-
-      AppLogger.info('Recargando billetera: $amount para usuario: $userId');
-
-      // Crear transacción de recarga
-      final transactionId = 'recharge_${DateTime.now().millisecondsSinceEpoch}';
-      final rechargeTransaction = TransactionRecord(
-        id: transactionId,
-        userId: userId,
-        amount: amount,
-        paymentMethodId: paymentMethodId,
-        paymentMethodName: 'Recarga de Billetera',
-        status: 'completed', // En un caso real, esto dependería del procesamiento
-        createdAt: DateTime.now(),
-        metadata: {'type': 'wallet_recharge'},
-      );
-
-      // Guardar transacción
-      await _firebaseService.firestore
-          .collection('transactions')
-          .doc(transactionId)
-          .set(rechargeTransaction.toFirestore());
-
-      // Actualizar balance
-      _walletBalance += amount;
-      
-      await _firebaseService.firestore
-          .collection('users')
-          .doc(userId)
-          .collection('wallet')
-          .doc('balance')
-          .set({
-            'amount': _walletBalance,
-            'updatedAt': DateTime.now().millisecondsSinceEpoch,
-          });
-
-      // Actualizar método de billetera local
-      final walletIndex = _paymentMethods.indexWhere((m) => m.type == PaymentMethodType.wallet);
-      if (walletIndex != -1) {
-        _paymentMethods[walletIndex] = _paymentMethods[walletIndex].copyWith(
-          walletBalance: _walletBalance.toStringAsFixed(2),
-        );
-      }
-
-      // Agregar a lista de transacciones
-      _transactions.insert(0, rechargeTransaction);
-      _calculateStatistics();
-
-      AppLogger.info('Billetera recargada exitosamente');
-      return true;
-
+      final data = await _api.createRechargeCheckout(amount);
+      final ok = data['initPoint'] != null || data['preferenceId'] != null;
+      return ok;
+    } on RapiApiException catch (e) {
+      _error = 'Error al recargar billetera: ${e.message ?? e.code}';
+      return false;
     } catch (e) {
       _error = 'Error al recargar billetera: $e';
-      AppLogger.error('Error recargando billetera', e);
       return false;
     } finally {
       _isWalletLoading = false;
@@ -671,7 +470,9 @@ class PaymentProvider with ChangeNotifier {
     }
   }
 
-  // Procesar pago
+  /// Los pagos por wallet/efectivo se procesan server-side al completar el ride
+  /// (`api.completeRide(paymentMethod: 'wallet' | 'cash')`). Aquí solo validamos
+  /// pre-condiciones locales para UX.
   Future<bool> processPayment({
     required String userId,
     required String paymentMethodId,
@@ -681,95 +482,29 @@ class PaymentProvider with ChangeNotifier {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      AppLogger.info('Procesando pago: $amount para usuario: $userId');
-
-      final paymentMethod = _paymentMethods.firstWhere(
+      final method = _paymentMethods.firstWhere(
         (m) => m.id == paymentMethodId,
         orElse: () => throw Exception('Método de pago no encontrado'),
       );
-
-      // Verificar balance para billetera
-      if (paymentMethod.type == PaymentMethodType.wallet) {
-        if (_walletBalance < amount) {
-          _error = 'Saldo insuficiente en billetera';
-          return false;
-        }
+      if (method.type == PaymentMethodType.wallet && _walletBalance < amount) {
+        _error = 'Saldo insuficiente en billetera';
+        notifyListeners();
+        return false;
       }
-
-      // Crear transacción
-      final transactionId = 'payment_${DateTime.now().millisecondsSinceEpoch}';
-      final transaction = TransactionRecord(
-        id: transactionId,
-        userId: userId,
-        tripId: tripId,
-        amount: amount,
-        paymentMethodId: paymentMethodId,
-        paymentMethodName: paymentMethod.name,
-        status: 'completed', // En producción esto dependería del procesamiento real
-        createdAt: DateTime.now(),
-        metadata: {
-          'concept': concept,
-          ...?metadata,
-        },
-      );
-
-      // Guardar transacción
-      await _firebaseService.firestore
-          .collection('transactions')
-          .doc(transactionId)
-          .set(transaction.toFirestore());
-
-      // Si es pago con billetera, descontar balance
-      if (paymentMethod.type == PaymentMethodType.wallet) {
-        _walletBalance -= amount;
-        
-        await _firebaseService.firestore
-            .collection('users')
-            .doc(userId)
-            .collection('wallet')
-            .doc('balance')
-            .set({
-              'amount': _walletBalance,
-              'updatedAt': DateTime.now().millisecondsSinceEpoch,
-            });
-
-        // Actualizar método de billetera local
-        final walletIndex = _paymentMethods.indexWhere((m) => m.type == PaymentMethodType.wallet);
-        if (walletIndex != -1) {
-          _paymentMethods[walletIndex] = _paymentMethods[walletIndex].copyWith(
-            walletBalance: _walletBalance.toStringAsFixed(2),
-          );
-        }
-      }
-
-      // Agregar a lista de transacciones
-      _transactions.insert(0, transaction);
-      _calculateStatistics();
-
-      AppLogger.info('Pago procesado exitosamente');
+      // El débito real lo ejecuta el backend en completeRide.
       return true;
-
     } catch (e) {
       _error = 'Error al procesar pago: $e';
-      AppLogger.error('Error procesando pago', e);
-      return false;
-    } finally {
-      _isLoading = false;
       notifyListeners();
+      return false;
     }
   }
 
-  // Seleccionar método de pago
   void selectPaymentMethod(PaymentMethod method) {
     _defaultPaymentMethodId = method.id;
     notifyListeners();
   }
 
-  // Limpiar datos
   void clearData() {
     _paymentMethods.clear();
     _transactions.clear();
@@ -783,99 +518,47 @@ class PaymentProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Métodos adicionales para promociones y lealtad
+  // ─── Promociones (aún no persistidas en backend) ───────────────────────────
   List<Map<String, dynamic>> _promotions = [];
   Map<String, dynamic>? _loyaltyProgram;
-  
+
   List<Map<String, dynamic>> get promotions => _promotions;
   Map<String, dynamic>? get loyaltyProgram => _loyaltyProgram;
-  
+
   Future<void> loadPromotions() async {
-    try {
-      _isLoading = true;
-      notifyListeners();
-      
-      // Simulación de carga de promociones
-      _promotions = [
-        {
-          'id': '1',
-          'code': 'WELCOME20',
-          'description': '20% de descuento en tu primer viaje',
-          'discount': 0.20,
-          'expiresAt': DateTime.now().add(Duration(days: 30)),
-        },
-        {
-          'id': '2',
-          'code': 'FRIEND10',
-          'description': '10% de descuento',
-          'discount': 0.10,
-          'expiresAt': DateTime.now().add(Duration(days: 15)),
-        },
-      ];
-      
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-    }
+    _promotions = [
+      {
+        'id': '1', 'code': 'WELCOME20',
+        'description': '20% de descuento en tu primer viaje',
+        'discount': 0.20,
+        'expiresAt': DateTime.now().add(const Duration(days: 30)),
+      },
+      {
+        'id': '2', 'code': 'FRIEND10',
+        'description': '10% de descuento',
+        'discount': 0.10,
+        'expiresAt': DateTime.now().add(const Duration(days: 15)),
+      },
+    ];
+    notifyListeners();
   }
-  
+
   Future<void> loadLoyaltyProgram() async {
-    try {
-      _isLoading = true;
-      notifyListeners();
-      
-      // Simulación de programa de lealtad
-      _loyaltyProgram = {
-        'points': 250,
-        'level': 'Gold',
-        'nextLevelPoints': 500,
-        'benefits': [
-          'Descuentos exclusivos',
-          'Prioridad en solicitudes',
-          'Soporte 24/7',
-        ],
-      };
-      
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-    }
+    _loyaltyProgram = {
+      'points': 250, 'level': 'Gold', 'nextLevelPoints': 500,
+      'benefits': ['Descuentos exclusivos', 'Prioridad en solicitudes', 'Soporte 24/7'],
+    };
+    notifyListeners();
   }
-  
+
   Future<bool> applyPromotionCode(String code) async {
-    try {
-      // Buscar promoción por código
-      final promo = _promotions.firstWhere(
-        (p) => p['code'] == code,
-        orElse: () => {},
-      );
-      
-      if (promo.isNotEmpty) {
-        // Aplicar promoción
-        return true;
-      }
-      return false;
-    } catch (e) {
-      _error = e.toString();
-      return false;
-    }
+    final promo = _promotions.firstWhere((p) => p['code'] == code, orElse: () => {});
+    return promo.isNotEmpty;
   }
-  
+
   Future<bool> usePromotion(String promotionId) async {
-    try {
-      // Usar promoción
-      _promotions.removeWhere((p) => p['id'] == promotionId);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      return false;
-    }
+    _promotions.removeWhere((p) => p['id'] == promotionId);
+    notifyListeners();
+    return true;
   }
 }

@@ -7,7 +7,7 @@
  *  2. Crea session JWT (access + refresh)
  *  3. Firma Firebase Custom Token (para que el Flutter siga usando Firebase)
  *
- * Response: { user, jwt, refreshToken, firebaseCustomToken }
+ * Response: { user, jwt, refreshToken, accessTtlSec, refreshTtlSec }
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
@@ -15,7 +15,7 @@ import { query, maybeOne } from '@/lib/db'
 import { TwilioVerifyService } from '@/services/TwilioVerifyService'
 import { createSession } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
-import { auth as firebaseAuth } from '@/lib/firebase-admin'
+import { ipRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -34,6 +34,17 @@ interface UserRow {
 }
 
 export async function POST(req: NextRequest) {
+  // B#6: rate-limit por IP. 15 verificaciones / hora es holgado para uso
+  // legítimo (usuario típico intenta 1-3 códigos) y bloquea el brute-force
+  // sobre los test-phones (código fijo `1234`, espacio de 10⁴).
+  const rl = ipRateLimit(req, 'sms-verify', { max: 15, windowMs: 60 * 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited', message: 'Demasiados intentos. Espera 1 hora.' },
+      { status: 429 },
+    )
+  }
+
   let body: { phoneNumber?: string; code?: string; deviceInfo?: unknown }
   try {
     body = await req.json()
@@ -104,13 +115,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Session (JWT propio) + Firebase Custom Token
+  // Session JWT propia — sin Firebase
   const session = await createSession(user!.id, (body.deviceInfo as Record<string, unknown>) ?? {})
-
-  const firebaseCustomToken = await firebaseAuth.createCustomToken(user!.id, {
-    provider: 'phone',
-    phone: phoneNumber,
-  })
 
   // Auditoría
   await query(
@@ -139,6 +145,5 @@ export async function POST(req: NextRequest) {
     refreshToken: session.refreshToken,
     accessTtlSec: ACCESS_TTL_SECONDS,
     refreshTtlSec: REFRESH_TTL_SECONDS,
-    firebaseCustomToken,
   })
 }

@@ -6,3 +6,8 @@ next-env.d.ts
 *.log
 .DS_Store
 api/tsconfig.tsbuildinfo
+
+# Firebase service account keys — NUNCA commitear
+keys/
+*firebase-admin*.json
+*service-account*.json

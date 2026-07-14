@@ -7,7 +7,6 @@ import '../../widgets/common/rappi_app_bar.dart';
 import '../../screens/shared/settings_screen.dart';
 import '../../screens/shared/about_screen.dart';
 import '../../utils/logger.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Drawer for the passenger home screen (inDrive style).
 /// Handles navigation, driver mode switch, logout, etc.
@@ -262,18 +261,11 @@ class _DriverModeButton extends StatelessWidget {
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('driver_applications')
-          .where('userId', isEqualTo: userId)
-          .where('status', whereIn: ['pending', 'under_review'])
-          .limit(1)
-          .get();
-      if (snapshot.docs.isNotEmpty) return snapshot.docs.first.data();
-      return null;
-    } catch (e) {
-      AppLogger.error('Error verificando solicitud pendiente: $e');
-      return null;
-    }
+    // TODO(node-migration): reemplazar con endpoint GET /driver-applications?userId=xxx&status=pending,under_review
+    // cuando exista. Hoy no hay endpoint en RapiApiClient para consultar solicitudes
+    // pendientes de conductor, así que devolvemos null (comportamiento seguro:
+    // navegar al flujo de registro normal si el usuario no tiene rol driver).
+    AppLogger.info('checkPendingDriverApplication stub — sin endpoint aún (userId=$userId)');
+    return null;
   }
 }

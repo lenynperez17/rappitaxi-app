@@ -77,6 +77,28 @@ export async function isUserAdmin(uid: string): Promise<boolean> {
   }
 }
 
+/**
+ * Firma un Firebase Custom Token para `uid`. Retorna null si Firebase Admin
+ * no está configurado (durante la transición híbrida, si el service account
+ * de rapi-team todavía no está en el .env, la app cliente cae en fallback
+ * y usa solo el JWT del backend).
+ */
+export async function mintFirebaseCustomToken(
+  uid: string,
+  claims: Record<string, unknown> = {},
+): Promise<string | null> {
+  if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+    console.warn('[firebase-admin] Custom token skipped: FIREBASE_* not configured')
+    return null
+  }
+  try {
+    return await auth.createCustomToken(uid, claims)
+  } catch (err) {
+    console.error('[firebase-admin] createCustomToken failed:', err)
+    return null
+  }
+}
+
 export async function getUserData(uid: string) {
   try {
     const userDoc = await db.collection('users').doc(uid).get()

@@ -26,21 +26,21 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { label: 'Inicio', path: '/dashboard', icon: LayoutDashboard },
   { label: 'Usuarios', path: '/users', icon: Users },
   { label: 'Conductores', path: '/drivers', icon: Car },
   { label: 'Verificaciones', path: '/verifications', icon: ShieldCheck },
   { label: 'Viajes', path: '/trips', icon: Route },
-  // ★ NUEVO bloque de Recargas y Facturacion
+  // Bloque de Recargas y Facturación
   { label: 'Recargas', path: '/recharges', icon: CreditCard },
-  { label: 'Facturacion', path: '/invoices', icon: FileText },
-  { label: 'Notas de Credito', path: '/credit-notes', icon: FileMinus },
+  { label: 'Facturación', path: '/invoices', icon: FileText },
+  { label: 'Notas de Crédito', path: '/credit-notes', icon: FileMinus },
   { label: 'Financiero', path: '/financial', icon: DollarSign },
   { label: 'Mapa en Vivo', path: '/map', icon: MapPin },
-  { label: 'Analiticas', path: '/analytics', icon: BarChart3 },
+  { label: 'Analíticas', path: '/analytics', icon: BarChart3 },
   { label: 'Emergencias', path: '/emergencies', icon: AlertTriangle },
   { label: 'Promociones', path: '/promotions', icon: Tag },
-  { label: 'Configuracion', path: '/settings', icon: Settings },
+  { label: 'Configuración', path: '/settings', icon: Settings },
 ]
 
 interface SidebarProps {
@@ -104,7 +104,7 @@ export function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) 
 
       {!collapsed && (
         <div className="px-4 py-3 border-t border-gray-700/50 flex-shrink-0">
-          <p className="text-xs text-gray-500">v1.0 &middot; Rapi Team Peru</p>
+          <p className="text-xs text-gray-500">v1.0.5 &middot; Rapi Team Peru</p>
         </div>
       )}
     </aside>

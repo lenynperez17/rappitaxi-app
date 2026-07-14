@@ -7,11 +7,12 @@ import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:csv/csv.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../core/utils/payment_utils.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 
 class TransactionsHistoryScreen extends StatefulWidget {
@@ -77,44 +78,35 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
     _fadeController.forward();
     _slideController.forward();
 
-    // ✅ Cargar transacciones desde Firebase
-    _loadTransactionsFromFirebase();
+    // ✅ Cargar transacciones desde el backend Node
+    _loadTransactionsFromApi();
   }
 
-  // ✅ NUEVO: Cargar transacciones reales desde Firebase
-  Future<void> _loadTransactionsFromFirebase() async {
+  // ✅ NUEVO: Cargar transacciones reales desde el backend Node.
+  // La sesión JWT ya identifica al conductor, así que no necesitamos uid explícito.
+  Future<void> _loadTransactionsFromApi() async {
     setState(() => _isLoading = true);
 
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        AppLogger.warning('⚠️ No hay usuario autenticado en transactions_history');
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final driverId = currentUser.uid;
+      final api = RapiApiClient.instance;
       final now = DateTime.now();
       final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
       final lastWeekStart = startOfWeek.subtract(Duration(days: 7));
 
-      // ✅ Cargar viajes completados
-      final ridesSnapshot = await FirebaseFirestore.instance
-          .collection('rides')
-          .where('driverId', isEqualTo: driverId)
-          .where('status', isEqualTo: 'completed')
-          .orderBy('completedAt', descending: true)
-          .limit(100)
-          .get();
+      // ✅ Cargar viajes completados como conductor
+      final ridesResponse = await api.listRides(
+        role: 'driver',
+        status: 'completed',
+        page: 1,
+        pageSize: 100,
+      );
 
-      // ✅ Cargar retiros
-      final withdrawalsSnapshot = await FirebaseFirestore.instance
-          .collection('withdrawals')
-          .where('driverId', isEqualTo: driverId)
-          .where('status', whereIn: ['completed', 'pending'])
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
+      // ✅ Cargar retiros desde wallet transactions
+      final withdrawalsResponse = await api.listWalletTransactions(
+        type: 'withdrawal',
+        page: 1,
+        pageSize: 50,
+      );
 
       final List<Transaction> loadedTransactions = [];
       double totalEarnings = 0.0;
@@ -124,58 +116,75 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       double lastWeek = 0.0;
 
       // ✅ Procesar viajes
-      for (var doc in ridesSnapshot.docs) {
-        final data = doc.data();
-        final completedAt = (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now();
-        final fare = (data['fare'] ?? data['estimatedFare'] ?? 0.0) as num;
-        final commission = fare * 0.20; // 20% comisión
-        final netEarnings = fare - commission;
+      final rides = (ridesResponse['rides'] ?? ridesResponse['items'] ?? []) as List;
+      for (final rideRaw in rides) {
+        final data = rideRaw as Map<String, dynamic>;
+        final completedAtStr = (data['completedAt'] ?? data['completed_at']) as String?;
+        final completedAt = completedAtStr != null
+            ? DateTime.tryParse(completedAtStr) ?? DateTime.now()
+            : DateTime.now();
+        final fare = (data['fare'] ?? data['finalFare'] ?? data['estimatedFare'] ?? 0.0) as num;
+        final commissionRaw = data['platformCommission'] ?? data['commission'];
+        final commission = (commissionRaw as num?)?.toDouble() ?? (fare * 0.12); // 12% comisión por defecto
+        final netEarnings = fare.toDouble() - commission;
 
-        totalEarnings += netEarnings.toDouble();
+        totalEarnings += netEarnings;
         totalTrips++;
 
         if (completedAt.isAfter(startOfWeek)) {
-          thisWeek += netEarnings.toDouble();
+          thisWeek += netEarnings;
         } else if (completedAt.isAfter(lastWeekStart) && completedAt.isBefore(startOfWeek)) {
-          lastWeek += netEarnings.toDouble();
+          lastWeek += netEarnings;
         }
 
         loadedTransactions.add(Transaction(
-          id: doc.id,
+          id: (data['id'] ?? '').toString(),
           type: TransactionType.trip,
           date: completedAt,
-          amount: netEarnings.toDouble(),
+          amount: netEarnings,
           status: TransactionStatus.completed,
-          passenger: data['passengerName'],
-          pickup: data['pickupAddress'],
-          destination: data['destinationAddress'],
+          passenger: (data['passengerName'] ?? data['passenger']?['name']) as String?,
+          pickup: (data['pickupAddress'] ?? data['pickup']?['address']) as String?,
+          destination: (data['destinationAddress'] ?? data['destination']?['address']) as String?,
           distance: (data['distance'] as num?)?.toDouble(),
           duration: (data['duration'] as num?)?.toInt(),
-          paymentMethod: data['paymentMethod'],
-          commission: commission.toDouble(),
-          netEarnings: netEarnings.toDouble(),
+          paymentMethod: data['paymentMethod'] as String?,
+          commission: commission,
+          netEarnings: netEarnings,
           tip: (data['tip'] as num?)?.toDouble(),
         ));
       }
 
       // ✅ Procesar retiros
-      for (var doc in withdrawalsSnapshot.docs) {
-        final data = doc.data();
-        final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final withdrawals = (withdrawalsResponse['transactions'] ??
+              withdrawalsResponse['items'] ??
+              []) as List;
+      for (final wRaw in withdrawals) {
+        final data = wRaw as Map<String, dynamic>;
+        final createdAtStr = (data['createdAt'] ?? data['created_at']) as String?;
+        final createdAt = createdAtStr != null
+            ? DateTime.tryParse(createdAtStr) ?? DateTime.now()
+            : DateTime.now();
         final amount = (data['amount'] ?? 0.0) as num;
+        final statusStr = (data['status'] ?? '').toString();
 
-        totalWithdrawals += amount.toDouble();
+        // Solo contamos retiros completed y pending en el resumen
+        if (statusStr == 'completed' || statusStr == 'pending') {
+          totalWithdrawals += amount.abs().toDouble();
+        }
 
         loadedTransactions.add(Transaction(
-          id: doc.id,
+          id: (data['id'] ?? '').toString(),
           type: TransactionType.withdrawal,
           date: createdAt,
-          amount: -amount.toDouble(), // Negativo porque es un retiro
-          status: data['status'] == 'completed'
+          amount: -amount.abs().toDouble(), // Negativo porque es un retiro
+          status: statusStr == 'completed'
               ? TransactionStatus.completed
-              : TransactionStatus.pending,
-          withdrawalMethod: data['method'],
-          bankAccount: data['bankAccount'],
+              : (statusStr == 'cancelled'
+                  ? TransactionStatus.cancelled
+                  : TransactionStatus.pending),
+          withdrawalMethod: (data['method'] ?? data['withdrawalMethod']) as String?,
+          bankAccount: (data['bankAccount'] ?? data['metadata']?['bankAccount']) as String?,
         ));
       }
 
@@ -185,6 +194,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
       // ✅ Calcular balance pendiente
       final pendingBalance = totalEarnings - totalWithdrawals;
 
+      if (!mounted) return;
       setState(() {
         _transactions.clear();
         _transactions.addAll(loadedTransactions);
@@ -197,18 +207,17 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
         _isLoading = false;
       });
 
-      AppLogger.info('✅ Cargadas ${loadedTransactions.length} transacciones desde Firebase');
+      AppLogger.info('✅ Cargadas ${loadedTransactions.length} transacciones desde el backend Node');
     } catch (e) {
       AppLogger.error('❌ Error cargando transacciones: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error cargando transacciones: $e'),
-            backgroundColor: ModernTheme.error,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando transacciones: $e'),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
     }
   }
   
@@ -887,31 +896,13 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
   }
   
   void _showTransactionDetails(Transaction transaction) {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.0),
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            // Handle
-            Container(
-              margin: EdgeInsets.only(top: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).dividerColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            
-            // Header
-            Container(
+      maxHeightFraction: 0.7,
+      builder: (context) => Column(
+        children: [
+          // Header
+          Container(
               padding: EdgeInsets.all(20),
               child: Row(
                 children: [
@@ -983,13 +974,13 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
                         _buildDetailRow('Tarifa', transaction.amount.toCurrency()),
                         if (transaction.tip != null)
                           _buildDetailRow('Propina', transaction.tip!.toCurrency()),
-                        _buildDetailRow('Comisión (-20%)', (transaction.commission ?? 0).toCurrency()),
+                        _buildDetailRow('Comisión (-12%)', (transaction.commission ?? 0).toCurrency()),
                         Divider(),
                         _buildDetailRow('Ganancia Neta', (transaction.netEarnings ?? 0).toCurrency(), bold: true),
                       ]),
                       SizedBox(height: 20),
                       _buildDetailSection('Pago', [
-                        _buildDetailRow('Método', transaction.paymentMethod ?? ''),
+                        _buildDetailRow('Método', formatPaymentMethodLabel(transaction.paymentMethod)),
                         _buildDetailRow('Estado', transaction.status == TransactionStatus.completed ? 'Completado' : 'Cancelado'),
                       ]),
                     ],
@@ -1069,7 +1060,6 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
             ),
           ],
         ),
-      ),
     );
   }
   
@@ -1271,7 +1261,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
           final passengerName = transaction.passenger ?? 'N/A';
           final pickupLocation = transaction.pickup ?? 'N/A';
           final destinationLocation = transaction.destination ?? 'N/A';
-          final paymentMethodType = transaction.paymentMethod ?? 'N/A';
+          final paymentMethodType = formatPaymentMethodLabel(transaction.paymentMethod);
           final statusText = transaction.status == TransactionStatus.completed ? 'Completado' : 'Cancelado';
 
           csvData.add([

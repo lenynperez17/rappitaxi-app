@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import 'offer_price_screen.dart';
 
 /// Service definition with display data and price multiplier.
@@ -10,7 +11,6 @@ class _ServiceDef {
   final String subtitle;
   final int passengers;
   final String assetPath;
-  final IconData? icon;
   final double multiplier;
 
   const _ServiceDef({
@@ -19,41 +19,39 @@ class _ServiceDef {
     required this.subtitle,
     required this.passengers,
     required this.assetPath,
-    this.icon,
     required this.multiplier,
   });
 }
 
 const _services = [
   _ServiceDef(
-    type: 'viaje',
-    title: 'Viaje',
-    subtitle: 'Viaja a tu precio',
+    type: 'express',
+    title: 'Express',
+    subtitle: 'Viaja rápido a tu precio',
     passengers: 4,
     assetPath: 'assets/images/vehicles/sedan.png',
     multiplier: 1.0,
   ),
   _ServiceDef(
-    type: 'mototaxi',
-    title: 'Mototaxi',
-    subtitle: 'Viajes simples y justos',
-    passengers: 2,
-    assetPath: 'assets/images/vehicles/mototaxi.png',
-    multiplier: 0.75,
+    type: 'ejecutivo',
+    title: 'Ejecutivo',
+    subtitle: 'Viaje premium y cómodo',
+    passengers: 4,
+    assetPath: 'assets/images/vehicles/sedan.png',
+    multiplier: 1.15,
   ),
   _ServiceDef(
-    type: 'entregas',
-    title: 'Entregas',
-    subtitle: 'Envios rapidos y seguros',
-    passengers: 1,
-    assetPath: 'assets/images/vehicles/mototaxi.png',
-    icon: Icons.inventory_2_outlined,
-    multiplier: 0.85,
+    type: 'vip',
+    title: 'VIP',
+    subtitle: 'Experiencia de lujo',
+    passengers: 4,
+    assetPath: 'assets/images/vehicles/sedan.png',
+    multiplier: 1.3,
   ),
 ];
 
-/// Bottom sheet for setting ride price -- pixel-perfect inDrive clone.
-/// Layout: promo banner -> dynamic service cards with price adjuster -> toggle -> CTA.
+/// Bottom sheet for setting ride price — pixel-perfect inDrive clone.
+/// Layout: promo banner → dynamic service cards with price adjuster → toggle → CTA.
 class PriceSettingSheet extends StatefulWidget {
   final double? calculatedDistance;
   final int? estimatedTime;
@@ -106,7 +104,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
   }
 
   void _openOfferPriceScreen() {
-    final suggested = widget.suggestedPrice ?? 15.0;
+    final suggested = widget.suggestedPrice ?? widget.offeredPrice;
     final mult = _multiplierFor(widget.selectedServiceType);
     final serviceSuggested = suggested * mult;
     final minPrice = (serviceSuggested * 0.5).ceilToDouble().clamp(3.0, serviceSuggested);
@@ -139,15 +137,10 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
       ('Plin', Icons.phone_iphone, const Color(0xFF00BCD4)),
     ];
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: AppColors.getSurface(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
+        return Padding(
             padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -159,7 +152,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                     children: [
                       const Spacer(),
                       Text(
-                        'Metodo de pago',
+                        'Método de pago',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -197,24 +190,18 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                   ),
               ],
             ),
-          ),
         );
       },
     );
   }
 
   void _showOptionsSheet() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      backgroundColor: AppColors.getSurface(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
-            return SafeArea(
-              child: Padding(
+            return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -249,7 +236,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                     const SizedBox(height: 20),
                     // Toggle options
                     _OptionToggleRow(
-                      label: 'Mas de 4 pasajeros',
+                      label: 'Más de 4 pasajeros',
                       value: _moreThan4Passengers,
                       onChanged: (v) {
                         setModalState(() {});
@@ -258,7 +245,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                     ),
                     const SizedBox(height: 16),
                     _OptionToggleRow(
-                      label: 'Silla de bebe',
+                      label: 'Silla de bebé',
                       value: _babySeat,
                       onChanged: (v) {
                         setModalState(() {});
@@ -331,7 +318,6 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                     ),
                   ],
                 ),
-              ),
             );
           },
         );
@@ -341,19 +327,11 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
 
   void _showCommentDialog() {
     final controller = TextEditingController(text: _rideComment);
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.getSurface(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (ctx) {
         return Padding(
-          padding: EdgeInsets.fromLTRB(
-            16, 16, 16,
-            MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -390,7 +368,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                 maxLines: 3,
                 maxLength: 150,
                 decoration: InputDecoration(
-                  hintText: 'Ej: Llevo equipaje, esperame en la puerta...',
+                  hintText: 'Ej: Llevo equipaje, espérame en la puerta...',
                   hintStyle: TextStyle(color: AppColors.getTextSecondary(ctx)),
                   filled: true,
                   fillColor: AppColors.getInputFill(ctx),
@@ -435,7 +413,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final suggested = widget.suggestedPrice ?? 15.0;
+    final suggested = widget.suggestedPrice ?? widget.offeredPrice;
     final mult = _multiplierFor(widget.selectedServiceType);
     final serviceSuggested = suggested * mult;
     final minPrice = (serviceSuggested * 0.5).ceilToDouble().clamp(3.0, serviceSuggested);
@@ -494,7 +472,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Aceptar automaticamente la oferta de ${widget.offeredPrice.toCurrency()}',
+                        'Aceptar automáticamente la oferta de ${widget.offeredPrice.toCurrency()}',
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.getTextPrimary(context),
@@ -510,7 +488,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.paddingOf(context).bottom),
                 child: Row(
                   children: [
                     GestureDetector(
@@ -588,7 +566,6 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
           subtitle: service.subtitle,
           passengers: service.passengers,
           assetPath: service.assetPath,
-          icon: service.icon,
           isSelected: isSelected,
           trailingPrice: !isSelected
               ? '~${(suggested * service.multiplier).toCurrency()}'
@@ -631,7 +608,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Min: ${minPrice.toCurrency()} -- Max: ${maxPrice.toCurrency()}',
+                  'Mín: ${minPrice.toCurrency()} — Máx: ${maxPrice.toCurrency()}',
                   style: TextStyle(
                     fontSize: 11,
                     color: AppColors.getTextSecondary(context).withValues(alpha: 0.6),
@@ -661,7 +638,7 @@ class _PromoBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              '¿Tienes un codigo promocional? Usalo aqui',
+              '¿Tienes un código promocional? Úsalo aquí',
               style: TextStyle(
                 fontSize: 14,
                 color: AppColors.getTextPrimary(context),
@@ -684,7 +661,6 @@ class _ServiceCard extends StatelessWidget {
   final bool isSelected;
   final String? trailingPrice;
   final VoidCallback? onTap;
-  final IconData? icon;
 
   const _ServiceCard({
     required this.title,
@@ -694,7 +670,6 @@ class _ServiceCard extends StatelessWidget {
     required this.isSelected,
     this.trailingPrice,
     this.onTap,
-    this.icon,
   });
 
   @override
@@ -707,13 +682,11 @@ class _ServiceCard extends StatelessWidget {
         color: isSelected ? AppColors.getInputFill(context) : null,
         child: Row(
           children: [
-            // Vehicle image or icon
+            // Vehicle image
             SizedBox(
               width: 56,
               height: 40,
-              child: icon != null
-                  ? Icon(icon, size: 32, color: AppColors.getTextSecondary(context))
-                  : Image.asset(
+              child: Image.asset(
                       assetPath,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Icon(

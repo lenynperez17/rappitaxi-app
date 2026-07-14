@@ -84,10 +84,12 @@ class AppConstants {
   static const String onboardingKey = 'onboarding_completed';
   
   // Ride Status
-  static const String rideStatusPending = 'pending';
+  static const String rideStatusRequested = 'requested';
   static const String rideStatusAccepted = 'accepted';
-  static const String rideStatusArriving = 'arriving';
+  static const String rideStatusDriverArriving = 'driver_arriving';
+  static const String rideStatusWaitingVerification = 'waiting_verification';
   static const String rideStatusInProgress = 'in_progress';
+  static const String rideStatusArrivingDestination = 'arriving_destination';
   static const String rideStatusCompleted = 'completed';
   static const String rideStatusCancelled = 'cancelled';
   

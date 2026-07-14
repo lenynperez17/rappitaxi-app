@@ -1175,7 +1175,7 @@ abstract class AppLocalizations {
   /// No description provided for @appVersion.
   ///
   /// In es, this message translates to:
-  /// **'Versión 2.0.0'**
+  /// **'Versión 1.0.5'**
   String get appVersion;
 
   /// No description provided for @createAccount.

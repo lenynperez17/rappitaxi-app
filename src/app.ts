@@ -139,12 +139,12 @@ class App {
     // Public routes
     this.app.use(`${apiPrefix}/auth`, authRoutes);
     
-    // Protected routes (temporalmente sin authMiddleware para testing)
-    this.app.use(`${apiPrefix}/rides`, rideRoutes);
-    this.app.use(`${apiPrefix}/payments`, paymentRoutes);
-    this.app.use(`${apiPrefix}/drivers`, driverRoutes);
-    this.app.use(`${apiPrefix}/admin`, adminRoutes);
-    this.app.use(`${apiPrefix}/chat`, chatRoutes);
+    // Protected routes
+    this.app.use(`${apiPrefix}/rides`, authMiddleware, rideRoutes);
+    this.app.use(`${apiPrefix}/payments`, authMiddleware, paymentRoutes);
+    this.app.use(`${apiPrefix}/drivers`, authMiddleware, driverRoutes);
+    this.app.use(`${apiPrefix}/admin`, authMiddleware, adminRoutes);
+    this.app.use(`${apiPrefix}/chat`, authMiddleware, chatRoutes);
   }
 
   private initializeErrorHandling(): void {

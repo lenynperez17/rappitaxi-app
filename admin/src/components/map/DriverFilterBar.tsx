@@ -76,9 +76,9 @@ export function DriverFilterBar({
       )}
 
       <div className="ml-auto flex items-center gap-3 text-xs">
-        <Badge color="#10B981" label="online" count={onlineCount} />
+        <Badge color="#10B981" label="en línea" count={onlineCount} />
         <Badge color="#F59E0B" label="fantasma" count={ghostCount} />
-        <Badge color="#9CA3AF" label="offline" count={offlineCount} />
+        <Badge color="#9CA3AF" label="desconectados" count={offlineCount} />
       </div>
     </div>
   )

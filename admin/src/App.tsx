@@ -38,7 +38,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-[#E31E24] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Verificando sesion...</p>
+          <p className="text-sm text-gray-500">Verificando sesión...</p>
         </div>
       </div>
     )
@@ -74,7 +74,6 @@ function AppRoutes() {
         <Route path="recharges" element={<RechargesPage />} />
         <Route path="recharges/:rechargeId" element={<RechargeDetailPage />} />
         <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="invoices/:invoiceId" element={<InvoicesPage />} />
         <Route path="credit-notes" element={<CreditNotesPage />} />
         <Route path="financial" element={<FinancialPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />

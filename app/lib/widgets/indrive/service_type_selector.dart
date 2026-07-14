@@ -16,10 +16,9 @@ class ServiceTypeSelector extends StatelessWidget {
   });
 
   static const _services = [
-    _ServiceDef(ServiceType.viaje, Icons.local_taxi, 'Viaje', 'assets/images/vehicles/sedan.png'),
-    _ServiceDef(ServiceType.mototaxi, Icons.two_wheeler, 'Mototaxi', 'assets/images/vehicles/mototaxi.png'),
-    _ServiceDef(ServiceType.entregas, Icons.inventory_2, 'Entregas', 'assets/images/vehicles/van_entregas.png'),
-    _ServiceDef(ServiceType.ciudadACiudad, Icons.route, 'Ciudad a Ciudad', 'assets/images/vehicles/suv_interurbano.png'),
+    _ServiceDef(ServiceType.express, Icons.local_taxi, 'Express', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef(ServiceType.ejecutivo, Icons.directions_car, 'Ejecutivo', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef(ServiceType.vip, Icons.star, 'VIP', 'assets/images/vehicles/sedan.png'),
   ];
 
   @override

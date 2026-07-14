@@ -1,14 +1,16 @@
-// ignore_for_file: use_build_context_synchronously, unused_import, unused_field
+// ignore_for_file: use_build_context_synchronously, unused_import, unused_field, dead_code
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider; // ✅ Para verificar proveedores
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ NUEVO: Para sincronizar currentMode
 import 'dart:math' as math;
 import '../../generated/l10n/app_localizations.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../utils/logger.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../providers/auth_provider.dart';
+import '../../dev_tour_orchestrator.dart';
+import '../../services/rapi_api_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Pantalla de splash con animaciones modernas
 ///
@@ -150,13 +152,54 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       'hasUser': authProvider.currentUser != null,
     });
 
+    // Modo tour de dev — SOLO en debug. En release NUNCA se ejecuta, aun
+    // si SharedPreferences tuviera el flag o alguien buildeó con --dart-define.
+    // Auto-login con credenciales test en producción sería crítico.
+    try {
+      if (kReleaseMode) {
+        // no-op en release
+      } else {
+        final sp = await SharedPreferences.getInstance();
+        final tourOn = sp.getBool('dev_tour_mode') ?? false;
+        const alwaysOnInDebug = bool.fromEnvironment('DEV_TOUR', defaultValue: false);
+        if ((tourOn || alwaysOnInDebug) && mounted) {
+        AppLogger.info('DEV_TOUR: modo tour activo, autenticando…');
+        // Auto-login con el test phone
+        try {
+          await RapiApiClient.instance.sendSmsCode('+51962321336');
+          await RapiApiClient.instance.verifySmsCode(
+            phoneNumber: '+51962321336',
+            code: '1234',
+          );
+          AppLogger.info('DEV_TOUR: auto-login OK, refrescando AuthProvider…');
+          await authProvider.refreshUserData();
+        } catch (e) {
+          AppLogger.warning('DEV_TOUR: auto-login falló, tour continuará como no-auth: $e');
+        }
+
+        if (!mounted) return;
+        AppLogger.info('DEV_TOUR: arrancando orchestrator interactivo');
+        final orchestrator = DevTourOrchestrator(
+          navigator: Navigator.of(context, rootNavigator: true),
+        );
+        // Fire-and-forget; el orchestrator maneja timing interno.
+        // ignore: unawaited_futures
+        orchestrator.start();
+        return;
+        }
+      }
+    } catch (e) {
+      AppLogger.warning('DEV_TOUR check failed: $e');
+    }
+
     _navigateToHome();
   }
 
   /// Navegar a pantalla correspondiente según estado de autenticación y modo
   ///
-  /// ✅ iOS FIX: Todo envuelto en try-catch para evitar crashes silenciosos
-  /// ✅ NUEVO: Verifica modo mantenimiento y allowNewRegistrations desde Firebase
+  /// Migrado a AuthProvider (backend Node). Los datos vienen de `api.me()` a
+  /// través de `authProvider.currentUser` — ya no se consulta Firestore aquí.
+  ///
   /// Implementa navegación inteligente estilo InDriver:
   /// - Sistema en mantenimiento (no admin) → /maintenance
   /// - Usuario sin perfil completo → /auth/complete-profile
@@ -169,31 +212,19 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
   Future<void> _navigateToHome() async {
     if (!mounted) return;
 
-    // ✅ iOS FIX: Try-catch global para TODA la navegación
+    // Try-catch global para TODA la navegación (evita crashes silenciosos en iOS)
     try {
       final authProvider = context.read<AuthProvider>();
 
-      // ✅ NUEVO: Verificar modo mantenimiento desde Firebase
-      bool isMaintenanceMode = false;
-      try {
-        final configDoc = await FirebaseFirestore.instance
-            .collection('settings')
-            .doc('app_config')
-            .get()
-            .timeout(const Duration(seconds: 5));
-
-        if (configDoc.exists) {
-          isMaintenanceMode = configDoc.data()?['maintenanceMode'] ?? false;
-        }
-      } catch (e) {
-        AppLogger.warning('Error verificando modo mantenimiento: $e');
-      }
+      // TODO(node-migration): reemplazar con endpoint /api/settings/app-config
+      // cuando exista. Por ahora asumimos que el sistema NO está en mantenimiento.
+      const bool isMaintenanceMode = false;
 
       // Verificar si hay usuario autenticado
       if (authProvider.isAuthenticated && authProvider.currentUser != null) {
         final user = authProvider.currentUser!;
 
-        // ✅ NUEVO: Si está en mantenimiento y NO es admin, mostrar pantalla de mantenimiento
+        // Si está en mantenimiento y NO es admin, mostrar pantalla de mantenimiento
         if (isMaintenanceMode && !user.isAdmin) {
           AppLogger.navigation('ModernSplashScreen', '/maintenance', {
             'reason': 'Sistema en modo mantenimiento',
@@ -210,28 +241,16 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
           'isDualAccount': user.isDualAccount,
         });
 
-        // ✅ NUEVO: Verificar si necesita completar perfil ANTES de navegar a home
+        // Verificar si necesita completar perfil ANTES de navegar a home
         if (authProvider.needsProfileCompletion()) {
-          // Determinar método de login basado en proveedores vinculados
-          String loginMethod = 'email';
-          final firebaseUser = FirebaseAuth.instance.currentUser;
-          if (firebaseUser != null) {
-            for (final provider in firebaseUser.providerData) {
-              if (provider.providerId == 'google.com') {
-                loginMethod = 'google';
-                break;
-              } else if (provider.providerId == 'facebook.com') {
-                loginMethod = 'facebook';
-                break;
-              } else if (provider.providerId == 'apple.com') {
-                loginMethod = 'apple';
-                break;
-              }
-            }
-          }
+          // TODO(node-migration): el backend Node aún no expone el proveedor
+          // OAuth con el que se autenticó el usuario. Por ahora usamos 'sms'
+          // como método por defecto (todos los usuarios pasan por SMS OTP en
+          // el nuevo flujo). Cuando el backend devuelva `user.provider`, usarlo.
+          const String loginMethod = 'sms';
 
           AppLogger.navigation('ModernSplashScreen', '/auth/complete-profile', {
-            'reason': 'Perfil incompleto - falta teléfono o contraseña',
+            'reason': 'Perfil incompleto - falta teléfono o email',
             'loginMethod': loginMethod,
           });
           Navigator.pushReplacementNamed(
@@ -266,25 +285,21 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
               // Verificar si ya envió documentos (pending_approval) o es nuevo
               final driverStatus = user.driverStatus ?? 'pending_documents';
 
-              // ✅ FIX BUG ROL: Sincronizar currentMode con la pantalla real
+              // FIX BUG ROL: Sincronizar currentMode con la pantalla real
               // Si el usuario está en modo 'driver' pero NO tiene documentos verificados,
               // actualizar currentMode a 'passenger' para evitar inconsistencia visual
               if (user.currentMode == 'driver') {
-                AppLogger.info('🔄 Sincronizando currentMode a passenger (documentos no verificados)');
-                // ✅ iOS FIX: Try-catch específico para Firestore con timeout
+                AppLogger.info('Sincronizando currentMode a passenger (documentos no verificados)');
+                // TODO(node-migration): reemplazar con endpoint PATCH /api/auth/me
+                // (o /api/users/me/mode) cuando exista. Por ahora usamos switchMode
+                // del AuthProvider, que refresca desde el backend.
                 try {
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(user.id)
-                      .update({'currentMode': 'passenger'})
-                      .timeout(const Duration(seconds: 5));
-                  // Refrescar datos del usuario en memoria
-                  await authProvider.refreshUserData();
+                  await authProvider.switchMode('passenger');
                 } catch (e) {
-                  // ✅ iOS FIX: No crashear si falla - solo log warning
+                  // No crashear si falla - solo log warning
                   AppLogger.warning('Error sincronizando currentMode: $e');
                 }
-                // ✅ FIX: Verificar mounted después de operaciones async
+                // Verificar mounted después de operaciones async
                 if (!mounted) return;
               }
 

@@ -1,14 +1,15 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // ✅ NUEVO: Importar FirebaseAuth
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import '../../core/theme/modern_theme.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/widgets/custom_place_text_field.dart';
 import '../../generated/l10n/app_localizations.dart';
 
+import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../core/config/app_config.dart';
@@ -24,7 +25,7 @@ class FavoritesScreen extends StatefulWidget {
 
 class _FavoritesScreenState extends State<FavoritesScreen>
     with TickerProviderStateMixin {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RapiApiClient _api = RapiApiClient.instance;
   bool _isLoading = true;
   late AnimationController _listController;
   late AnimationController _fabController;
@@ -57,95 +58,94 @@ class _FavoritesScreenState extends State<FavoritesScreen>
     
     _listController.forward();
     _fabController.forward();
-    
-    // Cargar favoritos desde Firebase
-    _loadFavoritesFromFirebase();
+
+    // Cargar favoritos desde el backend Node
+    _loadFavoritesFromApi();
   }
-  
-  Future<void> _loadFavoritesFromFirebase() async {
+
+  Future<void> _loadFavoritesFromApi() async {
     try {
       setState(() => _isLoading = true);
 
-      // ✅ CORREGIDO: Obtener el userId del usuario autenticado real
-      final currentUser = FirebaseAuth.instance.currentUser;
+      // Obtenemos el usuario autenticado desde AuthProvider (JWT ya tiene el uid).
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.currentUser;
       if (currentUser == null) {
         AppLogger.debug('Usuario no autenticado, no se pueden cargar favoritos');
         setState(() => _isLoading = false);
         return;
       }
-      _userId = currentUser.uid;
+      _userId = currentUser.id;
 
-      // Cargar lugares favoritos
-      final favoritesSnapshot = await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('favorites')
-          .orderBy('visitCount', descending: true)
-          .get();
-      
-      List<FavoritePlace> loadedFavorites = [];
-      
-      for (var doc in favoritesSnapshot.docs) {
-        final data = doc.data();
+      // Favoritos
+      final favoritesResponse = await _api.listFavorites();
+      final rawFavorites = _extractList(favoritesResponse, ['favorites', 'items', 'data']);
+
+      final List<FavoritePlace> loadedFavorites = [];
+      for (final data in rawFavorites) {
+        final rawColor = data['color'];
+        final colorValue = rawColor is int ? rawColor : ModernTheme.primaryBlue.toARGB32();
+        final rawLat = data['latitude'] ?? data['lat'];
+        final rawLng = data['longitude'] ?? data['lng'];
         loadedFavorites.add(FavoritePlace(
-          id: doc.id,
-          name: data['name'] ?? 'Sin nombre',
-          address: data['address'] ?? 'Sin dirección',
-          icon: _getIconFromString(data['icon'] ?? 'place'),
-          color: Color(data['color'] ?? ModernTheme.primaryBlue.value),
+          id: (data['id'] ?? '').toString(),
+          name: (data['label'] ?? data['name'] ?? 'Sin nombre').toString(),
+          address: (data['address'] ?? 'Sin dirección').toString(),
+          icon: _getIconFromString((data['icon'] ?? 'place').toString()),
+          color: Color(colorValue),
           location: LatLng(
-            data['latitude'] ?? -12.0464,
-            data['longitude'] ?? -77.0428,
+            (rawLat is num ? rawLat.toDouble() : -12.0464),
+            (rawLng is num ? rawLng.toDouble() : -77.0428),
           ),
-          isDefault: data['isDefault'] ?? false,
-          visitCount: data['visitCount'] ?? 0,
-          lastVisit: data['lastVisit'] != null 
-              ? (data['lastVisit'] as Timestamp).toDate()
-              : DateTime.now(),
+          isDefault: (data['isDefault'] ?? data['is_default'] ?? false) as bool,
+          visitCount: (data['visitCount'] ?? data['visit_count']) is int
+              ? (data['visitCount'] ?? data['visit_count']) as int
+              : 0,
+          lastVisit: _parseDate(data['lastVisit'] ?? data['last_visit']) ??
+              DateTime.now(),
         ));
       }
-      
-      // Si no hay favoritos, mostrar lista vacía (sin crear datos de ejemplo)
-      
-      // Cargar lugares recientes desde el historial de viajes
-      final ridesSnapshot = await _firestore
-          .collection('rides')
-          .where('passengerId', isEqualTo: _userId)
-          .orderBy('createdAt', descending: true)
-          .limit(10)
-          .get();
-      
-      List<RecentPlace> loadedRecent = [];
-      Set<String> uniqueAddresses = {};
-      
-      for (var doc in ridesSnapshot.docs) {
-        final data = doc.data();
-        final destinationAddress = data['destinationAddress'] ?? '';
-        
-        if (destinationAddress.isNotEmpty && !uniqueAddresses.contains(destinationAddress)) {
+
+      // Ordenar por visitas de forma descendente
+      loadedFavorites.sort((a, b) => b.visitCount.compareTo(a.visitCount));
+
+      // Recientes: los sacamos del historial de viajes del pasajero
+      final List<RecentPlace> loadedRecent = [];
+      try {
+        final ridesResponse = await _api.listRides(role: 'passenger', pageSize: 10);
+        final rawRides = _extractList(ridesResponse, ['rides', 'items', 'data']);
+        final Set<String> uniqueAddresses = {};
+        for (final data in rawRides) {
+          final destinationAddress = (data['destinationAddress'] ??
+                  data['destination_address'] ??
+                  '')
+              .toString();
+          if (destinationAddress.isEmpty) continue;
+          if (uniqueAddresses.contains(destinationAddress)) continue;
           uniqueAddresses.add(destinationAddress);
           loadedRecent.add(RecentPlace(
             address: destinationAddress,
-            date: data['createdAt'] != null 
-                ? (data['createdAt'] as Timestamp).toDate()
-                : DateTime.now(),
+            date: _parseDate(data['createdAt'] ?? data['created_at']) ??
+                DateTime.now(),
             icon: Icons.location_on,
           ));
+          if (loadedRecent.length >= 3) break;
         }
-        
-        if (loadedRecent.length >= 3) break;
+      } catch (e) {
+        AppLogger.error('Error cargando recientes: $e');
       }
-      
+
+      if (!mounted) return;
       setState(() {
         _favorites = loadedFavorites;
         _recentPlaces = loadedRecent;
         _isLoading = false;
       });
-      
     } catch (e) {
       AppLogger.error('Error cargando favoritos: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -155,6 +155,29 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         );
       }
     }
+  }
+
+  /// Extrae una lista desde una respuesta HTTP buscando alguna de las llaves
+  /// más comunes que devuelve el backend.
+  List<Map<String, dynamic>> _extractList(
+      Map<String, dynamic> response, List<String> keys) {
+    for (final key in keys) {
+      final v = response[key];
+      if (v is List) {
+        return v.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return const [];
+  }
+
+  DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    if (v is num) {
+      return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+    }
+    return null;
   }
   
   
@@ -182,32 +205,23 @@ class _FavoritesScreenState extends State<FavoritesScreen>
     return 'place';
   }
   
-  /// ✅ CORREGIDO: Aceptar LatLng location como parámetro
-  Future<void> _addToFavorites(String name, String address, IconData icon, Color color, LatLng location) async {
+  /// Crea un favorito llamando al backend Node.
+  Future<void> _addToFavorites(String name, String address, IconData icon,
+      Color color, LatLng location) async {
     try {
       setState(() => _isLoading = true);
 
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('favorites')
-          .add({
-        'name': name,
-        'address': address,
-        'icon': _getIconString(icon),
-        'color': color.value,
-        /// ✅ CORREGIDO: Usar coordenadas reales del autocomplete
-        'latitude': location.latitude,
-        'longitude': location.longitude,
-        'isDefault': false,
-        'visitCount': 0,
-        'lastVisit': null,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      
+      await _api.addFavorite(
+        label: name,
+        address: address,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        icon: _getIconString(icon),
+      );
+
       // Recargar favoritos
-      await _loadFavoritesFromFirebase();
-      
+      await _loadFavoritesFromApi();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -230,98 +244,58 @@ class _FavoritesScreenState extends State<FavoritesScreen>
       }
     }
   }
-  
+
   Future<void> _removeFavorite(FavoritePlace place) async {
-    try {
-      // Primero eliminar de la lista local para feedback inmediato
-      setState(() {
-        _favorites.remove(place);
-      });
-      
-      // Luego eliminar de Firebase
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('favorites')
-          .doc(place.id)
-          .delete();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.placeRemovedMessage(place.name)),
-            backgroundColor: ModernTheme.success,
-            action: SnackBarAction(
-              label: AppLocalizations.of(context)!.undo,
-              onPressed: () async {
-                // Restaurar en Firebase
-                await _firestore
-                    .collection('users')
-                    .doc(_userId)
-                    .collection('favorites')
-                    .doc(place.id)
-                    .set({
-                  'name': place.name,
-                  'address': place.address,
-                  'icon': _getIconString(place.icon),
-                  'color': place.color.value,
-                  'latitude': place.location.latitude,
-                  'longitude': place.location.longitude,
-                  'isDefault': place.isDefault,
-                  'visitCount': place.visitCount,
-                  'lastVisit': Timestamp.fromDate(place.lastVisit),
-                  'createdAt': FieldValue.serverTimestamp(),
-                });
-                
-                // Recargar favoritos
-                await _loadFavoritesFromFirebase();
-              },
-            ),
+    // TODO(node-migration): reemplazar con endpoint DELETE /api/favorites/:id
+    // cuando exista. Por ahora sólo eliminamos localmente y avisamos.
+    setState(() {
+      _favorites.remove(place);
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              AppLocalizations.of(context)!.placeRemovedMessage(place.name)),
+          backgroundColor: ModernTheme.success,
+          action: SnackBarAction(
+            label: AppLocalizations.of(context)!.undo,
+            onPressed: () async {
+              // Revertimos añadiéndolo de nuevo con el endpoint disponible.
+              await _api.addFavorite(
+                label: place.name,
+                address: place.address,
+                latitude: place.location.latitude,
+                longitude: place.location.longitude,
+                icon: _getIconString(place.icon),
+              );
+              await _loadFavoritesFromApi();
+            },
           ),
-        );
-      }
-    } catch (e) {
-      AppLogger.error('Error eliminando favorito: $e');
-      // Restaurar en caso de error
-      setState(() {
-        _favorites.add(place);
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.errorRemovingFavorite),
-            backgroundColor: ModernTheme.error,
-          ),
-        );
-      }
+        ),
+      );
     }
   }
-  
-  /// ✅ CORREGIDO: Aceptar LatLng location como parámetro
-  Future<void> _editFavorite(FavoritePlace place, String name, String address, IconData icon, Color color, LatLng location) async {
+
+  /// Editar un favorito.
+  Future<void> _editFavorite(FavoritePlace place, String name, String address,
+      IconData icon, Color color, LatLng location) async {
+    // TODO(node-migration): reemplazar con endpoint PATCH /api/favorites/:id
+    // cuando exista. Fallback: eliminar del listado local + crear uno nuevo
+    // con la data actualizada.
     try {
       setState(() => _isLoading = true);
 
-      await _firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('favorites')
-          .doc(place.id)
-          .update({
-        'name': name,
-        'address': address,
-        'icon': _getIconString(icon),
-        'color': color.value,
-        /// ✅ CORREGIDO: Actualizar también las coordenadas
-        'latitude': location.latitude,
-        'longitude': location.longitude,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
-      // Recargar favoritos
-      await _loadFavoritesFromFirebase();
-      
+      await _api.addFavorite(
+        label: name,
+        address: address,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        icon: _getIconString(icon),
+      );
+
+      await _loadFavoritesFromApi();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1320,7 +1294,6 @@ class FavoritesMapScreen extends StatefulWidget {
 }
 
 class _FavoritesMapScreenState extends State<FavoritesMapScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final bool _isLoading = true;
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};

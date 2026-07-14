@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../core/constants/app_colors.dart';
 import '../core/widgets/mode_switch_button.dart';
 import '../providers/auth_provider.dart';
@@ -152,7 +151,7 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Mi perfil',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/profile');
+                      Navigator.pushNamed(context, '/passenger/profile');
                     },
                   ),
                   _buildMenuItem(
@@ -168,7 +167,7 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Mi Billetera',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/wallet');
+                      Navigator.pushNamed(context, '/passenger/payment-methods');
                     },
                   ),
                   _buildMenuItem(
@@ -204,7 +203,7 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Ayuda y soporte',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/help');
+                      Navigator.pushNamed(context, '/shared/help-center');
                     },
                   ),
                   _buildMenuItem(
@@ -220,7 +219,7 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Configuración',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/settings');
+                      Navigator.pushNamed(context, '/shared/settings');
                     },
                   ),
                 ],
@@ -386,9 +385,6 @@ class PassengerDrawer extends StatelessWidget {
               final rootNav = Navigator.of(context, rootNavigator: true);
               final authProvider = Provider.of<AuthProvider>(context, listen: false);
               Navigator.pop(context); // cierra dialog
-              try {
-                await FirebaseAuth.instance.signOut();
-              } catch (_) {/* best-effort */}
               try {
                 await authProvider.logout();
               } catch (_) {/* best-effort */}

@@ -1,4 +1,5 @@
-import { Timestamp } from 'firebase/firestore'
+// Timestamp alias (Firebase retirado del panel)
+type Timestamp = { seconds: number; nanoseconds: number } | Date | string
 
 export type DocumentStatus = 'pending' | 'approved' | 'rejected' | 'expired'
 

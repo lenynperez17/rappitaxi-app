@@ -66,15 +66,24 @@ service firebase.storage {
     
     // Driver documents (licenses, vehicle registration, etc.)
     match /drivers/{driverId}/documents/{documentId} {
-      allow read: if isAuthenticated() && 
+      allow read: if isAuthenticated() &&
                  (isOwner(driverId) || isAdmin());
-      allow write: if isAuthenticated() && 
-                  isOwner(driverId) && 
-                  isValidDocumentFile();
-      allow delete: if isAuthenticated() && 
+      allow write: if isAuthenticated() &&
+                  isOwner(driverId) &&
+                  request.resource.size < 10 * 1024 * 1024; // Max 10MB
+      allow delete: if isAuthenticated() &&
                    (isOwner(driverId) || isAdmin());
     }
-    
+
+    // Driver registration applications (new drivers uploading documents)
+    match /driver_applications/{userId}/{documentId} {
+      allow read: if isAuthenticated() &&
+                 (isOwner(userId) || isAdmin());
+      allow write: if isAuthenticated() &&
+                  isOwner(userId) &&
+                  request.resource.size < 10 * 1024 * 1024; // Max 10MB
+    }
+
     // Vehicle photos
     match /vehicles/{vehicleId}/photos/{photoId} {
       allow read: if isAuthenticated();
@@ -87,6 +96,13 @@ service firebase.storage {
                     (isOwner(resource.metadata.ownerId) || isAdmin()));
     }
     
+    // Chat media uploads (used by chat_service.dart)
+    match /chat_media/{rideId}/{fileId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                  request.resource.size < 10 * 1024 * 1024; // Max 10MB
+    }
+
     // Chat message attachments (images and audio)
     match /chats/{rideId}/messages/{messageId}/{fileId} {
       allow read: if isAuthenticated() && 

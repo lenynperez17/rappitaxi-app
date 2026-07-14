@@ -77,7 +77,7 @@ class PriceNegotiation {
       suggestedPrice: (map['suggestedPrice'] ?? 0.0).toDouble(),
       offeredPrice: (map['offeredPrice'] ?? 0.0).toDouble(),
       distance: (map['distance'] ?? 0.0).toDouble(),
-      estimatedTime: map['estimatedTime'] ?? 0,
+      estimatedTime: ((map['estimatedTime'] ?? 0) as num).toInt(),
       createdAt: _parseDateTime(map['createdAt']),
       expiresAt: _parseDateTime(map['expiresAt']),
       status: _statusFromString(map['status'] ?? 'waiting'),
@@ -280,10 +280,10 @@ class DriverOffer {
       vehiclePlate: map['vehiclePlate'] ?? '',
       vehicleColor: map['vehicleColor'] ?? '',
       acceptedPrice: (map['acceptedPrice'] ?? 0.0).toDouble(),
-      estimatedArrival: map['estimatedArrival'] ?? 0,
+      estimatedArrival: ((map['estimatedArrival'] ?? 0) as num).toInt(),
       offeredAt: _parseOfferDateTime(map['offeredAt']),
       status: _offerStatusFromString(map['status'] ?? 'pending'),
-      completedTrips: map['completedTrips'] ?? 0,
+      completedTrips: ((map['completedTrips'] ?? 0) as num).toInt(),
       acceptanceRate: (map['acceptanceRate'] ?? 0.0).toDouble(),
     );
   }

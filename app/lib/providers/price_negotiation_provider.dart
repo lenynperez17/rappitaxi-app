@@ -1,462 +1,345 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:math' as math;
 import '../models/price_negotiation_model.dart';
+import '../services/rapi_api_client.dart';
+import '../services/rapi_sse_client.dart';
 
-/// Provider para manejar las negociaciones de precios con implementación real
+/// Provider para manejar las negociaciones de precios estilo InDrive.
+/// Migrado de Firebase (Firestore / FirebaseAuth) al backend Node:
+///   - Estado inicial: HTTP vía [RapiApiClient]
+///   - Deltas en tiempo real: SSE vía [RapiSseClient]
+///
+/// En el nuevo modelo backend, la "negociación" y el "ride" son la misma
+/// entidad: cuando el pasajero crea un ride con `negotiable: true`, el mismo
+/// `rideId` funciona como identificador de negociación. Los conductores
+/// contra-ofertan a través de "offers" asociadas al ride.
 class PriceNegotiationProvider extends ChangeNotifier {
+  // -------------------- Estado --------------------
   final List<PriceNegotiation> _activeNegotiations = [];
   List<PriceNegotiation> _driverVisibleRequests = [];
   PriceNegotiation? _currentNegotiation;
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  /// Mapa rideId → (driverId → offerId).
+  /// Necesario para poder llamar `api.acceptOffer(offerId)` conociendo solo
+  /// el `driverId` (la UI acepta ofertas por conductor, no por offerId).
+  final Map<String, Map<String, String>> _offerIdsByNegotiation = {};
 
-  // ✅ NUEVO: StreamSubscription para escuchar cambios en tiempo real
-  StreamSubscription<QuerySnapshot>? _negotiationsSubscription;
+  // Cache del usuario actual (evita golpear /me en cada operación).
+  String? _cachedUserId;
+  Map<String, dynamic>? _cachedUserData;
 
+  // Última ubicación conocida del conductor. Se refresca en cada
+  // [loadDriverRequests] preguntándola al backend.
+  LatLng? _lastDriverLocation;
+
+  // Suscripciones a los streams SSE.
+  StreamSubscription<Map<String, dynamic>>? _passengerNegotiationSub;
+  StreamSubscription<Map<String, dynamic>>? _passengerRideUpdatesSub;
+  StreamSubscription<Map<String, dynamic>>? _driverRideUpdatesSub;
+  StreamSubscription<Map<String, dynamic>>? _driverNegotiationSub;
+
+  RapiApiClient get _api => RapiApiClient.instance;
+  RapiSseClient get _sse => RapiSseClient.instance;
+
+  // -------------------- Getters públicos --------------------
   List<PriceNegotiation> get activeNegotiations => _activeNegotiations;
   List<PriceNegotiation> get driverVisibleRequests => _driverVisibleRequests;
   PriceNegotiation? get currentNegotiation => _currentNegotiation;
 
-  // ✅ NUEVO: Iniciar escucha en tiempo real para pasajeros
-  // @param isRoleSwitchInProgress - Si true, no iniciar listener (cambio de rol en progreso)
+  // -------------------- Helpers de usuario --------------------
+  Future<String?> _getCurrentUserId() async {
+    if (_cachedUserId != null) return _cachedUserId;
+    try {
+      final me = await _api.me();
+      if (me == null) return null;
+      _cachedUserData = me;
+      _cachedUserId = (me['id'] ?? me['userId'] ?? me['uid'])?.toString();
+      return _cachedUserId;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo usuario actual: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _getCurrentUserData() async {
+    if (_cachedUserData != null) return _cachedUserData!;
+    try {
+      final me = await _api.me();
+      if (me != null) {
+        _cachedUserData = me;
+        _cachedUserId = (me['id'] ?? me['userId'] ?? me['uid'])?.toString();
+        return me;
+      }
+    } catch (_) {}
+    return const {};
+  }
+
+  // -------------------- Listener PASAJERO --------------------
+  /// Inicia la escucha en tiempo real para el pasajero.
+  /// @param isRoleSwitchInProgress - Si `true`, no iniciar (cambio de rol en curso).
   void startListeningToMyNegotiations({bool isRoleSwitchInProgress = false}) {
-    // ✅ VALIDACIÓN: No iniciar si hay cambio de rol en progreso
     if (isRoleSwitchInProgress) {
       debugPrint('⚠️ Cambio de rol en progreso, no iniciar listener de pasajero');
       return;
     }
 
-    final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint('❌ Usuario no autenticado para escuchar negociaciones');
-      return;
-    }
+    debugPrint('🔄 Iniciando listener de negociaciones (pasajero)');
 
-    debugPrint('🔄 Iniciando listener de negociaciones para pasajero: ${user.uid}');
+    // Cancelar suscripciones anteriores.
+    _passengerNegotiationSub?.cancel();
+    _passengerRideUpdatesSub?.cancel();
 
-    // Cancelar cualquier suscripción anterior
-    _negotiationsSubscription?.cancel();
+    // Estado inicial via HTTP — el SSE solo entrega deltas.
+    _refreshMyNegotiations();
 
-    // Escuchar en tiempo real las negociaciones del pasajero
-    // ✅ FIX: Filtrar en cliente para evitar necesidad de índice compuesto
-    _negotiationsSubscription = _firestore
-        .collection('negotiations')
-        .where('passengerId', isEqualTo: user.uid)
-        .snapshots()
-        .listen((snapshot) async {
-      // Only process waiting/negotiating negotiations (not old accepted ones)
-      // For accepted status, only include if it matches currentNegotiation (recent acceptance)
-      final activeDocs = snapshot.docs.where((doc) {
-        final status = doc.data()['status'] as String? ?? '';
-        final docId = doc.data()['id'] ?? doc.id;
-        if (status == 'waiting' || status == 'negotiating') return true;
-        if (status == 'accepted' && _currentNegotiation?.id == docId) return true;
-        return false;
-      }).toList();
+    // SSE: nueva contraoferta / oferta aceptada / rechazada.
+    _passengerNegotiationSub = _sse.negotiations.listen(
+      (event) async {
+        debugPrint('📡 SSE negotiation (pasajero) → $event');
+        await _refreshMyNegotiations();
+      },
+      onError: (e) => debugPrint('❌ SSE negociaciones (pasajero) error: $e'),
+    );
 
-      debugPrint('📥 Recibidas ${snapshot.docs.length} negociaciones totales, ${activeDocs.length} activas del pasajero');
-
-      // ✅ Obtener IDs de negociaciones activas actuales
-      final activeNegotiationIds = activeDocs.map((doc) => doc.data()['id'] ?? doc.id).toSet();
-
-      // ✅ Remover negociaciones que ya no están activas (aceptadas, completadas, etc.)
-      _activeNegotiations.removeWhere((negotiation) {
-        final shouldRemove = !activeNegotiationIds.contains(negotiation.id);
-        if (shouldRemove) {
-          debugPrint('🗑️ Removiendo negociación no activa: ${negotiation.id} (status: ${negotiation.status.name})');
-        }
-        return shouldRemove;
-      });
-
-      // ✅ Iterar solo sobre documentos activos
-      for (final doc in activeDocs) {
-        final data = doc.data();
-        final negotiationId = data['id'] ?? doc.id;
-
-        // ✅ CORREGIDO: Leer ofertas directamente del campo driverOffers del documento
-        final List<dynamic> offersData = data['driverOffers'] ?? [];
-        final driverOffers = offersData.map((offerData) {
-          return DriverOffer(
-            driverId: offerData['driverId'] ?? '',
-            driverName: offerData['driverName'] ?? 'Conductor',
-            driverPhoto: offerData['driverPhoto'] ?? '',
-            driverRating: (offerData['driverRating'] as num?)?.toDouble() ?? 5.0,
-            vehicleModel: offerData['vehicleModel'] ?? '',
-            vehiclePlate: offerData['vehiclePlate'] ?? '',
-            vehicleColor: offerData['vehicleColor'] ?? '',
-            acceptedPrice: (offerData['acceptedPrice'] as num?)?.toDouble() ?? 0.0,
-            estimatedArrival: offerData['estimatedArrival'] ?? 5,
-            offeredAt: _parseDateTime(offerData['offeredAt']),
-            status: OfferStatus.values.firstWhere(
-              (s) => s.name == (offerData['status'] ?? 'pending'),
-              orElse: () => OfferStatus.pending,
-            ),
-            completedTrips: offerData['completedTrips'] ?? 0,
-            acceptanceRate: (offerData['acceptanceRate'] as num?)?.toDouble() ?? 0.0,
-          );
-        }).toList();
-
-        final negotiation = PriceNegotiation(
-          id: negotiationId,
-          passengerId: data['passengerId'] ?? '',
-          passengerName: data['passengerName'] ?? '',
-          passengerPhoto: data['passengerPhoto'] ?? '',
-          passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
-          pickup: LocationPoint(
-            latitude: (data['pickup']?['latitude'] as num?)?.toDouble() ?? 0.0,
-            longitude: (data['pickup']?['longitude'] as num?)?.toDouble() ?? 0.0,
-            address: data['pickup']?['address'] ?? '',
-            reference: data['pickup']?['reference'],
-          ),
-          destination: LocationPoint(
-            latitude: (data['destination']?['latitude'] as num?)?.toDouble() ?? 0.0,
-            longitude: (data['destination']?['longitude'] as num?)?.toDouble() ?? 0.0,
-            address: data['destination']?['address'] ?? '',
-            reference: data['destination']?['reference'],
-          ),
-          suggestedPrice: (data['suggestedPrice'] as num?)?.toDouble() ?? 0.0,
-          offeredPrice: (data['offeredPrice'] as num?)?.toDouble() ?? 0.0,
-          distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
-          estimatedTime: data['estimatedTime'] ?? 0,
-          createdAt: _parseDateTime(data['createdAt']),
-          expiresAt: _parseDateTime(data['expiresAt']),
-          status: NegotiationStatus.values.firstWhere(
-            (s) => s.name == (data['status'] ?? 'waiting'),
-            orElse: () => NegotiationStatus.waiting,
-          ),
-          driverOffers: driverOffers,
-          selectedDriverId: data['acceptedDriverId'],
-          paymentMethod: PaymentMethod.values.firstWhere(
-            (m) => m.name == (data['paymentMethod'] ?? 'cash'),
-            orElse: () => PaymentMethod.cash,
-          ),
-          notes: data['notes'],
-        );
-
-        // Actualizar o agregar la negociación
-        final existingIndex = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
-        if (existingIndex >= 0) {
-          _activeNegotiations[existingIndex] = negotiation;
-          debugPrint('📝 Actualizada negociación: $negotiationId con ${driverOffers.length} ofertas, status: ${negotiation.status.name}');
-        } else {
-          _activeNegotiations.add(negotiation);
-          debugPrint('➕ Agregada nueva negociación: $negotiationId');
-        }
-
-        // Actualizar currentNegotiation si corresponde
-        debugPrint('🔍 Checking: currentNeg=${_currentNegotiation?.id}, docId=$negotiationId, match=${_currentNegotiation?.id == negotiationId}, offers=${driverOffers.length}');
-        if (_currentNegotiation?.id == negotiationId) {
-          _currentNegotiation = negotiation;
-          debugPrint('✅ Updated currentNegotiation with ${driverOffers.length} offers');
-        }
-
-        // If no currentNegotiation set, use the most recent waiting/negotiating one
-        if (_currentNegotiation == null &&
-            (negotiation.status == NegotiationStatus.waiting ||
-             negotiation.status == NegotiationStatus.negotiating)) {
-          _currentNegotiation = negotiation;
-          debugPrint('📌 Auto-set currentNegotiation to: $negotiationId (${negotiation.status.name})');
-        }
-      }
-
-      notifyListeners();
-    }, onError: (e) {
-      debugPrint('❌ Error en listener de negociaciones: $e');
-    });
+    // SSE: cambios de estado del viaje/negociación.
+    _passengerRideUpdatesSub = _sse.rideUpdates.listen(
+      (event) async {
+        debugPrint('📡 SSE ride_update (pasajero) → $event');
+        await _refreshMyNegotiations();
+      },
+      onError: (e) => debugPrint('❌ SSE rideUpdates (pasajero) error: $e'),
+    );
   }
 
-  // ✅ NUEVO: Detener escucha
+  /// Detiene solo el listener del pasajero.
   void stopListeningToNegotiations() {
-    debugPrint('🛑 Deteniendo listener de negociaciones');
-    _negotiationsSubscription?.cancel();
-    _negotiationsSubscription = null;
+    debugPrint('🛑 Deteniendo listener de negociaciones (pasajero)');
+    _passengerNegotiationSub?.cancel();
+    _passengerNegotiationSub = null;
+    _passengerRideUpdatesSub?.cancel();
+    _passengerRideUpdatesSub = null;
   }
 
-  // ✅ CLEANUP CENTRALIZADO: Detener TODOS los listeners al cambiar de rol
+  /// Cleanup centralizado — detener TODOS los listeners al cambiar de rol.
   void stopAllListeners() {
     debugPrint('🛑 Deteniendo TODOS los listeners de negociaciones');
-    _negotiationsSubscription?.cancel();
-    _negotiationsSubscription = null;
-    _driverNegotiationsSubscription?.cancel();
-    _driverNegotiationsSubscription = null;
+    _passengerNegotiationSub?.cancel();
+    _passengerNegotiationSub = null;
+    _passengerRideUpdatesSub?.cancel();
+    _passengerRideUpdatesSub = null;
+    _driverRideUpdatesSub?.cancel();
+    _driverRideUpdatesSub = null;
+    _driverNegotiationSub?.cancel();
+    _driverNegotiationSub = null;
     _activeNegotiations.clear();
     _driverVisibleRequests.clear();
     _currentNegotiation = null;
     notifyListeners();
   }
 
-  // ✅ CLEANUP: Detener solo listeners de pasajero
+  /// Detener solo listeners de pasajero (limpia estado local también).
   void stopPassengerListeners() {
     debugPrint('🛑 Deteniendo listeners de pasajero');
-    _negotiationsSubscription?.cancel();
-    _negotiationsSubscription = null;
+    _passengerNegotiationSub?.cancel();
+    _passengerNegotiationSub = null;
+    _passengerRideUpdatesSub?.cancel();
+    _passengerRideUpdatesSub = null;
     _activeNegotiations.clear();
     _currentNegotiation = null;
   }
 
-  // ✅ CLEANUP: Detener solo listeners de conductor
+  /// Detener solo listeners de conductor (limpia estado local también).
   void stopDriverListeners() {
     debugPrint('🛑 Deteniendo listeners de conductor');
-    _driverNegotiationsSubscription?.cancel();
-    _driverNegotiationsSubscription = null;
+    _driverRideUpdatesSub?.cancel();
+    _driverRideUpdatesSub = null;
+    _driverNegotiationSub?.cancel();
+    _driverNegotiationSub = null;
     _driverVisibleRequests.clear();
   }
 
-  // ✅ NUEVO: Listener en tiempo real para conductores
-  StreamSubscription<QuerySnapshot>? _driverNegotiationsSubscription;
-
-  // Iniciar escucha en tiempo real de solicitudes disponibles para conductores
-  // @param isRoleSwitchInProgress - Si true, no iniciar listener (cambio de rol en progreso)
+  // -------------------- Listener CONDUCTOR --------------------
+  /// Inicia la escucha en tiempo real de solicitudes disponibles para conductores.
+  /// @param isRoleSwitchInProgress - Si `true`, no iniciar (cambio de rol en curso).
   void startListeningToDriverRequests({bool isRoleSwitchInProgress = false}) {
-    // ✅ VALIDACIÓN: No iniciar si hay cambio de rol en progreso
     if (isRoleSwitchInProgress) {
       debugPrint('⚠️ Cambio de rol en progreso, no iniciar listener de conductor');
       return;
     }
 
-    final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint('❌ Conductor no autenticado');
-      return;
-    }
+    debugPrint('🔄 Iniciando listener de solicitudes (conductor)');
 
-    debugPrint('🔄 Iniciando listener de solicitudes para conductor: ${user.uid}');
+    _driverRideUpdatesSub?.cancel();
+    _driverNegotiationSub?.cancel();
 
-    // Cancelar suscripción anterior
-    _driverNegotiationsSubscription?.cancel();
+    // Estado inicial.
+    loadDriverRequests();
 
-    // Escuchar negociaciones en estado 'waiting' o 'negotiating'
-    _driverNegotiationsSubscription = _firestore
-        .collection('negotiations')
-        .where('status', whereIn: ['waiting', 'negotiating'])
-        .snapshots()
-        .listen((snapshot) async {
-      debugPrint('📥 Conductor recibió ${snapshot.docs.length} solicitudes');
+    // SSE: cualquier ride_update podría añadir/quitar rides disponibles.
+    _driverRideUpdatesSub = _sse.rideUpdates.listen(
+      (event) async {
+        debugPrint('📡 SSE ride_update (conductor) → $event');
+        await loadDriverRequests();
+      },
+      onError: (e) => debugPrint('❌ SSE rideUpdates (conductor) error: $e'),
+    );
 
-      // Obtener ubicación del conductor
-      final driverDoc = await _firestore.collection('drivers').doc(user.uid).get();
-      final driverData = driverDoc.data();
-
-      if (driverData == null || driverData['location'] == null) {
-        debugPrint('⚠️ Conductor sin ubicación');
-        return;
-      }
-
-      final driverLat = (driverData['location']['lat'] as num?)?.toDouble() ?? 0.0;
-      final driverLng = (driverData['location']['lng'] as num?)?.toDouble() ?? 0.0;
-      final driverLocation = LatLng(driverLat, driverLng);
-
-      final List<PriceNegotiation> filteredRequests = [];
-
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-
-        // ✅ FIX: Excluir las propias solicitudes del conductor (no puede aceptar su propio viaje)
-        final passengerId = data['passengerId'] as String? ?? '';
-        if (passengerId == user.uid) {
-          debugPrint('🚫 Excluyendo solicitud propia del conductor: ${doc.id}');
-          continue;
-        }
-
-        // Filtrar expirados
-        final expiresAt = _parseDateTime(data['expiresAt']);
-        if (expiresAt.isBefore(DateTime.now())) continue;
-
-        // Parsear ubicación de recogida
-        final pickupLat = (data['pickup']?['latitude'] as num?)?.toDouble() ?? 0.0;
-        final pickupLng = (data['pickup']?['longitude'] as num?)?.toDouble() ?? 0.0;
-        final pickupLocation = LatLng(pickupLat, pickupLng);
-
-        // Filtrar por distancia (10km máximo)
-        final distance = _calculateHaversineDistance(driverLocation, pickupLocation);
-        if (distance > 10.0) continue;
-
-        final negotiation = PriceNegotiation(
-          id: data['id'] ?? doc.id,
-          passengerId: data['passengerId'] ?? '',
-          passengerName: data['passengerName'] ?? '',
-          passengerPhoto: data['passengerPhoto'] ?? '',
-          passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
-          pickup: LocationPoint(
-            latitude: pickupLat,
-            longitude: pickupLng,
-            address: data['pickup']?['address'] ?? '',
-            reference: data['pickup']?['reference'],
-          ),
-          destination: LocationPoint(
-            latitude: (data['destination']?['latitude'] as num?)?.toDouble() ?? 0.0,
-            longitude: (data['destination']?['longitude'] as num?)?.toDouble() ?? 0.0,
-            address: data['destination']?['address'] ?? '',
-            reference: data['destination']?['reference'],
-          ),
-          suggestedPrice: (data['suggestedPrice'] as num?)?.toDouble() ?? 0.0,
-          offeredPrice: (data['offeredPrice'] as num?)?.toDouble() ?? 0.0,
-          distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
-          estimatedTime: data['estimatedTime'] ?? 0,
-          createdAt: _parseDateTime(data['createdAt']),
-          expiresAt: expiresAt,
-          status: NegotiationStatus.values.firstWhere(
-            (s) => s.name == (data['status'] ?? 'waiting'),
-            orElse: () => NegotiationStatus.waiting,
-          ),
-          driverOffers: [],
-          paymentMethod: PaymentMethod.values.firstWhere(
-            (m) => m.name == (data['paymentMethod'] ?? 'cash'),
-            orElse: () => PaymentMethod.cash,
-          ),
-          notes: data['notes'],
-        );
-
-        filteredRequests.add(negotiation);
-      }
-
-      _driverVisibleRequests = filteredRequests;
-      debugPrint('✅ Conductor ve ${_driverVisibleRequests.length} solicitudes cercanas');
-      notifyListeners();
-    }, onError: (e) {
-      debugPrint('❌ Error en listener de conductor: $e');
-    });
+    // SSE: eventos de negociación (ofertas aceptadas/rechazadas por el pasajero).
+    _driverNegotiationSub = _sse.negotiations.listen(
+      (event) async {
+        debugPrint('📡 SSE negotiation (conductor) → $event');
+        await loadDriverRequests();
+      },
+      onError: (e) => debugPrint('❌ SSE negociaciones (conductor) error: $e'),
+    );
   }
 
-  // Detener escucha de conductor
+  /// Detiene solo el listener del conductor.
   void stopListeningToDriverRequests() {
     debugPrint('🛑 Deteniendo listener de conductor');
-    _driverNegotiationsSubscription?.cancel();
-    _driverNegotiationsSubscription = null;
+    _driverRideUpdatesSub?.cancel();
+    _driverRideUpdatesSub = null;
+    _driverNegotiationSub?.cancel();
+    _driverNegotiationSub = null;
   }
 
-  // ✅ NUEVO: Obtener el rideId de una negociación aceptada
-  Future<String?> getRideIdForNegotiation(String negotiationId) async {
-    try {
-      final doc = await _firestore.collection('negotiations').doc(negotiationId).get()
-          .timeout(const Duration(seconds: 10), onTimeout: () {
-            throw TimeoutException('Timeout obteniendo rideId para negociación');
-          });
-      if (doc.exists) {
-        final rideId = doc.data()?['rideId'] as String?;
-        if (rideId != null && rideId.isNotEmpty) return rideId;
+  // -------------------- Refresh interno del pasajero --------------------
+  Future<void> _refreshMyNegotiations() async {
+    final userId = await _getCurrentUserId();
+    if (userId == null) return;
 
-        // Fallback: search rides collection by negotiationId
-        debugPrint('⚠️ rideId no encontrado en negociación, buscando en rides...');
-        final ridesQuery = await _firestore.collection('rides')
-            .where('negotiationId', isEqualTo: negotiationId)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 10));
-        if (ridesQuery.docs.isNotEmpty) {
-          return ridesQuery.docs.first.id;
+    try {
+      final response = await _api.listRides(role: 'passenger', pageSize: 50);
+      final rides = _extractList(response, keys: ['rides', 'data', 'items']);
+
+      // Estados considerados "abiertos" para el flujo InDrive.
+      const openStatuses = <String>{
+        'waiting', 'negotiating', 'requested', 'pending', 'accepted',
+      };
+
+      final List<PriceNegotiation> next = [];
+      for (final raw in rides) {
+        if (raw is! Map) continue;
+        final ride = raw.cast<String, dynamic>();
+        final status = (ride['status'] ?? '').toString();
+        final negotiable =
+            ride['negotiable'] == true || ride['isNegotiable'] == true;
+
+        // Sólo negociables abiertas.
+        if (!negotiable && status != 'accepted') continue;
+        if (!openStatuses.contains(status)) continue;
+
+        final rideId = (ride['id'] ?? ride['rideId'] ?? '').toString();
+        if (rideId.isEmpty) continue;
+
+        // status=accepted solo si coincide con currentNegotiation (aceptación reciente).
+        if (status == 'accepted' && _currentNegotiation?.id != rideId) continue;
+
+        // Traer ofertas del ride.
+        final offers = await _fetchOffersForRide(rideId);
+        next.add(_negotiationFromRide(ride, offers));
+      }
+
+      // Reemplazo idempotente.
+      _activeNegotiations
+        ..clear()
+        ..addAll(next);
+
+      // Mantener currentNegotiation sincronizado.
+      if (_currentNegotiation != null) {
+        final idx =
+            _activeNegotiations.indexWhere((n) => n.id == _currentNegotiation!.id);
+        if (idx >= 0) {
+          _currentNegotiation = _activeNegotiations[idx];
+        }
+      } else {
+        for (final n in _activeNegotiations) {
+          if (n.status == NegotiationStatus.waiting ||
+              n.status == NegotiationStatus.negotiating) {
+            _currentNegotiation = n;
+            debugPrint('📌 Auto-set currentNegotiation: ${n.id}');
+            break;
+          }
         }
       }
-      return null;
+
+      notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error obteniendo rideId: $e');
-      return null;
+      debugPrint('❌ Error refrescando negociaciones (pasajero): $e');
     }
   }
 
-  /// ✅ NUEVO: Verificar si el viaje asociado está cancelado y actualizar la negociación
+  Future<List<Map<String, dynamic>>> _fetchOffersForRide(String rideId) async {
+    try {
+      final resp = await _api.listRideOffers(rideId);
+      final list = _extractList(resp, keys: ['offers', 'data', 'items']);
+      final result = <Map<String, dynamic>>[];
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        result.add(raw.cast<String, dynamic>());
+      }
+
+      // Cachear offerId por driverId (necesario para acceptDriverOffer).
+      final byDriver = <String, String>{};
+      for (final offer in result) {
+        final id = (offer['id'] ?? offer['offerId'] ?? '').toString();
+        final driverId =
+            (offer['driverId'] ?? offer['driver']?['id'] ?? '').toString();
+        if (id.isNotEmpty && driverId.isNotEmpty) byDriver[driverId] = id;
+      }
+      _offerIdsByNegotiation[rideId] = byDriver;
+      return result;
+    } catch (e) {
+      debugPrint('❌ Error listando ofertas del ride $rideId: $e');
+      return const [];
+    }
+  }
+
+  // -------------------- Utilidades sobre rides --------------------
+  /// En el nuevo modelo backend la "negociación" y el "ride" son la misma
+  /// entidad, así que rideId == negotiationId.
+  Future<String?> getRideIdForNegotiation(String negotiationId) async {
+    if (negotiationId.isEmpty) return null;
+    return negotiationId;
+  }
+
+  /// Verifica si el viaje asociado está cancelado/completado y limpia estado local.
   Future<bool> checkAndHandleCancelledRide(String negotiationId) async {
     try {
-      final rideId = await getRideIdForNegotiation(negotiationId);
-      if (rideId == null) {
-        debugPrint('⚠️ No hay rideId para negociación: $negotiationId');
-        return false;
+      final response = await _api.getRide(negotiationId);
+      final ride = _extractMap(response, keys: ['ride', 'data']) ?? response;
+      final status = (ride['status'] ?? '').toString();
+
+      if (status == 'cancelled' || status == 'canceled' || status == 'completed') {
+        debugPrint(
+            '🔄 Viaje terminado ($status), removiendo negociación local: $negotiationId');
+        _activeNegotiations.removeWhere((n) => n.id == negotiationId);
+        if (_currentNegotiation?.id == negotiationId) _currentNegotiation = null;
+        notifyListeners();
+        return true;
       }
-
-      // Verificar el estado del viaje (con timeout)
-      final rideDoc = await _firestore.collection('rides').doc(rideId).get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout verificando estado del viaje');
-          });
-      if (!rideDoc.exists) {
-        debugPrint('⚠️ Viaje no encontrado: $rideId');
-        return false;
-      }
-
-      final rideData = rideDoc.data();
-      final rideStatus = rideData?['status'] as String?;
-
-      // Si el viaje terminó (cancelado o completado), actualizar la negociación
-      if (rideStatus == 'cancelled' || rideStatus == 'completed') {
-        debugPrint('🔄 Viaje terminado ($rideStatus), actualizando negociación: $negotiationId');
-
-        // Actualizar estado en Firestore (con timeout)
-        await _firestore.collection('negotiations').doc(negotiationId).update({
-          'status': rideStatus,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }).timeout(const Duration(seconds: 15), onTimeout: () {
-          throw TimeoutException('Timeout actualizando negociación terminada');
-        });
-
-        // Actualizar estado local
-        final index = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
-        if (index >= 0) {
-          _activeNegotiations.removeAt(index);
-          notifyListeners();
-        }
-
-        return true; // El viaje ya terminó
-      }
-
-      return false; // El viaje sigue activo
+      return false;
     } catch (e) {
       debugPrint('❌ Error verificando viaje cancelado: $e');
       return false;
     }
   }
 
-  /// ✅ NUEVO: Limpiar negociaciones cuyo viaje está cancelado
+  /// Limpiar negociaciones cuyo viaje está cancelado — refresca vía backend.
   Future<void> cleanupCancelledNegotiations() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      // Buscar negociaciones aceptadas del usuario
-      final snapshot = await _firestore
-          .collection('negotiations')
-          .where('passengerId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-
-      for (final doc in snapshot.docs) {
-        final negotiationId = doc.data()['id'] ?? doc.id;
-        await checkAndHandleCancelledRide(negotiationId);
-      }
-    } catch (e) {
-      debugPrint('❌ Error limpiando negociaciones canceladas: $e');
-    }
+    await _refreshMyNegotiations();
   }
 
-  /// ✅ NUEVO: Cancelar negociación manualmente por el pasajero
+  /// Cancelar negociación manualmente por el pasajero.
   Future<bool> cancelNegotiation(String negotiationId) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return false;
-
       debugPrint('🚫 Cancelando negociación: $negotiationId');
+      await _api.cancelRide(negotiationId, reason: 'passenger_cancelled');
 
-      // Actualizar en Firestore (con timeout)
-      await _firestore.collection('negotiations').doc(negotiationId).update({
-        'status': 'cancelled',
-        'cancelledAt': FieldValue.serverTimestamp(),
-        'cancelledBy': user.uid,
-        'cancellationReason': 'passenger_cancelled',
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
-        throw TimeoutException('Timeout cancelando negociación');
-      });
-
-      // Remover de la lista local
       _activeNegotiations.removeWhere((n) => n.id == negotiationId);
-
-      // Limpiar currentNegotiation si es la que se canceló
-      if (_currentNegotiation?.id == negotiationId) {
-        _currentNegotiation = null;
-      }
+      if (_currentNegotiation?.id == negotiationId) _currentNegotiation = null;
 
       notifyListeners();
       debugPrint('✅ Negociación cancelada exitosamente');
@@ -467,141 +350,145 @@ class PriceNegotiationProvider extends ChangeNotifier {
     }
   }
 
-  /// ✅ NUEVO: Expirar negociaciones que han pasado su tiempo límite (5 minutos)
-  /// Elimina el documento de Firebase para evitar negociaciones "fantasma"
+  /// Expirar negociaciones locales que hayan pasado su tiempo límite (5 min).
+  /// Notifica al backend cancelándolas.
   Future<void> expireOldNegotiations() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+    final now = DateTime.now();
+    final expired = <String>[];
 
-    try {
-      final now = DateTime.now();
+    _activeNegotiations.removeWhere((n) {
+      final isExpired = n.expiresAt.isBefore(now) &&
+          (n.status == NegotiationStatus.waiting ||
+              n.status == NegotiationStatus.negotiating);
+      if (isExpired) expired.add(n.id);
+      return isExpired;
+    });
 
-      // Buscar negociaciones activas del usuario que hayan expirado (con timeout)
-      final snapshot = await _firestore
-          .collection('negotiations')
-          .where('passengerId', isEqualTo: user.uid)
-          .where('status', whereIn: ['waiting', 'negotiating'])
-          .get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout buscando negociaciones expiradas');
-          });
-
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final expiresAt = _parseDateTime(data['expiresAt']);
-
-        // Si ya expiró, ELIMINAR el documento (no solo cambiar estado)
-        if (expiresAt.isBefore(now)) {
-          final negotiationId = data['id'] ?? doc.id;
-          debugPrint('⏰ Eliminando negociación expirada: $negotiationId');
-
-          // ✅ CAMBIO: Eliminar documento en lugar de solo actualizar estado
-          await _firestore.collection('negotiations').doc(doc.id).delete();
-
-          // Remover de lista local
-          _activeNegotiations.removeWhere((n) => n.id == negotiationId);
-        }
-      }
-
-      // Limpiar currentNegotiation si expiró
-      if (_currentNegotiation != null && _currentNegotiation!.expiresAt.isBefore(now)) {
-        _currentNegotiation = null;
-      }
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint('❌ Error expirando negociaciones: $e');
+    if (_currentNegotiation != null &&
+        _currentNegotiation!.expiresAt.isBefore(now)) {
+      _currentNegotiation = null;
     }
+
+    // Cancelar en el servidor los que expiraron localmente.
+    for (final id in expired) {
+      try {
+        await _api.cancelRide(id, reason: 'expired');
+        debugPrint('⏰ Ride expirado cancelado en server: $id');
+      } catch (e) {
+        debugPrint('⚠️ No se pudo cancelar en server el ride expirado $id: $e');
+      }
+    }
+
+    notifyListeners();
   }
 
-  /// ✅ NUEVO: Verificar si hay negociaciones activas (no expiradas, no canceladas)
+  /// Verificar si hay negociaciones activas (no expiradas, no canceladas).
   bool hasActiveNegotiation() {
     final now = DateTime.now();
     return _activeNegotiations.any((n) =>
-      n.expiresAt.isAfter(now) &&
-      n.status != NegotiationStatus.cancelled &&
-      n.status != NegotiationStatus.accepted
-    );
+        n.expiresAt.isAfter(now) &&
+        n.status != NegotiationStatus.cancelled &&
+        n.status != NegotiationStatus.accepted);
   }
 
-  /// ✅ NUEVO: Obtener negociaciones válidas (filtrar expiradas)
+  /// Obtener negociaciones válidas (filtrar expiradas).
   List<PriceNegotiation> getValidNegotiations() {
     final now = DateTime.now();
-    return _activeNegotiations.where((n) =>
-      n.expiresAt.isAfter(now) &&
-      n.status != NegotiationStatus.cancelled
-    ).toList();
+    return _activeNegotiations
+        .where((n) =>
+            n.expiresAt.isAfter(now) &&
+            n.status != NegotiationStatus.cancelled)
+        .toList();
   }
 
   @override
   void dispose() {
-    _negotiationsSubscription?.cancel();
-    _driverNegotiationsSubscription?.cancel();
+    _passengerNegotiationSub?.cancel();
+    _passengerRideUpdatesSub?.cancel();
+    _driverRideUpdatesSub?.cancel();
+    _driverNegotiationSub?.cancel();
     super.dispose();
   }
 
-  /// Para pasajeros: Crear nueva negociación con datos reales
+  // -------------------- Crear negociación (pasajero) --------------------
+  /// Crear una nueva negociación (equivale a crear un ride negociable).
   Future<void> createNegotiation({
     required LocationPoint pickup,
     required LocationPoint destination,
     required double offeredPrice,
     required PaymentMethod paymentMethod,
     String? notes,
-    // ✅ NUEVO: Parámetros de promoción
     String? appliedPromotionId,
     String? appliedPromotionCode,
     double? discountAmount,
     double? discountPercentage,
   }) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
         throw Exception('Usuario no autenticado');
       }
+      final userData = await _getCurrentUserData();
 
-      // Cancel any existing active negotiations first (only ONE per passenger)
-      try {
-        final existingNegotiations = await _firestore
-            .collection('negotiations')
-            .where('passengerId', isEqualTo: user.uid)
-            .where('status', whereIn: ['waiting', 'negotiating'])
-            .get();
-
-        for (final doc in existingNegotiations.docs) {
-          await doc.reference.update({
-            'status': 'cancelled',
-            'cancelledAt': Timestamp.now(),
-            'cancelReason': 'new_negotiation_created',
-          });
-          debugPrint('🗑️ Cancelled previous negotiation: ${doc.id}');
+      // Cancelar cualquier negociación activa previa del pasajero (una por usuario).
+      for (final n in List<PriceNegotiation>.from(_activeNegotiations)) {
+        if (n.status == NegotiationStatus.waiting ||
+            n.status == NegotiationStatus.negotiating) {
+          try {
+            await _api.cancelRide(n.id, reason: 'new_negotiation_created');
+            debugPrint('🗑️ Cancelada negociación previa: ${n.id}');
+          } catch (e) {
+            debugPrint('⚠️ Error cancelando negociación previa ${n.id}: $e');
+          }
         }
-      } catch (e) {
-        debugPrint('⚠️ Error cancelling previous negotiations: $e');
       }
-
-      // Clear local state
       _activeNegotiations.clear();
       _currentNegotiation = null;
 
-      // Obtener datos del usuario desde Firestore
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data() ?? {};
-
-      // Calcular datos reales
+      // Calcular datos derivados.
       final pickupLatLng = _locationPointToLatLng(pickup);
       final destLatLng = _locationPointToLatLng(destination);
-      
-      final distance = await _calculateRealDistance(pickupLatLng, destLatLng);
-      final estimatedTime = await _calculateRealTime(pickupLatLng, destLatLng);
+      final distance = _calculateHaversineDistance(pickupLatLng, destLatLng);
+      final estimatedTime = (distance / 30 * 60).round();
       final suggestedPrice = _calculateSuggestedPrice(distance);
 
+      // Crear el ride negociable en el backend.
+      final response = await _api.createRide(
+        pickup: {
+          'lat': pickup.latitude,
+          'lng': pickup.longitude,
+          'address': pickup.address,
+          if (pickup.reference != null) 'reference': pickup.reference,
+        },
+        destination: {
+          'lat': destination.latitude,
+          'lng': destination.longitude,
+          'address': destination.address,
+          if (destination.reference != null) 'reference': destination.reference,
+        },
+        vehicleType: 'car',
+        paymentMethod: paymentMethod.name,
+        proposedFare: offeredPrice,
+        negotiable: true,
+        notes: notes,
+      );
+
+      final ride = _extractMap(response, keys: ['ride', 'data']) ?? response;
+      final rideId =
+          (ride['id'] ?? ride['rideId'] ?? response['id'])?.toString();
+      if (rideId == null || rideId.isEmpty) {
+        throw Exception('No se recibió rideId del servidor');
+      }
+
       final negotiation = PriceNegotiation(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        passengerId: user.uid,
-        passengerName: user.displayName ?? userData['name'] ?? 'Usuario',
-        passengerPhone: userData['phone'] ?? '',
-        passengerPhoto: user.photoURL ?? userData['photoUrl'] ?? '',
-        passengerRating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
+        id: rideId,
+        passengerId: userId,
+        passengerName:
+            (userData['displayName'] ?? userData['name'] ?? 'Usuario').toString(),
+        passengerPhone: (userData['phone'] ?? '').toString(),
+        passengerPhoto:
+            (userData['photoUrl'] ?? userData['photoURL'] ?? '').toString(),
+        passengerRating: _toDouble(userData['rating']) ?? 5.0,
         pickup: pickup,
         destination: destination,
         suggestedPrice: suggestedPrice,
@@ -611,526 +498,324 @@ class PriceNegotiationProvider extends ChangeNotifier {
         createdAt: DateTime.now(),
         expiresAt: DateTime.now().add(const Duration(minutes: 5)),
         status: NegotiationStatus.waiting,
-        driverOffers: [],
+        driverOffers: const <DriverOffer>[],
         paymentMethod: paymentMethod,
         notes: notes,
-        // ✅ Campos de promoción
         appliedPromotionId: appliedPromotionId,
         appliedPromotionCode: appliedPromotionCode,
         discountAmount: discountAmount,
         discountPercentage: discountPercentage,
       );
-      
+
       _currentNegotiation = negotiation;
       _activeNegotiations.add(negotiation);
-      await _broadcastToDrivers(negotiation);
       notifyListeners();
-      
     } catch (e) {
-      debugPrint('Error creando negociación: $e');
+      debugPrint('❌ Error creando negociación: $e');
       rethrow;
     }
   }
-  
-  /// Para conductores: Ver todas las solicitudes activas desde Firestore
+
+  // -------------------- Cargar solicitudes (conductor) --------------------
+  /// Para conductores: cargar solicitudes disponibles en la zona.
   Future<void> loadDriverRequests() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
+      final userId = await _getCurrentUserId();
+      if (userId == null) return;
 
-      // Obtener ubicación actual del conductor
-      final driverDoc = await _firestore.collection('drivers').doc(user.uid).get();
-      final driverData = driverDoc.data();
-      
-      if (driverData == null || driverData['location'] == null) {
-        debugPrint('Conductor sin ubicación registrada');
-        return;
+      // Intentar obtener ubicación fresca desde el backend.
+      await _refreshDriverLocation();
+
+      final loc = _lastDriverLocation;
+      final response = loc != null
+          ? await _api.listAvailableRides(
+              lat: loc.latitude,
+              lng: loc.longitude,
+              radiusKm: 10,
+              limit: 50,
+            )
+          : await _api.listRides(role: 'driver', pageSize: 50);
+
+      final rides = _extractList(response, keys: ['rides', 'data', 'items']);
+      final now = DateTime.now();
+      final List<PriceNegotiation> filtered = [];
+
+      for (final raw in rides) {
+        if (raw is! Map) continue;
+        final ride = raw.cast<String, dynamic>();
+
+        // Solo mostrar negociables en estados abiertos.
+        final status = (ride['status'] ?? '').toString();
+        final negotiable =
+            ride['negotiable'] == true || ride['isNegotiable'] == true;
+        if (loc == null) {
+          // Sin ubicación filtramos localmente por estado (listAvailableRides
+          // ya lo hace en el server).
+          if (!negotiable) continue;
+          if (status != 'waiting' &&
+              status != 'negotiating' &&
+              status != 'requested' &&
+              status != 'pending') {
+            continue;
+          }
+        }
+
+        // Excluir las propias solicitudes del conductor.
+        final passengerId =
+            (ride['passengerId'] ?? ride['userId'] ?? '').toString();
+        if (passengerId == userId) {
+          debugPrint('🚫 Excluyendo solicitud propia: ${ride['id']}');
+          continue;
+        }
+
+        final negotiation = _negotiationFromRide(ride, const []);
+
+        // Filtro local por expiración.
+        if (negotiation.expiresAt.isBefore(now)) continue;
+
+        // Si tenemos ubicación y el server no filtró por radio, filtrar aquí.
+        if (loc != null) {
+          final distanceKm = _calculateHaversineDistance(
+            loc,
+            _locationPointToLatLng(negotiation.pickup),
+          );
+          if (distanceKm > 10.0) continue;
+        }
+
+        filtered.add(negotiation);
       }
 
-      // Buscar negociaciones activas en un radio de 10km
-      final driverLat = driverData['location']['lat'];
-      final driverLng = driverData['location']['lng'];
-      
-      // ✅ CORREGIDO: Sin filtro de expiresAt en query (puede ser String o Timestamp)
-      // El filtro se hace en el cliente después de parsear
-      final snapshot = await _firestore
-          .collection('negotiations')
-          .where('status', isEqualTo: 'waiting')
-          .limit(50)
-          .get();
-
-      _driverVisibleRequests = snapshot.docs
-          .map((doc) {
-            final data = doc.data();
-            return PriceNegotiation(
-              id: data['id'] ?? '',
-              passengerId: data['passengerId'] ?? '',
-              passengerName: data['passengerName'] ?? '',
-              passengerPhoto: data['passengerPhoto'] ?? '',
-              passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
-              pickup: LocationPoint(
-                latitude: (data['pickup']?['latitude'] as num?)?.toDouble() ?? 0.0,
-                longitude: (data['pickup']?['longitude'] as num?)?.toDouble() ?? 0.0,
-                address: data['pickup']?['address'] ?? '',
-                reference: data['pickup']?['reference'],
-              ),
-              destination: LocationPoint(
-                latitude: (data['destination']?['latitude'] as num?)?.toDouble() ?? 0.0,
-                longitude: (data['destination']?['longitude'] as num?)?.toDouble() ?? 0.0,
-                address: data['destination']?['address'] ?? '',
-                reference: data['destination']?['reference'],
-              ),
-              suggestedPrice: (data['suggestedPrice'] as num?)?.toDouble() ?? 0.0,
-              offeredPrice: (data['offeredPrice'] as num?)?.toDouble() ?? 0.0,
-              distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
-              estimatedTime: data['estimatedTime'] ?? 0,
-              createdAt: _parseDateTime(data['createdAt']),
-              expiresAt: _parseDateTime(data['expiresAt']),
-              status: NegotiationStatus.values.firstWhere(
-                (status) => status.name == data['status'],
-                orElse: () => NegotiationStatus.waiting,
-              ),
-              driverOffers: [],
-              paymentMethod: PaymentMethod.values.firstWhere(
-                (method) => method.name == data['paymentMethod'],
-                orElse: () => PaymentMethod.cash,
-              ),
-              notes: data['notes'],
-            );
-          })
-          .where((negotiation) {
-            // ✅ FIX: Excluir las propias solicitudes del conductor (no puede aceptar su propio viaje)
-            if (negotiation.passengerId == user.uid) {
-              debugPrint('🚫 Excluyendo solicitud propia del conductor: ${negotiation.id}');
-              return false;
-            }
-            // ✅ Filtrar expirados (el filtro que antes estaba en Firestore)
-            if (negotiation.expiresAt.isBefore(DateTime.now())) {
-              return false;
-            }
-            // Filtrar por proximidad (10km radio)
-            final distance = _calculateHaversineDistance(
-              LatLng(driverLat, driverLng),
-              _locationPointToLatLng(negotiation.pickup),
-            );
-            return distance <= 10.0; // 10km máximo
-          })
-          .toList();
-      
+      _driverVisibleRequests = filtered;
+      debugPrint('✅ Conductor ve ${_driverVisibleRequests.length} solicitudes');
       notifyListeners();
-      
     } catch (e) {
-      debugPrint('Error cargando solicitudes de conductores: $e');
+      debugPrint('❌ Error cargando solicitudes de conductores: $e');
     }
   }
-  
-  // ✅ NUEVO: Constante para saldo mínimo requerido para conductores
-  static const double minDriverBalance = 5.0; // S/. 5.00 mínimo para operar
 
-  /// ✅ NUEVO: Verificar si el conductor tiene saldo suficiente para operar
+  Future<void> _refreshDriverLocation() async {
+    try {
+      final status = await _api.driverStatus();
+      final loc = _extractMap(status, keys: ['location', 'position']);
+      if (loc != null) {
+        final lat = _toDouble(loc['lat']) ?? _toDouble(loc['latitude']);
+        final lng = _toDouble(loc['lng']) ?? _toDouble(loc['longitude']);
+        if (lat != null && lng != null) {
+          _lastDriverLocation = LatLng(lat, lng);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ No se pudo obtener ubicación del conductor: $e');
+    }
+  }
+
+  // -------------------- Wallet check (conductor) --------------------
+  static const double minDriverBalance = 0.0; // Solo comisión 12% al completar viaje.
+  double get minimumDriverBalance => minDriverBalance;
+
+  /// Verifica si el conductor tiene saldo suficiente para operar.
   Future<bool> checkDriverBalance(String driverId) async {
     try {
-      // ✅ FIX: Agregar timeout de 15 segundos para evitar congelamiento
-      final walletDoc = await _firestore.collection('wallets').doc(driverId).get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout verificando saldo del conductor');
-          });
-      if (!walletDoc.exists) {
-        debugPrint('⚠️ Conductor sin billetera: $driverId');
-        return false;
-      }
-
-      final walletData = walletDoc.data()!;
-      final balance = (walletData['balance'] as num?)?.toDouble() ?? 0.0;
-      final pendingBalance = (walletData['pendingBalance'] as num?)?.toDouble() ?? 0.0;
-      final availableBalance = balance - pendingBalance;
-
-      debugPrint('💰 Saldo conductor $driverId: S/. $availableBalance (mínimo: S/. $minDriverBalance)');
-      return availableBalance >= minDriverBalance;
-    } on TimeoutException {
-      debugPrint('⏱️ Timeout verificando saldo, reintentando...');
-      return false;
+      final balance = await _api.walletBalance();
+      final credits = _toDouble(balance['serviceCredits']) ??
+          _toDouble(balance['balance']) ??
+          _toDouble(balance['available']) ??
+          0.0;
+      debugPrint(
+          '💰 Créditos conductor $driverId: S/. $credits (mínimo: S/. $minDriverBalance)');
+      return credits >= minDriverBalance;
     } catch (e) {
       debugPrint('❌ Error verificando saldo: $e');
       return false;
     }
   }
 
-  /// ✅ NUEVO: Getter para obtener el saldo mínimo requerido
-  double get minimumDriverBalance => minDriverBalance;
-
-  /// Para conductores: Hacer una oferta con datos reales
-  /// ✅ MODIFICADO: Ahora retorna String? con mensaje de error o null si éxito
-  Future<String?> makeDriverOffer(String negotiationId, double acceptedPrice) async {
+  // -------------------- Oferta del conductor --------------------
+  /// Para conductores: Hacer una oferta con datos reales.
+  /// Retorna `null` si éxito, o un mensaje de error si falla.
+  Future<String?> makeDriverOffer(
+      String negotiationId, double acceptedPrice) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return 'Usuario no autenticado';
+      final userId = await _getCurrentUserId();
+      if (userId == null) return 'Usuario no autenticado';
 
-      // ✅ NUEVO: Verificar saldo mínimo antes de hacer oferta
-      final hasBalance = await checkDriverBalance(user.uid);
+      // Verificar saldo mínimo antes de hacer oferta.
+      final hasBalance = await checkDriverBalance(userId);
       if (!hasBalance) {
         debugPrint('❌ Conductor sin saldo suficiente para hacer ofertas');
         return 'Saldo insuficiente. Necesitas mínimo S/. ${minDriverBalance.toStringAsFixed(2)} para hacer ofertas. Recarga tu billetera.';
       }
 
-      // Obtener datos del conductor desde Firestore (con timeout)
-      final driverDoc = await _firestore.collection('drivers').doc(user.uid).get()
-          .timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout obteniendo datos del conductor');
-          });
-      final driverData = driverDoc.data() ?? {};
-
-      // Obtener teléfono del conductor desde users
-      String driverPhone = '';
+      // Datos del conductor.
+      final userData = await _getCurrentUserData();
+      Map<String, dynamic> driverProfile = const {};
       try {
-        final userDoc = await _firestore.collection('users').doc(user.uid).get();
-        driverPhone = userDoc.data()?['phone'] ?? '';
-      } catch (_) {}
+        driverProfile = await _api.myDriverProfile();
+      } catch (e) {
+        debugPrint('⚠️ No se pudo obtener perfil de conductor: $e');
+      }
+      final vehicleData =
+          _extractMap(driverProfile, keys: ['vehicle']) ?? const <String, dynamic>{};
 
-      // Obtener datos del vehículo
-      final vehicleData = driverData['vehicle'] ?? {};
-      
-      // Calcular tiempo de llegada real
-      final negotiationIndex = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
-      int estimatedArrival = 5; // default
-      
-      if (negotiationIndex != -1 && driverData['location'] != null) {
-        final driverLocation = LatLng(
-          (driverData['location']['lat'] as num?)?.toDouble() ?? 0.0,
-          (driverData['location']['lng'] as num?)?.toDouble() ?? 0.0,
+      // Calcular ETA si tenemos ubicación del conductor y del ride.
+      int estimatedArrival = 5;
+      final rideIndex =
+          _driverVisibleRequests.indexWhere((r) => r.id == negotiationId);
+      if (_lastDriverLocation != null && rideIndex != -1) {
+        final distKm = _calculateHaversineDistance(
+          _lastDriverLocation!,
+          _locationPointToLatLng(_driverVisibleRequests[rideIndex].pickup),
         );
-        final pickupLocation = _locationPointToLatLng(
-          _activeNegotiations[negotiationIndex].pickup,
-        );
-        
-        estimatedArrival = await _calculateRealTime(driverLocation, pickupLocation);
+        estimatedArrival = (distKm / 30 * 60).round().clamp(1, 60);
       }
 
+      // Enviar oferta al backend.
+      await _api.submitRideOffer(
+        negotiationId,
+        amount: acceptedPrice,
+        etaSeconds: estimatedArrival * 60,
+      );
+
+      // Reflejar la oferta localmente para respuesta inmediata en la UI.
       final offer = DriverOffer(
-        driverId: user.uid,
-        driverName: user.displayName ?? driverData['name'] ?? 'Conductor',
-        driverPhone: driverPhone,
-        driverPhoto: user.photoURL ?? driverData['photoUrl'] ?? '',
-        driverRating: (driverData['rating'] as num?)?.toDouble() ?? 5.0,
-        vehicleModel: await _getDriverVehicleModel(),
-        vehiclePlate: vehicleData['plate'] ?? '',
-        vehicleColor: vehicleData['color'] ?? '',
+        driverId: userId,
+        driverName: (userData['displayName'] ?? userData['name'] ?? 'Conductor')
+            .toString(),
+        driverPhone: (userData['phone'] ?? '').toString(),
+        driverPhoto:
+            (userData['photoUrl'] ?? userData['photoURL'] ?? '').toString(),
+        driverRating: _toDouble(userData['rating']) ?? 5.0,
+        vehicleModel: _formatVehicleModel(vehicleData),
+        vehiclePlate: (vehicleData['plate'] ?? '').toString(),
+        vehicleColor: (vehicleData['color'] ?? '').toString(),
         acceptedPrice: acceptedPrice,
         estimatedArrival: estimatedArrival,
         offeredAt: DateTime.now(),
         status: OfferStatus.pending,
-        completedTrips: driverData['completedTrips'] ?? 0,
-        acceptanceRate: (driverData['acceptanceRate'] as num?)?.toDouble() ?? 100.0,
+        completedTrips:
+            (driverProfile['completedTrips'] as num?)?.toInt() ?? 0,
+        acceptanceRate: _toDouble(driverProfile['acceptanceRate']) ?? 100.0,
       );
-      
-      // ✅ FIX: Write to Firestore ALWAYS, regardless of local state.
-      // The driver's _activeNegotiations may not contain this negotiation
-      // (it lives in _driverVisibleRequests), so the Firestore writes must
-      // happen outside the local-state guard.
 
-      // Save offer to Firestore subcollection (with timeout)
-      await _firestore
-          .collection('negotiations')
-          .doc(negotiationId)
-          .collection('offers')
-          .doc(user.uid)
-          .set({
-            'driverId': offer.driverId,
-            'driverName': offer.driverName,
-            'driverPhone': offer.driverPhone,
-            'driverPhoto': offer.driverPhoto,
-            'driverRating': offer.driverRating,
-            'vehicleModel': offer.vehicleModel,
-            'vehiclePlate': offer.vehiclePlate,
-            'vehicleColor': offer.vehicleColor,
-            'acceptedPrice': offer.acceptedPrice,
-            'estimatedArrival': offer.estimatedArrival,
-            'offeredAt': offer.offeredAt.toIso8601String(),
-            'status': offer.status.name,
-            'completedTrips': offer.completedTrips,
-            'acceptanceRate': offer.acceptanceRate,
-          }).timeout(const Duration(seconds: 15), onTimeout: () {
-            throw TimeoutException('Timeout guardando oferta');
-          });
-
-      // ✅ IMPORTANT: Replace any existing offer from same driver (not append)
-      // Read current offers, remove old ones from this driver, add new one
-      final negotiationDoc = await _firestore.collection('negotiations').doc(negotiationId).get();
-      final List<dynamic> existingOffers = negotiationDoc.data()?['driverOffers'] ?? [];
-      // Remove previous offers from same driver
-      final filteredOffers = existingOffers.where((o) => o['driverId'] != offer.driverId).toList();
-      // Add new offer
-      filteredOffers.add({
-        'driverId': offer.driverId,
-        'driverName': offer.driverName,
-        'driverPhone': offer.driverPhone,
-        'driverPhoto': offer.driverPhoto,
-        'driverRating': offer.driverRating,
-        'vehicleModel': offer.vehicleModel,
-        'vehiclePlate': offer.vehiclePlate,
-        'vehicleColor': offer.vehicleColor,
-        'acceptedPrice': offer.acceptedPrice,
-        'estimatedArrival': offer.estimatedArrival,
-        'offeredAt': offer.offeredAt.toIso8601String(),
-        'status': offer.status.name,
-        'completedTrips': offer.completedTrips,
-        'acceptanceRate': offer.acceptanceRate,
-      });
-
-      await _firestore.collection('negotiations').doc(negotiationId).update({
-        'status': 'negotiating',
-        'driverOffers': filteredOffers,
-        'lastOfferAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 15), onTimeout: () {
-        throw TimeoutException('Timeout actualizando negociación');
-      });
-
-      // Update local state if negotiation exists in _activeNegotiations
-      if (negotiationIndex != -1) {
-        final updatedOffers = List<DriverOffer>.from(
-          _activeNegotiations[negotiationIndex].driverOffers
-        )..add(offer);
-
-        _activeNegotiations[negotiationIndex] =
-            _activeNegotiations[negotiationIndex].copyWith(
-          driverOffers: updatedOffers,
+      final negIdx =
+          _activeNegotiations.indexWhere((n) => n.id == negotiationId);
+      if (negIdx != -1) {
+        final updated = List<DriverOffer>.from(
+            _activeNegotiations[negIdx].driverOffers)
+          ..removeWhere((o) => o.driverId == userId)
+          ..add(offer);
+        _activeNegotiations[negIdx] = _activeNegotiations[negIdx].copyWith(
+          driverOffers: updated,
           status: NegotiationStatus.negotiating,
         );
-
         if (_currentNegotiation?.id == negotiationId) {
-          _currentNegotiation = _activeNegotiations[negotiationIndex];
+          _currentNegotiation = _activeNegotiations[negIdx];
         }
       }
 
       notifyListeners();
-      return null; // ✅ Success
+      return null; // Éxito.
     } catch (e) {
-      debugPrint('Error haciendo oferta: $e');
+      debugPrint('❌ Error haciendo oferta: $e');
       return 'Error al enviar oferta: $e';
     }
   }
 
-  /// Para pasajeros: Aceptar oferta de conductor
-  /// ✅ CORREGIDO: Usa Firestore Transaction para operación ATÓMICA
-  /// Crea un viaje en Firestore y conecta la negociación con el ride
-  Future<String?> acceptDriverOffer(String negotiationId, String driverId) async {
-    // ✅ IMPORTANTE: Capturar datos inmediatamente para evitar condiciones de carrera
-    // El listener de Firebase puede modificar _activeNegotiations mientras esperamos
-    final negotiationIndex = _activeNegotiations
-        .indexWhere((n) => n.id == negotiationId);
-
+  // -------------------- Aceptar oferta (pasajero) --------------------
+  /// Para pasajeros: aceptar la oferta de un conductor.
+  /// Retorna el `rideId` (que coincide con `negotiationId`) si éxito.
+  Future<String?> acceptDriverOffer(
+      String negotiationId, String driverId) async {
+    final negotiationIndex =
+        _activeNegotiations.indexWhere((n) => n.id == negotiationId);
     if (negotiationIndex == -1) {
       debugPrint('⚠️ Negociación $negotiationId no encontrada en lista activa');
       return null;
     }
-
-    // Copiar la negociación inmediatamente antes de cualquier await
     final negotiation = _activeNegotiations[negotiationIndex];
 
-    final offerIndex = negotiation.driverOffers
-        .indexWhere((o) => o.driverId == driverId);
-
+    final offerIndex =
+        negotiation.driverOffers.indexWhere((o) => o.driverId == driverId);
     if (offerIndex == -1) {
       debugPrint('⚠️ Oferta del conductor $driverId no encontrada');
       return null;
     }
-
-    // Copiar la oferta inmediatamente
     final acceptedOffer = negotiation.driverOffers[offerIndex];
 
     try {
-      // ✅ TRANSACTION ATÓMICA: Crear ride y actualizar negociación juntos
-      String? rideId;
-      final driverVerificationCode = _generateVerificationCode();
-      final passengerVerificationCode = _generateVerificationCode();
-
-      await _firestore.runTransaction((transaction) async {
-        // 1. Verificar que la negociación sigue activa (dentro de la transacción)
-        final negotiationRef = _firestore.collection('negotiations').doc(negotiationId);
-        final negotiationDoc = await transaction.get(negotiationRef);
-
-        if (!negotiationDoc.exists) {
-          throw Exception('Negociación no encontrada');
-        }
-
-        final negData = negotiationDoc.data()!;
-        final currentStatus = negData['status'] as String?;
-
-        // ✅ FIX RACE CONDITION: Si ya fue aceptada por otro, abortar
-        if (currentStatus == 'accepted' || currentStatus == 'cancelled' || currentStatus == 'completed') {
-          throw Exception('La negociación ya no está disponible (estado: $currentStatus)');
-        }
-
-        // 2. Crear el viaje en Firestore (dentro de transacción)
-        final rideRef = _firestore.collection('rides').doc();
-        rideId = rideRef.id;
-
-        transaction.set(rideRef, {
-          'passengerId': negotiation.passengerId,
-          'userId': negotiation.passengerId,
-          'driverId': driverId,
-          'negotiationId': negotiationId,
-          'pickupLocation': {
-            'latitude': negotiation.pickup.latitude,
-            'longitude': negotiation.pickup.longitude,
-          },
-          'destinationLocation': {
-            'latitude': negotiation.destination.latitude,
-            'longitude': negotiation.destination.longitude,
-          },
-          'pickupAddress': negotiation.pickup.address,
-          'destinationAddress': negotiation.destination.address,
-          'estimatedFare': acceptedOffer.acceptedPrice,
-          'finalFare': acceptedOffer.acceptedPrice,
-          'estimatedDistance': negotiation.distance,
-          'status': 'accepted',
-          'paymentMethod': negotiation.paymentMethod.name,
-          'isPaidOutsideApp': negotiation.paymentMethod == PaymentMethod.cash,
-          'requestedAt': FieldValue.serverTimestamp(),
-          'acceptedAt': FieldValue.serverTimestamp(),
-          // Códigos de verificación mutua
-          'passengerVerificationCode': passengerVerificationCode,
-          'driverVerificationCode': driverVerificationCode,
-          'isPassengerVerified': false,
-          'isDriverVerified': false,
-          // Info del conductor
-          'vehicleInfo': {
-            'driverName': acceptedOffer.driverName,
-            'driverPhone': acceptedOffer.driverPhone,
-            'driverPhoto': acceptedOffer.driverPhoto,
-            'driverRating': acceptedOffer.driverRating,
-            'vehicleModel': acceptedOffer.vehicleModel,
-            'vehiclePlate': acceptedOffer.vehiclePlate,
-            'vehicleColor': acceptedOffer.vehicleColor,
-          },
-          // Info del pasajero
-          'passengerInfo': {
-            'passengerName': negotiation.passengerName,
-            'passengerPhone': negotiation.passengerPhone,
-            'passengerPhoto': negotiation.passengerPhoto,
-            'passengerRating': negotiation.passengerRating,
-          },
-          // Campos de promoción (si aplica)
-          if (negotiation.appliedPromotionId != null)
-            'appliedPromotionId': negotiation.appliedPromotionId,
-          if (negotiation.appliedPromotionCode != null)
-            'appliedPromotionCode': negotiation.appliedPromotionCode,
-          if (negotiation.discountAmount != null)
-            'discountAmount': negotiation.discountAmount,
-          if (negotiation.discountPercentage != null)
-            'discountPercentage': negotiation.discountPercentage,
-          if (negotiation.discountAmount != null)
-            'originalFare': acceptedOffer.acceptedPrice,
-        });
-
-        // 3. Actualizar la negociación (dentro de transacción)
-        transaction.update(negotiationRef, {
-          'status': 'accepted',
-          'acceptedDriverId': driverId,
-          'rideId': rideId,
-          'acceptedAt': FieldValue.serverTimestamp(),
-        });
-      }).timeout(const Duration(seconds: 30), onTimeout: () {
-        throw TimeoutException('Timeout al aceptar oferta - operación muy lenta');
-      });
-
-      // ✅ Si llegamos aquí, la transacción fue exitosa
-
-      // Actualizar ofertas localmente (si la negociación aún existe en la lista)
-      final currentNegotiationIndex = _activeNegotiations
-          .indexWhere((n) => n.id == negotiationId);
-
-      if (currentNegotiationIndex != -1) {
-        final updatedOffers = List<DriverOffer>.from(negotiation.driverOffers);
-        for (int i = 0; i < updatedOffers.length; i++) {
-          updatedOffers[i] = updatedOffers[i].copyWith(
-            status: i == offerIndex
-                ? OfferStatus.accepted
-                : OfferStatus.rejected,
-          );
-        }
-
-        _activeNegotiations[currentNegotiationIndex] = negotiation.copyWith(
-          driverOffers: updatedOffers,
-          status: NegotiationStatus.accepted,
-          acceptedDriverId: driverId,
-        );
-
-        if (_currentNegotiation?.id == negotiationId) {
-          _currentNegotiation = _activeNegotiations[currentNegotiationIndex];
-        }
-      } else {
-        // La negociación fue removida durante el proceso
-        if (_currentNegotiation?.id == negotiationId) {
-          _currentNegotiation = negotiation.copyWith(
-            status: NegotiationStatus.accepted,
-            acceptedDriverId: driverId,
-          );
-        }
+      // Resolver offerId a partir de driverId (cache o refetch).
+      String? offerId = _offerIdsByNegotiation[negotiationId]?[driverId];
+      if (offerId == null) {
+        await _fetchOffersForRide(negotiationId);
+        offerId = _offerIdsByNegotiation[negotiationId]?[driverId];
+      }
+      if (offerId == null) {
+        debugPrint(
+            '❌ No se pudo resolver offerId para driverId=$driverId en $negotiationId');
+        return null;
       }
 
-      // Enviar notificación al conductor (fuera de transacción, no crítico)
-      if (rideId != null) {
-        await _sendAcceptanceNotification(driverId, rideId!, negotiation);
+      // Aceptar la oferta en el backend (crea el "match" ride↔driver).
+      await _api.acceptOffer(offerId);
+
+      // Actualizar estado local — aceptar esta oferta y marcar el resto como rechazadas.
+      final updatedOffers = List<DriverOffer>.from(negotiation.driverOffers);
+      for (int i = 0; i < updatedOffers.length; i++) {
+        updatedOffers[i] = updatedOffers[i].copyWith(
+          status:
+              i == offerIndex ? OfferStatus.accepted : OfferStatus.rejected,
+        );
+      }
+
+      _activeNegotiations[negotiationIndex] = negotiation.copyWith(
+        driverOffers: updatedOffers,
+        status: NegotiationStatus.accepted,
+        acceptedDriverId: driverId,
+      );
+
+      if (_currentNegotiation?.id == negotiationId) {
+        _currentNegotiation = _activeNegotiations[negotiationIndex];
       }
 
       notifyListeners();
 
-      debugPrint('✅ Viaje creado atómicamente: $rideId desde negociación: $negotiationId');
-      return rideId;
-
-    } on TimeoutException catch (e) {
-      debugPrint('⏱️ $e');
-      return null;
+      debugPrint(
+          '✅ Oferta aceptada — rideId: $negotiationId, offer: $offerId, precio: ${acceptedOffer.acceptedPrice}');
+      // rideId == negotiationId en el nuevo modelo backend.
+      return negotiationId;
     } catch (e) {
       debugPrint('❌ Error aceptando oferta: $e');
       return null;
     }
   }
 
-  /// Reject a driver's offer by updating its status in the driverOffers array
-  Future<void> rejectDriverOffer(String negotiationId, String driverId) async {
+  // -------------------- Rechazar oferta (pasajero) --------------------
+  /// Rechaza una oferta específica actualizando su status en el estado local.
+  ///
+  /// El backend no expone un endpoint por-oferta; la UX es que el pasajero
+  /// simplemente esconde la oferta rechazada. La negociación sigue viva y
+  /// otros conductores pueden seguir ofertando.
+  Future<void> rejectDriverOffer(
+      String negotiationId, String driverId) async {
     try {
-      final negotiationRef = _firestore.collection('negotiations').doc(negotiationId);
-      final doc = await negotiationRef.get();
-
-      if (!doc.exists) {
-        debugPrint('⚠️ Negotiation $negotiationId not found for rejection');
-        return;
-      }
-
-      final data = doc.data()!;
-      final List<dynamic> offersData = data['driverOffers'] ?? [];
-
-      // Update the specific driver's offer status to 'rejected'
-      final updatedOffers = offersData.map((offer) {
-        if (offer['driverId'] == driverId) {
-          return {...Map<String, dynamic>.from(offer), 'status': 'rejected'};
-        }
-        return offer;
-      }).toList();
-
-      // Check if there are any pending offers left
-      final hasPendingOffers = updatedOffers.any((o) => o['status'] == 'pending');
-      final updateData = <String, dynamic>{'driverOffers': updatedOffers};
-      // Reset to 'waiting' if no pending offers remain (so other drivers can still see it)
-      if (!hasPendingOffers) {
-        updateData['status'] = 'waiting';
-      }
-      await negotiationRef.update(updateData);
-
-      // Update local state
-      final negIndex = _activeNegotiations.indexWhere((n) => n.id == negotiationId);
+      final negIndex =
+          _activeNegotiations.indexWhere((n) => n.id == negotiationId);
       if (negIndex != -1) {
         final negotiation = _activeNegotiations[negIndex];
-        final updatedLocalOffers = negotiation.driverOffers.map((o) {
-          if (o.driverId == driverId) {
-            return o.copyWith(status: OfferStatus.rejected);
-          }
-          return o;
+        final updated = negotiation.driverOffers.map((o) {
+          return o.driverId == driverId
+              ? o.copyWith(status: OfferStatus.rejected)
+              : o;
         }).toList();
 
-        _activeNegotiations[negIndex] = negotiation.copyWith(driverOffers: updatedLocalOffers);
+        // Si no quedan ofertas pendientes, volver a estado 'waiting' para que
+        // otros conductores puedan seguir ofertando.
+        final hasPending = updated.any((o) => o.status == OfferStatus.pending);
+        _activeNegotiations[negIndex] = negotiation.copyWith(
+          driverOffers: updated,
+          status:
+              hasPending ? negotiation.status : NegotiationStatus.waiting,
+        );
 
         if (_currentNegotiation?.id == negotiationId) {
           _currentNegotiation = _activeNegotiations[negIndex];
@@ -1138,288 +823,262 @@ class PriceNegotiationProvider extends ChangeNotifier {
       }
 
       notifyListeners();
-      debugPrint('✅ Oferta del conductor $driverId rechazada en negociación $negotiationId');
+      debugPrint(
+          '✅ Oferta rechazada localmente — driverId: $driverId en $negotiationId');
     } catch (e) {
-      debugPrint('❌ Error rejecting driver offer: $e');
+      debugPrint('❌ Error rechazando oferta: $e');
       rethrow;
     }
   }
 
-  /// Generar código de verificación de 4 dígitos
-  String _generateVerificationCode() {
-    final random = math.Random();
-    String code = '';
-    for (int i = 0; i < 4; i++) {
-      code += random.nextInt(10).toString();
-    }
-    return code;
+  // -------------------- Cleanup histórico --------------------
+  /// Limpia negociaciones expiradas o stale. Con el backend, la expiración
+  /// se gestiona server-side; solo reseteamos estado local aquí.
+  Future<void> cleanupExpiredNegotiations() async {
+    _activeNegotiations.clear();
+    _currentNegotiation = null;
+    notifyListeners();
   }
 
-  /// Enviar notificación al conductor cuando su oferta es aceptada
-  Future<void> _sendAcceptanceNotification(
-    String driverId,
-    String rideId,
-    PriceNegotiation negotiation
-  ) async {
-    try {
-      await _firestore.collection('notifications').add({
-        'userId': driverId,
-        'title': '¡Oferta Aceptada!',
-        'message': 'Tu oferta de S/. ${negotiation.driverOffers.firstWhere((o) => o.driverId == driverId).acceptedPrice.toStringAsFixed(2)} ha sido aceptada. Dirígete al punto de recogida.',
-        'type': 'offer_accepted',
-        'data': {
-          'rideId': rideId,
-          'negotiationId': negotiation.id,
-          'pickupAddress': negotiation.pickup.address,
-          'destinationAddress': negotiation.destination.address,
-        },
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      debugPrint('✅ Notificación enviada al conductor: $driverId');
-    } catch (e) {
-      debugPrint('❌ Error enviando notificación: $e');
-    }
-  }
-  
-  // MÉTODOS AUXILIARES REALES
-  
-  /// Calcular precio sugerido basado en distancia real y tarifas de Perú
+  // -------------------- Helpers privados --------------------
+  /// Calcula precio sugerido basado en distancia real y tarifas de Perú.
   double _calculateSuggestedPrice(double distanceKm) {
-    const double tarifaBase = 4.0; // S/ 4.00 tarifa base en Perú
-    const double tarifaPorKm = 2.5; // S/ 2.50 por kilómetro
-    const double tarifaMinima = 8.0; // S/ 8.00 mínimo
-    
+    const double tarifaBase = 4.0; // S/ 4.00 tarifa base.
+    const double tarifaPorKm = 2.5; // S/ 2.50 por kilómetro.
+    const double tarifaMinima = 8.0; // S/ 8.00 mínimo.
     final precio = tarifaBase + (distanceKm * tarifaPorKm);
     return math.max(precio, tarifaMinima).roundToDouble();
   }
-  
-  /// Obtener modelo del vehículo del conductor
-  Future<String> _getDriverVehicleModel() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return '';
-      
-      final driverDoc = await _firestore.collection('drivers').doc(user.uid).get();
-      final vehicleData = driverDoc.data()?['vehicle'] ?? {};
-      
-      final marca = vehicleData['brand'] ?? '';
-      final modelo = vehicleData['model'] ?? '';
-      final anio = vehicleData['year'] ?? '';
-      
-      if (marca.isNotEmpty && modelo.isNotEmpty) {
-        return '$marca $modelo ${anio.isNotEmpty ? anio : ''}'.trim();
-      }
-      
-      return '';
-      
-    } catch (e) {
-      debugPrint('Error obteniendo modelo de vehículo: $e');
-      return '';
+
+  String _formatVehicleModel(Map<String, dynamic> vehicleData) {
+    final marca = (vehicleData['brand'] ?? vehicleData['make'] ?? '').toString();
+    final modelo = (vehicleData['model'] ?? '').toString();
+    final anio = (vehicleData['year'] ?? '').toString();
+    if (marca.isNotEmpty && modelo.isNotEmpty) {
+      return '$marca $modelo${anio.isNotEmpty ? ' $anio' : ''}'.trim();
     }
-  }
-  
-  /// Broadcast real a conductores cercanos via Firestore
-  Future<void> _broadcastToDrivers(PriceNegotiation negotiation) async {
-    try {
-      // Guardar negociación en Firestore para que los conductores la vean
-      // Approximate pickup location for drivers (hide exact coords until ride accepted)
-      // Add random offset of ~200-500m to protect passenger's exact location
-      final random = math.Random();
-      final latOffset = (random.nextDouble() - 0.5) * 0.008; // ~400m range
-      final lngOffset = (random.nextDouble() - 0.5) * 0.008;
-      final approxPickupLat = negotiation.pickup.latitude + latOffset;
-      final approxPickupLng = negotiation.pickup.longitude + lngOffset;
-
-      // Extract zone/neighborhood from address (e.g. "Av. Principal 123, Miraflores" -> "Zona Miraflores")
-      final addressParts = negotiation.pickup.address.split(',');
-      final approxAddress = addressParts.length > 1
-          ? 'Zona ${addressParts.last.trim()}'
-          : 'Zona ${negotiation.pickup.address}';
-
-      await _firestore
-          .collection('negotiations')
-          .doc(negotiation.id)
-          .set({
-            'id': negotiation.id,
-            'passengerId': negotiation.passengerId,
-            'passengerName': negotiation.passengerName,
-            'passengerPhoto': negotiation.passengerPhoto,
-            'passengerRating': negotiation.passengerRating,
-            // Approximate location for drivers (exact location revealed after acceptance)
-            'pickup': {
-              'latitude': approxPickupLat,
-              'longitude': approxPickupLng,
-              'address': approxAddress,
-              'reference': null,
-            },
-            // Exact pickup stored separately (only readable after ride accepted)
-            'exactPickup': {
-              'latitude': negotiation.pickup.latitude,
-              'longitude': negotiation.pickup.longitude,
-              'address': negotiation.pickup.address,
-              'reference': negotiation.pickup.reference,
-            },
-            'destination': {
-              'latitude': negotiation.destination.latitude,
-              'longitude': negotiation.destination.longitude,
-              'address': negotiation.destination.address,
-              'reference': negotiation.destination.reference,
-            },
-            'suggestedPrice': negotiation.suggestedPrice,
-            'offeredPrice': negotiation.offeredPrice,
-            'distance': negotiation.distance,
-            'estimatedTime': negotiation.estimatedTime,
-            'createdAt': Timestamp.fromDate(negotiation.createdAt),
-            'expiresAt': Timestamp.fromDate(negotiation.expiresAt),
-            'status': negotiation.status.name,
-            'driverOffers': [], // Initialize empty array so arrayUnion works cleanly
-            'driverId': null,
-            'paymentMethod': negotiation.paymentMethod.name,
-            'notes': negotiation.notes,
-          });
-      
-      // Buscar conductores activos en un radio de 15km
-      final pickupLatLng = _locationPointToLatLng(negotiation.pickup);
-      
-      final driversSnapshot = await _firestore
-          .collection('drivers')
-          .where('isOnline', isEqualTo: true)
-          .where('isAvailable', isEqualTo: true)
-          .get();
-      
-      final List<String> nearbyDriverIds = [];
-      
-      for (final driverDoc in driversSnapshot.docs) {
-        final driverData = driverDoc.data();
-        if (driverData['location'] != null) {
-          final driverLocation = LatLng(
-            (driverData['location']['lat'] as num?)?.toDouble() ?? 0.0,
-            (driverData['location']['lng'] as num?)?.toDouble() ?? 0.0,
-          );
-          
-          final distance = _calculateHaversineDistance(
-            pickupLatLng,
-            driverLocation,
-          );
-          
-          if (distance <= 15.0) { // 15km radio
-            nearbyDriverIds.add(driverDoc.id);
-          }
-        }
-      }
-      
-      // Enviar notificación push a conductores cercanos
-      if (nearbyDriverIds.isNotEmpty) {
-        await _sendPushNotificationToDrivers(nearbyDriverIds, negotiation);
-      }
-      
-      _driverVisibleRequests.add(negotiation);
-      debugPrint('Negociación broadcast a ${nearbyDriverIds.length} conductores');
-      
-    } catch (e) {
-      debugPrint('Error haciendo broadcast a conductores: $e');
-      rethrow;
-    }
-  }
-  
-  /// ✅ IMPLEMENTADO: Enviar notificaciones push a conductores
-  Future<void> _sendPushNotificationToDrivers(List<String> driverIds, PriceNegotiation negotiation) async {
-    try {
-      for (final driverId in driverIds) {
-        // Crear notificación en Firestore (será procesada por Cloud Functions)
-        await _firestore.collection('notifications').add({
-          'userId': driverId,
-          'title': 'Nueva Solicitud de Viaje',
-          'message': 'Nueva solicitud de viaje. Distancia: ${(negotiation.distance / 1000).toStringAsFixed(1)} km. Precio ofrecido: S/. ${negotiation.offeredPrice.toStringAsFixed(2)}',
-          'type': 'price_negotiation',
-          'data': {
-            'negotiationId': negotiation.id,
-            'passengerId': negotiation.passengerId,
-            'pickup': {'lat': negotiation.pickup.latitude, 'lng': negotiation.pickup.longitude},
-            'destination': {'lat': negotiation.destination.latitude, 'lng': negotiation.destination.longitude},
-            'offeredPrice': negotiation.offeredPrice,
-          },
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-      debugPrint('✅ Notificaciones creadas para ${driverIds.length} conductores');
-    } catch (e) {
-      debugPrint('❌ Error enviando notificaciones: $e');
-    }
+    return modelo;
   }
 
-  LatLng _locationPointToLatLng(LocationPoint point) {
-    return LatLng(point.latitude, point.longitude);
-  }
-
-  /// Helper para parsear DateTime desde Firestore (soporta Timestamp y String)
-  DateTime _parseDateTime(dynamic value) {
-    if (value == null) return DateTime.now();
-    if (value is Timestamp) return value.toDate();
-    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
-    return DateTime.now();
-  }
+  LatLng _locationPointToLatLng(LocationPoint point) =>
+      LatLng(point.latitude, point.longitude);
 
   double _calculateHaversineDistance(LatLng point1, LatLng point2) {
     const double earthRadius = 6371;
-    double lat1Rad = point1.latitude * (math.pi / 180);
-    double lat2Rad = point2.latitude * (math.pi / 180);
-    double deltaLat = (point2.latitude - point1.latitude) * (math.pi / 180);
-    double deltaLng = (point2.longitude - point1.longitude) * (math.pi / 180);
-
-    double a = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
-        math.cos(lat1Rad) * math.cos(lat2Rad) *
-        math.sin(deltaLng / 2) * math.sin(deltaLng / 2);
-    double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-
+    final lat1Rad = point1.latitude * (math.pi / 180);
+    final lat2Rad = point2.latitude * (math.pi / 180);
+    final deltaLat = (point2.latitude - point1.latitude) * (math.pi / 180);
+    final deltaLng = (point2.longitude - point1.longitude) * (math.pi / 180);
+    final a = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+        math.cos(lat1Rad) *
+            math.cos(lat2Rad) *
+            math.sin(deltaLng / 2) *
+            math.sin(deltaLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return earthRadius * c;
   }
 
-  Future<double> _calculateRealDistance(LatLng point1, LatLng point2) async {
-    return _calculateHaversineDistance(point1, point2);
+  double? _toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
   }
 
-  Future<int> _calculateRealTime(LatLng point1, LatLng point2) async {
-    double distanceKm = _calculateHaversineDistance(point1, point2);
-    return (distanceKm / 30 * 60).round();
+  DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    return DateTime.now();
   }
 
-  /// Clean up expired or stale negotiations for the current user
-  Future<void> cleanupExpiredNegotiations() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      final snapshot = await _firestore
-          .collection('negotiations')
-          .where('passengerId', isEqualTo: user.uid)
-          .where('status', whereIn: ['waiting', 'negotiating'])
-          .get();
-
-      final now = DateTime.now();
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        DateTime? expiresAt;
-        final raw = data['expiresAt'];
-        if (raw is Timestamp) {
-          expiresAt = raw.toDate();
-        } else if (raw is String) {
-          expiresAt = DateTime.tryParse(raw);
-        }
-
-        if (expiresAt != null && now.isAfter(expiresAt)) {
-          await doc.reference.update({'status': 'expired'});
-          debugPrint('Cleaned up expired negotiation: ${doc.id}');
-        }
-      }
-
-      _activeNegotiations.clear();
-      _currentNegotiation = null;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error cleaning up negotiations: $e');
+  Map<String, dynamic>? _extractMap(dynamic src, {required List<String> keys}) {
+    if (src is! Map) return null;
+    for (final k in keys) {
+      final v = src[k];
+      if (v is Map) return v.cast<String, dynamic>();
     }
+    return null;
+  }
+
+  List<dynamic> _extractList(dynamic src, {required List<String> keys}) {
+    if (src is! Map) return const [];
+    for (final k in keys) {
+      final v = src[k];
+      if (v is List) return v;
+    }
+    return const [];
+  }
+
+  /// Construye un [PriceNegotiation] desde el shape que devuelve el backend Node
+  /// para un ride. Es defensivo con nombres de campo alternativos.
+  PriceNegotiation _negotiationFromRide(
+    Map<String, dynamic> ride,
+    List<Map<String, dynamic>> offers,
+  ) {
+    final rideId = (ride['id'] ?? ride['rideId'] ?? '').toString();
+    final pickupMap =
+        _extractMap(ride, keys: ['pickup', 'pickupLocation']) ?? const {};
+    final destMap =
+        _extractMap(ride, keys: ['destination', 'destinationLocation']) ?? const {};
+
+    final pickupPoint = LocationPoint(
+      latitude: _toDouble(pickupMap['latitude']) ??
+          _toDouble(pickupMap['lat']) ??
+          0.0,
+      longitude: _toDouble(pickupMap['longitude']) ??
+          _toDouble(pickupMap['lng']) ??
+          0.0,
+      address:
+          (pickupMap['address'] ?? ride['pickupAddress'] ?? '').toString(),
+      reference: pickupMap['reference']?.toString(),
+    );
+    final destPoint = LocationPoint(
+      latitude: _toDouble(destMap['latitude']) ??
+          _toDouble(destMap['lat']) ??
+          0.0,
+      longitude: _toDouble(destMap['longitude']) ??
+          _toDouble(destMap['lng']) ??
+          0.0,
+      address:
+          (destMap['address'] ?? ride['destinationAddress'] ?? '').toString(),
+      reference: destMap['reference']?.toString(),
+    );
+
+    // Ofertas.
+    final driverOffers = <DriverOffer>[];
+    for (final raw in offers) {
+      final rawDriver =
+          _extractMap(raw, keys: ['driver']) ?? const <String, dynamic>{};
+      final rawVehicle =
+          _extractMap(raw, keys: ['vehicle']) ?? const <String, dynamic>{};
+
+      driverOffers.add(DriverOffer(
+        driverId:
+            (raw['driverId'] ?? rawDriver['id'] ?? '').toString(),
+        driverName: (raw['driverName'] ??
+                rawDriver['displayName'] ??
+                rawDriver['name'] ??
+                'Conductor')
+            .toString(),
+        driverPhone:
+            (raw['driverPhone'] ?? rawDriver['phone'] ?? '').toString(),
+        driverPhoto:
+            (raw['driverPhoto'] ?? rawDriver['photoUrl'] ?? '').toString(),
+        driverRating: _toDouble(raw['driverRating']) ??
+            _toDouble(rawDriver['rating']) ??
+            5.0,
+        vehicleModel:
+            (raw['vehicleModel'] ?? rawVehicle['model'] ?? '').toString(),
+        vehiclePlate:
+            (raw['vehiclePlate'] ?? rawVehicle['plate'] ?? '').toString(),
+        vehicleColor:
+            (raw['vehicleColor'] ?? rawVehicle['color'] ?? '').toString(),
+        acceptedPrice: _toDouble(raw['amount']) ??
+            _toDouble(raw['acceptedPrice']) ??
+            0.0,
+        estimatedArrival: (raw['estimatedArrival'] as num?)?.toInt() ??
+            ((raw['etaSeconds'] as num?) != null
+                ? ((raw['etaSeconds'] as num).toInt() / 60).round()
+                : 5),
+        offeredAt: _parseDateTime(raw['offeredAt'] ?? raw['createdAt']),
+        status: OfferStatus.values.firstWhere(
+          (s) => s.name == (raw['status'] ?? 'pending'),
+          orElse: () => OfferStatus.pending,
+        ),
+        completedTrips: (raw['completedTrips'] as num?)?.toInt() ?? 0,
+        acceptanceRate: _toDouble(raw['acceptanceRate']) ?? 100.0,
+      ));
+    }
+
+    // Timestamps: si no viene expiresAt, asumir 5 min desde createdAt.
+    final createdAt = _parseDateTime(ride['createdAt'] ?? ride['requestedAt']);
+    var expiresAt = _parseDateTime(ride['expiresAt']);
+    if (expiresAt.difference(createdAt).inSeconds <= 0) {
+      expiresAt = createdAt.add(const Duration(minutes: 5));
+    }
+
+    // Mapear ride.status → NegotiationStatus (soporta múltiples vocabularios).
+    final rideStatus = (ride['status'] ?? 'waiting').toString();
+    NegotiationStatus status;
+    switch (rideStatus) {
+      case 'requested':
+      case 'pending':
+      case 'waiting':
+        status = driverOffers.isEmpty
+            ? NegotiationStatus.waiting
+            : NegotiationStatus.negotiating;
+        break;
+      case 'negotiating':
+        status = NegotiationStatus.negotiating;
+        break;
+      case 'accepted':
+        status = NegotiationStatus.accepted;
+        break;
+      case 'in_progress':
+      case 'inProgress':
+      case 'ongoing':
+        status = NegotiationStatus.inProgress;
+        break;
+      case 'completed':
+        status = NegotiationStatus.completed;
+        break;
+      case 'cancelled':
+      case 'canceled':
+        status = NegotiationStatus.cancelled;
+        break;
+      case 'expired':
+        status = NegotiationStatus.expired;
+        break;
+      default:
+        status = NegotiationStatus.waiting;
+    }
+
+    final passengerInfo =
+        _extractMap(ride, keys: ['passengerInfo']) ?? const <String, dynamic>{};
+
+    return PriceNegotiation(
+      id: rideId,
+      passengerId: (ride['passengerId'] ?? ride['userId'] ?? '').toString(),
+      passengerName:
+          (ride['passengerName'] ?? passengerInfo['passengerName'] ?? '')
+              .toString(),
+      passengerPhone:
+          (ride['passengerPhone'] ?? passengerInfo['passengerPhone'] ?? '')
+              .toString(),
+      passengerPhoto:
+          (ride['passengerPhoto'] ?? passengerInfo['passengerPhoto'] ?? '')
+              .toString(),
+      passengerRating: _toDouble(ride['passengerRating']) ??
+          _toDouble(passengerInfo['passengerRating']) ??
+          5.0,
+      pickup: pickupPoint,
+      destination: destPoint,
+      suggestedPrice: _toDouble(ride['suggestedPrice']) ?? 0.0,
+      offeredPrice: _toDouble(ride['proposedFare']) ??
+          _toDouble(ride['offeredPrice']) ??
+          _toDouble(ride['estimatedFare']) ??
+          0.0,
+      distance: _toDouble(ride['distance']) ??
+          _toDouble(ride['estimatedDistance']) ??
+          0.0,
+      estimatedTime: (ride['estimatedTime'] as num?)?.toInt() ?? 0,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+      status: status,
+      driverOffers: driverOffers,
+      selectedDriverId:
+          (ride['acceptedDriverId'] ?? ride['driverId'])?.toString(),
+      paymentMethod: PaymentMethod.values.firstWhere(
+        (m) => m.name == (ride['paymentMethod'] ?? 'cash'),
+        orElse: () => PaymentMethod.cash,
+      ),
+      notes: ride['notes']?.toString(),
+      appliedPromotionId: ride['appliedPromotionId']?.toString(),
+      appliedPromotionCode: ride['appliedPromotionCode']?.toString(),
+      discountAmount: _toDouble(ride['discountAmount']),
+      discountPercentage: _toDouble(ride['discountPercentage']),
+    );
   }
 }

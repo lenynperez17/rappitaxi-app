@@ -1,18 +1,20 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../generated/l10n/app_localizations.dart';
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/payment_utils.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/payment_service.dart';
-import '../../services/firebase_service.dart';
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 
 enum CardType { visa, mastercard, amex, discover, other }
@@ -61,7 +63,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
 
   // ✅ Servicios
   final PaymentService _paymentService = PaymentService();
-  final FirebaseService _firebaseService = FirebaseService();
+  final RapiApiClient _api = RapiApiClient.instance;
 
   String _defaultMethodId = 'cash'; // ✅ Efectivo como método por defecto
   bool _isLoading = true;
@@ -114,37 +116,28 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     _initializeServices();
   }
 
-  /// Inicializar PaymentService y cargar datos desde Firebase
+  /// Cargar datos del backend Node (métodos de pago + balance de billetera).
   Future<void> _initializeServices() async {
     try {
-      // Obtener usuario actual
-      final user = FirebaseAuth.instance.currentUser;
+      final authProvider = context.read<AuthProvider>();
+      final user = authProvider.currentUser;
       if (user == null) {
         AppLogger.error('Usuario no autenticado');
         setState(() => _isLoading = false);
         return;
       }
 
-      _userId = user.uid;
+      _userId = user.id;
 
-      // ✅ SIMPLIFICADO: NO inicializar PaymentService (causa errores de conexión)
-      // Solo cargar datos desde Firestore directamente, como lo hacen otros módulos
-
-      // Cargar payment methods desde Firebase
-      await _loadPaymentMethodsFromFirebase();
-
-      // Cargar wallet balance
+      // Cargar métodos de pago y saldo desde el backend Node.
+      await _loadPaymentMethodsFromApi();
       await _loadWalletBalance();
-
-      // NO cargar historial de transacciones (requiere PaymentService)
-      // await _loadTransactionHistory();
 
       setState(() {
         _isLoading = false;
       });
 
       AppLogger.info('Métodos de pago cargados exitosamente');
-
     } catch (e) {
       AppLogger.error('Error cargando métodos de pago: $e');
       setState(() {
@@ -164,36 +157,40 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     }
   }
 
-  /// Cargar métodos de pago guardados desde Firestore
-  Future<void> _loadPaymentMethodsFromFirebase() async {
+  /// Carga los métodos de pago del usuario desde el backend Node.
+  Future<void> _loadPaymentMethodsFromApi() async {
     if (_userId == null) return;
 
     try {
-      final snapshot = await _firebaseService.firestore
-          .collection('users')
-          .doc(_userId)
-          .collection('payment_methods')
-          .orderBy('createdAt', descending: true)
-          .limit(50) // ✅ Agregar limit para cumplir con reglas de Firestore
-          .get();
+      final response = await _api.listPaymentMethods();
+      final rawList = _extractList(response, ['methods', 'items', 'data']);
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
+      for (final data in rawList) {
+        final methodType = (data['methodType'] ?? data['type'])?.toString();
+        if (methodType == 'cash' || methodType == 'wallet') {
+          // Ya están en la lista por defecto — actualizamos sólo si viene marcado
+          // como default para no duplicar.
+          if ((data['isDefault'] ?? data['is_default'] ?? false) as bool) {
+            _defaultMethodId = methodType == 'wallet' ? 'wallet' : 'cash';
+          }
+          continue;
+        }
 
-        // Convertir de Firestore a PaymentMethod
         final method = PaymentMethod(
-          id: doc.id,
+          id: (data['id'] ?? '').toString(),
           type: PaymentMethodType.card,
-          name: data['name'] ?? 'Tarjeta',
+          name: (data['label'] ?? data['name'] ?? 'Tarjeta').toString(),
           cardNumber: data['lastFourDigits'] != null
               ? '•••• ${data['lastFourDigits']}'
               : null,
-          cardHolder: data['cardHolder'],
-          expiryDate: data['expiryDate'],
-          cardType: _parseCardType(data['cardType']),
-          isDefault: data['isDefault'] ?? false,
+          cardHolder: data['cardHolder']?.toString(),
+          expiryDate: data['expiryDate']?.toString(),
+          cardType: _parseCardType(data['cardType']?.toString()),
+          isDefault:
+              (data['isDefault'] ?? data['is_default'] ?? false) as bool,
           icon: Icons.credit_card,
-          color: _getCardColorFromType(_parseCardType(data['cardType'])),
+          color:
+              _getCardColorFromType(_parseCardType(data['cardType']?.toString())),
         );
 
         setState(() {
@@ -208,41 +205,46 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     }
   }
 
-  /// Cargar balance de billetera desde Firestore
+  /// Cargar balance de billetera desde el backend Node.
   Future<void> _loadWalletBalance() async {
     if (_userId == null) return;
 
     try {
-      final userDoc = await _firebaseService.firestore
-          .collection('users')
-          .doc(_userId)
-          .get();
+      final data = await _api.walletBalance();
+      final walletBalance = (data['balance'] as num?)?.toDouble() ?? 0.0;
 
-      if (userDoc.exists) {
-        final data = userDoc.data();
-        final walletBalance = (data?['walletBalance'] ?? 0.0).toDouble();
-
-        // Actualizar balance en el método wallet
-        setState(() {
-          final walletIndex = _paymentMethods.indexWhere(
-            (m) => m.type == PaymentMethodType.wallet
+      // Actualizar balance en el método wallet
+      setState(() {
+        final walletIndex = _paymentMethods.indexWhere(
+          (m) => m.type == PaymentMethodType.wallet,
+        );
+        if (walletIndex != -1) {
+          _paymentMethods[walletIndex] = PaymentMethod(
+            id: _paymentMethods[walletIndex].id,
+            type: _paymentMethods[walletIndex].type,
+            name: _paymentMethods[walletIndex].name,
+            walletBalance: walletBalance.toStringAsFixed(2),
+            isDefault: _paymentMethods[walletIndex].isDefault,
+            icon: _paymentMethods[walletIndex].icon,
+            color: _paymentMethods[walletIndex].color,
           );
-          if (walletIndex != -1) {
-            _paymentMethods[walletIndex] = PaymentMethod(
-              id: _paymentMethods[walletIndex].id,
-              type: _paymentMethods[walletIndex].type,
-              name: _paymentMethods[walletIndex].name,
-              walletBalance: walletBalance.toStringAsFixed(2),
-              isDefault: _paymentMethods[walletIndex].isDefault,
-              icon: _paymentMethods[walletIndex].icon,
-              color: _paymentMethods[walletIndex].color,
-            );
-          }
-        });
-      }
+        }
+      });
     } catch (e) {
       AppLogger.error('Error cargando wallet balance: $e');
     }
+  }
+
+  /// Extrae una lista de la respuesta HTTP buscando llaves comunes.
+  List<Map<String, dynamic>> _extractList(
+      Map<String, dynamic> response, List<String> keys) {
+    for (final key in keys) {
+      final v = response[key];
+      if (v is List) {
+        return v.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return const [];
   }
 
   /// Cargar historial de transacciones desde PaymentService
@@ -969,7 +971,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(transaction.paymentMethod),
+            Text(formatPaymentMethodLabel(transaction.paymentMethod)),
             Text(
               _formatDate(transaction.createdAt),
               style: TextStyle(fontSize: 12),
@@ -1153,18 +1155,11 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
               final successMessage = AppLocalizations.of(context)!.methodDeleted;
               Navigator.pop(context);
 
-              // Eliminar de Firestore si no es cash o wallet
+              // TODO(node-migration): reemplazar con endpoint
+              // DELETE /api/payment-methods/:id cuando exista.
               if (method.type == PaymentMethodType.card && _userId != null) {
-                try {
-                  await _firebaseService.firestore
-                      .collection('users')
-                      .doc(_userId)
-                      .collection('payment_methods')
-                      .doc(method.id)
-                      .delete();
-                } catch (e) {
-                  AppLogger.error('Error eliminando payment method: $e');
-                }
+                AppLogger.info(
+                    'Payment method local removido (endpoint DELETE pendiente): ${method.id}');
               }
 
               setState(() {
@@ -1199,28 +1194,21 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
   }
   
   void _addPaymentMethod() {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+      maxHeightFraction: 0.9,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.5,
         maxChildSize: 0.9,
         builder: (context, scrollController) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: AddPaymentMethodSheet(
-              scrollController: scrollController,
-              onMethodAdded: (method) {
-                setState(() {
-                  _paymentMethods.add(method);
-                });
-              },
-            ),
+          return AddPaymentMethodSheet(
+            scrollController: scrollController,
+            onMethodAdded: (method) {
+              setState(() {
+                _paymentMethods.add(method);
+              });
+            },
           );
         },
       ),
@@ -1240,16 +1228,11 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     final TextEditingController customAmountController = TextEditingController();
     double selectedAmount = 0;
 
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
             top: 24,
             left: 24,
             right: 24,
@@ -1334,7 +1317,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     );
   }
 
-  /// Procesar recarga con MercadoPago
+  /// Procesar recarga vía backend Node — genera el checkout de MercadoPago.
   Future<void> _processRecharge(double amount) async {
     if (_userId == null) return;
 
@@ -1348,33 +1331,19 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         ),
       );
 
-      // Obtener datos del usuario
-      final userDoc = await _firebaseService.firestore
-          .collection('users')
-          .doc(_userId)
-          .get();
-
-      final userData = userDoc.data();
-      final email = userData?['email'] ?? '';
-      final name = userData?['name'] ?? 'Usuario';
-
-      // Crear preferencia de pago
-      final result = await _paymentService.createMercadoPagoPreference(
-        rideId: 'wallet_recharge_${DateTime.now().millisecondsSinceEpoch}',
-        amount: amount,
-        payerEmail: email,
-        payerName: name,
-        description: 'Recarga de billetera Rappi Team',
-      );
+      // El backend arma la preferencia y devuelve el initPoint listo para WebView.
+      final checkout = await _api.createRechargeCheckout(amount);
 
       if (!mounted) return;
       Navigator.pop(context); // Cerrar loader
 
-      if (result.success && result.initPoint != null) {
-        // Abrir MercadoPago en WebView
-        await _openMercadoPagoWebView(result.initPoint!, amount);
+      final initPoint = (checkout['initPoint'] ??
+              checkout['init_point'] ??
+              checkout['url']) as String?;
+      if (initPoint != null && initPoint.isNotEmpty) {
+        await _openMercadoPagoWebView(initPoint, amount);
       } else {
-        _showError('Error creando preferencia de pago: ${result.error}');
+        _showError('No se pudo generar la preferencia de pago');
       }
     } catch (e) {
       if (!mounted) return;
@@ -1402,11 +1371,10 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                   onPageFinished: (url) async {
                     final navigator = Navigator.of(context);
 
-                    // Detectar si el pago fue exitoso
+                    // Detectar si el pago fue exitoso — el webhook del
+                    // backend actualiza el balance en Postgres, así que sólo
+                    // recargamos el saldo desde la API.
                     if (url.contains('success') || url.contains('approved')) {
-                      // Actualizar wallet balance en Firestore
-                      await _updateWalletBalance(amount);
-
                       if (!mounted) return;
                       navigator.pop();
 
@@ -1415,7 +1383,6 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
 
                       // Recargar datos
                       await _loadWalletBalance();
-                      await _loadTransactionHistory();
                     } else if (url.contains('failure') || url.contains('pending')) {
                       if (!mounted) return;
                       navigator.pop();
@@ -1431,17 +1398,15 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     );
   }
 
-  /// Actualizar balance de wallet en Firestore
+  /// Refresca el balance de la billetera desde el backend Node.
+  ///
+  /// La actualización real la hace el webhook de MercadoPago sobre Postgres;
+  /// aquí sólo re-leemos el saldo para que el UI refleje el cambio.
   Future<void> _updateWalletBalance(double amount) async {
     if (_userId == null) return;
-
-    try {
-      await _firebaseService.firestore.collection('users').doc(_userId).update({
-        'walletBalance': FieldValue.increment(amount),
-      });
-    } catch (e) {
-      AppLogger.error('Error actualizando wallet balance: $e');
-    }
+    // TODO(node-migration): eliminar este método cuando ya no se llame; el
+    // saldo se refresca vía _loadWalletBalance() después del webhook.
+    await _loadWalletBalance();
   }
 
   void _showError(String message) {
@@ -1482,29 +1447,14 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
   
   /// ✅ IMPLEMENTADO: Mostrar detalles de transacción con descarga de PDF
   void _showTransactionDetails(PaymentHistoryItem transaction) async {
-    showModalBottomSheet(
+    showResponsiveBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
+      builder: (context) => Padding(
         padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-
             Text(
               AppLocalizations.of(context)!.transactionDetails,
               style: TextStyle(
@@ -1518,7 +1468,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
             _buildDetailRow(AppLocalizations.of(context)!.transactionId, transaction.id),
             _buildDetailRow(AppLocalizations.of(context)!.tripDetailLabel, transaction.rideId),
             _buildDetailRow(AppLocalizations.of(context)!.dateDetailLabel, _formatDate(transaction.createdAt)),
-            _buildDetailRow(AppLocalizations.of(context)!.methodDetailLabel, transaction.paymentMethod),
+            _buildDetailRow(AppLocalizations.of(context)!.methodDetailLabel, formatPaymentMethodLabel(transaction.paymentMethod)),
             _buildDetailRow(AppLocalizations.of(context)!.amountDetailLabel, transaction.amount.toCurrency()),
             _buildDetailRow('Comisión plataforma', transaction.platformCommission.toCurrency()),
             _buildDetailRow(
@@ -1545,7 +1495,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                   child: ElevatedButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/support');
+                      Navigator.pushNamed(context, '/shared/support');
                     },
                     icon: Icon(Icons.help),
                     label: Text(AppLocalizations.of(context)!.helpButton),
@@ -1598,7 +1548,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                 _buildPdfRow('ID de Transacción:', transaction.id),
                 _buildPdfRow('ID de Viaje:', transaction.rideId),
                 _buildPdfRow('Fecha:', DateFormat('dd/MM/yyyy HH:mm').format(transaction.createdAt)),
-                _buildPdfRow('Método de Pago:', transaction.paymentMethod),
+                _buildPdfRow('Método de Pago:', formatPaymentMethodLabel(transaction.paymentMethod)),
                 pw.SizedBox(height: 10),
 
                 // Amounts
@@ -1746,8 +1696,6 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
   final _cardHolderController = TextEditingController();
   final _expiryController = TextEditingController();
   final _cvvController = TextEditingController();
-
-  final FirebaseService _firebaseService = FirebaseService();
 
   CardType _selectedCardType = CardType.visa;
   bool _isLoading = false;
@@ -1917,7 +1865,7 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
     );
   }
   
-  /// ✅ IMPLEMENTADO: Agregar tarjeta y guardar en Firestore
+  /// Agregar una tarjeta como método de pago vía backend Node.
   Future<void> _addCard() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -1925,40 +1873,32 @@ class _AddPaymentMethodSheetState extends State<AddPaymentMethodSheet> {
       });
 
       try {
-        // Obtener usuario actual
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) {
-          throw Exception('Usuario no autenticado');
-        }
-
         // Detectar tipo de tarjeta automáticamente
         _selectedCardType = _detectCardType(_cardNumberController.text);
 
         // Obtener últimos 4 dígitos
-        final lastFourDigits = _cardNumberController.text.replaceAll(' ', '').substring(
-          _cardNumberController.text.replaceAll(' ', '').length - 4
-        );
+        final digitsOnly = _cardNumberController.text.replaceAll(' ', '');
+        final lastFourDigits =
+            digitsOnly.substring(digitsOnly.length - 4);
 
-        // Guardar en Firestore (NO guardamos el número completo por seguridad)
-        final docRef = await _firebaseService.firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('payment_methods')
-            .add({
-          'name': '${_selectedCardType.name.toUpperCase()} •••• $lastFourDigits',
-          'lastFourDigits': lastFourDigits,
-          'cardHolder': _cardHolderController.text.toUpperCase(),
-          'expiryDate': _expiryController.text,
-          'cardType': _selectedCardType.name,
-          'isDefault': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        final label =
+            '${_selectedCardType.name.toUpperCase()} •••• $lastFourDigits';
+
+        // Registrar en backend Node — NO se envía el número completo por
+        // seguridad; el backend guarda sólo label + últimos 4.
+        final response = await RapiApiClient.instance.addPaymentMethod(
+          methodType: 'card',
+          label: label,
+          isDefault: false,
+        );
+        final methodId =
+            (response['id'] ?? response['methodId'] ?? '').toString();
 
         // Crear objeto PaymentMethod para UI
         final newMethod = PaymentMethod(
-          id: docRef.id,
+          id: methodId,
           type: PaymentMethodType.card,
-          name: '${_selectedCardType.name.toUpperCase()} •••• $lastFourDigits',
+          name: label,
           cardNumber: '•••• •••• •••• $lastFourDigits',
           cardHolder: _cardHolderController.text.toUpperCase(),
           expiryDate: _expiryController.text,

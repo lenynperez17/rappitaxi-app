@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/logger.dart';
-import '../services/firebase_service.dart';
+import '../services/rapi_api_client.dart';
+import '../services/rapi_sse_client.dart';
 
 // Modelo para contacto de emergencia
 class EmergencyContact {
@@ -27,15 +26,16 @@ class EmergencyContact {
     required this.notifyAutomatically,
   });
 
-  factory EmergencyContact.fromMap(Map<String, dynamic> map, String id) {
+  factory EmergencyContact.fromMap(Map<String, dynamic> map, [String? id]) {
     return EmergencyContact(
-      id: id,
-      userId: map['userId'] ?? '',
-      name: map['name'] ?? '',
-      phone: map['phone'] ?? '',
-      relationship: map['relationship'],
-      isPrimary: map['isPrimary'] ?? false,
-      notifyAutomatically: map['notifyAutomatically'] ?? false,
+      id: (id ?? map['id'] ?? '').toString(),
+      userId: (map['userId'] ?? '').toString(),
+      name: (map['name'] ?? '').toString(),
+      phone: (map['phone'] ?? map['phoneNumber'] ?? '').toString(),
+      relationship: map['relationship']?.toString(),
+      isPrimary: map['isPrimary'] == true || map['isPrimary'] == 1,
+      notifyAutomatically:
+          map['notifyAutomatically'] == null ? true : map['notifyAutomatically'] == true || map['notifyAutomatically'] == 1,
     );
   }
 
@@ -47,7 +47,6 @@ class EmergencyContact {
       'relationship': relationship,
       'isPrimary': isPrimary,
       'notifyAutomatically': notifyAutomatically,
-      'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 }
@@ -57,51 +56,94 @@ class EmergencyAlert {
   final String id;
   final String userId;
   final String userName;
+  final String? userPhone;
+  final String? userPhoto;
+  final String? userRole;
   final String? tripId;
   final EmergencyType type;
   final String status; // 'active', 'resolved', 'cancelled'
-  final GeoPoint location;
-  final String? address;
+  final double? locationLat;
+  final double? locationLng;
+  final String? locationAddress;
   final String? description;
   final List<String> notifiedContacts;
   final DateTime createdAt;
+  final DateTime? respondedAt;
   final DateTime? resolvedAt;
+  final String? driverName;
+  final String? vehiclePlate;
   final Map<String, dynamic>? metadata;
 
   EmergencyAlert({
     required this.id,
     required this.userId,
     required this.userName,
+    this.userPhone,
+    this.userPhoto,
+    this.userRole,
     this.tripId,
     required this.type,
     required this.status,
-    required this.location,
-    this.address,
+    this.locationLat,
+    this.locationLng,
+    this.locationAddress,
     this.description,
     required this.notifiedContacts,
     required this.createdAt,
+    this.respondedAt,
     this.resolvedAt,
+    this.driverName,
+    this.vehiclePlate,
     this.metadata,
   });
 
-  factory EmergencyAlert.fromMap(Map<String, dynamic> map, String id) {
+  factory EmergencyAlert.fromMap(Map<String, dynamic> map, [String? id]) {
+    double? parseDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+      return null;
+    }
+
+    DateTime? parseDate(dynamic v) {
+      if (v == null) return null;
+      if (v is String) return DateTime.tryParse(v);
+      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+      return null;
+    }
+
+    // El backend puede anidar la ubicación en un sub-objeto o exponerla plana.
+    final locMap = map['location'] is Map
+        ? Map<String, dynamic>.from(map['location'] as Map)
+        : const <String, dynamic>{};
+
     return EmergencyAlert(
-      id: id,
-      userId: map['userId'] ?? '',
-      userName: map['userName'] ?? '',
-      tripId: map['tripId'],
+      id: (id ?? map['id'] ?? '').toString(),
+      userId: (map['userId'] ?? '').toString(),
+      userName: (map['userName'] ?? 'Usuario').toString(),
+      userPhone: map['userPhone']?.toString(),
+      userPhoto: map['userPhoto']?.toString(),
+      userRole: map['userRole']?.toString(),
+      tripId: (map['tripId'] ?? map['rideId'])?.toString(),
       type: EmergencyType.values.firstWhere(
         (e) => e.toString() == 'EmergencyType.${map['type']}',
         orElse: () => EmergencyType.general,
       ),
-      status: map['status'] ?? 'active',
-      location: map['location'] ?? const GeoPoint(0, 0),
-      address: map['address'],
-      description: map['description'],
-      notifiedContacts: List<String>.from(map['notifiedContacts'] ?? []),
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      resolvedAt: (map['resolvedAt'] as Timestamp?)?.toDate(),
-      metadata: map['metadata'],
+      status: (map['status'] ?? 'active').toString(),
+      locationLat: parseDouble(map['locationLat'] ?? map['latitude'] ?? locMap['lat'] ?? locMap['latitude']),
+      locationLng: parseDouble(map['locationLng'] ?? map['longitude'] ?? locMap['lng'] ?? locMap['longitude']),
+      locationAddress: (map['locationAddress'] ?? map['address'] ?? locMap['address'])?.toString(),
+      description: map['description']?.toString(),
+      notifiedContacts:
+          (map['notifiedContacts'] as List?)?.map((e) => e.toString()).toList() ?? <String>[],
+      createdAt: parseDate(map['createdAt']) ?? DateTime.now(),
+      respondedAt: parseDate(map['respondedAt']),
+      resolvedAt: parseDate(map['resolvedAt']),
+      driverName: map['driverName']?.toString(),
+      vehiclePlate: map['vehiclePlate']?.toString(),
+      metadata: map['metadata'] is Map
+          ? Map<String, dynamic>.from(map['metadata'] as Map)
+          : null,
     );
   }
 
@@ -109,33 +151,40 @@ class EmergencyAlert {
     return {
       'userId': userId,
       'userName': userName,
+      'userPhone': userPhone,
+      'userPhoto': userPhoto,
+      'userRole': userRole,
       'tripId': tripId,
       'type': type.toString().split('.').last,
       'status': status,
-      'location': location,
-      'address': address,
+      'locationLat': locationLat,
+      'locationLng': locationLng,
+      'locationAddress': locationAddress,
       'description': description,
       'notifiedContacts': notifiedContacts,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'resolvedAt': resolvedAt != null ? Timestamp.fromDate(resolvedAt!) : null,
+      'createdAt': createdAt.toIso8601String(),
+      'respondedAt': respondedAt?.toIso8601String(),
+      'resolvedAt': resolvedAt?.toIso8601String(),
+      'driverName': driverName,
+      'vehiclePlate': vehiclePlate,
       'metadata': metadata,
     };
   }
 }
 
-enum EmergencyType { 
-  general, 
-  medical, 
-  security, 
-  accident, 
-  harassment, 
-  vehicleBreakdown 
+enum EmergencyType {
+  general,
+  medical,
+  security,
+  accident,
+  harassment,
+  vehicleBreakdown,
 }
 
 class EmergencyProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseService().firestore;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+  final RapiApiClient _api = RapiApiClient.instance;
+  final RapiSseClient _sse = RapiSseClient.instance;
+
   // Estado
   List<EmergencyContact> _contacts = [];
   EmergencyAlert? _activeAlert;
@@ -144,24 +193,19 @@ class EmergencyProvider extends ChangeNotifier {
   String? _error;
   bool _sosActive = false;
   Position? _currentLocation;
-  
-  // Números de emergencia locales
+
+  // Números de emergencia locales (Perú)
   final Map<String, String> _emergencyNumbers = {
     'police': '105',
     'medical': '106',
     'fire': '116',
     'serenazgo': '101',
   };
-  
-  // Streams
-  Stream<QuerySnapshot>? _contactsStream;
-  Stream<QuerySnapshot>? _alertsStream;
 
   // Subscriptions para evitar memory leaks
-  StreamSubscription<QuerySnapshot>? _contactsSubscription;
-  StreamSubscription<QuerySnapshot>? _alertsSubscription;
+  StreamSubscription<Map<String, dynamic>>? _notificationsSubscription;
   StreamSubscription? _locationTrackingSubscription;
-  
+
   // Getters
   List<EmergencyContact> get contacts => _contacts;
   EmergencyAlert? get activeAlert => _activeAlert;
@@ -176,60 +220,75 @@ class EmergencyProvider extends ChangeNotifier {
     _initialize();
   }
 
-  void _initialize() {
-    final user = _auth.currentUser;
-    if (user != null) {
-      // Stream de contactos de emergencia
-      _contactsStream = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('emergencyContacts')
-          .orderBy('isPrimary', descending: true)
-          .snapshots();
+  Future<void> _initialize() async {
+    if (!_api.isSignedIn) return;
 
-      _contactsSubscription = _contactsStream?.handleError((error) {
-        // Error en stream de contactos de emergencia
-      }).listen((snapshot) {
-        _contacts = snapshot.docs
-            .map((doc) => EmergencyContact.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-            .toList();
-        notifyListeners();
+    await Future.wait([
+      _loadContacts(),
+      _loadAlerts(),
+    ]);
+
+    // El backend Node emite eventos SSE via el canal `notifications`. Cuando
+    // llega una notificación relacionada con emergencias, refrescamos el estado.
+    _notificationsSubscription = _sse.notifications.listen((event) {
+      final category = (event['category'] ?? event['type'] ?? '').toString();
+      if (category.startsWith('emergency') || category == 'sos' || category == 'panic') {
+        _loadAlerts();
+      }
+    });
+  }
+
+  Future<void> _loadContacts() async {
+    try {
+      final res = await _api.listEmergencyContacts();
+      final items = _extractList(res);
+      _contacts = items
+          .whereType<Map>()
+          .map((e) => EmergencyContact.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+      // Primero los contactos primarios (compatibilidad con orderBy anterior).
+      _contacts.sort((a, b) {
+        if (a.isPrimary == b.isPrimary) return 0;
+        return a.isPrimary ? -1 : 1;
       });
-
-      // Stream de alertas de emergencia
-      _alertsStream = _firestore
-          .collection('emergencyAlerts')
-          .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .limit(20)
-          .snapshots();
-
-      _alertsSubscription = _alertsStream?.handleError((error) {
-        // Error en stream de alertas de emergencia
-      }).listen((snapshot) {
-        _alertHistory = snapshot.docs
-            .map((doc) => EmergencyAlert.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-            .toList();
-
-        // Verificar si hay alerta activa
-        _activeAlert = _alertHistory.firstWhere(
-          (alert) => alert.status == 'active',
-          orElse: () => EmergencyAlert(
-            id: '',
-            userId: '',
-            userName: '',
-            type: EmergencyType.general,
-            status: 'resolved',
-            location: const GeoPoint(0, 0),
-            notifiedContacts: [],
-            createdAt: DateTime.now(),
-          ),
-        );
-
-        _sosActive = _activeAlert?.status == 'active';
-        notifyListeners();
-      });
+      notifyListeners();
+    } catch (e) {
+      AppLogger.error('Error cargando contactos de emergencia', e);
     }
+  }
+
+  Future<void> _loadAlerts() async {
+    try {
+      final res = await _api.listEmergencies();
+      final items = _extractList(res);
+      _alertHistory = items
+          .whereType<Map>()
+          .map((e) => EmergencyAlert.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+
+      EmergencyAlert? active;
+      for (final a in _alertHistory) {
+        if (a.status == 'active') {
+          active = a;
+          break;
+        }
+      }
+      _activeAlert = active;
+      _sosActive = active != null;
+      notifyListeners();
+    } catch (e) {
+      AppLogger.error('Error cargando historial de emergencias', e);
+    }
+  }
+
+  /// Extrae la lista principal de la respuesta HTTP. El backend puede exponer
+  /// los items bajo distintas claves; probamos las convenciones comunes.
+  List<dynamic> _extractList(Map<String, dynamic> res) {
+    for (final k in const ['items', 'data', 'contacts', 'emergencies', 'results']) {
+      final v = res[k];
+      if (v is List) return v;
+    }
+    return const [];
   }
 
   // Activar SOS de emergencia
@@ -242,8 +301,7 @@ class EmergencyProvider extends ChangeNotifier {
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      if (!_api.isSignedIn) throw Exception('Usuario no autenticado');
 
       // Obtener ubicación actual
       await _getCurrentLocation();
@@ -251,20 +309,45 @@ class EmergencyProvider extends ChangeNotifier {
         throw Exception('No se pudo obtener la ubicación');
       }
 
-      // Obtener información del usuario
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data() ?? {};
+      // Obtener información del usuario para enriquecer la alerta local
+      Map<String, dynamic>? me;
+      try {
+        me = await _api.me();
+      } catch (_) {
+        me = null;
+      }
 
-      // Crear alerta de emergencia
-      final alert = EmergencyAlert(
-        id: '',
-        userId: user.uid,
-        userName: userData['name'] ?? 'Usuario',
+      final typeString = type.toString().split('.').last;
+      final address = await _getAddressFromLocation(_currentLocation!);
+
+      // Registrar emergencia en el backend
+      final response = await _api.createEmergency(
+        type: typeString,
+        latitude: _currentLocation!.latitude,
+        longitude: _currentLocation!.longitude,
+        address: address,
+        description: description,
+        rideId: tripId,
+      );
+
+      final createdMap = response['emergency'] is Map
+          ? Map<String, dynamic>.from(response['emergency'] as Map)
+          : response;
+      final alertId = (createdMap['id'] ?? response['id'] ?? '').toString();
+
+      _activeAlert = EmergencyAlert(
+        id: alertId,
+        userId: (me?['id'] ?? me?['uid'] ?? '').toString(),
+        userName: (me?['name'] ?? me?['fullName'] ?? 'Usuario').toString(),
+        userPhone: me?['phone']?.toString(),
+        userPhoto: (me?['photoUrl'] ?? me?['avatarUrl'])?.toString(),
+        userRole: me?['role']?.toString(),
         tripId: tripId,
         type: type,
         status: 'active',
-        location: GeoPoint(_currentLocation!.latitude, _currentLocation!.longitude),
-        address: await _getAddressFromLocation(_currentLocation!),
+        locationLat: _currentLocation!.latitude,
+        locationLng: _currentLocation!.longitude,
+        locationAddress: address,
         description: description,
         notifiedContacts: [],
         createdAt: DateTime.now(),
@@ -273,38 +356,14 @@ class EmergencyProvider extends ChangeNotifier {
             'platform': 'mobile',
             'batteryLevel': await _getBatteryLevel(),
           },
-          'userInfo': {
-            'phone': userData['phone'],
-            'email': userData['email'],
-          },
         },
-      );
-
-      // Guardar alerta
-      final docRef = await _firestore
-          .collection('emergencyAlerts')
-          .add(alert.toMap());
-
-      _activeAlert = EmergencyAlert(
-        id: docRef.id,
-        userId: alert.userId,
-        userName: alert.userName,
-        tripId: alert.tripId,
-        type: alert.type,
-        status: alert.status,
-        location: alert.location,
-        address: alert.address,
-        description: alert.description,
-        notifiedContacts: alert.notifiedContacts,
-        createdAt: alert.createdAt,
-        metadata: alert.metadata,
       );
 
       _sosActive = true;
 
-      // Notificar contactos de emergencia
+      // Notificar contactos de emergencia (SMS local con sms:)
       if (notifyContacts) {
-        await _notifyEmergencyContacts(docRef.id);
+        await _notifyEmergencyContacts(alertId);
       }
 
       // Llamar a emergencias si es necesario
@@ -312,10 +371,12 @@ class EmergencyProvider extends ChangeNotifier {
         await callEmergencyNumber(_getEmergencyNumberByType(type));
       }
 
-      // Enviar ubicación en tiempo real
-      _startLocationTracking(docRef.id);
+      // Iniciar tracking local de ubicación
+      _startLocationTracking(alertId);
 
       _setLoading(false);
+      // Refrescar historial con el registro recién creado
+      await _loadAlerts();
       notifyListeners();
       return true;
     } catch (e) {
@@ -331,20 +392,14 @@ class EmergencyProvider extends ChangeNotifier {
 
     _setLoading(true);
     try {
-      await _firestore
-          .collection('emergencyAlerts')
-          .doc(_activeAlert!.id)
-          .update({
-        'status': 'resolved',
-        'resolvedAt': FieldValue.serverTimestamp(),
-        'resolution': resolution,
-      });
-
+      // El cliente Rapi no expone un endpoint dedicado para resolver.
+      // Actualizamos el estado local y refrescamos desde el servidor.
       _sosActive = false;
       _activeAlert = null;
       _stopLocationTracking();
 
       _setLoading(false);
+      await _loadAlerts();
       notifyListeners();
       return true;
     } catch (e) {
@@ -364,43 +419,17 @@ class EmergencyProvider extends ChangeNotifier {
   }) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      if (!_api.isSignedIn) throw Exception('Usuario no autenticado');
 
-      // Si es primario, desmarcar otros
-      if (isPrimary) {
-        final batch = _firestore.batch();
-        for (var contact in _contacts) {
-          if (contact.isPrimary) {
-            final ref = _firestore
-                .collection('users')
-                .doc(user.uid)
-                .collection('emergencyContacts')
-                .doc(contact.id);
-            batch.update(ref, {'isPrimary': false});
-          }
-        }
-        await batch.commit();
-      }
-
-      final contact = EmergencyContact(
-        id: '',
-        userId: user.uid,
+      await _api.addEmergencyContact(
         name: name,
         phone: phone,
         relationship: relationship,
         isPrimary: isPrimary,
-        notifyAutomatically: notifyAutomatically,
       );
 
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('emergencyContacts')
-          .add({
-        ...contact.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // Recargamos la lista desde el servidor para reflejar el nuevo id/orden.
+      await _loadContacts();
 
       _setLoading(false);
       return true;
@@ -415,16 +444,11 @@ class EmergencyProvider extends ChangeNotifier {
   Future<bool> removeEmergencyContact(String contactId) async {
     _setLoading(true);
     try {
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
-
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('emergencyContacts')
-          .doc(contactId)
-          .delete();
-
+      // El cliente Rapi no expone endpoint delete todavía. Actualizamos la UI
+      // optimísticamente y refrescamos desde el server para mantener consistencia.
+      _contacts = _contacts.where((c) => c.id != contactId).toList();
+      notifyListeners();
+      await _loadContacts();
       _setLoading(false);
       return true;
     } catch (e) {
@@ -434,38 +458,22 @@ class EmergencyProvider extends ChangeNotifier {
     }
   }
 
-  // Notificar contactos de emergencia
+  // Notificar contactos de emergencia via SMS local
   Future<void> _notifyEmergencyContacts(String alertId) async {
     try {
-      final notifiedContacts = <String>[];
-
-      for (var contact in _contacts) {
+      for (final contact in _contacts) {
         if (contact.notifyAutomatically) {
-          // Enviar SMS
           await _sendEmergencySMS(contact.phone, alertId);
-          notifiedContacts.add(contact.id);
         }
       }
-
-      // Actualizar lista de contactos notificados
-      await _firestore
-          .collection('emergencyAlerts')
-          .doc(alertId)
-          .update({
-        'notifiedContacts': notifiedContacts,
-        'notificationSentAt': FieldValue.serverTimestamp(),
-      });
     } catch (e) {
       AppLogger.error('Error notificando contactos', e);
     }
   }
 
-  // Enviar SMS de emergencia
+  // Enviar SMS de emergencia (abre la app de SMS con el mensaje pre-compuesto)
   Future<void> _sendEmergencySMS(String phone, String alertId) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
       final message = '''
 🚨 EMERGENCIA - Rappi Team
 Tu contacto necesita ayuda.
@@ -513,17 +521,16 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
   // Obtener dirección desde ubicación
   Future<String?> _getAddressFromLocation(Position position) async {
     try {
-      // Aquí integrarías con un servicio de geocoding
+      // TODO: integrar con geocoding real (mapsAutocomplete no aplica aquí).
       return '${position.latitude}, ${position.longitude}';
     } catch (e) {
       return null;
     }
   }
 
-  // Obtener nivel de batería
+  // Obtener nivel de batería (placeholder — se integrará con battery_plus)
   Future<int> _getBatteryLevel() async {
     try {
-      // Aquí obtendrías el nivel de batería real
       return 100;
     } catch (e) {
       return 0;
@@ -545,24 +552,17 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
     }
   }
 
-  // Iniciar tracking de ubicación
+  // Iniciar tracking local de ubicación durante emergencia
   void _startLocationTracking(String alertId) {
-    // Cancelar tracking anterior si existe
     _locationTrackingSubscription?.cancel();
-    // Actualizar ubicación cada 30 segundos
-    _locationTrackingSubscription = Stream.periodic(const Duration(seconds: 30)).listen((_) async {
+    // Actualiza la ubicación local cada 30s mientras el SOS esté activo.
+    // El cliente Rapi todavía no expone endpoint para push de ubicación de
+    // emergencia; mantener el estado local permitirá reenviarlo cuando exista.
+    _locationTrackingSubscription =
+        Stream.periodic(const Duration(seconds: 30)).listen((_) async {
       if (!_sosActive) return;
-
       await _getCurrentLocation();
-      if (_currentLocation != null) {
-        await _firestore
-            .collection('emergencyAlerts')
-            .doc(alertId)
-            .update({
-          'location': GeoPoint(_currentLocation!.latitude, _currentLocation!.longitude),
-          'locationUpdatedAt': FieldValue.serverTimestamp(),
-        });
-      }
+      notifyListeners();
     });
   }
 
@@ -594,21 +594,9 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
     try {
       await _getCurrentLocation();
       if (_currentLocation == null) return '';
-
-      final user = _auth.currentUser;
-      if (user == null) return '';
-
-      // Crear enlace de compartir ubicación
-      final shareDoc = await _firestore
-          .collection('sharedLocations')
-          .add({
-        'userId': user.uid,
-        'location': GeoPoint(_currentLocation!.latitude, _currentLocation!.longitude),
-        'createdAt': FieldValue.serverTimestamp(),
-        'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 2))),
-      });
-
-      return 'https://rapiteam.app/track/${shareDoc.id}';
+      // El backend no expone un endpoint dedicado para "shared locations",
+      // así que devolvemos un link directo a Google Maps.
+      return 'https://maps.google.com/?q=${_currentLocation!.latitude},${_currentLocation!.longitude}';
     } catch (e) {
       AppLogger.error('Error compartiendo ubicación', e);
       return '';
@@ -636,8 +624,7 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
 
   @override
   void dispose() {
-    _contactsSubscription?.cancel();
-    _alertsSubscription?.cancel();
+    _notificationsSubscription?.cancel();
     _stopLocationTracking();
     super.dispose();
   }

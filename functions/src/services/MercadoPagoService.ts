@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { calculateRechargeBreakdown } from '../utils/mercadopagoFees';
 
 /**
  * 💳 SERVICIO MERCADOPAGO - COMPLETO Y FUNCIONAL
@@ -250,7 +251,12 @@ export class MercadoPagoService {
   }
 
   /**
-   * Manejar pago aprobado (acreditar saldo)
+   * Manejar pago aprobado (acreditar saldo NETO con comision MP descontada).
+   *
+   * IMPORTANTE: A partir de 2026-04, la comision real MercadoPago Peru
+   * (4.49% + S/0.55 IGV financiero) se descuenta del monto bruto.
+   * El conductor recibe el `netAmount` en su wallet, NO el `grossAmount`.
+   * El desglose se almacena en `driverRecharges` para facturacion SUNAT.
    */
   private async handleApprovedPayment(
     userId: string,
@@ -259,18 +265,36 @@ export class MercadoPagoService {
     transactionRef: admin.firestore.DocumentReference
   ): Promise<void> {
     try {
-      console.log(`✅ Pago aprobado - Acreditando S/ ${amount} a usuario ${userId}`);
+      // Calcular desglose de comision MercadoPago
+      const breakdown = calculateRechargeBreakdown(amount);
+      console.log(`✅ Pago aprobado - Bruto S/ ${breakdown.grossAmount} - Comision MP S/ ${breakdown.totalMpFee} - Neto S/ ${breakdown.netAmount} a usuario ${userId}`);
 
-      // Usar transacción de Firestore para atomicidad
+      // Idempotencia: si ya existe un driverRecharges con este paymentId, no duplicar
+      const existingRecharge = await this.db
+        .collection('driverRecharges')
+        .where('mpPaymentId', '==', String(payment.id))
+        .limit(1)
+        .get();
+      if (!existingRecharge.empty) {
+        console.log(`ℹ️  Recarga ya procesada anteriormente (paymentId=${payment.id}), saltando`);
+        return;
+      }
+
+      // Get user data for the recharge record
+      const userSnap = await this.db.collection('users').doc(userId).get();
+      const userData = userSnap.exists ? userSnap.data() : null;
+
+      // Atomic transaction: credit wallet + write driverRecharges + log walletTransactions
+      const rechargeRef = this.db.collection('driverRecharges').doc();
+
       await this.db.runTransaction(async (transaction) => {
-        // Obtener wallet del usuario (donde la app lee el saldo)
         const walletRef = this.db.collection('wallets').doc(userId);
         const walletDoc = await transaction.get(walletRef);
 
         const currentBalance = (walletDoc.exists ? walletDoc.data()?.serviceCredits : 0) || 0;
-        const newBalance = currentBalance + amount;
+        const newBalance = currentBalance + breakdown.netAmount; // SOLO se acredita el NETO
 
-        // Actualizar serviceCredits en wallets (campo que lee la app)
+        // Update wallet
         if (walletDoc.exists) {
           transaction.update(walletRef, {
             serviceCredits: newBalance,
@@ -287,14 +311,14 @@ export class MercadoPagoService {
           });
         }
 
-        // También actualizar balance en users (para consistencia)
+        // Update users.balance for consistency
         const userRef = this.db.collection('users').doc(userId);
         transaction.update(userRef, {
           balance: newBalance,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-        // Actualizar transacción
+        // Update legacy recharge_transactions (compatibility)
         transaction.update(transactionRef, {
           status: 'completed',
           paymentId: payment.id,
@@ -304,27 +328,84 @@ export class MercadoPagoService {
           approvedAt: admin.firestore.FieldValue.serverTimestamp(),
           previousBalance: currentBalance,
           newBalance: newBalance,
+          // Breakdown de comision MercadoPago
+          grossAmount: breakdown.grossAmount,
+          mpCommission: breakdown.mpCommission,
+          mpIgv: breakdown.mpIgv,
+          totalMpFee: breakdown.totalMpFee,
+          netAmount: breakdown.netAmount,
         });
 
-        // Registrar en historial de transacciones del usuario
+        // Create driverRecharges document with full breakdown (used by admin panel and invoicing)
+        transaction.set(rechargeRef, {
+          driverId: userId,
+          driverName: userData?.fullName || userData?.name || '',
+          driverEmail: userData?.email || '',
+          driverPhone: userData?.phone || userData?.phoneNumber || '',
+          driverDocumentType: userData?.documentType,
+          driverDocumentNumber: userData?.documentNumber,
+
+          grossAmount: breakdown.grossAmount,
+          mpCommission: breakdown.mpCommission,
+          mpIgv: breakdown.mpIgv,
+          totalMpFee: breakdown.totalMpFee,
+          netAmount: breakdown.netAmount,
+
+          paymentMethod: 'mercadopago',
+          mpPaymentId: String(payment.id),
+          mpPaymentStatus: 'approved',
+          mpPaymentMethodId: payment.payment_method_id,
+
+          status: 'approved',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdBy: 'system',
+        });
+
+        // Log wallet transaction for audit trail
+        const txnRef = this.db.collection('walletTransactions').doc();
+        transaction.set(txnRef, {
+          walletId: userId,
+          userId,
+          type: 'recharge',
+          amount: breakdown.netAmount,
+          status: 'completed',
+          description: `Recarga MercadoPago - bruto S/ ${breakdown.grossAmount.toFixed(2)}, neto S/ ${breakdown.netAmount.toFixed(2)} (comision S/ ${breakdown.totalMpFee.toFixed(2)})`,
+          rechargeId: rechargeRef.id,
+          metadata: {
+            paymentMethod: 'mercadopago',
+            mpPaymentId: String(payment.id),
+            grossAmount: breakdown.grossAmount,
+            mpCommission: breakdown.mpCommission,
+            mpIgv: breakdown.mpIgv,
+            totalMpFee: breakdown.totalMpFee,
+            netAmount: breakdown.netAmount,
+            effectiveFeePercentage: breakdown.effectiveFeePercentage,
+          },
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Legacy history (compatibility)
         const historyRef = this.db.collection('users').doc(userId).collection('transactions').doc();
         transaction.set(historyRef, {
           type: 'recharge',
-          amount: amount,
+          amount: breakdown.netAmount,
+          grossAmount: breakdown.grossAmount,
+          mpFee: breakdown.totalMpFee,
           paymentMethod: 'mercadopago',
           paymentId: payment.id,
           status: 'completed',
           previousBalance: currentBalance,
           newBalance: newBalance,
-          description: 'Recarga de saldo con MercadoPago',
+          description: `Recarga MercadoPago - neto acreditado S/ ${breakdown.netAmount.toFixed(2)}`,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });
 
-      // Notificar al usuario
-      await this.notifyUserRechargeSuccess(userId, amount);
+      // Notificar al usuario con el monto NETO acreditado
+      await this.notifyUserRechargeSuccess(userId, breakdown.netAmount);
 
-      console.log(`✅ Saldo acreditado exitosamente a usuario ${userId}`);
+      console.log(`✅ Recarga aprobada - rechargeId=${rechargeRef.id} - Neto S/ ${breakdown.netAmount} acreditado a ${userId}`);
 
     } catch (error: any) {
       console.error('❌ Error acreditando saldo:', error.message);
