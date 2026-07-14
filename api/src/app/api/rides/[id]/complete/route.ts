@@ -141,7 +141,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         )
       }
 
-      // Cobro de wallet si aplica
+      // Cobro de wallet + contraparte de crédito al driver + comisión al platform.
+      // Antes solo hacía el debit del passenger — desbalanceaba el libro contable:
+      // el dinero del passenger "desaparecía" (SUM negativa) sin acreditar al driver.
       let walletDebit: WalletTxRow | null = null
       if (updated.payment_method === 'wallet' && updated.passenger_id) {
         // Balance actual del passenger
@@ -159,6 +161,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           }
         }
         const newBalance = Math.round((currentBalance - finalFare) * 100) / 100
+
+        // Comisión platform (Rapi Team) sobre finalFare. Configurable via
+        // app_settings; default 20% (típico ride-hailing Perú).
+        const commissionRateRes = await client.query<{ value_num: string | null }>(
+          `SELECT value_num FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
+        )
+        const commissionRate = Number(commissionRateRes.rows[0]?.value_num ?? 0.20)
+        const commissionAmount = Math.round(finalFare * commissionRate * 100) / 100
+        const driverEarning = Math.round((finalFare - commissionAmount) * 100) / 100
+
+        // 1) DEBIT al passenger (dinero sale)
         const debitRes = await client.query<WalletTxRow>(
           `INSERT INTO wallet_transactions
              (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
@@ -173,6 +186,40 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           ],
         )
         walletDebit = debitRes.rows[0]!
+
+        // 2) CREDIT al driver (netamente de la comisión) — cierra la doble entrada
+        if (updated.driver_id && driverEarning > 0) {
+          await client.query(
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount, description, status, ride_id, metadata, completed_at)
+             VALUES ($1, 'credit', $2, $3, 'completed', $4, $5::jsonb, now())`,
+            [
+              updated.driver_id,
+              driverEarning,
+              `Ganancia viaje ${id} (comisión ${(commissionRate * 100).toFixed(0)}%)`,
+              id,
+              JSON.stringify({ finalFare, commissionRate, commissionAmount, driverEarning }),
+            ],
+          )
+        }
+
+        // 3) COMMISSION al platform (userId=null, contable) — audit trail
+        if (commissionAmount > 0) {
+          await client.query(
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount, description, status, ride_id, metadata, completed_at)
+             VALUES ($1, 'commission', $2, $3, 'completed', $4, $5::jsonb, now())`,
+            [
+              // Platform commission bucket — usamos passenger_id como referencia (no null porque hay NOT NULL constraint)
+              // Se distingue por type='commission'. TODO: user_id='__platform__' cuando se relaje NOT NULL.
+              updated.passenger_id,
+              commissionAmount,
+              `Comisión plataforma viaje ${id}`,
+              id,
+              JSON.stringify({ finalFare, commissionRate, driverId: updated.driver_id }),
+            ],
+          )
+        }
       }
 
       // Notificar al passenger

@@ -75,6 +75,20 @@ export async function POST(req: NextRequest) {
   if (!code || !dt || !['percent', 'flat'].includes(dt) || dv <= 0) {
     return NextResponse.json({ success: false, error: 'invalid_input' }, { status: 400 })
   }
+  // Cap: percent no puede exceder 100 (típo daría vale > costo del viaje);
+  // flat capped a S/ 500 (razonable para taxi urbano Perú, cambiar si crecen).
+  if (dt === 'percent' && dv > 100) {
+    return NextResponse.json(
+      { success: false, error: 'percent_too_high', message: 'Descuento porcentual no puede exceder 100%' },
+      { status: 400 },
+    )
+  }
+  if (dt === 'flat' && dv > 500) {
+    return NextResponse.json(
+      { success: false, error: 'flat_too_high', message: 'Descuento fijo máximo S/ 500' },
+      { status: 400 },
+    )
+  }
   try {
     const rows = await query<ValeRow>(
       `INSERT INTO vales (code, description, discount_type, discount_value, max_uses,

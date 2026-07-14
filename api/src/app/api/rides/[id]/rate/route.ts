@@ -75,6 +75,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (!ratedUserId) {
         throw { code: 'no_counterpart', message: 'No hay contraparte que calificar' }
       }
+      // Defensa en profundidad: NUNCA permitir auto-rating (fraude de rating).
+      // El check de accept ya bloquea self-ride, pero rides pre-existentes o
+      // futuros paths podrían tener passenger_id === driver_id.
+      if (ratedUserId === auth.userId) {
+        throw { code: 'cannot_rate_self', message: 'No puedes calificarte a ti mismo' }
+      }
 
       // ride_ratings.role guarda el rol del CALIFICADO (patrón consistente con la app)
       const ratedRole = raterRole === 'passenger' ? 'driver' : 'passenger'

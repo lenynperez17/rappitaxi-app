@@ -53,6 +53,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (ride.driver_id && ride.driver_id !== auth.userId) {
         throw { code: 'already_taken' }
       }
+      // Prevenir self-ride: un usuario `dual` NO puede aceptar su propio ride.
+      // Sin este check, podía crear ride como passenger, aceptar como driver,
+      // completarlo, y auto-rating de 5⭐ para farm de reputación (wash-trading).
+      if (ride.passenger_id === auth.userId) {
+        throw { code: 'cannot_accept_own_ride' }
+      }
 
       // Prevenir double-booking: si el driver ya tiene un ride activo distinto,
       // rechazar la aceptación. Sin este check, un driver puede aceptar N
@@ -148,6 +154,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           activeRideId: e.activeRideId,
         },
         { status: 409 },
+      )
+    }
+    if (knownCode === 'cannot_accept_own_ride') {
+      return NextResponse.json(
+        { success: false, error: 'cannot_accept_own_ride',
+          message: 'No puedes aceptar tu propio viaje como conductor.' },
+        { status: 403 },
       )
     }
     console.error('[rides/accept] error:', err)

@@ -147,9 +147,19 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const proposedFare = typeof body.proposedFare === 'number' && body.proposedFare > 0
-    ? body.proposedFare
-    : null
+  // Cap absoluto en proposedFare para prevenir fat-finger / driver malicioso
+  // que proponga estimated_fare inflado. Taxi urbano Perú realista: max S/ 500.
+  // Combinado con FINAL_FARE_MAX_MULTIPLIER=1.5 en complete → max S/ 750 total.
+  const PROPOSED_FARE_ABS_CAP = 500
+  const rawProposed = typeof body.proposedFare === 'number' ? body.proposedFare : null
+  if (rawProposed !== null && rawProposed > PROPOSED_FARE_ABS_CAP) {
+    return NextResponse.json(
+      { success: false, error: 'fare_too_high',
+        message: `El precio propuesto no puede exceder S/ ${PROPOSED_FARE_ABS_CAP}.` },
+      { status: 400 },
+    )
+  }
+  const proposedFare = rawProposed !== null && rawProposed > 0 ? rawProposed : null
   const negotiable = body.negotiable === true
   const distanceMeters = typeof body.distanceMeters === 'number' && body.distanceMeters >= 0
     ? Math.round(body.distanceMeters)

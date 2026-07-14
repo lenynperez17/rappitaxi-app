@@ -152,13 +152,26 @@ export async function POST(req: NextRequest) {
   }
 
   // Buscar mp_payment con ese external_reference (es el UUID que creamos)
-  const mpRow = await maybeOne<{ id: string; user_id: string; status: string; mp_payment_id: string | null }>(
-    'SELECT id, user_id, status, mp_payment_id FROM mp_payments WHERE id = $1',
+  const mpRow = await maybeOne<{ id: string; user_id: string; status: string; mp_payment_id: string | null; amount: string | null }>(
+    'SELECT id, user_id, status, mp_payment_id, amount FROM mp_payments WHERE id = $1',
     [externalRef],
   )
   if (!mpRow) {
     console.warn('[mp/webhook] external_reference no encontrado:', externalRef)
     return NextResponse.json({ ok: true, note: 'unknown_ref' })
+  }
+
+  // Validar que el monto de MP coincide con lo que originamos. Si no, marcar
+  // discrepancia y NO acreditar. Defensa en profundidad contra tampering o
+  // cambios silenciosos en la preference de MP.
+  const expectedAmount = Number(mpRow.amount ?? 0)
+  if (expectedAmount > 0 && Math.abs(payment.transaction_amount - expectedAmount) > 0.01) {
+    console.error('[mp/webhook] DISCREPANCY: expected', expectedAmount, 'got', payment.transaction_amount, 'externalRef', externalRef)
+    await query(
+      `UPDATE mp_payments SET status = 'discrepancy', raw = $1, updated_at = now() WHERE id = $2`,
+      [JSON.stringify({ ...payment, _discrepancy: { expected: expectedAmount, actual: payment.transaction_amount } }), externalRef],
+    )
+    return NextResponse.json({ ok: false, error: 'amount_discrepancy' }, { status: 422 })
   }
 
   const newStatus = payment.status === 'approved' ? 'approved'
