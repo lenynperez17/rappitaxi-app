@@ -311,21 +311,67 @@ export async function POST(req: NextRequest) {
 
     // 6) SMS a contactos externos (fuera de la transacción — no bloquear).
     // Best-effort: fallos individuales se loguean pero no revierten la
-    // creación de la emergencia. El sender Twilio ya tiene su propio timeout.
+    // creación de la emergencia.
+    //
+    // Anti-abuse: el sistema NUNCA debe usarse como relay de spam/phishing.
+    //  - Cuerpo del SMS es TEMPLATE FIJO, no incluye texto user-controlled
+    //    (address se dropea a `[ubicación disponible en la app]` — evita
+    //    que un attacker inyecte URLs/phishing/vulgaridad al SMS).
+    //  - Rate limit por destination_phone: max 3 SMS SOS al mismo phone /24h
+    //    (previene bombing a phones aleatorios que el attacker pone como
+    //    "contacto" propio).
+    //  - Rate limit total por user: max 5 SOS-con-SMS por user / 24h.
     let smsSent = 0
     let smsFailed = 0
+    let smsBlocked = 0
     if (result.smsRecipients.length > 0) {
-      const message = `SOS de ${'' /* nombre inyectado abajo */ }`
-      // Import dinámico para evitar cargar Twilio si no hay contactos externos.
       try {
         const { sendSmsMessage } = await import('@/services/TwilioSmsSender')
+
+        // Contar SOS del último 24h para este user (rate limit total)
+        const userSosRes = await query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM auth_events
+            WHERE user_id = $1
+              AND event_type = 'sos_sms_sent'
+              AND created_at > NOW() - INTERVAL '24 hours'`,
+          [auth.userId],
+        )
+        const userSosCount = Number(userSosRes[0]?.count ?? '0')
+        const USER_SOS_SMS_LIMIT = 5
+
         for (const r of result.smsRecipients) {
+          if (userSosCount + smsSent >= USER_SOS_SMS_LIMIT) {
+            smsBlocked++
+            continue
+          }
+          // Rate limit por destination phone
+          const destRes = await query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count
+               FROM auth_events
+              WHERE event_type = 'sos_sms_sent'
+                AND metadata->>'destinationPhone' = $1
+                AND created_at > NOW() - INTERVAL '24 hours'`,
+            [r.phone],
+          )
+          if (Number(destRes[0]?.count ?? '0') >= 3) {
+            smsBlocked++
+            continue
+          }
+
           try {
-            const body = `SOS: alerta de emergencia activada por un contacto. ` +
-              (result.emergency.address ? `Ubicación: ${result.emergency.address}. ` : '') +
-              `Revisa la app Rapi Team o contáctalo de inmediato.`
+            // Body: TEMPLATE FIJO, sin datos user-controlled. Address queda
+            // solo en la app (el contacto abre la app para verla) para no
+            // convertir el SMS en canal de phishing.
+            const body = `SOS Rapi Team: alerta de emergencia activada por un contacto tuyo. Revisa la app o llámalo de inmediato.`
             await sendSmsMessage(r.phone, body)
             smsSent++
+            // Registrar auth_event para el rate limit
+            await query(
+              `INSERT INTO auth_events (user_id, event_type, metadata)
+               VALUES ($1, 'sos_sms_sent', $2::jsonb)`,
+              [auth.userId, JSON.stringify({ destinationPhone: r.phone, emergencyId: result.emergency.id })],
+            )
           } catch (e) {
             console.error('[emergencies] sms fail', r.phone, e)
             smsFailed++
@@ -335,7 +381,6 @@ export async function POST(req: NextRequest) {
         console.error('[emergencies] SMS service unavailable — external contacts no notificados', e)
         smsFailed = result.smsRecipients.length
       }
-      void message
     }
 
     return NextResponse.json(
@@ -345,6 +390,7 @@ export async function POST(req: NextRequest) {
         notifiedContacts: result.notifiedCount,
         smsSent,
         smsFailed,
+        smsBlocked,
       },
       { status: 200 },
     )
