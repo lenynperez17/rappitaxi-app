@@ -161,7 +161,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       );
       final rawList = (resp['rides'] as List?) ?? const [];
 
-      DateTime? _parseIso(dynamic v) {
+      DateTime? parseIso(dynamic v) {
         if (v is String) return DateTime.tryParse(v);
         return null;
       }
@@ -181,7 +181,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           if (raw is! Map) continue;
           final data = Map<String, dynamic>.from(raw);
           final completedAt =
-              _parseIso(data['completedAt'] ?? data['completed_at']);
+              parseIso(data['completedAt'] ?? data['completed_at']);
           if (completedAt == null) continue;
           if (completedAt.isBefore(weekStart) || !completedAt.isBefore(weekEnd)) {
             continue;
@@ -190,7 +190,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           final fare = (data['finalFare'] ?? data['fare'] ?? data['final_fare'] ?? 0);
           if (fare is num) weekEarnings += fare.toDouble();
 
-          final startedAt = _parseIso(data['startedAt'] ?? data['started_at']);
+          final startedAt = parseIso(data['startedAt'] ?? data['started_at']);
           if (startedAt != null) {
             final duration = completedAt.difference(startedAt);
             weekHours += duration.inMinutes / 60.0;
@@ -229,7 +229,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           .listWalletTransactions(type: 'withdrawal', pageSize: 50);
       final rawList = (resp['transactions'] as List?) ?? const [];
 
-      DateTime? _parseIso(dynamic v) {
+      DateTime? parseIso(dynamic v) {
         if (v is String) return DateTime.tryParse(v);
         return null;
       }
@@ -246,8 +246,8 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           method: (data['method'] ?? 'bank_transfer') as String,
           destination: (data['destination'] ?? '') as String,
           status: (data['status'] ?? 'Procesando') as String,
-          createdAt: _parseIso(data['createdAt'] ?? data['created_at']) ?? DateTime.now(),
-          processedAt: _parseIso(data['processedAt'] ?? data['processed_at']),
+          createdAt: parseIso(data['createdAt'] ?? data['created_at']) ?? DateTime.now(),
+          processedAt: parseIso(data['processedAt'] ?? data['processed_at']),
         ));
       }
 

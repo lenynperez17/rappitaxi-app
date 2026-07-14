@@ -44,8 +44,7 @@ class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _isInitializing = true;
   String? _errorMessage;
-  bool _isAccountLocked = false;
-  DateTime? _lockedUntil;
+  final bool _isAccountLocked = false;
   bool _isRoleSwitchInProgress = false;
 
   bool _emailVerified = false;
@@ -682,12 +681,4 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  void _clearError() {
-    _errorMessage = null;
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
 }

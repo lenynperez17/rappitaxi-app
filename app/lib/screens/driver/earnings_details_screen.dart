@@ -116,7 +116,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
       double bonuses = 0.0;
       double surgeEarnings = 0.0;
 
-      DateTime? _parseIso(dynamic v) {
+      DateTime? parseIso(dynamic v) {
         if (v is String) return DateTime.tryParse(v);
         return null;
       }
@@ -126,7 +126,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
         final data = Map<String, dynamic>.from(raw);
 
         final completedAt =
-            _parseIso(data['completedAt'] ?? data['completed_at']);
+            parseIso(data['completedAt'] ?? data['completed_at']);
         if (completedAt == null) continue;
         if (completedAt.isBefore(startDate) || completedAt.isAfter(endDate)) {
           continue;
@@ -140,7 +140,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
         totalEarnings += fare.toDouble();
 
         // Duración y análisis temporal
-        final startedAt = _parseIso(data['startedAt'] ?? data['started_at']);
+        final startedAt = parseIso(data['startedAt'] ?? data['started_at']);
         if (startedAt != null) {
           final duration = completedAt.difference(startedAt);
           totalHours += duration.inMinutes / 60.0;
