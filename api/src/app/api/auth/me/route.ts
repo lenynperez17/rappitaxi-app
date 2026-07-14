@@ -78,6 +78,7 @@ export async function PATCH(req: NextRequest) {
 
   let body: {
     fullName?: string
+    displayName?: string
     email?: string
     phone?: string
     profilePhotoUrl?: string
@@ -118,6 +119,10 @@ export async function PATCH(req: NextRequest) {
   //   - /api/auth/email/verify (aún no implementado; hasta entonces solo admin)
   // Se aceptan silenciosamente pero se ignoran para no romper clientes viejos.
   if (body.profilePhotoUrl !== undefined) push('profile_photo_url', body.profilePhotoUrl)
+  // Campos que la app envía y ahora persisten (migración 018)
+  if (body.displayName !== undefined) push('display_name', body.displayName)
+  if (body.birthDate !== undefined) push('birth_date', body.birthDate)
+  if (body.identityDocument !== undefined) push('identity_document', body.identityDocument)
 
   if (sets.length === 0 && body.currentMode === undefined) {
     return NextResponse.json({ success: false, error: 'no_fields' }, { status: 400 })
