@@ -79,8 +79,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const ride = rideRes.rows[0]
       if (!ride) throw { code: 'not_found' }
       if (ride.driver_id !== auth.userId) throw { code: 'forbidden' }
-      if (ride.status !== 'in_progress' && ride.status !== 'arrived') {
-        throw { code: 'invalid_status', message: `Estado actual: ${ride.status}` }
+
+      // Advisory lock del passenger para serializar débitos concurrentes.
+      // Sin este lock, dos rides distintos completándose en paralelo (2 drivers
+      // distintos, sin lock contention en la fila ride) leen el mismo balance
+      // y ambos hacen debit → balance negativo. Mismo patrón que /wallet/withdrawals.
+      if (ride.passenger_id) {
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+          [ride.passenger_id],
+        )
+      }
+
+      // Solo permite completar rides que están `in_progress` — obliga a que
+      // haya pasado por `start` (que a su vez requiere `arrived`). Sin esto,
+      // un driver podía marcar arrived → complete directo, cobrando al
+      // passenger un viaje que nunca empezó.
+      if (ride.status !== 'in_progress') {
+        throw { code: 'invalid_status', message: `El viaje debe estar en curso (in_progress) para completarse. Estado actual: ${ride.status}` }
       }
 
       // Cap contra wallet-drain: si hay estimación previa y el driver

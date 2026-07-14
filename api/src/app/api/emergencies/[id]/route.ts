@@ -38,6 +38,19 @@ interface AdminCheckRow {
 
 const VALID_STATUS = new Set(['active', 'pending', 'dispatched', 'escalated', 'resolved', 'cancelled'])
 
+// Espejo de ALLOWED_TRANSITIONS en /api/admin/emergencies/[id] — evita que
+// este endpoint permita transiciones que el otro bloquea (ej. resolved →
+// active). Sin esto, un admin podía reabrir emergencias resueltas desde este
+// endpoint y romper el audit trail.
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  active: ['pending', 'dispatched', 'escalated', 'resolved', 'cancelled'],
+  pending: ['active', 'dispatched', 'escalated', 'resolved', 'cancelled'],
+  dispatched: ['escalated', 'resolved', 'cancelled'],
+  escalated: ['dispatched', 'resolved', 'cancelled'],
+  resolved: [],
+  cancelled: [],
+}
+
 function serialize(e: EmergencyRow) {
   return {
     id: e.id,
@@ -107,6 +120,30 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   if (body.status !== undefined && !VALID_STATUS.has(body.status)) {
     return NextResponse.json({ success: false, error: 'invalid_status' }, { status: 400 })
+  }
+
+  // Validar transición contra el estado actual — mismo state machine que
+  // /api/admin/emergencies/[id]. Sin esto, un admin podría revertir un
+  // 'resolved' a 'active' desde este endpoint y confundir auditoría.
+  if (body.status !== undefined) {
+    const current = await maybeOne<{ status: string }>(
+      'SELECT status FROM emergencies WHERE id = $1',
+      [id],
+    )
+    if (!current) {
+      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+    }
+    if (current.status !== body.status) {
+      const allowed = ALLOWED_TRANSITIONS[current.status] ?? []
+      if (!allowed.includes(body.status)) {
+        return NextResponse.json({
+          success: false,
+          error: 'invalid_transition',
+          message: `No se permite pasar de '${current.status}' a '${body.status}'`,
+          currentStatus: current.status,
+        }, { status: 409 })
+      }
+    }
   }
 
   const updates: string[] = []

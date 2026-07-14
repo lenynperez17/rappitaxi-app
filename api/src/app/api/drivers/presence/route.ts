@@ -42,6 +42,7 @@ interface PresenceBody {
   speed?: unknown
   vehicleType?: unknown
   activeRideId?: unknown
+  clearActiveRide?: unknown
 }
 
 function toNumberOrNull(v: unknown): number | null {
@@ -109,6 +110,10 @@ export async function POST(req: NextRequest) {
     typeof body.activeRideId === 'string' && body.activeRideId.trim() !== ''
       ? body.activeRideId.trim()
       : null
+  // Flag explícito para limpiar el active_ride_id (driver quiere liberarse
+  // manualmente sin esperar cancel/complete). Sin este flag, con COALESCE
+  // ningún heartbeat puede setear el campo a NULL.
+  const clearActiveRide = body.clearActiveRide === true
 
   // B#15: si el driver envía `activeRideId`, verificar que ese ride existe
   // y está asignado a este mismo driver. Sin este check, un driver malicioso
@@ -129,6 +134,15 @@ export async function POST(req: NextRequest) {
     activeRideId = rawActiveRideId
   }
 
+  // Estrategia para active_ride_id:
+  // - `clearActiveRide=true` → set NULL explícito (driver quiere liberarse)
+  // - activeRideId con valor → sobreescribir con ese valor
+  // - sin activeRideId ni clearActiveRide → COALESCE (preservar el previo,
+  //   evita wipe silencioso en cada heartbeat que omite el campo)
+  const activeRideExpr = clearActiveRide
+    ? 'NULL'
+    : 'COALESCE(EXCLUDED.active_ride_id, driver_presence.active_ride_id)'
+
   try {
     await query(
       `INSERT INTO driver_presence (
@@ -142,7 +156,7 @@ export async function POST(req: NextRequest) {
          accuracy_meters = EXCLUDED.accuracy_meters,
          speed_kmh = EXCLUDED.speed_kmh,
          vehicle_type = COALESCE(EXCLUDED.vehicle_type, driver_presence.vehicle_type),
-         active_ride_id = EXCLUDED.active_ride_id,
+         active_ride_id = ${activeRideExpr},
          last_heartbeat = now(),
          updated_at = now()`,
       [driverId, latitude, longitude, heading, accuracy, speed, vehicleType, activeRideId],

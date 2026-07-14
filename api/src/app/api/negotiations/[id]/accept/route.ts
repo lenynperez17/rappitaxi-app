@@ -127,6 +127,21 @@ export async function POST(
         throw { code: 'ride_already_assigned', status: 409 }
       }
 
+      // Prevenir double-booking del driver — mismo check que rides/accept y
+      // offers/accept. Sin este bloqueo, un driver puede aceptar N negociaciones
+      // en paralelo y dejar tirados a N-1 passengers.
+      if (newDriverId) {
+        const busyRes = await client.query<{ active_ride_id: string | null }>(
+          `SELECT active_ride_id FROM driver_presence
+            WHERE driver_id = $1 FOR UPDATE`,
+          [newDriverId],
+        )
+        const busy = busyRes.rows[0]?.active_ride_id
+        if (busy && busy !== negotiation.ride_id) {
+          throw { code: 'driver_busy', status: 409, activeRideId: busy }
+        }
+      }
+
       const amount = Number(negotiation.amount)
 
       await client.query(
@@ -153,6 +168,17 @@ export async function POST(
           WHERE id = $3`,
         [amount, newDriverId, negotiation.ride_id],
       )
+
+      // Marcar al driver como ocupado con este ride.
+      if (newDriverId) {
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, active_ride_id, updated_at, last_heartbeat)
+           VALUES ($1, $2, now(), now())
+           ON CONFLICT (driver_id) DO UPDATE
+             SET active_ride_id = EXCLUDED.active_ride_id, updated_at = now()`,
+          [newDriverId, negotiation.ride_id],
+        )
+      }
 
       // Notificar al proponente
       await client.query(

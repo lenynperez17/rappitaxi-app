@@ -139,6 +139,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
 
+  // Dedupe: si el user ya tiene una emergencia activa en los últimos 5 min,
+  // no crear una nueva — retornar la existente. Esto previene spam por
+  // tap-tap del panic button o loop malicioso que llenaría notifications
+  // + FCM push a todos los admins.
+  const existingActive = await maybeOne<{ id: string; created_at: Date }>(
+    `SELECT id, created_at FROM emergencies
+      WHERE user_id = $1
+        AND status IN ('active', 'pending', 'dispatched', 'escalated')
+        AND created_at > NOW() - INTERVAL '5 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [auth.userId],
+  )
+  if (existingActive) {
+    return NextResponse.json({
+      success: true,
+      dedupe: true,
+      message: 'Ya tienes una emergencia activa reciente',
+      emergency: { id: existingActive.id, createdAt: existingActive.created_at },
+    }, { status: 200 })
+  }
+
   const type = (body.type ?? 'panic').trim()
   if (!VALID_TYPES.has(type)) {
     return NextResponse.json(
