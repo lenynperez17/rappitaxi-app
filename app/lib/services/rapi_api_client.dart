@@ -802,6 +802,10 @@ class RapiApiClient {
         'isDefault': isDefault,
       }))!;
 
+  Future<void> deletePaymentMethod(String paymentMethodId) async {
+    await _authedDelete('/api/payment-methods/$paymentMethodId');
+  }
+
   Future<Map<String, dynamic>> listWalletTransactions({
     String? type,
     int page = 1,

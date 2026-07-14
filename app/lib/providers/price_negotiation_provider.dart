@@ -72,7 +72,10 @@ class PriceNegotiationProvider extends ChangeNotifier {
         _cachedUserId = (me['id'] ?? me['userId'] ?? me['uid'])?.toString();
         return me;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Log para observabilidad — antes silencio total ocultaba fallos de red.
+      debugPrint('getCachedUserData falló: $e');
+    }
     return const {};
   }
 

@@ -349,8 +349,9 @@ class PaymentProvider with ChangeNotifier {
         return true;
       }
 
-      // TODO(backend): DELETE /api/payment-methods/{id} está pendiente en cliente.
-      // Cuando exista, usar api.deletePaymentMethod(paymentMethodId).
+      // Ya no es local-only: eliminar en backend con endpoint DELETE.
+      // Si el backend confirma, actualizar la lista local.
+      await RapiApiClient.instance.deletePaymentMethod(paymentMethodId);
       _paymentMethods.removeWhere((m) => m.id == paymentMethodId);
       return true;
     } catch (e) {
