@@ -40,12 +40,13 @@ export async function GET(req: NextRequest) {
 
   // Datos de viajes (como passenger o driver)
   const rides = await query(
-    `SELECT id, passenger_id, driver_id, status, payment_method,
+    `SELECT id, passenger_id, driver_id, status, payment_method, vehicle_type,
             estimated_fare, final_fare, distance_meters, duration_seconds,
-            pickup_address, destination_address, pickup_latitude, pickup_longitude,
-            destination_latitude, destination_longitude,
-            cancelled_by, cancelled_reason, accepted_at, started_at, arrived_at,
-            completed_at, created_at
+            pickup_address, pickup_lat, pickup_lng,
+            destination_address, destination_lat, destination_lng,
+            passenger_rating, driver_rating,
+            cancelled_by, cancelled_reason,
+            accepted_at, started_at, completed_at, created_at
        FROM rides
        WHERE passenger_id = $1 OR driver_id = $1
        ORDER BY created_at DESC LIMIT 1000`,
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest) {
 
   // Favoritos
   const favorites = await query(
-    `SELECT id, name, address, latitude, longitude, icon, created_at
+    `SELECT id, label, address, latitude, longitude, icon, created_at
        FROM user_favorites
        WHERE user_id = $1
        ORDER BY created_at DESC LIMIT 100`,
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
   // Payment methods (solo metadata, nunca full card number)
   const paymentMethods = await query(
     `SELECT id, method_type, label, is_default, created_at
-       FROM payment_methods
+       FROM user_payment_methods
        WHERE user_id = $1`,
     [auth.userId],
   )
