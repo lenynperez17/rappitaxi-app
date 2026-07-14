@@ -213,13 +213,18 @@ export async function POST(req: NextRequest) {
       const userName = userRes.rows[0]?.full_name ?? 'Un usuario'
       const userPhone = userRes.rows[0]?.phone ?? ''
 
-      // 3) Notificar contactos de emergencia (los que sean también users del sistema)
-      //    Se busca a los users cuyo phone coincide con phone de emergency_contacts del user.
+      // 3) Notificar contactos de emergencia — DOS canales:
+      //   (a) los contactos que YA son app users → in-app notification (FCM)
+      //   (b) los contactos que NO son app users → SMS vía Twilio (fuera de tx)
+      //
+      // Antes solo se hacía (a); (b) es donde vive el 99% de los contactos
+      // reales del user (mamá, esposo, hermano) y quedaban silenciados.
       const contactsRes = await client.query<{ id: string; name: string; phone: string }>(
         `SELECT id, name, phone FROM emergency_contacts WHERE user_id = $1`,
         [auth.userId],
       )
       let notifiedCount = 0
+      const smsRecipients: Array<{ name: string; phone: string }> = []
       if (contactsRes.rows.length > 0) {
         const phones = contactsRes.rows.map((c) => c.phone)
         // Buscar users cuyo phone coincida
@@ -227,6 +232,7 @@ export async function POST(req: NextRequest) {
           `SELECT id, phone FROM users WHERE phone = ANY($1::text[])`,
           [phones],
         )
+        const matchedPhones = new Set(matchedUsersRes.rows.map((r) => r.phone))
         for (const target of matchedUsersRes.rows) {
           await client.query(
             `INSERT INTO notifications (user_id, type, title, body, data)
@@ -250,6 +256,12 @@ export async function POST(req: NextRequest) {
             ],
           )
           notifiedCount++
+        }
+        // Contactos externos (no app users) → cola para SMS post-tx
+        for (const c of contactsRes.rows) {
+          if (!matchedPhones.has(c.phone)) {
+            smsRecipients.push({ name: c.name, phone: c.phone })
+          }
         }
       }
 
@@ -294,14 +306,45 @@ export async function POST(req: NextRequest) {
         ],
       )
 
-      return { emergency, notifiedCount }
+      return { emergency, notifiedCount, smsRecipients }
     })
+
+    // 6) SMS a contactos externos (fuera de la transacción — no bloquear).
+    // Best-effort: fallos individuales se loguean pero no revierten la
+    // creación de la emergencia. El sender Twilio ya tiene su propio timeout.
+    let smsSent = 0
+    let smsFailed = 0
+    if (result.smsRecipients.length > 0) {
+      const message = `SOS de ${'' /* nombre inyectado abajo */ }`
+      // Import dinámico para evitar cargar Twilio si no hay contactos externos.
+      try {
+        const { sendSmsMessage } = await import('@/services/TwilioSmsSender')
+        for (const r of result.smsRecipients) {
+          try {
+            const body = `SOS: alerta de emergencia activada por un contacto. ` +
+              (result.emergency.address ? `Ubicación: ${result.emergency.address}. ` : '') +
+              `Revisa la app Rapi Team o contáctalo de inmediato.`
+            await sendSmsMessage(r.phone, body)
+            smsSent++
+          } catch (e) {
+            console.error('[emergencies] sms fail', r.phone, e)
+            smsFailed++
+          }
+        }
+      } catch (e) {
+        console.error('[emergencies] SMS service unavailable — external contacts no notificados', e)
+        smsFailed = result.smsRecipients.length
+      }
+      void message
+    }
 
     return NextResponse.json(
       {
         success: true,
         emergency: serialize(result.emergency),
         notifiedContacts: result.notifiedCount,
+        smsSent,
+        smsFailed,
       },
       { status: 200 },
     )
