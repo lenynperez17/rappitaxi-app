@@ -77,6 +77,12 @@ export async function POST(req: NextRequest) {
       message: `Monto mínimo S/ ${MIN_WITHDRAWAL}` }, { status: 400 })
   }
 
+  // Idempotency: la app móvil envía este header para que un tap-tap accidental
+  // no cree 2 withdrawals distintos. UNIQUE (driver_id, idempotency_key)
+  // garantiza atomicidad; devolvemos el withdrawal existente si la 2da request
+  // trae el mismo key.
+  const idempotencyKey = req.headers.get('idempotency-key')?.trim() || null
+
   try {
     const result = await tx(async (client: PoolClient) => {
       // CRÍTICO: advisory lock por driver_id para serializar POST /withdrawals
@@ -89,6 +95,19 @@ export async function POST(req: NextRequest) {
         `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
         [auth.userId],
       )
+
+      // Check idempotency: si ya existe withdrawal con este key para este
+      // driver, retornarlo sin crear nuevo.
+      if (idempotencyKey) {
+        const existing = await client.query<WithdrawalRow>(
+          `SELECT id, bank_account_id, amount, fee, net_amount, status, external_ref,
+                  reject_reason, approved_at, completed_at, created_at
+             FROM wallet_withdrawals
+            WHERE driver_id = $1 AND idempotency_key = $2 LIMIT 1`,
+          [auth.userId, idempotencyKey],
+        )
+        if (existing.rows[0]) return existing.rows[0]
+      }
 
       // Verificar que la cuenta bancaria pertenece al driver
       const bankRes = await client.query<{ id: string }>(
@@ -113,11 +132,11 @@ export async function POST(req: NextRequest) {
 
       // Insertar withdrawal
       const wRes = await client.query<WithdrawalRow>(
-        `INSERT INTO wallet_withdrawals (driver_id, bank_account_id, amount, fee, net_amount, status)
-         VALUES ($1, $2, $3, $4, $5, 'pending')
+        `INSERT INTO wallet_withdrawals (driver_id, bank_account_id, amount, fee, net_amount, status, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5, 'pending', $6)
          RETURNING id, bank_account_id, amount, fee, net_amount, status, external_ref,
                    reject_reason, approved_at, completed_at, created_at`,
-        [auth.userId, bankAccountId, amount, fee, netAmount],
+        [auth.userId, bankAccountId, amount, fee, netAmount, idempotencyKey],
       )
       const w = wRes.rows[0]
 

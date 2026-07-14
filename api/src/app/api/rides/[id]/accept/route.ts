@@ -54,6 +54,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'already_taken' }
       }
 
+      // Prevenir double-booking: si el driver ya tiene un ride activo distinto,
+      // rechazar la aceptación. Sin este check, un driver puede aceptar N
+      // rides simultáneos y dejar tirados a los primeros passengers.
+      const busyRes = await client.query<{ active_ride_id: string | null }>(
+        `SELECT active_ride_id FROM driver_presence
+          WHERE driver_id = $1 FOR UPDATE`,
+        [auth.userId],
+      )
+      const activeRide = busyRes.rows[0]?.active_ride_id
+      if (activeRide && activeRide !== id) {
+        throw { code: 'driver_busy', activeRideId: activeRide }
+      }
+
       const updateRes = await client.query<RideCore>(
         `UPDATE rides
             SET driver_id = $1,
@@ -64,6 +77,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         [auth.userId, id],
       )
       const updated = updateRes.rows[0]!
+
+      // Marcar al driver como ocupado con este ride.
+      await client.query(
+        `INSERT INTO driver_presence (driver_id, active_ride_id, updated_at, last_heartbeat)
+         VALUES ($1, $2, now(), now())
+         ON CONFLICT (driver_id) DO UPDATE
+           SET active_ride_id = EXCLUDED.active_ride_id, updated_at = now()`,
+        [auth.userId, id],
+      )
 
       // Notificar al passenger
       if (updated.passenger_id) {
@@ -113,6 +135,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (knownCode === 'already_taken') {
       return NextResponse.json(
         { success: false, error: 'already_taken', message: 'Otro conductor ya tomó este viaje' },
+        { status: 409 },
+      )
+    }
+    if (knownCode === 'driver_busy') {
+      const e = err as { activeRideId?: string }
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'driver_busy',
+          message: 'Ya tienes un viaje activo. Complétalo o cancélalo antes de aceptar otro.',
+          activeRideId: e.activeRideId,
+        },
         { status: 409 },
       )
     }

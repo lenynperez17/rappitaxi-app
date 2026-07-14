@@ -113,6 +113,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       )
       const updated = updateRes.rows[0]!
 
+      // Liberar al driver del active_ride_id — sin esto queda marcado ocupado
+      // hasta el próximo heartbeat con activeRideId=null (que la app puede
+      // no enviar) o hasta el janitor del admin/live.
+      if (updated.driver_id) {
+        await client.query(
+          `UPDATE driver_presence
+              SET active_ride_id = NULL, updated_at = now()
+            WHERE driver_id = $1 AND active_ride_id = $2`,
+          [updated.driver_id, id],
+        )
+      }
+
       // Cobro de wallet si aplica
       let walletDebit: WalletTxRow | null = null
       if (updated.payment_method === 'wallet' && updated.passenger_id) {

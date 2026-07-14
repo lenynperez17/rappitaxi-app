@@ -109,7 +109,7 @@ export function LiveMapPage() {
   return (
     <div className="h-full flex flex-col relative">
       {/* Barra superior compacta flotante */}
-      <div className="absolute top-3 left-3 right-3 lg:right-[26rem] z-[400] pointer-events-none flex items-center justify-between gap-3">
+      <div className="absolute top-3 left-3 right-3 lg:right-[26rem] z-[600] pointer-events-none flex items-center justify-between gap-3">
         <div className="pointer-events-auto bg-white/95 backdrop-blur rounded-lg shadow-md border border-gray-200 px-3 py-2 flex items-center gap-3">
           <div>
             <div className="text-sm font-bold text-gray-900 leading-none">Mapa en vivo</div>

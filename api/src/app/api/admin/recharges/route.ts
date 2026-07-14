@@ -110,25 +110,54 @@ export async function POST(req: NextRequest) {
   )
   if (!driver) return NextResponse.json({ success: false, error: 'driver_not_found' }, { status: 404 })
 
-  const rechargeId = await tx(async (client) => {
-    const rechargeRes = await client.query<{ id: string }>(
-      `INSERT INTO driver_recharges
-         (driver_id, amount, method, reference, notes, approved_by, status, approved_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'completed', now())
-       RETURNING id`,
-      [driverId, amount, method, body.reference ?? null, body.notes ?? null, auth.userId],
-    )
-    const rechargeId = rechargeRes.rows[0]!.id
-    // Refleja en wallet como crédito
-    await client.query(
-      `INSERT INTO wallet_transactions
-         (user_id, type, amount, description, status, external_ref, metadata, completed_at)
-       VALUES ($1, 'recharge', $2, $3, 'completed', $4, $5, now())`,
-      [driverId, amount, `Recarga admin ${method}`, rechargeId,
-       JSON.stringify({ method, adminId: auth.userId, reference: body.reference })],
-    )
-    return rechargeId
-  })
+  // Idempotency-Key desde header — si viene, exigimos que sea único por driver.
+  // Sin key, seguimos aceptando (compat) pero desde el panel siempre se envía.
+  const idempotencyKey = req.headers.get('idempotency-key')?.trim() || null
+
+  let rechargeId: string
+  try {
+    rechargeId = await tx(async (client) => {
+      // Chequear si ya existe una recarga con esta key para este driver (retry).
+      if (idempotencyKey) {
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM driver_recharges
+            WHERE driver_id = $1 AND idempotency_key = $2 LIMIT 1`,
+          [driverId, idempotencyKey],
+        )
+        if (existing.rows[0]) return existing.rows[0].id
+      }
+
+      const rechargeRes = await client.query<{ id: string }>(
+        `INSERT INTO driver_recharges
+           (driver_id, amount, method, reference, notes, approved_by, status, approved_at, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5, $6, 'completed', now(), $7)
+         RETURNING id`,
+        [driverId, amount, method, body.reference ?? null, body.notes ?? null, auth.userId, idempotencyKey],
+      )
+      const newId = rechargeRes.rows[0]!.id
+      // Refleja en wallet como crédito
+      await client.query(
+        `INSERT INTO wallet_transactions
+           (user_id, type, amount, description, status, external_ref, metadata, completed_at)
+         VALUES ($1, 'recharge', $2, $3, 'completed', $4, $5, now())`,
+        [driverId, amount, `Recarga admin ${method}`, newId,
+         JSON.stringify({ method, adminId: auth.userId, reference: body.reference })],
+      )
+      return newId
+    })
+  } catch (e) {
+    // UNIQUE violation en (driver_id, idempotency_key) → retornar el existente
+    if ((e as { code?: string }).code === '23505' && idempotencyKey) {
+      const existing = await maybeOne<{ id: string }>(
+        `SELECT id FROM driver_recharges WHERE driver_id = $1 AND idempotency_key = $2 LIMIT 1`,
+        [driverId, idempotencyKey],
+      )
+      if (existing) rechargeId = existing.id
+      else throw e
+    } else {
+      throw e
+    }
+  }
 
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)

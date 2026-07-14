@@ -116,19 +116,26 @@ export async function GET(req: NextRequest) {
       LIMIT 500`,
   )
 
-  // 3. Conductores offline recientes: is_online=false pero last_heartbeat en última hora
+  // 3. Conductores offline: TODOS los drivers/dual activos que no están online.
+  // Incluye: (a) los que tienen driver_presence.is_online=false, y (b) los
+  // que nunca hicieron ping (sin fila en driver_presence). Sin el LEFT JOIN
+  // los drivers "nuevos" no aparecen aunque estén verificados y listos.
   const offlineDrivers = await query<DriverRow>(
-    `SELECT dp.driver_id, u.full_name, u.phone, u.profile_photo_url, (SELECT AVG(stars) FROM ride_ratings WHERE rated_user_id = u.id AND role = 'driver') AS rating,
-            dp.is_online, dp.latitude, dp.longitude, dp.vehicle_type,
+    `SELECT u.id AS driver_id, u.full_name, u.phone, u.profile_photo_url,
+            (SELECT AVG(stars) FROM ride_ratings WHERE rated_user_id = u.id AND role = 'driver') AS rating,
+            COALESCE(dp.is_online, false) AS is_online,
+            dp.latitude, dp.longitude, dp.vehicle_type,
             dp.active_ride_id, dp.last_heartbeat,
-            EXTRACT(EPOCH FROM (NOW() - dp.last_heartbeat)) / 60 AS minutes_since_heartbeat
-       FROM driver_presence dp
-       JOIN users u ON u.id = dp.driver_id
-      WHERE dp.is_online = false
-        AND dp.last_heartbeat IS NOT NULL
-        AND dp.last_heartbeat > NOW() - INTERVAL '1 hour'
+            CASE WHEN dp.last_heartbeat IS NULL THEN NULL
+                 ELSE EXTRACT(EPOCH FROM (NOW() - dp.last_heartbeat)) / 60
+            END AS minutes_since_heartbeat
+       FROM users u
+       LEFT JOIN driver_presence dp ON dp.driver_id = u.id
+      WHERE u.user_type IN ('driver', 'dual')
         AND u.deleted_at IS NULL
-      ORDER BY dp.last_heartbeat DESC
+        AND u.is_active = true
+        AND (dp.is_online IS NULL OR dp.is_online = false)
+      ORDER BY dp.last_heartbeat DESC NULLS LAST
       LIMIT 200`,
   )
 

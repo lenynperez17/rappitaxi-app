@@ -72,6 +72,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         [auth.userId, reason, id],
       )
 
+      // Liberar al driver: sin esto queda marcado como "ocupado" hasta que
+      // corra el janitor del admin/live. Bloquea nuevas asignaciones del
+      // panel y provoca "ghost busy" en dashboards.
+      if (ride.driver_id) {
+        await client.query(
+          `UPDATE driver_presence
+              SET active_ride_id = NULL, updated_at = now()
+            WHERE driver_id = $1 AND active_ride_id = $2`,
+          [ride.driver_id, id],
+        )
+      }
+
       // Notificar a la contraparte
       const otherPartyId =
         isPassenger ? ride.driver_id

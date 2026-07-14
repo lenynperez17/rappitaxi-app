@@ -77,6 +77,19 @@ export async function POST(
         throw { code: 'ride_already_assigned', status: 409 }
       }
 
+      // Prevenir double-booking del driver: si el driver de esta oferta ya
+      // tiene otro ride activo, rechazar la aceptación del passenger para
+      // que el passenger elija otra oferta y el driver no quede tirando 2 rides.
+      const busyRes = await client.query<{ active_ride_id: string | null }>(
+        `SELECT active_ride_id FROM driver_presence
+          WHERE driver_id = $1 FOR UPDATE`,
+        [offer.driver_id],
+      )
+      const busy = busyRes.rows[0]?.active_ride_id
+      if (busy && busy !== offer.ride_id) {
+        throw { code: 'driver_busy', status: 409, activeRideId: busy }
+      }
+
       // Aceptar esta oferta
       await client.query(
         `UPDATE ride_offers
@@ -106,6 +119,15 @@ export async function POST(
                 accepted_at = now()
           WHERE id = $3`,
         [offer.driver_id, finalFare, offer.ride_id],
+      )
+
+      // Marcar al driver como ocupado con este ride.
+      await client.query(
+        `INSERT INTO driver_presence (driver_id, active_ride_id, updated_at, last_heartbeat)
+         VALUES ($1, $2, now(), now())
+         ON CONFLICT (driver_id) DO UPDATE
+           SET active_ride_id = EXCLUDED.active_ride_id, updated_at = now()`,
+        [offer.driver_id, offer.ride_id],
       )
 
       // Nombre del passenger para el push

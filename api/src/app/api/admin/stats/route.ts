@@ -27,12 +27,12 @@ export async function GET(req: NextRequest) {
       (SELECT COUNT(*)::text FROM users WHERE is_active = true AND suspended_at IS NULL AND deleted_at IS NULL) AS total_active,
       (SELECT COUNT(*)::text FROM users WHERE suspended_at IS NOT NULL AND deleted_at IS NULL) AS total_suspended,
       (SELECT COUNT(*)::text FROM rides) AS total_trips,
-      (SELECT COUNT(*)::text FROM rides WHERE created_at >= date_trunc('day', now())) AS trips_today,
+      (SELECT COUNT(*)::text FROM rides WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')) AS trips_today,
       (SELECT COUNT(*)::text FROM rides WHERE status = 'completed') AS trips_completed,
       (SELECT COUNT(*)::text FROM rides WHERE status = 'cancelled') AS trips_cancelled,
       (SELECT COALESCE(SUM(amount), 0)::text FROM driver_recharges WHERE status = 'completed') AS total_recharges,
-      (SELECT COALESCE(SUM(amount), 0)::text FROM driver_recharges WHERE status = 'completed' AND created_at >= date_trunc('day', now())) AS recharges_today,
-      (SELECT COALESCE(SUM(amount), 0)::text FROM driver_recharges WHERE status = 'completed' AND created_at >= date_trunc('month', now())) AS recharges_month,
+      (SELECT COALESCE(SUM(amount), 0)::text FROM driver_recharges WHERE status = 'completed' AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')) AS recharges_today,
+      (SELECT COALESCE(SUM(amount), 0)::text FROM driver_recharges WHERE status = 'completed' AND created_at >= (date_trunc('month', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')) AS recharges_month,
       (SELECT COUNT(*)::text FROM emergencies) AS total_emergencies,
       (SELECT COUNT(*)::text FROM emergencies WHERE status IN ('active','pending','escalated')) AS active_emergencies
   `)
