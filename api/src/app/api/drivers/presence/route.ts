@@ -1,0 +1,159 @@
+/**
+ * POST /api/drivers/presence
+ * Auth: Bearer <access_token> (driver o dual)
+ *
+ * Heartbeat de presencia del conductor. La app llama este endpoint cada 5-15s
+ * mientras el driver esté online para actualizar su ubicación en tiempo real
+ * en `driver_presence`. Además de la lat/lng, admite heading, accuracy, speed,
+ * vehicleType y activeRideId opcionales.
+ *
+ * Body:
+ *   {
+ *     latitude: number,
+ *     longitude: number,
+ *     heading?: number,
+ *     accuracy?: number,      // metros
+ *     speed?: number,         // km/h
+ *     vehicleType?: string,
+ *     activeRideId?: string,  // UUID del ride en curso, si lo hay
+ *   }
+ *
+ * Respuestas:
+ *   200 { success: true, ok: true, driver_id }
+ *   400 body inválido
+ *   401 sin token
+ *   403 el usuario no es driver ni dual
+ */
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth-middleware'
+import { maybeOne, query } from '@/lib/db'
+
+export const runtime = 'nodejs'
+
+interface UserTypeRow {
+  user_type: string
+}
+
+interface PresenceBody {
+  latitude?: unknown
+  longitude?: unknown
+  heading?: unknown
+  accuracy?: unknown
+  speed?: unknown
+  vehicleType?: unknown
+  activeRideId?: unknown
+}
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req)
+  if (!auth.ok) return auth.response
+  const driverId = auth.userId
+
+  let body: PresenceBody = {}
+  try {
+    body = (await req.json()) as PresenceBody
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'bad_json' },
+      { status: 400 },
+    )
+  }
+
+  const latitude = toNumberOrNull(body.latitude)
+  const longitude = toNumberOrNull(body.longitude)
+  if (latitude === null || longitude === null) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_input', message: 'latitude y longitude son requeridos' },
+      { status: 400 },
+    )
+  }
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_coordinates' },
+      { status: 400 },
+    )
+  }
+
+  // Verificar que el usuario sea driver o dual
+  const user = await maybeOne<UserTypeRow>(
+    'SELECT user_type FROM users WHERE id = $1',
+    [driverId],
+  )
+  if (!user) {
+    return NextResponse.json(
+      { success: false, error: 'user_not_found' },
+      { status: 404 },
+    )
+  }
+  if (user.user_type !== 'driver' && user.user_type !== 'dual') {
+    return NextResponse.json(
+      { success: false, error: 'forbidden', message: 'Solo drivers pueden reportar presencia' },
+      { status: 403 },
+    )
+  }
+
+  const heading = toNumberOrNull(body.heading)
+  const accuracy = toNumberOrNull(body.accuracy)
+  const speed = toNumberOrNull(body.speed)
+  const vehicleType =
+    typeof body.vehicleType === 'string' && body.vehicleType.trim() !== ''
+      ? body.vehicleType.trim()
+      : null
+  const rawActiveRideId =
+    typeof body.activeRideId === 'string' && body.activeRideId.trim() !== ''
+      ? body.activeRideId.trim()
+      : null
+
+  // B#15: si el driver envía `activeRideId`, verificar que ese ride existe
+  // y está asignado a este mismo driver. Sin este check, un driver malicioso
+  // envenena driver_presence.active_ride_id con IDs ajenos → confunde
+  // admin/live y podría filtrar contexto en dashboards.
+  let activeRideId: string | null = null
+  if (rawActiveRideId) {
+    const owned = await query<{ id: string }>(
+      `SELECT id FROM rides WHERE id = $1 AND driver_id = $2 LIMIT 1`,
+      [rawActiveRideId, driverId],
+    )
+    if (owned.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'active_ride_not_owned' },
+        { status: 403 },
+      )
+    }
+    activeRideId = rawActiveRideId
+  }
+
+  try {
+    await query(
+      `INSERT INTO driver_presence (
+         driver_id, latitude, longitude, heading, accuracy_meters, speed_kmh,
+         vehicle_type, active_ride_id, last_heartbeat, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+       ON CONFLICT (driver_id) DO UPDATE SET
+         latitude = EXCLUDED.latitude,
+         longitude = EXCLUDED.longitude,
+         heading = EXCLUDED.heading,
+         accuracy_meters = EXCLUDED.accuracy_meters,
+         speed_kmh = EXCLUDED.speed_kmh,
+         vehicle_type = COALESCE(EXCLUDED.vehicle_type, driver_presence.vehicle_type),
+         active_ride_id = EXCLUDED.active_ride_id,
+         last_heartbeat = now(),
+         updated_at = now()`,
+      [driverId, latitude, longitude, heading, accuracy, speed, vehicleType, activeRideId],
+    )
+
+    return NextResponse.json({ success: true, ok: true, driver_id: driverId })
+  } catch (err) {
+    console.error('[drivers/presence] error:', err)
+    return NextResponse.json(
+      { success: false, error: 'server_error' },
+      { status: 500 },
+    )
+  }
+}

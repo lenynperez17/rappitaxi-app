@@ -1,0 +1,244 @@
+/**
+ * POST /api/rides/:id/complete
+ *   Driver completa el viaje.
+ *   Body: { finalFare, distanceMeters?, durationSeconds? }
+ *   UPDATE status='completed', final_fare, completed_at=now().
+ *   Si payment_method='wallet', cobrar de wallet_transactions
+ *     (insertar type='debit' con amount negativo).
+ *   Retorna { ride, walletDebit? }.
+ */
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/auth-middleware'
+import { query, tx } from '@/lib/db'
+
+export const runtime = 'nodejs'
+
+interface RideRow {
+  id: string
+  passenger_id: string | null
+  driver_id: string | null
+  status: string
+  payment_method: string | null
+  estimated_fare: string | null
+  final_fare: string | null
+  distance_meters: number | null
+  duration_seconds: number | null
+  completed_at: Date | null
+}
+
+// Cap para prevenir wallet-drain: driver no puede cobrar más de 1.5x la
+// estimación mostrada al passenger al aceptar el viaje. Si el trayecto real
+// excede eso, debe abrirse disputa por soporte.
+const FINAL_FARE_MAX_MULTIPLIER = 1.5
+
+interface WalletTxRow {
+  id: string
+  amount: string
+  type: string
+  status: string
+  balance_after: string | null
+  created_at: Date
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(req)
+  if (!auth.ok) return auth.response
+  const { id } = await ctx.params
+
+  let body: {
+    finalFare?: number
+    distanceMeters?: number
+    durationSeconds?: number
+  } = {}
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
+  }
+
+  const finalFare = Number(body.finalFare ?? 0)
+  if (!isFinite(finalFare) || finalFare <= 0) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_final_fare', message: 'finalFare debe ser > 0' },
+      { status: 400 },
+    )
+  }
+  const distanceMeters = typeof body.distanceMeters === 'number' && body.distanceMeters >= 0
+    ? Math.round(body.distanceMeters)
+    : null
+  const durationSeconds = typeof body.durationSeconds === 'number' && body.durationSeconds >= 0
+    ? Math.round(body.durationSeconds)
+    : null
+
+  try {
+    const result = await tx(async (client) => {
+      const rideRes = await client.query<RideRow>(
+        'SELECT * FROM rides WHERE id = $1 FOR UPDATE',
+        [id],
+      )
+      const ride = rideRes.rows[0]
+      if (!ride) throw { code: 'not_found' }
+      if (ride.driver_id !== auth.userId) throw { code: 'forbidden' }
+      if (ride.status !== 'in_progress' && ride.status !== 'arrived') {
+        throw { code: 'invalid_status', message: `Estado actual: ${ride.status}` }
+      }
+
+      // Cap contra wallet-drain: si hay estimación previa y el driver
+      // envía un finalFare que la excede 1.5x, rechazar. El passenger vio
+      // el estimated_fare al aceptar el viaje — cobrar mucho más allá de
+      // eso requiere disputa manual.
+      const estimated = Number(ride.estimated_fare ?? 0)
+      if (estimated > 0) {
+        const maxAllowed = estimated * FINAL_FARE_MAX_MULTIPLIER
+        if (finalFare > maxAllowed) {
+          throw {
+            code: 'fare_exceeds_cap',
+            message: `finalFare (${finalFare}) excede el máximo permitido (${maxAllowed.toFixed(2)})`,
+            estimatedFare: estimated,
+            maxAllowed,
+          }
+        }
+      }
+
+      const updateRes = await client.query<RideRow>(
+        `UPDATE rides
+            SET status = 'completed',
+                final_fare = $1,
+                distance_meters = COALESCE($2, distance_meters),
+                duration_seconds = COALESCE($3, duration_seconds),
+                completed_at = now()
+          WHERE id = $4
+          RETURNING *`,
+        [finalFare, distanceMeters, durationSeconds, id],
+      )
+      const updated = updateRes.rows[0]!
+
+      // Cobro de wallet si aplica
+      let walletDebit: WalletTxRow | null = null
+      if (updated.payment_method === 'wallet' && updated.passenger_id) {
+        // Balance actual del passenger
+        const balRes = await client.query<{ balance: string }>(
+          'SELECT rapi_team_user_balance($1)::text AS balance',
+          [updated.passenger_id],
+        )
+        const currentBalance = Number(balRes.rows[0]?.balance ?? 0)
+        if (currentBalance < finalFare) {
+          throw {
+            code: 'insufficient_funds',
+            message: 'Saldo insuficiente en wallet para completar el cobro',
+            balance: currentBalance,
+            required: finalFare,
+          }
+        }
+        const newBalance = Math.round((currentBalance - finalFare) * 100) / 100
+        const debitRes = await client.query<WalletTxRow>(
+          `INSERT INTO wallet_transactions
+             (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
+           VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, now())
+           RETURNING id, amount::text, type, status, balance_after::text, created_at`,
+          [
+            updated.passenger_id,
+            -finalFare,
+            newBalance,
+            `Cobro por viaje ${id}`,
+            id,
+          ],
+        )
+        walletDebit = debitRes.rows[0]!
+      }
+
+      // Notificar al passenger
+      if (updated.passenger_id) {
+        await client.query(
+          `INSERT INTO notifications (user_id, type, title, body, data)
+           VALUES ($1, 'ride_completed', $2, $3, $4)`,
+          [
+            updated.passenger_id,
+            'Viaje completado',
+            `Total: S/ ${finalFare.toFixed(2)}`,
+            JSON.stringify({
+              rideId: id,
+              driverId: auth.userId,
+              finalFare,
+              paymentMethod: updated.payment_method,
+              walletDebitId: walletDebit?.id ?? null,
+            }),
+          ],
+        )
+      }
+
+      return { ride: updated, walletDebit }
+    })
+
+    await query(
+      `INSERT INTO auth_events (user_id, event_type, provider, metadata)
+       VALUES ($1, 'ride_completed', 'app', $2)`,
+      [auth.userId, JSON.stringify({ rideId: id, finalFare, walletCharged: !!result.walletDebit })],
+    )
+
+    return NextResponse.json({
+      success: true,
+      ride: {
+        id: result.ride.id,
+        status: result.ride.status,
+        finalFare: result.ride.final_fare !== null ? Number(result.ride.final_fare) : null,
+        distanceMeters: result.ride.distance_meters,
+        durationSeconds: result.ride.duration_seconds,
+        paymentMethod: result.ride.payment_method,
+        completedAt: result.ride.completed_at,
+      },
+      walletDebit: result.walletDebit
+        ? {
+            id: result.walletDebit.id,
+            amount: Number(result.walletDebit.amount),
+            balanceAfter: result.walletDebit.balance_after !== null
+              ? Number(result.walletDebit.balance_after)
+              : null,
+            createdAt: result.walletDebit.created_at,
+          }
+        : null,
+    })
+  } catch (err) {
+    const knownCode = (err as { code?: string; message?: string })?.code
+    if (knownCode === 'not_found') {
+      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+    }
+    if (knownCode === 'forbidden') {
+      return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 })
+    }
+    if (knownCode === 'invalid_status') {
+      return NextResponse.json(
+        { success: false, error: 'invalid_status', message: (err as { message?: string }).message },
+        { status: 409 },
+      )
+    }
+    if (knownCode === 'fare_exceeds_cap') {
+      const e = err as { message?: string; estimatedFare?: number; maxAllowed?: number }
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'fare_exceeds_cap',
+          message: e.message,
+          estimatedFare: e.estimatedFare,
+          maxAllowed: e.maxAllowed,
+        },
+        { status: 422 },
+      )
+    }
+    if (knownCode === 'insufficient_funds') {
+      const e = err as { balance?: number; required?: number; message?: string }
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'insufficient_funds',
+          message: e.message,
+          balance: e.balance,
+          required: e.required,
+        },
+        { status: 402 },
+      )
+    }
+    console.error('[rides/complete] error:', err)
+    return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 })
+  }
+}
