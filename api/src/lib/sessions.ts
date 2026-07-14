@@ -125,8 +125,9 @@ async function signRefreshJwt(userId: string, sessionId: string): Promise<string
 /**
  * Decodifica un refresh JWT SIN verificarlo (solo necesitamos el jti). La
  * verificación real es por hash en DB (más estricta y revocable).
+ * Exportado para que /auth/logout pueda derivar el sessionId del refresh token.
  */
-function peekJti(refreshToken: string): string | null {
+export function peekJti(refreshToken: string): string | null {
   const parts = refreshToken.split('.');
   if (parts.length !== 3) return null;
   try {

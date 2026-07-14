@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { TwilioVerifyService } from '@/services/TwilioVerifyService'
+import { ipRateLimit as sharedIpRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -26,28 +27,13 @@ function isValidE164(p: string) {
   return /^\+[1-9][0-9]{9,14}$/.test(p)
 }
 
-const ipBuckets = new Map<string, { count: number; resetAt: number }>()
-const IP_WINDOW_MS = 60 * 60 * 1000
-
-function ipRateLimit(req: NextRequest): { ok: boolean; remaining: number } {
-  const max = Number(process.env.SMS_RATE_LIMIT_PER_IP_PER_HOUR ?? 10)
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'unknown'
-  const now = Date.now()
-  const bucket = ipBuckets.get(ip)
-  if (!bucket || bucket.resetAt < now) {
-    ipBuckets.set(ip, { count: 1, resetAt: now + IP_WINDOW_MS })
-    return { ok: true, remaining: max - 1 }
-  }
-  if (bucket.count >= max) return { ok: false, remaining: 0 }
-  bucket.count += 1
-  return { ok: true, remaining: max - bucket.count }
-}
+// Rate-limit por IP: usa el shared en `lib/rate-limit` que tiene purga
+// periódica (PURGE_EVERY=500). Antes había un Map local sin purga que
+// crecía sin cota → OOM eventual bajo attacker con IPs rotativas.
+const IP_MAX_PER_HOUR = Number(process.env.SMS_RATE_LIMIT_PER_IP_PER_HOUR ?? 10)
 
 export async function POST(req: NextRequest) {
-  const rl = ipRateLimit(req)
+  const rl = sharedIpRateLimit(req, 'sms-send', { max: IP_MAX_PER_HOUR, windowMs: 60 * 60 * 1000 })
   if (!rl.ok) {
     return NextResponse.json(
       { success: false, error: 'ip_rate_limited', message: 'Demasiadas solicitudes. Intenta más tarde.' },

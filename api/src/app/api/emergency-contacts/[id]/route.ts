@@ -67,11 +67,19 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     params.push(body.name.trim())
   }
   if (body.phone !== undefined) {
-    if (!body.phone.trim()) {
+    const p = body.phone.trim()
+    if (!p) {
       return NextResponse.json({ success: false, error: 'invalid_phone' }, { status: 400 })
     }
+    // Validar E.164 (mismo que POST /emergency-contacts).
+    if (!/^\+[1-9][0-9]{9,14}$/.test(p)) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_phone', message: 'Formato E.164 requerido: +51999888777' },
+        { status: 400 },
+      )
+    }
     updates.push(`phone = $${idx++}`)
-    params.push(body.phone.trim())
+    params.push(p)
   }
   if (body.relationship !== undefined) {
     updates.push(`relationship = $${idx++}`)

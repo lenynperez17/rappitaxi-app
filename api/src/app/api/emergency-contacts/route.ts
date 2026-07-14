@@ -85,6 +85,15 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
+  // Validar E.164 — sin esto un attacker podía poner strings arbitrarios
+  // como phone y luego usar SOS para hacer que el sistema los "envíe" SMS
+  // (Twilio rechazaría, pero validar temprano es defensa clara).
+  if (!/^\+[1-9][0-9]{9,14}$/.test(phone)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_phone', message: 'Formato E.164 requerido: +51999888777' },
+      { status: 400 },
+    )
+  }
 
   try {
     const contact = await tx(async (client) => {

@@ -37,14 +37,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_platform' }, { status: 400 })
   }
 
+  // SEGURIDAD: si el token ya está registrado para OTRO user, no lo reasignamos
+  // silenciosamente (eso permitía secuestro de push notifications ajenas).
+  // En su lugar, borramos el registro antiguo (el dispositivo del otro user
+  // re-registrará en el próximo boot con su propio token) e insertamos el
+  // nuevo. Esto asume que en la práctica NO hay 2 users legítimos compartiendo
+  // el mismo token FCM (los tokens son per-instalación).
+  await query(
+    `DELETE FROM fcm_tokens WHERE token = $1 AND user_id <> $2`,
+    [token, auth.userId],
+  )
   await query(
     `INSERT INTO fcm_tokens (user_id, token, platform, device_info, last_seen_at)
      VALUES ($1, $2, $3, $4, now())
      ON CONFLICT (token) DO UPDATE
-       SET user_id = EXCLUDED.user_id,
-           platform = EXCLUDED.platform,
+       SET platform = EXCLUDED.platform,
            device_info = EXCLUDED.device_info,
-           last_seen_at = now()`,
+           last_seen_at = now()
+       WHERE fcm_tokens.user_id = EXCLUDED.user_id`,
     [auth.userId, token, platform, deviceInfo ? JSON.stringify(deviceInfo) : null],
   )
 

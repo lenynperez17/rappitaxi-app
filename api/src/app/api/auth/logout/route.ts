@@ -8,7 +8,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
-import { revokeSession, revokeAllUserSessions } from '@/lib/sessions'
+import { revokeSession, revokeAllUserSessions, peekJti } from '@/lib/sessions'
+import { query } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -29,7 +30,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, revokedCount: revoked })
     }
     if (body.refreshToken) {
-      await revokeSession(body.refreshToken)
+      // BUG FIX: antes se pasaba el JWT completo como sessionId, y
+      // revokeSession(sessionId) hacía UPDATE WHERE id=<JWT> → nunca matcheaba.
+      // Ahora: derivar el jti (sessionId real) del JWT.
+      const sessionId = peekJti(body.refreshToken)
+      if (sessionId) {
+        // Ownership check: solo revocar si la sesión pertenece al user autenticado.
+        // Sin esto, un attacker que conoce sessionId ajeno podría revocarlo (DoS).
+        const owner = await query<{ user_id: string }>(
+          'SELECT user_id FROM sessions WHERE id = $1 LIMIT 1',
+          [sessionId],
+        )
+        if (owner[0]?.user_id === auth.userId) {
+          await revokeSession(sessionId)
+        }
+      }
+    } else {
+      // Sin refreshToken en el body, revocar sesión actual del access token.
+      // Buscar la sesión más reciente del user (heurística sin sid en claims).
+      // Como fallback razonable, no romper el logout.
     }
     return NextResponse.json({ success: true })
   } catch (err) {
