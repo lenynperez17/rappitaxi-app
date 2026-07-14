@@ -150,6 +150,14 @@ export async function POST(
   if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
     return NextResponse.json({ success: false, error: 'invalid_amount' }, { status: 400 })
   }
+  // Cap absoluto — sin esto un driver malicioso podía ofertar S/999999
+  // que si el passenger acepta por fat-finger, wallet drain.
+  if (amount !== null && amount > 500) {
+    return NextResponse.json(
+      { success: false, error: 'amount_too_high', message: 'La oferta no puede exceder S/ 500.' },
+      { status: 400 },
+    )
+  }
   if (etaSeconds !== null && (!Number.isFinite(etaSeconds) || etaSeconds < 0)) {
     return NextResponse.json({ success: false, error: 'invalid_eta' }, { status: 400 })
   }

@@ -99,11 +99,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'invalid_status', message: `El viaje debe estar en curso (in_progress) para completarse. Estado actual: ${ride.status}` }
       }
 
-      // Cap contra wallet-drain: si hay estimación previa y el driver
-      // envía un finalFare que la excede 1.5x, rechazar. El passenger vio
-      // el estimated_fare al aceptar el viaje — cobrar mucho más allá de
-      // eso requiere disputa manual.
+      // Cap contra wallet-drain — 2 cotas:
+      // 1) Si hay estimated_fare, cobrar más de 1.5× requiere disputa manual.
+      // 2) Cap absoluto de S/ 750 SIEMPRE (incluso si estimated_fare es NULL).
+      //    Sin esta cota segunda, un ride creado sin proposedFare (permitido)
+      //    llegaba a complete con estimated=NULL → cap = infinito → wallet drain.
+      const FINAL_FARE_ABS_CAP = 750
       const estimated = Number(ride.estimated_fare ?? 0)
+      if (finalFare > FINAL_FARE_ABS_CAP) {
+        throw {
+          code: 'fare_exceeds_cap',
+          message: `finalFare (${finalFare}) excede el máximo absoluto (S/ ${FINAL_FARE_ABS_CAP}).`,
+          estimatedFare: estimated,
+          maxAllowed: FINAL_FARE_ABS_CAP,
+        }
+      }
       if (estimated > 0) {
         const maxAllowed = estimated * FINAL_FARE_MAX_MULTIPLIER
         if (finalFare > maxAllowed) {

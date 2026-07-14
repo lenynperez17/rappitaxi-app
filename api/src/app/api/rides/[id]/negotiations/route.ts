@@ -118,6 +118,13 @@ export async function POST(
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ success: false, error: 'invalid_amount' }, { status: 400 })
   }
+  // Cap absoluto S/ 500 — mismo que rides POST y offers.
+  if (amount > 500) {
+    return NextResponse.json(
+      { success: false, error: 'amount_too_high', message: 'El monto propuesto no puede exceder S/ 500.' },
+      { status: 400 },
+    )
+  }
   const message =
     typeof payload.message === 'string' && payload.message.trim().length > 0
       ? payload.message.trim().slice(0, 500)

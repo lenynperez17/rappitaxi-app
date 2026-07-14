@@ -15,6 +15,11 @@ interface NominatimResponse {
 }
 
 export async function GET(req: NextRequest) {
+  // Auth PRIMERO — sin esto, attacker no-auth podía burnar 30 req/min por IP
+  // y provocar 429 a admins legítimos en la misma IP corporativa.
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return auth.response
+
   // Nominatim policy: ≤ 1 req/s por origen. Bucket 30 req/min por IP.
   const rl = ipRateLimit(req, 'geocode-reverse', { max: 30, windowMs: 60_000 })
   if (!rl.ok) {
@@ -23,9 +28,6 @@ export async function GET(req: NextRequest) {
       { status: 429 },
     )
   }
-
-  const auth = await requireAdmin(req)
-  if (!auth.ok) return auth.response
 
   const { searchParams } = new URL(req.url)
   const lat = Number(searchParams.get('lat'))

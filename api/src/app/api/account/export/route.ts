@@ -19,12 +19,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
+import { ipRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Rate limit: 3 exports/hora por IP. Sin esto, 100 concurrent GETs
+  // podían disparar 8+ heavy queries + ~50MB JSON, spike DB + CPU.
+  const rl = ipRateLimit(req, 'gdpr-export', { max: 3, windowMs: 60 * 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited',
+        message: 'Máximo 3 exportaciones por hora. Espera unos minutos.' },
+      { status: 429 },
+    )
+  }
 
   const user = await maybeOne(
     `SELECT id, full_name, display_name, email, phone, phone_number, user_type,

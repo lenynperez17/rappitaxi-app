@@ -161,10 +161,14 @@ export async function POST(req: NextRequest) {
   }
   const proposedFare = rawProposed !== null && rawProposed > 0 ? rawProposed : null
   const negotiable = body.negotiable === true
-  const distanceMeters = typeof body.distanceMeters === 'number' && body.distanceMeters >= 0
+  // Caps sanos para prevenir envenenamiento de analytics con valores absurdos
+  // (distance 9e15, duration 1e9). Taxi urbano Perú: <500km, <8h.
+  const MAX_DISTANCE_M = 500_000  // 500 km
+  const MAX_DURATION_S = 8 * 3600  // 8 horas
+  const distanceMeters = typeof body.distanceMeters === 'number' && body.distanceMeters >= 0 && body.distanceMeters <= MAX_DISTANCE_M
     ? Math.round(body.distanceMeters)
     : null
-  const durationSeconds = typeof body.durationSeconds === 'number' && body.durationSeconds >= 0
+  const durationSeconds = typeof body.durationSeconds === 'number' && body.durationSeconds >= 0 && body.durationSeconds <= MAX_DURATION_S
     ? Math.round(body.durationSeconds)
     : null
 
