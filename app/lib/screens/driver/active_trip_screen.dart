@@ -999,7 +999,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   _buildSummaryRow(
                     Icons.route,
                     'Distancia',
-                    '${((_currentTrip?.estimatedDistance ?? 0) / 1000).toStringAsFixed(1)} km',
+                    '${(_currentTrip?.estimatedDistance ?? 0).toStringAsFixed(1)} km',
                   ),
                 ],
               ),

@@ -275,7 +275,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
           final messenger = ScaffoldMessenger.of(context);
           try {
             final statusText = _trip!.status == 'completed' ? 'Viaje Completado' : _trip!.status;
-            final shareText = 'Detalles del Viaje - Rappi Team\nFecha: ${_formatDateTime(_trip!.requestedAt)}\nEstado: $statusText\nOrigen: ${_trip!.pickupAddress}\nDestino: ${_trip!.destinationAddress}\nDistancia: ${(_trip!.estimatedDistance / 1000).toStringAsFixed(2)} km\n${_trip!.finalFare != null ? 'Tarifa final: S/${_trip!.finalFare!.toStringAsFixed(2)}' : 'Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}'}\nCompartido desde Rappi Team';
+            final shareText = 'Detalles del Viaje - Rappi Team\nFecha: ${_formatDateTime(_trip!.requestedAt)}\nEstado: $statusText\nOrigen: ${_trip!.pickupAddress}\nDestino: ${_trip!.destinationAddress}\nDistancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km\n${_trip!.finalFare != null ? 'Tarifa final: S/${_trip!.finalFare!.toStringAsFixed(2)}' : 'Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}'}\nCompartido desde Rappi Team';
             await Share.share(shareText, subject: 'Detalles del Viaje - Rappi Team');
           } catch (e) { messenger.showSnackBar(SnackBar(content: Text('Error al compartir: $e'), backgroundColor: AppColors.error)); }
         }),
@@ -295,7 +295,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
                 pw.Text('Ubicaciones', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                 pw.Text('Origen: ${_trip!.pickupAddress}'), pw.Text('Destino: ${_trip!.destinationAddress}'),
                 pw.Text('Detalles financieros', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-                pw.Text('Distancia: ${(_trip!.estimatedDistance / 1000).toStringAsFixed(2)} km'),
+                pw.Text('Distancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km'),
                 if (_trip!.finalFare != null) pw.Text('Tarifa: S/${_trip!.finalFare!.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))
                 else pw.Text('Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
                 pw.Spacer(), pw.Divider(), pw.Text('Gracias por usar Rappi Team', style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic)),

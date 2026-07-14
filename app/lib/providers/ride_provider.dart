@@ -494,8 +494,10 @@ class RideProvider with ChangeNotifier {
       'destinationAddress': destinationAddress,
       'status': 'requested',
       'requestedAt': DateTime.now().toIso8601String(),
+      // estimatedDistance en KM (dividimos entre 1000 los metros del cálculo).
+      // Match con el resto del app que ya asume km.
       'estimatedDistance':
-          _calculateDistance(pickupLocation, destinationLocation),
+          _calculateDistance(pickupLocation, destinationLocation) / 1000,
       'estimatedFare': estimatedFare,
       'paymentMethod': paymentMethod,
       'isPaidOutsideApp': isPaidOutsideApp,

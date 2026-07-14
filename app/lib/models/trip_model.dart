@@ -125,32 +125,49 @@ class TripModel {
 
   /// Crear desde JSON
   factory TripModel.fromJson(Map<String, dynamic> json) {
-    // ✅ CORREGIDO: Soportar ambos formatos de ubicación (lat/lng y latitude/longitude)
-    final pickupLoc = json['pickupLocation'] ?? {};
-    final destLoc = json['destinationLocation'] ?? {};
+    // Backend Node envía las ubicaciones como `pickup: {address, lat, lng}` y
+    // `destination: {...}` (formato canónico). Legacy Firestore usaba
+    // `pickupLocation` + `pickupAddress` en el root. Aceptar AMBOS.
+    final Map<String, dynamic> pickupBlob = (json['pickup'] is Map<String, dynamic>
+            ? json['pickup'] as Map<String, dynamic>
+            : json['pickupLocation'] is Map<String, dynamic>
+                ? json['pickupLocation'] as Map<String, dynamic>
+                : const {});
+    final Map<String, dynamic> destBlob = (json['destination'] is Map<String, dynamic>
+            ? json['destination'] as Map<String, dynamic>
+            : json['destinationLocation'] is Map<String, dynamic>
+                ? json['destinationLocation'] as Map<String, dynamic>
+                : const {});
 
     return TripModel(
       id: json['id'] ?? '',
-      userId: json['userId'] ?? '',
+      userId: json['userId'] ?? json['passengerId'] ?? '',
       driverId: json['driverId'],
       pickupLocation: LatLng(
-        ((pickupLoc['lat'] ?? pickupLoc['latitude']) as num?)?.toDouble() ?? 0.0,
-        ((pickupLoc['lng'] ?? pickupLoc['longitude']) as num?)?.toDouble() ?? 0.0,
+        ((pickupBlob['lat'] ?? pickupBlob['latitude']) as num?)?.toDouble() ?? 0.0,
+        ((pickupBlob['lng'] ?? pickupBlob['longitude']) as num?)?.toDouble() ?? 0.0,
       ),
       destinationLocation: LatLng(
-        ((destLoc['lat'] ?? destLoc['latitude']) as num?)?.toDouble() ?? 0.0,
-        ((destLoc['lng'] ?? destLoc['longitude']) as num?)?.toDouble() ?? 0.0,
+        ((destBlob['lat'] ?? destBlob['latitude']) as num?)?.toDouble() ?? 0.0,
+        ((destBlob['lng'] ?? destBlob['longitude']) as num?)?.toDouble() ?? 0.0,
       ),
-      pickupAddress: json['pickupAddress'] ?? '',
-      destinationAddress: json['destinationAddress'] ?? '',
+      // Address: primero busca dentro del blob (formato Node), después root (legacy)
+      pickupAddress: (pickupBlob['address'] as String?)
+          ?? (json['pickupAddress'] as String?)
+          ?? '',
+      destinationAddress: (destBlob['address'] as String?)
+          ?? (json['destinationAddress'] as String?)
+          ?? '',
       status: json['status'] ?? 'requested',
-      requestedAt: _parseDateTime(json['requestedAt']),
+      // requestedAt puede venir como createdAt del backend
+      requestedAt: _parseDateTime(json['requestedAt'] ?? json['createdAt']),
       acceptedAt: _parseDateTime(json['acceptedAt']),
       startedAt: _parseDateTime(json['startedAt']),
       completedAt: _parseDateTime(json['completedAt']),
       cancelledAt: _parseDateTime(json['cancelledAt']),
       cancelledBy: json['cancelledBy'],
-      estimatedDistance: (json['estimatedDistance'] as num?)?.toDouble() ?? 0.0,
+      // estimatedDistance en km (dividir metros del backend por 1000)
+      estimatedDistance: _parseDistanceKm(json),
       estimatedFare: (json['estimatedFare'] as num?)?.toDouble() ?? 0.0,
       finalFare: (json['finalFare'] as num?)?.toDouble(),
       passengerRating: (json['passengerRating'] as num?)?.toDouble(),
@@ -195,14 +212,34 @@ class TripModel {
     );
   }
 
-  /// Parsear fecha
+  /// Parsear fecha. Convierte UTC a hora local automáticamente para display.
   static DateTime _parseDateTime(dynamic dateTime) {
     if (dateTime == null) return DateTime.now();
-    if (dateTime is DateTime) return dateTime;
+    if (dateTime is DateTime) return dateTime.toLocal();
     if (dateTime is String) {
-      return DateTime.tryParse(dateTime) ?? DateTime.now();
+      final parsed = DateTime.tryParse(dateTime);
+      return parsed != null ? parsed.toLocal() : DateTime.now();
     }
     return DateTime.now();
+  }
+
+  /// Extrae distancia en KM del JSON del backend.
+  /// Backend envía `distanceMeters` (metros). Legacy Firestore/local usaba
+  /// `estimatedDistance` que en ride_provider._calculateDistance retorna
+  /// METROS (radius=6371000). Convertir siempre a km al parsear.
+  static double _parseDistanceKm(Map<String, dynamic> json) {
+    // Prefer distanceMeters del backend
+    final meters = json['distanceMeters'];
+    if (meters is num) return meters.toDouble() / 1000.0;
+    // Legacy: estimatedDistance puede venir en metros (>1000) o km (<1000)
+    final legacy = json['estimatedDistance'];
+    if (legacy is num) {
+      final n = legacy.toDouble();
+      // Heurística: si es > 500, casi seguro son metros — dividir.
+      // Un ride urbano razonable es <100km.
+      return n > 500 ? n / 1000.0 : n;
+    }
+    return 0.0;
   }
 
   /// Convertir a JSON

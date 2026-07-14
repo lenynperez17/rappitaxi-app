@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,19 +50,51 @@ class RapiApiClient {
   // hereda el timeout sin tocar los call-sites.
   final http.Client _http = _TimeoutClient(http.Client(), _kHttpTimeout);
 
+  // Secure storage (encriptado por Android Keystore / iOS Keychain).
+  // Reemplaza el uso previo de SharedPreferences que dejaba tokens en
+  // plaintext XML accesible con root/ADB backup.
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+  );
+
   // Cache en memoria (reduces reads a secure storage)
   String? _accessCache;
   String? _refreshCache;
   DateTime? _accessExpiresAtCache;
 
   /// Restaurar tokens del storage. Llamar al arrancar la app.
+  /// MIGRACIÓN: leer de secure_storage primero; si vacío, fallback a
+  /// SharedPreferences (para users viejos) y migrar en background.
   Future<void> restore() async {
-    final sp = await SharedPreferences.getInstance();
-    _accessCache = sp.getString(_kAccessToken);
-    _refreshCache = sp.getString(_kRefreshToken);
-    final expIso = sp.getString(_kAccessExpiresAt);
-    if (expIso != null) {
-      _accessExpiresAtCache = DateTime.tryParse(expIso);
+    _accessCache = await _secureStorage.read(key: _kAccessToken);
+    _refreshCache = await _secureStorage.read(key: _kRefreshToken);
+    final expIso = await _secureStorage.read(key: _kAccessExpiresAt);
+    if (expIso != null) _accessExpiresAtCache = DateTime.tryParse(expIso);
+
+    // Fallback + migration: si secure_storage está vacío pero SharedPreferences
+    // tiene tokens de una versión anterior, migrarlos al secure storage.
+    if (_refreshCache == null) {
+      final sp = await SharedPreferences.getInstance();
+      final legacyAccess = sp.getString(_kAccessToken);
+      final legacyRefresh = sp.getString(_kRefreshToken);
+      final legacyExp = sp.getString(_kAccessExpiresAt);
+      if (legacyRefresh != null) {
+        _accessCache = legacyAccess;
+        _refreshCache = legacyRefresh;
+        if (legacyExp != null) _accessExpiresAtCache = DateTime.tryParse(legacyExp);
+        // Migrar y borrar del SharedPreferences (plaintext ya no).
+        await _secureStorage.write(key: _kAccessToken, value: legacyAccess ?? '');
+        await _secureStorage.write(key: _kRefreshToken, value: legacyRefresh);
+        if (legacyExp != null) {
+          await _secureStorage.write(key: _kAccessExpiresAt, value: legacyExp);
+        }
+        await Future.wait([
+          sp.remove(_kAccessToken),
+          sp.remove(_kRefreshToken),
+          sp.remove(_kAccessExpiresAt),
+        ]);
+      }
     }
   }
 
@@ -76,11 +109,10 @@ class RapiApiClient {
     _accessCache = accessToken;
     _refreshCache = refreshToken;
     _accessExpiresAtCache = DateTime.now().add(Duration(seconds: accessTtlSec - 30));
-    final sp = await SharedPreferences.getInstance();
     await Future.wait([
-      sp.setString(_kAccessToken, accessToken),
-      sp.setString(_kRefreshToken, refreshToken),
-      sp.setString(_kAccessExpiresAt, _accessExpiresAtCache!.toIso8601String()),
+      _secureStorage.write(key: _kAccessToken, value: accessToken),
+      _secureStorage.write(key: _kRefreshToken, value: refreshToken),
+      _secureStorage.write(key: _kAccessExpiresAt, value: _accessExpiresAtCache!.toIso8601String()),
     ]);
   }
 
@@ -88,12 +120,21 @@ class RapiApiClient {
     _accessCache = null;
     _refreshCache = null;
     _accessExpiresAtCache = null;
-    final sp = await SharedPreferences.getInstance();
     await Future.wait([
-      sp.remove(_kAccessToken),
-      sp.remove(_kRefreshToken),
-      sp.remove(_kAccessExpiresAt),
-    ]);
+      _secureStorage.delete(key: _kAccessToken),
+      _secureStorage.delete(key: _kRefreshToken),
+      _secureStorage.delete(key: _kAccessExpiresAt),
+    ])
+    ;
+    // Cleanup de posibles restos de SharedPreferences (legacy)
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await Future.wait([
+        sp.remove(_kAccessToken),
+        sp.remove(_kRefreshToken),
+        sp.remove(_kAccessExpiresAt),
+      ]);
+    } catch (_) { /* fallback silent */ }
   }
 
   bool get _accessLikelyValid {
