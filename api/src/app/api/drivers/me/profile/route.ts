@@ -255,11 +255,13 @@ export async function PATCH(req: NextRequest) {
   const sets: string[] = []
   const params: unknown[] = []
 
+  // CRÍTICO: NUNCA aceptar `phone`/`phoneNumber` via PATCH aquí — mismo
+  // attack vector que PATCH /auth/me (setear phone ajeno → víctima entra
+  // por SMS y cae en cuenta del attacker). Cambio de teléfono debe ir por
+  // el flow verificado /api/auth/phone/verify con OTP.
   const fields: Array<[keyof ProfileBody, string]> = [
     ['fullName', 'full_name'],
     ['displayName', 'display_name'],
-    ['phone', 'phone'],
-    ['phoneNumber', 'phone_number'],
     ['profilePhotoUrl', 'profile_photo_url'],
   ]
 
