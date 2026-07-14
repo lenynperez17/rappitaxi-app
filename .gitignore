@@ -208,9 +208,45 @@ app/fastlane/.env
 .playwright-mcp/
 admin-*.jpeg
 admin-*.png
+admin_*.png
+admin_*.jpeg
+analytics*.png
+analytics*.yml
+credit-notes*.png
+credit-notes*.yml
+dashboard.png
+drivers*.png
+drivers*.yml
+emergencies*.png
+emergencies*.yml
+financial*.png
+financial*.yml
+users*.png
+users*.yml
+trips*.png
+trips*.yml
+invoices*.png
+invoices*.yml
+recharges*.png
+recharges*.yml
+verifications*.png
+verifications*.yml
+promotions*.png
+promotions*.yml
+settings*.png
+settings*.yml
+map*.png
+map*.yml
+*-snap.yml
 *-page.png
 map-page.png
 reset-password-modal.png
+
+# Apple App Store Connect API key privada
+*.p8
+
+# Next.js build info incremental
+tsconfig.tsbuildinfo
 
 # Python cache
 __pycache__/

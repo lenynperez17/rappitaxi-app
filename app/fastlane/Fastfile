@@ -1,0 +1,56 @@
+default_platform(:ios)
+platform :ios do
+  desc "Upload metadata"
+  lane :upload_metadata do
+    api_key = app_store_connect_api_key(
+      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
+      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
+      in_house: false
+    )
+    deliver(api_key: api_key, skip_binary_upload: true, skip_screenshots: true, force: true,
+      submit_for_review: false, automatic_release: false, app_identifier: 'com.rapiteam.app', team_id: '78N32BX46K')
+  end
+
+  lane :upload_privacy do
+    upload_app_privacy_details_to_app_store(
+      username: 'lenynperez17@gmail.com', team_id: '78N32BX46K',
+      app_identifier: 'com.rapiteam.app',
+      json_path: './fastlane/app_privacy_details.json',
+      skip_json_file_saving: true, skip_publish: false
+    )
+  end
+
+  lane :build_manual do
+    build_app(
+      workspace: 'ios/Runner.xcworkspace',
+      scheme: 'Runner',
+      configuration: 'Release',
+      output_directory: 'build/ios/ipa',
+      output_name: 'Runner.ipa',
+      export_method: 'app-store',
+      export_options: {
+        signingStyle: 'manual',
+        teamID: '78N32BX46K',
+        provisioningProfiles: {
+          'com.rapiteam.app' => 'com.rapiteam.app AppStore'
+        }
+      }
+    )
+  end
+
+  lane :upload_ipa do
+    api_key = app_store_connect_api_key(
+      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
+      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
+      in_house: false
+    )
+    upload_to_app_store(
+      api_key: api_key, skip_metadata: true, skip_screenshots: true, force: true,
+      ipa: 'build/ios/ipa/Runner.ipa',
+      app_identifier: 'com.rapiteam.app', team_id: '78N32BX46K',
+      submit_for_review: false,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false
+    )
+  end
+end

@@ -1,0 +1,30 @@
+Rapi Team es la app de transporte que te devuelve el control. A diferencia de otras plataformas donde un algoritmo decide cuanto pagas, en Rapi Team tu propones el precio y el conductor decide si lo acepta o te hace una contraoferta. Asi de simple. Asi de justo.
+
+NEGOCIA TU TARIFA
+Olvida las tarifas dinamicas. Con nuestro sistema de negociacion, tu estableces el monto que consideras justo. Los conductores cercanos pueden aceptar tu precio o proponerte uno nuevo.
+
+SERVICIOS PARA CADA NECESIDAD
+- Express: Viajes rapidos y economicos para tu dia a dia.
+- Ejecutivo: Vehiculos de gama media para reuniones.
+- VIP: La mejor experiencia con vehiculos premium.
+- Encomiendas: Envia paquetes de forma rapida y segura.
+- Interurbano: Viajes entre ciudades con conductores verificados.
+
+SEGURIDAD EN CADA VIAJE
+- Rastreo GPS en tiempo real.
+- Boton SOS de emergencia.
+- Conductores verificados con documentacion validada.
+- Chat en la app sin compartir tu numero personal.
+
+PAGA COMO PREFIERAS
+- Efectivo o MercadoPago.
+
+PARA CONDUCTORES
+- Recibe solicitudes y decide cuales aceptar.
+- Negocia tarifas justas.
+- Panel de ganancias detallado.
+- Billetera digital para gestionar tus ingresos.
+
+Descarga Rapi Team gratis y viaja a tu precio.
+Soporte: facturacion.rapiteam@gmail.com
+Web: rapiteam.com
