@@ -91,7 +91,7 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
     ));
   }
 
-  Widget _buildLoadingState() { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange)), SizedBox(height: 16), Text('Cargando informacion de soporte...', style: TextStyle(color: AppColors.getTextSecondary(context)))])); }
+  Widget _buildLoadingState() { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange)), SizedBox(height: 16), Text('Cargando información de soporte...', style: TextStyle(color: AppColors.getTextSecondary(context)))])); }
 
   Widget _buildTabViews() { return AnimatedBuilder(animation: _fadeAnimation, builder: (context, child) { return Opacity(opacity: _fadeAnimation.value, child: TabBarView(children: [_buildFAQsTab(), _buildTicketsTab(), _buildNewTicketTab(), _buildContactTab()])); }); }
 

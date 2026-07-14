@@ -146,7 +146,7 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
                       ),
                       const SizedBox(height: 20),
                       AnimatedBuilder(animation: _submitController, builder: (context, child) {
-                        return Transform.scale(scale: 1 - (0.1 * _submitController.value), child: AnimatedPulseButton(text: _isSubmitting ? 'Enviando...' : 'Enviar Calificacion', icon: _isSubmitting ? null : Icons.send, onPressed: _isSubmitting ? () {} : _submitRating));
+                        return Transform.scale(scale: 1 - (0.1 * _submitController.value), child: AnimatedPulseButton(text: _isSubmitting ? 'Enviando...' : 'Enviar Calificación', icon: _isSubmitting ? null : Icons.send, onPressed: _isSubmitting ? () {} : _submitRating));
                       }),
                     ],
                     if (_rating == 0) ...[

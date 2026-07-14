@@ -198,7 +198,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
 
   Widget _buildNotificationCard(Map<String, dynamic> data) {
     final id = (data['id'] ?? '').toString();
-    final title = data['title'] ?? 'Notificacion';
+    final title = data['title'] ?? 'Notificación';
     final body = data['body'] ?? '';
     final isRead = (data['isRead'] ?? data['read'] ?? false) == true;
     final type = (data['type'] ?? 'info').toString();
@@ -403,7 +403,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           .removeWhere((n) => (n['id'] ?? '').toString() == notificationId);
     });
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Notificacion eliminada')));
+        .showSnackBar(SnackBar(content: Text('Notificación eliminada')));
   }
 
   Future<void> _deleteAllNotifications() async {

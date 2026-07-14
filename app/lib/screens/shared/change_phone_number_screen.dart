@@ -276,7 +276,7 @@ class _ChangePhoneNumberScreenState extends State<ChangePhoneNumberScreen>
           },
         ),
         SizedBox(height: 32),
-        AnimatedPulseButton(text: 'Enviar Codigo de Verificacion', icon: Icons.send, isLoading: _isLoading, onPressed: _isLoading ? null : _sendOTP),
+        AnimatedPulseButton(text: 'Enviar Código de Verificación', icon: Icons.send, isLoading: _isLoading, onPressed: _isLoading ? null : _sendOTP),
         SizedBox(height: 24),
         _buildSecurityInfo(),
       ]),

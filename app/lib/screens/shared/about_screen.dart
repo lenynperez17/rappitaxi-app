@@ -173,7 +173,7 @@ class _AboutScreenState extends State<AboutScreen>
 
   Widget _buildAppInfoSection() {
     return _buildSection(
-      'Informacion de la App',
+      'Información de la App',
       Icons.info,
       AppColors.priceBlack,
       [
@@ -203,12 +203,12 @@ class _AboutScreenState extends State<AboutScreen>
 
   Widget _buildLegalSection() {
     return _buildSection(
-      'Informacion Legal',
+      'Información Legal',
       Icons.gavel,
       Colors.purple,
       [
-        _buildActionTile('Terminos y Condiciones', 'Leer los terminos del servicio', Icons.article, _showTermsAndConditions),
-        _buildActionTile('Politica de Privacidad', 'Conoce como protegemos tus datos', Icons.privacy_tip, _showPrivacyPolicy),
+        _buildActionTile('Términos y Condiciones', 'Leer los terminos del servicio', Icons.article, _showTermsAndConditions),
+        _buildActionTile('Política de Privacidad', 'Conoce como protegemos tus datos', Icons.privacy_tip, _showPrivacyPolicy),
         _buildActionTile('Politica de Cookies', 'Informacion sobre el uso de cookies', Icons.cookie, _showCookiePolicy),
         _buildActionTile('Licencias de Software', 'Licencias de terceros', Icons.code, _showLicenses),
         _buildInfoTile('Registro Comercial', 'RUC: 20XXXXXXXXX', Icons.business),
@@ -354,11 +354,11 @@ class _AboutScreenState extends State<AboutScreen>
   }
 
   void _showTermsAndConditions() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Terminos y Condiciones', 'Los presentes Terminos y Condiciones regulan el uso de la aplicacion Rappi Team. Al utilizar nuestros servicios, usted acepta estos terminos en su totalidad. Rappi Team se reserva el derecho de modificar estos terminos en cualquier momento.')));
+    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Términos y Condiciones', 'Los presentes Terminos y Condiciones regulan el uso de la aplicacion Rappi Team. Al utilizar nuestros servicios, usted acepta estos terminos en su totalidad. Rappi Team se reserva el derecho de modificar estos terminos en cualquier momento.')));
   }
 
   void _showPrivacyPolicy() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Politica de Privacidad', 'En Rappi Team, nos comprometemos a proteger su privacidad. Recopilamos informacion personal necesaria para brindar nuestros servicios de transporte, incluyendo nombre, telefono, ubicacion y datos de pago. Esta informacion se utiliza exclusivamente para facilitar los viajes y mejorar la experiencia del usuario.')));
+    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Política de Privacidad', 'En Rappi Team, nos comprometemos a proteger su privacidad. Recopilamos informacion personal necesaria para brindar nuestros servicios de transporte, incluyendo nombre, telefono, ubicacion y datos de pago. Esta informacion se utiliza exclusivamente para facilitar los viajes y mejorar la experiencia del usuario.')));
   }
 
   void _showCookiePolicy() {

@@ -167,7 +167,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
         else { if (await Permission.photos.isGranted || await Permission.photos.isLimited) { permissionStatus = PermissionStatus.granted; } else { permissionStatus = await Permission.photos.request(); if (permissionStatus.isDenied) { permissionStatus = await Permission.storage.request(); } } }
         if (!permissionStatus.isGranted && !permissionStatus.isLimited) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Se necesitan permisos de camara/galeria'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating, action: SnackBarAction(label: 'Configuracion', textColor: Colors.white, onPressed: () => openAppSettings())));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Se necesitan permisos de camara/galeria'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating, action: SnackBarAction(label: 'Configuración', textColor: Colors.white, onPressed: () => openAppSettings())));
           return;
         }
         final picker = ImagePicker(); final image = await picker.pickImage(source: source, maxWidth: 1920, maxHeight: 1920, imageQuality: 85);
@@ -224,7 +224,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
 
   Widget _buildPersonalInfoStep() {
     return SingleChildScrollView(padding: const EdgeInsets.all(24), child: Form(key: _formKey, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildStepHeader('Paso 1 de 3', 'Informacion Personal', 'Ingresa tus datos de documento y licencia'),
+      _buildStepHeader('Paso 1 de 3', 'Información Personal', 'Ingresa tus datos de documento y licencia'),
       const SizedBox(height: 32),
       _buildTextField(controller: _dniController, label: 'Numero de Documento (DNI/CE)', hint: 'Ej: 12345678', icon: Icons.badge_outlined, keyboardType: TextInputType.number, maxLength: 8),
       const SizedBox(height: 16),
@@ -236,7 +236,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
 
   Widget _buildVehicleInfoStep() {
     return SingleChildScrollView(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildStepHeader('Paso 2 de 3', 'Informacion del Vehiculo', 'Ingresa los datos de tu vehiculo'),
+      _buildStepHeader('Paso 2 de 3', 'Información del Vehículo', 'Ingresa los datos de tu vehiculo'),
       const SizedBox(height: 32),
       _buildTextField(controller: _plateController, label: 'Placa del Vehiculo', hint: 'Ej: ABC-123', icon: Icons.directions_car, textCapitalization: TextCapitalization.characters),
       const SizedBox(height: 16),
@@ -258,7 +258,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
       const SizedBox(height: 16),
       _buildDocumentUpload('Foto del Vehiculo', _vehiclePhoto, () => _pickDocument('vehiculo'), Icons.directions_car, _isVehiclePdf),
       const SizedBox(height: 32),
-      Text('Documentos Adicionales de Verificacion', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
+      Text('Documentos Adicionales de Verificación', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
       const SizedBox(height: 8),
       Text('Estos documentos son obligatorios para completar tu registro como conductor.', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
       const SizedBox(height: 16),

@@ -99,7 +99,7 @@ class _EmergencyDetailsScreenState extends State<EmergencyDetailsScreen> {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Ubicacion', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text('Ubicación', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const Divider(height: 24),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Icon(Icons.location_on, color: AppColors.error), const SizedBox(width: 12),

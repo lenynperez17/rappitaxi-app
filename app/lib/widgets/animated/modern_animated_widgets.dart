@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
+// ignore_for_file: deprecated_member_use, unused_field, unused_element, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../core/theme/modern_theme.dart';
@@ -86,17 +86,9 @@ class _AnimatedPulseButtonState extends State<AnimatedPulseButton>
     final isEnabled = widget.onPressed != null && !widget.isLoading;
 
     return GestureDetector(
-      onTap: widget.isLoading ? null : () {
-        print('🔍🔍🔍 GESTURE DETECTOR TAP!');
-        print('🔍 onPressed != null: ${widget.onPressed != null}');
-        print('🔍 isLoading: ${widget.isLoading}');
-        if (widget.onPressed != null) {
-          print('🔍 EJECUTANDO onPressed!');
-          widget.onPressed!();
-        } else {
-          print('🔍 onPressed ES NULL!');
-        }
-      },
+      onTap: widget.isLoading || widget.onPressed == null
+          ? null
+          : widget.onPressed,
       child: Opacity(
         opacity: isEnabled ? 1.0 : 0.5,
         child: Container(
