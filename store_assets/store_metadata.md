@@ -1,6 +1,6 @@
 # Rapi Team - Store Metadata
 
-> Last updated: April 2, 2026
+> Last updated: July 14, 2026
 > Package: com.rapiteam.app | Bundle ID: com.rapiteam.app
 
 ---
@@ -59,6 +59,9 @@ PAGA COMO PREFIERAS
 Flexibilidad total en tus pagos:
 - Efectivo: Paga directamente al conductor.
 - MercadoPago: Paga de forma digital, rapida y segura.
+- Yape y Plin: Escanea el QR y transfiere al conductor.
+- Billetera Rapi: Recarga tu saldo y paga sin comisiones extras.
+- Tarjeta: Debito o credito guardadas de forma segura.
 
 FUNCIONES QUE HACEN LA DIFERENCIA
 - Lugares favoritos: Guarda tu casa, trabajo y destinos frecuentes para solicitar viajes en segundos.
@@ -97,7 +100,7 @@ Bienvenido a Rapi Team v1.0
 - Rastreo GPS en tiempo real durante todo el viaje.
 - Chat integrado entre pasajero y conductor.
 - Boton SOS de emergencia.
-- Pagos en efectivo y MercadoPago.
+- Pagos en efectivo, MercadoPago, Yape, Plin, billetera Rapi o tarjeta.
 - Viajes programados.
 - Guarda tus lugares favoritos.
 - Historial de viajes y calificaciones.
@@ -161,6 +164,9 @@ PAY YOUR WAY
 Total payment flexibility:
 - Cash: Pay the driver directly.
 - MercadoPago: Pay digitally, quickly, and securely.
+- Yape and Plin: Scan the QR and transfer directly to the driver.
+- Rapi Wallet: Top up your balance and pay with no extra fees.
+- Card: Debit or credit securely saved.
 
 FEATURES THAT MAKE THE DIFFERENCE
 - Favorite places: Save home, work, and frequent destinations to request rides in seconds.
@@ -199,7 +205,7 @@ Welcome to Rapi Team v1.0
 - Real-time GPS tracking throughout your ride.
 - In-app chat between passenger and driver.
 - Emergency SOS button.
-- Pay with cash or MercadoPago.
+- Pay with cash, MercadoPago, Yape, Plin, in-app wallet, or card.
 - Scheduled rides.
 - Save your favorite places.
 - Trip history and ratings.
