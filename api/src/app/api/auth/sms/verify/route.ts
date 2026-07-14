@@ -91,10 +91,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Upsert user (por phone). Si no existe, crear con UUID nuevo.
+  // Upsert user (por phone). Solo matchear filas con phone_verified=true —
+  // sin este filtro, un atacante que setea `phone` a un número ajeno via
+  // PATCH podía secuestrar la cuenta cuando el dueño real hacía SMS login.
+  // Además ordenamos por phone_verified DESC + created_at ASC para lookup
+  // determinista si por alguna razón hay múltiples filas.
   let user = await maybeOne<UserRow>(
     `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
-       FROM users WHERE phone = $1 OR phone_number = $1 LIMIT 1`,
+       FROM users
+       WHERE (phone = $1 OR phone_number = $1)
+         AND phone_verified = true
+       ORDER BY phone_verified DESC, created_at ASC
+       LIMIT 1`,
     [phoneNumber],
   )
   let isNewUser = false
