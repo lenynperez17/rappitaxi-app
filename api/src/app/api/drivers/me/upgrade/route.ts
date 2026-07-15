@@ -28,14 +28,26 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
 
-  const user = await maybeOne<{ id: string; user_type: string; is_admin: boolean }>(
-    'SELECT id, user_type, is_admin FROM users WHERE id = $1 AND deleted_at IS NULL',
+  const user = await maybeOne<{ id: string; user_type: string; is_admin: boolean; phone_verified: boolean; email_verified: boolean }>(
+    'SELECT id, user_type, is_admin, phone_verified, email_verified FROM users WHERE id = $1 AND deleted_at IS NULL',
     [auth.userId],
   )
   if (!user) return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 404 })
 
   if (user.user_type === 'driver' || user.user_type === 'dual') {
     return NextResponse.json({ success: true, message: 'Ya eres conductor', userType: user.user_type })
+  }
+
+  // Ronda 70 SECURITY: exigir teléfono verificado antes de upgrade a driver.
+  // Antes el UPDATE forzaba is_verified=true bypassing la verificación de
+  // contacto que el resto de la app exige para payouts, cambio de teléfono,
+  // OTP. Un passenger sin phone verificado no debe poder tomar rides como driver.
+  if (!user.phone_verified) {
+    return NextResponse.json({
+      success: false,
+      error: 'phone_not_verified',
+      message: 'Verifica tu teléfono antes de habilitar el modo conductor.',
+    }, { status: 403 })
   }
 
   // Verificar que todos los documentos requeridos están approved Y VIGENTES.
@@ -75,8 +87,11 @@ export async function POST(req: NextRequest) {
     }, { status: 403 })
   }
 
+  // Ronda 70: NO forzar is_verified=true — ese flag representa verificación
+  // de contacto (phone/email), no de documentos. El estado 'dual' + is_verified
+  // preservado son señales independientes. is_verified se mantiene como estaba.
   await query(
-    `UPDATE users SET user_type = 'dual', is_verified = true, updated_at = now() WHERE id = $1`,
+    `UPDATE users SET user_type = 'dual', updated_at = now() WHERE id = $1`,
     [auth.userId],
   )
   await query(
