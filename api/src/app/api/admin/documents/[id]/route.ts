@@ -114,8 +114,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           [doc.driver_id],
         )
         driverVerified = true
-      } else if (newStatus === 'rejected' || newStatus === 'expired') {
-        // Si el documento se rechaza/expira, quitar verificación (por si estaba)
+      } else if ((newStatus === 'rejected' || newStatus === 'expired') && REQUIRED_DOC_TYPES.has(doc.doc_type)) {
+        // Ronda 67: solo desverificar cuando el documento rechazado/expirado
+        // ES uno de los REQUERIDOS. Antes: rechazar un doc opcional
+        // (vehicle_photo, etc) apagaba is_verified aunque los 5 requeridos
+        // siguieran approved → driver quedaba "no verificado" sin razón.
         await client.query(
           `UPDATE users SET is_verified = false, updated_at = now() WHERE id = $1`,
           [doc.driver_id],
