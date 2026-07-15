@@ -63,9 +63,19 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">
-        <BarChart3 className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-        Los gráficos históricos se están migrando al nuevo backend
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-blue-600" /> Distribución de usuarios
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+          <Card title="Pasajeros" value={stats?.users.passengers ?? 0} />
+          <Card title="Conductores" value={stats?.users.drivers ?? 0} />
+          <Card title="Dual (ambos)" value={stats?.users.dual ?? 0} />
+          <Card title="Administradores" value={stats?.users.admins ?? 0} />
+        </div>
+        <p className="text-xs text-gray-500 pt-2 border-t">
+          Total activo: <strong>{stats?.users.active ?? 0}</strong> · Suspendidos: <strong>{stats?.users.suspended ?? 0}</strong>
+        </p>
       </div>
     </div>
   )
