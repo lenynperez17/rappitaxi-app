@@ -99,7 +99,22 @@ export async function POST(req: NextRequest) {
 
   try {
     const acc = await tx(async (client: PoolClient) => {
-      if (isDefault) {
+      // Ronda 45 Bug#2: si es la primera cuenta activa del driver, forzar
+      // is_default=true (aunque el cliente no lo envíe). Sin esto retiros que
+      // asumen "default siempre existe" fallan silenciosamente en el flow
+      // recién-onboardeado.
+      let effectiveDefault = isDefault
+      if (!effectiveDefault) {
+        const existing = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM driver_bank_accounts
+             WHERE driver_id = $1 AND is_active = true`,
+          [auth.userId],
+        )
+        if (Number(existing.rows[0]?.count ?? '0') === 0) {
+          effectiveDefault = true
+        }
+      }
+      if (effectiveDefault) {
         await client.query(
           `UPDATE driver_bank_accounts SET is_default = false WHERE driver_id = $1`,
           [auth.userId],
@@ -111,7 +126,7 @@ export async function POST(req: NextRequest) {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, bank_name, account_type, account_number, cci, holder_name,
                    holder_document, is_default, is_active, created_at`,
-        [auth.userId, bankName, accountType, accountNumber, cci, holderName, holderDocument, isDefault],
+        [auth.userId, bankName, accountType, accountNumber, cci, holderName, holderDocument, effectiveDefault],
       )
       return r.rows[0]
     })

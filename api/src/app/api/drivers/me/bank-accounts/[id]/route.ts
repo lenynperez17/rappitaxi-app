@@ -8,10 +8,18 @@ import { queryFull } from '@/lib/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// UUID v4 pattern — evita Postgres 22P02 → 500 con ids mal formados
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+
+  // Ronda 45 Bug#1: validar UUID antes del UPDATE
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+  }
 
   const r = await queryFull(
     `UPDATE driver_bank_accounts
