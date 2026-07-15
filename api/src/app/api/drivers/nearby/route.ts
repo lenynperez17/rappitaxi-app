@@ -51,11 +51,7 @@ interface NearbyBody {
   limit?: unknown
 }
 
-function toNumber(v: unknown, fallback: number): number {
-  if (v === undefined || v === null || v === '') return fallback
-  const n = Number(v)
-  return Number.isFinite(n) ? n : fallback
-}
+// Helper removido en Ronda 86 (radius/limit ahora validan explícitamente)
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
