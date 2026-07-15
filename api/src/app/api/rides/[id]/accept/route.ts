@@ -72,14 +72,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
          ON CONFLICT (driver_id) DO NOTHING`,
         [auth.userId],
       )
-      const busyRes = await client.query<{ active_ride_id: string | null }>(
-        `SELECT active_ride_id FROM driver_presence
+      const busyRes = await client.query<{ active_ride_id: string | null; is_online: boolean }>(
+        `SELECT active_ride_id, is_online FROM driver_presence
           WHERE driver_id = $1 FOR UPDATE`,
         [auth.userId],
       )
       const activeRide = busyRes.rows[0]?.active_ride_id
       if (activeRide && activeRide !== id) {
         throw { code: 'driver_busy', activeRideId: activeRide }
+      }
+      // Ronda 85: rechazar si el driver no está online. Antes: push antiguo o
+      // replay hacía que un driver offline aceptara un ride → passenger espera
+      // a alguien que no aparecerá porque el matcher lo excluye por is_online=false.
+      if (!busyRes.rows[0]?.is_online) {
+        throw { code: 'driver_offline', message: 'Debes estar en línea para aceptar viajes' }
       }
 
       const updateRes = await client.query<RideCore>(
@@ -169,6 +175,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json(
         { success: false, error: 'cannot_accept_own_ride',
           message: 'No puedes aceptar tu propio viaje como conductor.' },
+        { status: 403 },
+      )
+    }
+    if (knownCode === 'driver_offline') {
+      return NextResponse.json(
+        { success: false, error: 'driver_offline',
+          message: 'Debes estar en línea para aceptar viajes.' },
         { status: 403 },
       )
     }
