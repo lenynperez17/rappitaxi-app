@@ -98,6 +98,15 @@ export async function POST(req: NextRequest) {
   try {
     const contact = await tx(async (client) => {
       if (isPrimary) {
+        // Ronda 49 Bug#2: advisory xact lock por user antes del UPDATE +
+        // INSERT. Sin esto, dos POSTs concurrentes con isPrimary=true del
+        // mismo user pasaban ambos el UPDATE (cada uno viendo el estado
+        // pre-imagen bajo READ COMMITTED) y ambos INSERT terminaban con
+        // is_primary=true → dos primary contacts violando el invariante.
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 173))`,
+          [auth.userId],
+        )
         await client.query(
           `UPDATE emergency_contacts SET is_primary = false WHERE user_id = $1`,
           [auth.userId],

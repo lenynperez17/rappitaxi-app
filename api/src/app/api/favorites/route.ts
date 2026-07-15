@@ -8,7 +8,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
-import { query } from '@/lib/db'
+import { query, isUniqueViolation } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -91,12 +91,24 @@ export async function POST(req: NextRequest) {
     : null
   const icon = body.icon?.trim() || null
 
-  const rows = await query<FavoriteRow>(
-    `INSERT INTO user_favorites (user_id, label, address, latitude, longitude, icon)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, user_id, label, address, latitude::text, longitude::text, icon, created_at`,
-    [auth.userId, label, address, latitude, longitude, icon],
-  )
-
-  return NextResponse.json({ success: true, favorite: serialize(rows[0]!) })
+  // Ronda 49 Bug#1: try/catch en el INSERT — sin esto, unique violation
+  // (label duplicado por user) o pool error → 500 con stacktrace expuesta.
+  try {
+    const rows = await query<FavoriteRow>(
+      `INSERT INTO user_favorites (user_id, label, address, latitude, longitude, icon)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, user_id, label, address, latitude::text, longitude::text, icon, created_at`,
+      [auth.userId, label, address, latitude, longitude, icon],
+    )
+    return NextResponse.json({ success: true, favorite: serialize(rows[0]!) })
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        { success: false, error: 'duplicate_label', message: 'Ya tienes un favorito con ese nombre' },
+        { status: 409 },
+      )
+    }
+    console.error('[favorites/POST] error:', err)
+    return NextResponse.json({ success: false, error: 'server_error' }, { status: 500 })
+  }
 }
