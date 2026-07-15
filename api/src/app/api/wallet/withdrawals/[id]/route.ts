@@ -26,15 +26,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       if (w.status !== 'pending') {
         throw { code: 'not_cancellable', status: 409, currentStatus: w.status }
       }
+      // Cancelar la transacción pending del wallet PRIMERO — si falla, abortamos
+      // sin marcar el withdrawal como cancelled. Verificamos rowCount para no
+      // dejar el withdrawal en 'cancelled' sin reacreditar (Ronda 39 Bug).
+      // completed_at se deja NULL: una tx cancelada NO está completed,
+      // contaminaría reportes que filtran por completed_at IS NOT NULL.
+      const txRes = await client.query(
+        `UPDATE wallet_transactions SET status = 'cancelled'
+           WHERE external_ref = $1 AND user_id = $2 AND status = 'pending'`,
+        [id, auth.userId],
+      )
+      if (txRes.rowCount === 0) {
+        throw {
+          code: 'wallet_tx_not_found',
+          status: 500,
+          message: 'No se encontró la transacción pending del retiro; contacta a soporte',
+        }
+      }
+
       await client.query(
         `UPDATE wallet_withdrawals SET status = 'cancelled', updated_at = now() WHERE id = $1`,
         [id],
-      )
-      // Cancelar la transacción pending del wallet
-      await client.query(
-        `UPDATE wallet_transactions SET status = 'cancelled', completed_at = now()
-           WHERE external_ref = $1 AND user_id = $2 AND status = 'pending'`,
-        [id, auth.userId],
       )
     })
     return NextResponse.json({ success: true })
