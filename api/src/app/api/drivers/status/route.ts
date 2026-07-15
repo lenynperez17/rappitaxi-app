@@ -96,15 +96,32 @@ export async function PUT(req: NextRequest) {
           [driverId],
         )
       } else {
+        // Ronda 87: si el driver tiene active_ride_id apuntando a un ride
+        // TODAVÍA activo, rechazar el offline (obliga a cancelar/completar
+        // el ride primero). Si el ride ya terminó (completed/cancelled),
+        // clearear active_ride_id oportunamente.
+        const active = await client.query<{ active_ride_id: string | null; ride_status: string | null }>(
+          `SELECT dp.active_ride_id, r.status AS ride_status
+             FROM driver_presence dp
+             LEFT JOIN rides r ON r.id = dp.active_ride_id
+            WHERE dp.driver_id = $1 FOR UPDATE`,
+          [driverId],
+        )
+        const rid = active.rows[0]?.active_ride_id
+        const rstatus = active.rows[0]?.ride_status
+        if (rid && rstatus && ['accepted','on_way','arrived','in_progress'].includes(rstatus)) {
+          throw { code: 'has_active_ride', activeRideId: rid, status: 409 }
+        }
         await client.query(
-          `INSERT INTO driver_presence (driver_id, is_online, latitude, longitude, heading, last_heartbeat, updated_at)
-           VALUES ($1, false, NULL, NULL, NULL, NULL, now())
+          `INSERT INTO driver_presence (driver_id, is_online, latitude, longitude, heading, last_heartbeat, active_ride_id, updated_at)
+           VALUES ($1, false, NULL, NULL, NULL, NULL, NULL, now())
            ON CONFLICT (driver_id) DO UPDATE SET
              is_online = false,
              latitude = NULL,
              longitude = NULL,
              heading = NULL,
              last_heartbeat = NULL,
+             active_ride_id = NULL,
              updated_at = now()`,
           [driverId],
         )
@@ -146,6 +163,14 @@ export async function PUT(req: NextRequest) {
       is_online: isOnline,
     })
   } catch (err) {
+    const known = err as { code?: string; activeRideId?: string; status?: number }
+    if (known?.code === 'has_active_ride') {
+      return NextResponse.json({
+        success: false, error: 'has_active_ride',
+        activeRideId: known.activeRideId,
+        message: 'No puedes desconectarte con un viaje activo. Completa o cancela el viaje primero.',
+      }, { status: 409 })
+    }
     console.error('[drivers/status PUT] error:', err)
     return NextResponse.json(
       { success: false, error: 'server_error' },
