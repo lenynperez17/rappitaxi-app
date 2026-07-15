@@ -49,6 +49,15 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  // Ronda 51 Bug#2: validación de typeof (consistente con register/finish).
+  // Sin esto, expectedChallenge no-string (number/object) llegaba a
+  // verifyAuthentication → TypeError sin envoltura → 500 en vez de 400.
+  if (typeof body.expectedChallenge !== 'string' || body.expectedChallenge.length < 8) {
+    return NextResponse.json(
+      { success: false, error: 'expectedChallenge inválido' },
+      { status: 400 }
+    );
+  }
 
   try {
     const auth = await verifyAuthentication({

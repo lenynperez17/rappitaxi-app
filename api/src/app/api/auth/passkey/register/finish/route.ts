@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { verifyAccessToken } from '@/lib/jwt';
 import { verifyRegistration, PasskeyError } from '@/lib/passkeys';
+import { maybeOne } from '@/lib/db';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 
 export const runtime = 'nodejs';
@@ -51,6 +52,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { success: false, error: 'invalid_token' },
       { status: 401 }
+    );
+  }
+
+  // Ronda 51 Bug#1: chequear estado del user (mismo patrón que
+  // authenticate/finish B#9). Sin este gate, un user suspendido puede
+  // registrar passkeys nuevas con su JWT vigente antes de que expire.
+  const userRow = await maybeOne<{ is_active: boolean; suspended_at: Date | null; deleted_at: Date | null }>(
+    'SELECT is_active, suspended_at, deleted_at FROM users WHERE id = $1',
+    [claims.sub],
+  );
+  if (!userRow || userRow.deleted_at) {
+    return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 404 });
+  }
+  if (!userRow.is_active || userRow.suspended_at) {
+    return NextResponse.json(
+      { success: false, error: 'account_disabled', message: 'Cuenta suspendida' },
+      { status: 403 },
     );
   }
 
