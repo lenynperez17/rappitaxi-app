@@ -10,6 +10,12 @@ import { query } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
+// Throttle in-memory del janitor (Ronda 19 MEDIUM#4). Es process-local — con
+// múltiples workers PM2 cada uno tiene su propio contador, pero el impacto
+// combinado sigue siendo N janitor-runs por minuto en vez de N por request.
+const JANITOR_INTERVAL_MS = 60_000
+let LAST_JANITOR_RUN = 0
+
 interface ActiveTripRow {
   id: string
   status: string
@@ -51,36 +57,41 @@ export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
 
-  // 0. Auto-expirar viajes zombie (más de 24h en estado activo). Es idempotente
-  //    y barato con el índice `idx_rides_status`. Evita que estados sucios
-  //    queden en pantalla y bloqueen conductores.
-  await query(
-    `UPDATE rides
-        SET status = 'cancelled',
-            cancelled_by = 'system',
-            cancelled_reason = 'timeout_24h_stale',
-            completed_at = COALESCE(completed_at, NOW())
-      WHERE status IN ('requested','searching','accepted','on_way','arrived','in_progress')
-        AND created_at < NOW() - INTERVAL '24 hours'`,
-  )
-  await query(
-    `UPDATE driver_presence
-        SET active_ride_id = NULL
-      WHERE active_ride_id IS NOT NULL
-        AND active_ride_id NOT IN (
-          SELECT id FROM rides
-           WHERE status IN ('accepted','on_way','arrived','in_progress')
-        )`,
-  )
-  // Drivers "online" con heartbeat > 5 min → forzarlos a offline. Evita zombie
-  // presence si la app se cerró sin cerrar sesión.
-  await query(
-    `UPDATE driver_presence
-        SET is_online = false
-      WHERE is_online = true
-        AND last_heartbeat IS NOT NULL
-        AND last_heartbeat < NOW() - INTERVAL '5 minutes'`,
-  )
+  // 0. Auto-cleanup zombie state. Throttled a 1 vez cada 60s (Ronda 19 MEDIUM#4):
+  //    antes cada GET del panel disparaba 3 UPDATEs sobre rides + driver_presence
+  //    → row lock contention con endpoints hot (/rides/accept, /presence). Con N
+  //    admins polling cada 3-5s la contención era permanente. In-memory throttle
+  //    (process-level, aceptable porque el janitor real es idempotente y sirve
+  //    solo como fallback UX del panel).
+  const now = Date.now()
+  if (now - LAST_JANITOR_RUN > JANITOR_INTERVAL_MS) {
+    LAST_JANITOR_RUN = now
+    await query(
+      `UPDATE rides
+          SET status = 'cancelled',
+              cancelled_by = 'system',
+              cancelled_reason = 'timeout_24h_stale',
+              completed_at = COALESCE(completed_at, NOW())
+        WHERE status IN ('requested','searching','accepted','on_way','arrived','in_progress')
+          AND created_at < NOW() - INTERVAL '24 hours'`,
+    )
+    await query(
+      `UPDATE driver_presence
+          SET active_ride_id = NULL
+        WHERE active_ride_id IS NOT NULL
+          AND active_ride_id NOT IN (
+            SELECT id FROM rides
+             WHERE status IN ('accepted','on_way','arrived','in_progress')
+          )`,
+    )
+    await query(
+      `UPDATE driver_presence
+          SET is_online = false
+        WHERE is_online = true
+          AND last_heartbeat IS NOT NULL
+          AND last_heartbeat < NOW() - INTERVAL '5 minutes'`,
+    )
+  }
 
   // 1. Viajes activos (no completados ni cancelados) — con datos del pasajero, conductor
   //    y posición actual del conductor si está online.
@@ -102,13 +113,25 @@ export async function GET(req: NextRequest) {
   )
 
   // 2. Conductores online: is_online=true y heartbeat en últimos 5 min
+  // Ronda 19 MEDIUM#3: reemplazado subquery correlacionada (`SELECT AVG(stars)
+  // FROM ride_ratings ...`) — hacía N+1 hasta 700 queries por poll del panel.
+  // Ahora LEFT JOIN LATERAL con LIMIT 1 (o mejor, precompute) sobre una CTE
+  // agregada una sola vez.
   const onlineDrivers = await query<DriverRow>(
-    `SELECT dp.driver_id, u.full_name, u.phone, u.profile_photo_url, (SELECT AVG(stars) FROM ride_ratings WHERE rated_user_id = u.id AND role = 'driver') AS rating,
+    `WITH driver_ratings AS (
+       SELECT rated_user_id, AVG(stars) AS avg_stars
+         FROM ride_ratings
+        WHERE role = 'driver'
+        GROUP BY rated_user_id
+     )
+     SELECT dp.driver_id, u.full_name, u.phone, u.profile_photo_url,
+            dr.avg_stars AS rating,
             dp.is_online, dp.latitude, dp.longitude, dp.vehicle_type,
             dp.active_ride_id, dp.last_heartbeat,
             NULL AS minutes_since_heartbeat
        FROM driver_presence dp
        JOIN users u ON u.id = dp.driver_id
+       LEFT JOIN driver_ratings dr ON dr.rated_user_id = u.id
       WHERE dp.is_online = true
         AND (dp.last_heartbeat IS NULL OR dp.last_heartbeat > NOW() - INTERVAL '5 minutes')
         AND u.deleted_at IS NULL
@@ -117,12 +140,16 @@ export async function GET(req: NextRequest) {
   )
 
   // 3. Conductores offline: TODOS los drivers/dual activos que no están online.
-  // Incluye: (a) los que tienen driver_presence.is_online=false, y (b) los
-  // que nunca hicieron ping (sin fila en driver_presence). Sin el LEFT JOIN
-  // los drivers "nuevos" no aparecen aunque estén verificados y listos.
+  // Mismo fix N+1 aplicado.
   const offlineDrivers = await query<DriverRow>(
-    `SELECT u.id AS driver_id, u.full_name, u.phone, u.profile_photo_url,
-            (SELECT AVG(stars) FROM ride_ratings WHERE rated_user_id = u.id AND role = 'driver') AS rating,
+    `WITH driver_ratings AS (
+       SELECT rated_user_id, AVG(stars) AS avg_stars
+         FROM ride_ratings
+        WHERE role = 'driver'
+        GROUP BY rated_user_id
+     )
+     SELECT u.id AS driver_id, u.full_name, u.phone, u.profile_photo_url,
+            dr.avg_stars AS rating,
             COALESCE(dp.is_online, false) AS is_online,
             dp.latitude, dp.longitude, dp.vehicle_type,
             dp.active_ride_id, dp.last_heartbeat,
@@ -131,6 +158,7 @@ export async function GET(req: NextRequest) {
             END AS minutes_since_heartbeat
        FROM users u
        LEFT JOIN driver_presence dp ON dp.driver_id = u.id
+       LEFT JOIN driver_ratings dr ON dr.rated_user_id = u.id
       WHERE u.user_type IN ('driver', 'dual')
         AND u.deleted_at IS NULL
         AND u.is_active = true
