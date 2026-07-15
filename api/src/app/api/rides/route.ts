@@ -122,15 +122,22 @@ export async function POST(req: NextRequest) {
   const vehicleType = body.vehicleType?.trim()
   const paymentMethod = body.paymentMethod?.trim()
 
-  if (!pickup || typeof pickup.lat !== 'number' || typeof pickup.lng !== 'number') {
+  // Ronda 79: validar rango lat/lng además de tipo. Sin esto, coords absurdas
+  // (999, -4000) llegaban a Postgres y contaminaban Haversine + crasheaban
+  // Google Maps client + envenenaban analytics.
+  const isValidCoord = (lat: unknown, lng: unknown): boolean =>
+    typeof lat === 'number' && typeof lng === 'number' &&
+    Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+  if (!pickup || !isValidCoord(pickup.lat, pickup.lng)) {
     return NextResponse.json(
-      { success: false, error: 'invalid_pickup', message: 'pickup.lat y pickup.lng son obligatorios' },
+      { success: false, error: 'invalid_pickup', message: 'pickup.lat ∈ [-90,90] y pickup.lng ∈ [-180,180] son obligatorios' },
       { status: 400 },
     )
   }
-  if (!destination || typeof destination.lat !== 'number' || typeof destination.lng !== 'number') {
+  if (!destination || !isValidCoord(destination.lat, destination.lng)) {
     return NextResponse.json(
-      { success: false, error: 'invalid_destination', message: 'destination.lat y destination.lng son obligatorios' },
+      { success: false, error: 'invalid_destination', message: 'destination.lat ∈ [-90,90] y destination.lng ∈ [-180,180] son obligatorios' },
       { status: 400 },
     )
   }
