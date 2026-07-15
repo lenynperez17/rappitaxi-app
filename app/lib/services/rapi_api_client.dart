@@ -300,24 +300,51 @@ class RapiApiClient {
 
   /// Fuerza refresh del access token con el refresh actual.
   /// Retorna false si el refresh falló (cliente debe cerrar sesión).
+  ///
+  /// Single-flight: si dos llamadas concurrentes reciben 401 y disparan
+  /// refresh en paralelo, ambos POST /api/auth/refresh usan el MISMO refresh
+  /// token. El server (sessions.ts) marca el primero como usado y trata al
+  /// segundo como token-reuse ATTACK → revoca TODAS las sesiones del user en
+  /// TODOS los dispositivos (defensa correcta contra robo real). Para no
+  /// disparar el sistema anti-reuse en flujo normal, serializamos las llamadas
+  /// concurrentes tras un Completer: la primera hace el refresh de verdad,
+  /// las demás esperan y comparten el resultado. Ronda 17 HIGH#3.
+  Completer<bool>? _refreshInFlight;
+
   Future<bool> refreshAccessToken() async {
-    if (_refreshCache == null) return false;
-    final r = await _http.post(
-      Uri.parse('$baseUrl/api/auth/refresh'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'refreshToken': _refreshCache}),
-    );
-    if (r.statusCode != 200) {
-      await _clearSession();
-      return false;
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) return inFlight.future;
+    final completer = Completer<bool>();
+    _refreshInFlight = completer;
+    try {
+      if (_refreshCache == null) {
+        completer.complete(false);
+        return false;
+      }
+      final r = await _http.post(
+        Uri.parse('$baseUrl/api/auth/refresh'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': _refreshCache}),
+      );
+      if (r.statusCode != 200) {
+        await _clearSession();
+        completer.complete(false);
+        return false;
+      }
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      await _persistSession(
+        accessToken: data['jwt'] as String,
+        refreshToken: data['refreshToken'] as String,
+        accessTtlSec: data['accessTtlSec'] as int? ?? 3600,
+      );
+      completer.complete(true);
+      return true;
+    } catch (e, st) {
+      completer.completeError(e, st);
+      rethrow;
+    } finally {
+      _refreshInFlight = null;
     }
-    final data = jsonDecode(r.body) as Map<String, dynamic>;
-    await _persistSession(
-      accessToken: data['jwt'] as String,
-      refreshToken: data['refreshToken'] as String,
-      accessTtlSec: data['accessTtlSec'] as int? ?? 3600,
-    );
-    return true;
   }
 
   /// Cierra sesión — revoca refresh en el server y limpia storage.

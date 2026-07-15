@@ -271,16 +271,19 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
           WHERE driver_id = $1`,
         [id],
       )
-      // Cancelar ofertas y negociaciones pending (no dejan huella en el driver
-      // eliminado, pero pueden confundir al pasajero contraparte)
+      // Cancelar ofertas y negociaciones pending. Nota: ride_offers y
+      // ride_negotiations NO tienen columna updated_at (schema 009); el CHECK
+      // constraint de status no incluye 'cancelled' — usamos 'expired' que sí
+      // existe en ambos. En negotiations el usuario es 'proposed_by' (no
+      // offerer_id/responder_id que nunca existieron).
       await client.query(
-        `UPDATE ride_offers SET status = 'cancelled', updated_at = now()
+        `UPDATE ride_offers SET status = 'expired', responded_at = now()
           WHERE driver_id = $1 AND status = 'pending'`,
         [id],
       )
       await client.query(
-        `UPDATE ride_negotiations SET status = 'cancelled', updated_at = now()
-          WHERE (offerer_id = $1 OR responder_id = $1) AND status = 'pending'`,
+        `UPDATE ride_negotiations SET status = 'expired', responded_at = now()
+          WHERE proposed_by = $1 AND status = 'pending'`,
         [id],
       )
     })

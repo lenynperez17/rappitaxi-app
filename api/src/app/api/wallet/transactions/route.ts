@@ -73,10 +73,19 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const filters: string[] = [`user_id = $1`]
+  // Excluir type='commission' del historial personal — esas filas usan
+  // user_id=passenger_id como bucket contable (ver migración 019) pero no
+  // representan una transacción del usuario. Mostrarlas confunde al pasajero
+  // ("¿por qué recibí S/20 de comisión?") y es potencialmente explotable
+  // como evidencia contra la plataforma.
+  const filters: string[] = [`user_id = $1`, `type != 'commission'`]
   const params: unknown[] = [auth.userId]
   let idx = 2
   if (typeParam) {
+    if (typeParam === 'commission') {
+      // Nadie puede consultar sus commissions — son ledger interno.
+      return NextResponse.json({ success: true, transactions: [], total: 0, page, limit, totalPages: 0 })
+    }
     filters.push(`type = $${idx++}`)
     params.push(typeParam)
   }
