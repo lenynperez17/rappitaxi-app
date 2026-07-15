@@ -11,7 +11,7 @@ import { query, maybeOne } from '@/lib/db'
 import { createSession, deviceInfoFromHeaders } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { getClientIp } from '@/lib/auth-middleware'
-import { ipRateLimit } from '@/lib/rate-limit'
+import { ipRateLimit, keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -55,6 +55,18 @@ export async function POST(req: NextRequest) {
   // B#5: password mínima 8 caracteres (era 4, brute-forceable).
   if (!password || password.length < 8) {
     return NextResponse.json({ success: false, error: 'invalid_password' }, { status: 400 })
+  }
+
+  // Ronda 57 Bug#2: rate-limit adicional por email (además del IP). Sin esto,
+  // botnet distribuido con IPs rotativas puede brute-forcear un email admin
+  // sin disparar ipRateLimit. 10 intentos/hora por email es amplio para
+  // usuarios legítimos y bloquea brute-force distribuido.
+  const emailRl = keyedRateLimit(`admin-login:email:${email}`, { max: 10, windowMs: 60 * 60_000 })
+  if (!emailRl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited', message: 'Demasiados intentos para esta cuenta. Espera 1 hora.' },
+      { status: 429 },
+    )
   }
 
   const user = await maybeOne<UserRow>(

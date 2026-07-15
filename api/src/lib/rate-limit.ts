@@ -42,7 +42,16 @@ export function ipRateLimit(
   opts: { max: number; windowMs: number },
 ): { ok: boolean; remaining: number } {
   const ip = extractClientIp(req)
-  const bucketKey = `${key}:${ip}`
+  return keyedRateLimit(`${key}:${ip}`, opts)
+}
+
+// Ronda 57 Bug#2: rate-limit por key arbitraria (email/user_id) además del IP.
+// Un botnet distribuido puede rotar IPs para brute-forcear un email sin
+// disparar ipRateLimit → esto agrega el otro eje (bucket por email).
+export function keyedRateLimit(
+  bucketKey: string,
+  opts: { max: number; windowMs: number },
+): { ok: boolean; remaining: number } {
   const now = Date.now()
 
   if (++callsSincePurge >= PURGE_EVERY) {

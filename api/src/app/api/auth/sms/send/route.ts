@@ -73,14 +73,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, provider: 'test', status: 'pending' })
   }
 
-  // Cooldown 15 min
-  const rows = await query<{ last_sent_at: Date | null }>(
-    'SELECT last_sent_at FROM phone_verifications WHERE phone_key = $1',
-    [phoneKey],
+  // Cooldown 15 min — reserva atómica via INSERT ON CONFLICT DO UPDATE
+  // WHERE last_sent_at < now() - interval. Ronda 57 Bug#1: sin esta reserva
+  // atómica, dos requests concurrentes ambos leian last_sent_at antes de
+  // que ninguno actualizara → ambos pasaban check y ambos llamaban Twilio →
+  // múltiples SMS al mismo número, quemando saldo + spam al user.
+  const cooldownIntervalSec = Math.floor(SEND_COOLDOWN_MS / 1000)
+  const reserved = await query<{ reserved: boolean; last_sent_at: Date | null }>(
+    `INSERT INTO phone_verifications (phone_key, phone_number, last_sent_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (phone_key) DO UPDATE
+       SET last_sent_at = now(), phone_number = EXCLUDED.phone_number
+       WHERE phone_verifications.last_sent_at IS NULL
+          OR phone_verifications.last_sent_at < now() - ($3::int * interval '1 second')
+     RETURNING true AS reserved, last_sent_at`,
+    [phoneKey, phoneNumber, cooldownIntervalSec],
   )
-  const lastSentMs = rows[0]?.last_sent_at ? new Date(rows[0].last_sent_at).getTime() : 0
-  if (lastSentMs > 0 && Date.now() - lastSentMs < SEND_COOLDOWN_MS) {
-    const remainingMin = Math.ceil((SEND_COOLDOWN_MS - (Date.now() - lastSentMs)) / 60000)
+  if (reserved.length === 0) {
+    // No se pudo reservar → estamos dentro del cooldown; devolver 429
+    const existing = await query<{ last_sent_at: Date }>(
+      'SELECT last_sent_at FROM phone_verifications WHERE phone_key = $1',
+      [phoneKey],
+    )
+    const lastSentMs = existing[0]?.last_sent_at ? new Date(existing[0].last_sent_at).getTime() : Date.now()
+    const remainingMin = Math.max(1, Math.ceil((SEND_COOLDOWN_MS - (Date.now() - lastSentMs)) / 60000))
     return NextResponse.json(
       {
         success: false,
@@ -111,12 +127,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'sms_error', message: result.error }, { status: 500 })
   }
 
-  await query(
-    `INSERT INTO phone_verifications (phone_key, phone_number, last_sent_at)
-     VALUES ($1,$2,now())
-     ON CONFLICT (phone_key) DO UPDATE SET last_sent_at = now()`,
-    [phoneKey, phoneNumber],
-  )
-
+  // Reserva ya se hizo arriba con INSERT ON CONFLICT DO UPDATE — no necesitamos
+  // segundo UPDATE aquí (Ronda 57 fix).
   return NextResponse.json({ success: true, provider: 'sms', status: 'pending' })
 }
