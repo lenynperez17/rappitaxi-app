@@ -68,7 +68,10 @@ export async function POST(req: NextRequest) {
     const options = await generateRegistration({
       id: user.id,
       email: user.email,
-      displayName: user.display_name ?? user.full_name ?? user.email ?? user.id,
+      // Ronda 64: usar || (no ??) porque '' es común en BD y ?? solo cae
+      // con null/undefined. Sin esto, prompt nativo passkey mostraba cuenta
+      // sin nombre visible y gestores de credenciales rechazaban el registro.
+      displayName: user.display_name || user.full_name || user.email || user.id,
     });
     return NextResponse.json({ success: true, options }, { status: 200 });
   } catch (err) {
