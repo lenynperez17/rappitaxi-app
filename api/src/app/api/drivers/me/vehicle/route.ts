@@ -213,24 +213,30 @@ export async function PUT(req: NextRequest) {
       return { row: ins.rows[0]!, created: true, plateChanged: false }
     })
 
-    // Notificación in-app para el driver
-    await tx(async (client) => {
-      await client.query(
-        `INSERT INTO notifications (user_id, type, title, body, data)
-         VALUES ($1, $2, $3, $4, $5::jsonb)`,
-        [
-          driverId,
-          'vehicle_updated',
-          result.created ? 'Vehículo registrado' : 'Vehículo actualizado',
-          result.created
-            ? 'Tu vehículo fue registrado. Espera la verificación del equipo.'
-            : result.plateChanged
-              ? 'Cambiaste la placa; tu vehículo debe ser reverificado.'
-              : 'Datos de tu vehículo actualizados.',
-          JSON.stringify({ vehicleId: result.row.id, plate: result.row.plate }),
-        ],
-      )
-    })
+    // Ronda 54 Bug#1: notificación en try-catch silencioso. Si el INSERT falla
+    // el vehículo ya está guardado — devolver 500 haría al cliente reintentar
+    // el PUT y perder is_verified sin razón.
+    try {
+      await tx(async (client) => {
+        await client.query(
+          `INSERT INTO notifications (user_id, type, title, body, data)
+           VALUES ($1, $2, $3, $4, $5::jsonb)`,
+          [
+            driverId,
+            'vehicle_updated',
+            result.created ? 'Vehículo registrado' : 'Vehículo actualizado',
+            result.created
+              ? 'Tu vehículo fue registrado. Espera la verificación del equipo.'
+              : result.plateChanged
+                ? 'Cambiaste la placa; tu vehículo debe ser reverificado.'
+                : 'Datos de tu vehículo actualizados.',
+            JSON.stringify({ vehicleId: result.row.id, plate: result.row.plate }),
+          ],
+        )
+      })
+    } catch (notifErr) {
+      console.warn('[drivers/me/vehicle] notification insert failed (non-blocking):', notifErr)
+    }
 
     return NextResponse.json({
       success: true,

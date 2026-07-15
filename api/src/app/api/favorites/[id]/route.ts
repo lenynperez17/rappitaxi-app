@@ -91,8 +91,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     params.push(lng)
   }
   if (body.icon !== undefined) {
+    // Ronda 54 Bug#2: verificar typeof string antes de trim() para evitar
+    // TypeError → 500 si el cliente envía number/boolean/object.
     updates.push(`icon = $${idx++}`)
-    params.push(body.icon?.trim() || null)
+    params.push(typeof body.icon === 'string' ? (body.icon.trim() || null) : null)
   }
 
   if (updates.length === 0) {
