@@ -21,7 +21,7 @@ interface DriverRow {
   created_at: Date
   total_trips: string
   avg_rating: string | null
-  total: string
+  total?: string
 }
 
 export async function GET(req: NextRequest) {
@@ -31,8 +31,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = (searchParams.get('search') ?? '').trim().toLowerCase()
   const status = searchParams.get('status')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize') ?? '50')))
+  // Ronda 29: NaN-safe pagination
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '50')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = [
@@ -50,21 +53,28 @@ export async function GET(req: NextRequest) {
     where.push(`(LOWER(u.full_name) LIKE $${params.length} OR LOWER(u.email) LIKE $${params.length} OR u.phone LIKE $${params.length})`)
   }
 
+  const whereSql = where.join(' AND ')
+
+  // Ronda 29 Bug#1: total separado (COUNT(*) OVER daba 0 si rows vacío OOR)
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM users u WHERE ${whereSql}`,
+    params,
+  )
+  const total = Number(totalRes[0]?.total ?? 0)
+
+  const pagedParams = [...params, pageSize, offset]
   const rows = await query<DriverRow>(
     `SELECT u.id, u.full_name, u.email, u.phone, u.user_type, u.is_active,
             u.is_verified, u.profile_photo_url, u.suspended_at, u.created_at,
             (SELECT COUNT(*)::text FROM rides r WHERE r.driver_id = u.id AND r.status = 'completed') AS total_trips,
             (SELECT ROUND(AVG(rr.stars)::numeric, 2)::text
-               FROM ride_ratings rr WHERE rr.rated_user_id = u.id AND rr.role = 'driver') AS avg_rating,
-            COUNT(*) OVER() AS total
+               FROM ride_ratings rr WHERE rr.rated_user_id = u.id AND rr.role = 'driver') AS avg_rating
        FROM users u
-       WHERE ${where.join(' AND ')}
+       WHERE ${whereSql}
        ORDER BY u.created_at DESC
-       LIMIT ${pageSize} OFFSET ${offset}`,
-    params,
+       LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+    pagedParams,
   )
-
-  const total = rows.length ? Number(rows[0].total) : 0
   return NextResponse.json({
     success: true,
     drivers: rows.map((d) => ({

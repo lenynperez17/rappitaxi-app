@@ -26,7 +26,7 @@ interface RechargeRow {
   driver_name: string | null
   driver_phone: string | null
   driver_email: string | null
-  total: string
+  total?: string
 }
 
 export async function GET(req: NextRequest) {
@@ -39,8 +39,11 @@ export async function GET(req: NextRequest) {
   const method = searchParams.get('method')
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize') ?? '50')))
+  // Ronda 29: NaN-safe pagination + placeholders
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '50')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
@@ -48,22 +51,29 @@ export async function GET(req: NextRequest) {
   if (status) { params.push(status); where.push(`r.status = $${params.length}`) }
   if (driverId) { params.push(driverId); where.push(`r.driver_id = $${params.length}`) }
   if (method) { params.push(method); where.push(`r.method = $${params.length}`) }
-  if (fromDate) { params.push(fromDate); where.push(`r.created_at >= $${params.length}`) }
-  if (toDate) { params.push(toDate); where.push(`r.created_at <= $${params.length}`) }
+  if (fromDate) { params.push(fromDate); where.push(`r.created_at >= $${params.length}::date`) }
+  // Ronda 29 Bug#2: toDate como 'YYYY-MM-DD' se interpreta como 00:00:00 →
+  // excluye todo el día. Sumar 1 día para incluir hasta el fin del día.
+  if (toDate) { params.push(toDate); where.push(`r.created_at < ($${params.length}::date + interval '1 day')`) }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+  // Ronda 29 Bug#1: total con COUNT separado (COUNT(*) OVER daba 0 si rows vacío)
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM driver_recharges r ${whereSql}`,
+    params,
+  )
+  const total = Number(totalRes[0]?.total ?? 0)
+
+  const pagedParams = [...params, pageSize, offset]
   const rows = await query<RechargeRow>(
-    `SELECT r.*, u.full_name AS driver_name, u.phone AS driver_phone, u.email AS driver_email,
-            COUNT(*) OVER() AS total
+    `SELECT r.*, u.full_name AS driver_name, u.phone AS driver_phone, u.email AS driver_email
        FROM driver_recharges r
        LEFT JOIN users u ON u.id = r.driver_id
        ${whereSql}
        ORDER BY r.created_at DESC
-       LIMIT ${pageSize} OFFSET ${offset}`,
-    params,
+       LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+    pagedParams,
   )
-
-  const total = rows.length ? Number(rows[0].total) : 0
   return NextResponse.json({
     success: true,
     recharges: rows.map((r) => ({
