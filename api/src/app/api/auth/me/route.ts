@@ -164,11 +164,16 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 404 })
   }
 
+  // Ronda 16 MEDIUM#6: incluir displayName/birthDate/identityDocument en el
+  // response del PATCH — GET los devuelve, PATCH no lo hacía → el cliente
+  // Flutter que rehidrataba desde este response veía los campos como null
+  // inmediatamente después de guardarlos.
   return NextResponse.json({
     success: true,
     user: {
       id: updated.id,
       fullName: updated.full_name,
+      displayName: updated.display_name,
       email: updated.email,
       emailVerified: updated.email_verified,
       phone: updated.phone,
@@ -177,6 +182,8 @@ export async function PATCH(req: NextRequest) {
       profileComplete: updated.profile_complete,
       profilePhotoUrl: updated.profile_photo_url,
       authProvider: updated.auth_provider,
+      birthDate: updated.birth_date,
+      identityDocument: updated.identity_document,
       createdAt: updated.created_at,
     },
   })
