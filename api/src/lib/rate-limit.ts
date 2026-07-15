@@ -18,15 +18,30 @@ function purgeExpired(now: number): void {
   }
 }
 
+// Ronda 34 Bug#1: X-Real-IP tiene prioridad sobre X-Forwarded-For — nuestro
+// nginx lo setea con $remote_addr (IP real del socket TCP) y no puede ser
+// spoofeado desde el cliente. X-Forwarded-For sí es forjable si Next.js está
+// expuesto directamente (aunque nginx nos protege, defense-in-depth).
+// Fallback 'unknown' se conserva pero rate-limit externo (nginx) atrapa DoS.
+function extractClientIp(req: NextRequest): string {
+  const realIp = req.headers.get('x-real-ip')?.trim()
+  if (realIp && realIp.length > 0) return realIp
+  const xff = req.headers.get('x-forwarded-for')
+  if (xff) {
+    // Con XFF confiamos SOLO en la última IP (la que nuestro proxy agrega),
+    // no la primera (que el cliente puede haber forjado).
+    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean)
+    if (parts.length > 0) return parts[parts.length - 1]
+  }
+  return 'unknown'
+}
+
 export function ipRateLimit(
   req: NextRequest,
   key: string,
   opts: { max: number; windowMs: number },
 ): { ok: boolean; remaining: number } {
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'unknown'
+  const ip = extractClientIp(req)
   const bucketKey = `${key}:${ip}`
   const now = Date.now()
 

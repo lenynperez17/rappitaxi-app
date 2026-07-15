@@ -81,8 +81,11 @@ export function getPool(): Pool {
  */
 export const pool = new Proxy({} as Pool, {
   get(_target, prop) {
-    const real = getPool() as unknown as Record<string | symbol, unknown>;
-    const value = real[prop as string | symbol];
+    // Ronda 34 Bug#2: Reflect.get con receiver=real evita romper getters
+    // privados de pg.Pool (totalCount, idleCount usan #privateField). Con
+    // `real[prop]` el `this` era el proxy y throwaba TypeError.
+    const real = getPool();
+    const value = Reflect.get(real as object, prop, real);
     return typeof value === 'function' ? (value as Function).bind(real) : value;
   },
 }) as Pool;
