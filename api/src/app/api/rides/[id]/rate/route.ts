@@ -185,6 +185,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         { status: 409 },
       )
     }
+    // Ronda 75: mapear cannot_rate_self antes del fallback 500
+    if (knownCode === 'cannot_rate_self') {
+      return NextResponse.json(
+        { success: false, error: 'cannot_rate_self', message: (err as { message?: string }).message },
+        { status: 409 },
+      )
+    }
     console.error('[rides/rate] error:', err)
     return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 })
   }
