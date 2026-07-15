@@ -279,6 +279,10 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
+  // Ronda 55 Bug#2: incluir updated_at para que UI/cachés/ETags detecten
+  // el cambio. Sin esto, RETURNING devolvía el timestamp viejo tras PATCH.
+  sets.push(`updated_at = now()`)
+
   params.push(driverId)
 
   try {

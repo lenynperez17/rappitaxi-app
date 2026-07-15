@@ -38,11 +38,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message: 'Ya eres conductor', userType: user.user_type })
   }
 
-  // Verificar que todos los documentos requeridos están approved.
+  // Verificar que todos los documentos requeridos están approved Y VIGENTES.
+  // Ronda 55 Bug#1 SECURITY: sin AND (expires_at IS NULL OR expires_at > now()),
+  // documentos aprobados hace años con expires_at vencido pasaban el gate y el
+  // pasajero se convertía en dual con licencia/SOAT expirados — exactamente
+  // lo que este endpoint dice prevenir.
   const approvedRes = await query<{ doc_type: string }>(
     `SELECT doc_type FROM driver_documents
       WHERE driver_id = $1
         AND status = 'approved'
+        AND (expires_at IS NULL OR expires_at > now())
         AND doc_type = ANY($2::text[])`,
     [auth.userId, REQUIRED_DOC_TYPES],
   )
@@ -52,7 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: false,
       error: 'documents_missing_or_not_approved',
-      message: 'Un admin debe aprobar tus documentos antes de habilitar el modo conductor.',
+      message: 'Todos tus documentos deben estar aprobados y vigentes.',
       missing,
     }, { status: 403 })
   }
