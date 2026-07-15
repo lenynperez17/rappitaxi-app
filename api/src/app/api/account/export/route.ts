@@ -78,14 +78,27 @@ export async function GET(req: NextRequest) {
     [auth.userId],
   )
 
-  // Invoices (como customer)
+  // Invoices (como customer). Ronda 84: incluir voided_at para no exportar
+  // documentos anulados como evidencia fiscal válida.
   const invoices = await query(
     `SELECT id, series, correlative, document_type, customer_name,
             customer_doc, customer_doc_type, subtotal, igv, total, status,
-            issued_at
+            issued_at, voided_at,
+            metadata->>'voidReason' AS void_reason
        FROM invoices
        WHERE customer_id = $1
        ORDER BY issued_at DESC LIMIT 500`,
+    [auth.userId],
+  )
+  // Credit notes emitidas contra facturas del usuario (Ronda 84):
+  // el docstring GDPR/Art.20 prometia incluirlas y no lo hacía.
+  const creditNotes = await query(
+    `SELECT cn.id, cn.series, cn.correlative, cn.invoice_id,
+            cn.reason, cn.reason_notes, cn.amount, cn.status, cn.issued_at
+       FROM credit_notes cn
+       JOIN invoices i ON i.id = cn.invoice_id
+       WHERE i.customer_id = $1
+       ORDER BY cn.issued_at DESC LIMIT 500`,
     [auth.userId],
   )
 
@@ -175,6 +188,7 @@ export async function GET(req: NextRequest) {
     rides,
     walletTransactions: walletTx,
     invoices,
+    creditNotes,
     emergencies,
     emergencyContacts,
     favorites,
