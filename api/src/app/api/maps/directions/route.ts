@@ -99,10 +99,18 @@ async function fromOsrm(originLat: string, originLng: string, destLat: string, d
     durationSeconds: Math.round(route.duration),
     durationText: `${Math.round(route.duration / 60)} min`,
     polyline,
-    bounds: {
-      northeast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
-      southwest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
-    },
+    // Ronda 52 bonus: reduce en vez de Math.max/min(...spread). Spread sobre
+    // arrays >10k elementos (rutas largas con overview=full) tira RangeError
+    // por stack overflow → 502 aunque OSRM haya respondido OK.
+    bounds: (() => {
+      let neLat = -Infinity, neLng = -Infinity, swLat = Infinity, swLng = Infinity
+      for (let i = 0; i < lats.length; i++) {
+        const la = lats[i]!, ln = lngs[i]!
+        if (la > neLat) neLat = la; if (la < swLat) swLat = la
+        if (ln > neLng) neLng = ln; if (ln < swLng) swLng = ln
+      }
+      return { northeast: { lat: neLat, lng: neLng }, southwest: { lat: swLat, lng: swLng } }
+    })(),
     startAddress: null,
     endAddress: null,
   }

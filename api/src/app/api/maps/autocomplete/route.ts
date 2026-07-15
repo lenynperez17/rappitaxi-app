@@ -60,10 +60,11 @@ async function fromGoogle(q: string, key: string, session?: string, lat?: string
 // Nominatim en Perú rara vez tiene house_number mapeado, así que preservamos
 // el número que el usuario escribió y lo añadimos al mainText/description.
 function extractHouseNumber(query: string): string | null {
-  // Busca 1-6 dígitos como palabra completa (no dentro de otra palabra).
-  // Ejemplos: "Av Javier Prado 1068", "Jr Los Pinos 234-A", "Calle 5 #789".
-  const match = query.match(/(?:^|\s|#|nro\.?|no\.?|número|numero)\s*(\d{1,6})(?:[-A-Za-z]?)?/i)
-  return match ? match[1] : null
+  // Ronda 52 Bug#2: usar match global + tomar el ÚLTIMO número. Antes el
+  // regex tomaba el primer número, corrompiendo direcciones como "Av 28 de
+  // Julio 350" → capturaba "28" en vez de "350".
+  const matches = [...query.matchAll(/(?:^|\s|#|nro\.?|no\.?|número|numero)\s*(\d{1,6})(?:[-A-Za-z]?)?/gi)]
+  return matches.length > 0 ? matches[matches.length - 1]![1]! : null
 }
 
 async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Prediction[]> {
@@ -108,9 +109,16 @@ async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Pre
       main = road ?? p.address?.suburb ?? p.address?.city ?? p.display_name?.split(',')[0] ?? ''
     }
     // description: si el número no venía en display_name pero el usuario lo escribió, insertarlo.
+    // Ronda 52 Bug#1: solo reemplazar en el primer segmento (antes de la
+    // primera coma). Antes: "Los Pinos, Los Pinos Norte, Lima" reemplazaba
+    // el 1er match que a veces era el distrito → dirección corrupta.
     let description = p.display_name ?? ''
     if (userNumber && road && !description.includes(userNumber)) {
-      description = description.replace(road, `${road} ${userNumber}`)
+      const parts = description.split(',')
+      if (parts[0] && parts[0].includes(road)) {
+        parts[0] = parts[0].replace(road, `${road} ${userNumber}`)
+        description = parts.join(',')
+      }
     }
     const secondary = description.split(',').slice(1).join(',').trim()
     return {
