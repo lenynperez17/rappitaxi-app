@@ -150,6 +150,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ success: false, error: 'no_fields' }, { status: 400 })
   }
 
+  // Ronda 68: capturar profile_photo_url ANTES del UPDATE para poder
+  // borrar la foto vieja de storage si cambia. Sin esto, la foto anterior
+  // queda huérfana en disco + accesible via /api/media (admin bypass),
+  // rompiendo moderación cuando la razón del cambio era contenido inapropiado.
+  const oldPhoto = body.profilePhotoUrl !== undefined
+    ? await maybeOne<{ profile_photo_url: string | null }>(
+        `SELECT profile_photo_url FROM users WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      )
+    : null
+
   params.push(id)
   try {
     const user = await maybeOne<UserRow>(
@@ -159,6 +170,28 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       params,
     )
     if (!user) return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+
+    // Borrar la foto anterior si cambió (comparación null-safe)
+    if (oldPhoto?.profile_photo_url && oldPhoto.profile_photo_url !== body.profilePhotoUrl) {
+      const keyMatch = oldPhoto.profile_photo_url.match(/\/api\/media\/(.+)$/)
+      if (keyMatch) {
+        try {
+          const prevFile = await maybeOne<{ id: string; storage_key: string }>(
+            `SELECT id, storage_key FROM storage_files WHERE storage_key = $1 LIMIT 1`,
+            [keyMatch[1]],
+          )
+          if (prevFile) {
+            await query(`DELETE FROM storage_files WHERE id = $1`, [prevFile.id])
+            setImmediate(async () => {
+              try { await deleteFile(prevFile.storage_key) }
+              catch (e) { console.warn('[admin/users PATCH] no se pudo borrar foto vieja:', e) }
+            })
+          }
+        } catch (e) {
+          console.warn('[admin/users PATCH] cleanup foto vieja fallo:', e)
+        }
+      }
+    }
 
     await query(
       `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
