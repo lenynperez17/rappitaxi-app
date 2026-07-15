@@ -20,7 +20,7 @@
  */
 
 import { SignJWT, jwtVerify, decodeJwt, type JWTPayload } from 'jose';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 // --------------------------------------------------------------------------
 // Constantes públicas
@@ -155,6 +155,16 @@ export function hashRefreshToken(token: string): string {
  * Formato base64url(<ts>.<nonce>.<extra>.<ttlMs>.<hmacHex>).
  * Permite preservar pequeños metadatos (ej. `mode=json|deeplink`) sin DB.
  */
+// Ronda 35 Bug#2: encodeURIComponent NO codifica '.', ni '~', ni "'". Si el
+// caller pasa `extra` con puntos (redirect="app.rapi.team/x"), el split por
+// '.' explota. Escapamos '.' → '%2E' manualmente antes del join.
+function encodeStatePart(s: string): string {
+  return encodeURIComponent(s).replace(/\./g, '%2E');
+}
+function decodeStatePart(s: string): string {
+  return decodeURIComponent(s);
+}
+
 export function issueOauthState(
   extra: Record<string, string> = {},
   ttlMs = 10 * 60 * 1000
@@ -164,10 +174,12 @@ export function issueOauthState(
   const ts = Date.now().toString();
   const nonce = randomBytes(12).toString('hex');
   const extraStr = Object.entries(extra)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .map(([k, v]) => `${encodeStatePart(k)}=${encodeStatePart(v)}`)
     .join('&');
   const base = `${ts}.${nonce}.${extraStr}.${ttlMs}`;
-  const hmac = createHash('sha256').update(`${base}|${secret}`).digest('hex');
+  // Ronda 35 Bug#1: HMAC real, no SHA-256(base|secret) — este último es
+  // vulnerable a length-extension. HMAC-SHA256 es el estándar.
+  const hmac = createHmac('sha256', secret).update(base).digest('hex');
   return Buffer.from(`${base}.${hmac}`, 'utf8').toString('base64url');
 }
 
@@ -195,8 +207,17 @@ export function verifyOauthState(state: string): OauthStateCheck {
     string,
   ];
   const base = `${ts}.${nonce}.${extraStr}.${ttlMs}`;
-  const expected = createHash('sha256').update(`${base}|${secret}`).digest('hex');
-  if (expected !== hmac) return { ok: false, reason: 'bad_signature' };
+  const expected = createHmac('sha256', secret).update(base).digest('hex');
+  // Ronda 35: timingSafeEqual para evitar timing attacks
+  try {
+    const a = Buffer.from(expected, 'hex');
+    const b = Buffer.from(hmac, 'hex');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return { ok: false, reason: 'bad_signature' };
+    }
+  } catch {
+    return { ok: false, reason: 'bad_signature' };
+  }
   const issuedAt = Number(ts);
   const ttl = Number(ttlMs);
   if (!Number.isFinite(issuedAt) || !Number.isFinite(ttl)) {
@@ -208,7 +229,7 @@ export function verifyOauthState(state: string): OauthStateCheck {
     for (const pair of extraStr.split('&')) {
       if (!pair) continue;
       const [k, v = ''] = pair.split('=');
-      extra[decodeURIComponent(k!)] = decodeURIComponent(v);
+      extra[decodeStatePart(k!)] = decodeStatePart(v);
     }
   }
   void nonce; // silenciar lint: existe para hacer el state único
