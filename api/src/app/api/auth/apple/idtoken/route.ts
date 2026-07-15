@@ -77,15 +77,16 @@ export async function POST(req: NextRequest) {
     payload.email_verified === true || payload.email_verified === 'true'
   const fullName = body.fullName?.trim() || null
 
-  // Buscar por apple_uid siempre; por email SOLO si Apple verificó el email
-  // (B#10 — mismo patrón que Google). Private-relay emails suelen venir con
-  // email_verified=true, así que este check no rompe UX Apple normal.
+  // Ronda 36 CRITICAL B#1: cross-provider takeover. Igual que Google:
+  // matcheo por email solo si la fila no está reclamada por otro provider.
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users
            WHERE apple_uid = $1
-              OR (email IS NOT NULL AND LOWER(email) = $2)
+              OR (email IS NOT NULL AND LOWER(email) = $2
+                  AND apple_uid IS NULL AND google_uid IS NULL
+                  AND (auth_provider = 'apple' OR auth_provider IS NULL))
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users

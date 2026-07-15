@@ -73,15 +73,22 @@ export async function POST(req: NextRequest) {
   const fullName = payload.name ?? null
   const picture = payload.picture ?? null
 
-  // Buscar por google_uid siempre; por email SOLO si Google verificó ese email.
-  // Sin este check, un actor con Google Workspace y `email_verified=false`
-  // podría hijack de una cuenta existente creada por SMS/admin (B#1).
+  // Ronda 36 CRITICAL B#1: cross-provider takeover. El match por email debe
+  // condicionarse al MISMO proveedor (no cualquier user con ese email). Sin
+  // este filtro, un attacker con Google+mismo email podía tomar cuentas
+  // creadas via Apple, SMS o admin — el UPDATE asignaba su google_uid a la
+  // cuenta existente + JWT sobre user.id de la víctima → takeover completo.
+  // Match por email SOLO cuando (a) Google verificó el email Y (b) la fila
+  // existente NO tiene google_uid Y (c) fue creada via 'google' o el email
+  // no está reclamado por otro provider (email_verified de OTRO provider).
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
            WHERE google_uid = $1
-              OR (email IS NOT NULL AND LOWER(email) = $2)
+              OR (email IS NOT NULL AND LOWER(email) = $2
+                  AND google_uid IS NULL AND apple_uid IS NULL
+                  AND (auth_provider = 'google' OR auth_provider IS NULL))
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
