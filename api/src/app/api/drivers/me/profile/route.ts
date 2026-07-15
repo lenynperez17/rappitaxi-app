@@ -227,7 +227,16 @@ export async function PATCH(req: NextRequest) {
 
   let body: ProfileBody = {}
   try {
-    body = (await req.json()) as ProfileBody
+    const raw = await req.json()
+    // Ronda 69: JSON.parse acepta null/array/primitives como JSON válido.
+    // El for-loop posterior crasheaba con TypeError si body era null → 500.
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json(
+        { success: false, error: 'bad_body', message: 'Se esperaba un objeto JSON' },
+        { status: 400 },
+      )
+    }
+    body = raw as ProfileBody
   } catch {
     return NextResponse.json(
       { success: false, error: 'bad_json' },
