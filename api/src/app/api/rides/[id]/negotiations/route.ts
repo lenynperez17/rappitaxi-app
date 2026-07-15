@@ -151,6 +151,20 @@ export async function POST(
 
   try {
     const result = await tx(async (client) => {
+      // Ronda 25 Bug#1 TOCTOU: re-verificar status del ride bajo FOR UPDATE.
+      // Sin este re-check, request A leyó status='searching' en línea 145, B lo
+      // transicionó a accepted/cancelled entre eso y el tx, A insertaba una
+      // contraoferta pending sobre un ride ya cerrado (spam + mismatch precio).
+      const statusRes = await client.query<{ status: string; driver_id: string | null }>(
+        `SELECT status, driver_id FROM rides WHERE id = $1 FOR UPDATE`,
+        [rideId],
+      )
+      const current = statusRes.rows[0]
+      if (!current) throw { code: 'ride_not_found' }
+      if (!negotiableStatuses.has(current.status)) {
+        throw { code: 'ride_not_negotiable', message: `El viaje está en estado ${current.status}` }
+      }
+
       // Marcar propuestas previas del mismo user como superseded
       await client.query(
         `UPDATE ride_negotiations
@@ -168,6 +182,10 @@ export async function POST(
       )
       const negotiation = inserted.rows[0]!
 
+      // Ronda 25 Bug#2: notificación fan-out. Si counterpartyId existe (post-match)
+      // avisar directamente. Si es passenger en estado requested/searching sin
+      // driver asignado, avisar a drivers online cercanos (compatibilidad con el
+      // flujo de offers). Sin esto la contraoferta quedaba huerfana sin push.
       if (role.counterpartyId) {
         await client.query(
           `INSERT INTO notifications (user_id, type, title, body, data)
@@ -175,6 +193,30 @@ export async function POST(
           [
             role.counterpartyId,
             role.role === 'passenger' ? 'Nueva oferta del pasajero' : 'Contraoferta del conductor',
+            message ?? `Precio propuesto: S/ ${amount.toFixed(2)}`,
+            JSON.stringify({
+              rideId,
+              negotiationId: negotiation.id,
+              amount,
+              proposedBy: auth.userId,
+              proposedByRole: role.role,
+            }),
+          ],
+        )
+      } else if (role.role === 'passenger') {
+        // Fan-out a drivers online (mismos criterios que /rides/available filter).
+        await client.query(
+          `INSERT INTO notifications (user_id, type, title, body, data)
+           SELECT dp.driver_id, 'negotiation_new', $1, $2, $3::jsonb
+             FROM driver_presence dp
+             JOIN users u ON u.id = dp.driver_id
+            WHERE dp.is_online = true
+              AND dp.active_ride_id IS NULL
+              AND u.deleted_at IS NULL
+              AND (dp.last_heartbeat IS NULL OR dp.last_heartbeat > NOW() - INTERVAL '5 minutes')
+            LIMIT 30`,
+          [
+            'Nueva oferta del pasajero',
             message ?? `Precio propuesto: S/ ${amount.toFixed(2)}`,
             JSON.stringify({
               rideId,
