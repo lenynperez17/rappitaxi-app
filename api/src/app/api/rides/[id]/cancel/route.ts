@@ -18,6 +18,10 @@ interface RideCore {
   passenger_id: string | null
   driver_id: string | null
   status: string
+  accepted_at: Date | null
+  started_at: Date | null
+  final_fare: string | null
+  estimated_fare: string | null
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -46,7 +50,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     const result = await tx(async (client) => {
       const rideRes = await client.query<RideCore>(
-        'SELECT id, passenger_id, driver_id, status FROM rides WHERE id = $1 FOR UPDATE',
+        `SELECT id, passenger_id, driver_id, status, accepted_at, started_at,
+                final_fare::text, estimated_fare::text
+           FROM rides WHERE id = $1 FOR UPDATE`,
         [id],
       )
       const ride = rideRes.rows[0]
@@ -62,15 +68,80 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'forbidden' }
       }
 
+      // Ronda 20 HIGH#2: reglas de cancelación por estado + cancel fee.
+      //   - status='in_progress' → CERRAR el ride via /complete, no /cancel.
+      //     Passenger no puede cancelar un ride en curso sin cargo; obligamos
+      //     al driver a marcar complete con final_fare o al admin a intervenir.
+      //   - status='arrived' + passenger cancela → cancel_fee S/2 (driver estuvo
+      //     en el punto, gastó combustible). Admin puede eximir con reason='dispute'.
+      //   - status='accepted' o 'on_way' + passenger cancela > 2min desde accepted
+      //     → cancel_fee S/2 (compensación al driver por reserva).
+      //   - Driver cancela cualquier estado → sin fee (política empresa: el driver
+      //     se penaliza en su rating, no monetariamente).
+      const CANCEL_FEE = 2.00
+      let cancelFee = 0
+      if (isPassenger && !isAdmin) {
+        if (ride.status === 'in_progress') {
+          throw {
+            code: 'invalid_status',
+            message: 'No puedes cancelar un viaje en curso. Contacta al conductor o soporte.',
+          }
+        }
+        if (ride.status === 'arrived') {
+          cancelFee = CANCEL_FEE
+        } else if ((ride.status === 'accepted' || ride.status === 'on_way') && ride.accepted_at) {
+          const minsSinceAccept = (Date.now() - new Date(ride.accepted_at).getTime()) / 60_000
+          if (minsSinceAccept > 2) cancelFee = CANCEL_FEE
+        }
+      }
+      // In-progress rides solo cancelables por admin (o driver en emergencia)
+      if (ride.status === 'in_progress' && !isAdmin && !isDriver) {
+        throw { code: 'invalid_status', message: 'Solo el conductor o soporte pueden cerrar un viaje en curso.' }
+      }
+
       await client.query(
         `UPDATE rides
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancelled_reason = $2,
-                completed_at = now()
-          WHERE id = $3`,
-        [auth.userId, reason, id],
+                completed_at = now(),
+                final_fare = $3
+          WHERE id = $4`,
+        [auth.userId, reason, cancelFee > 0 ? cancelFee : null, id],
       )
+
+      // Aplicar cancel fee al passenger si corresponde (via wallet debit).
+      // Solo cobrable si el ride tenía wallet como payment method — para cash
+      // el driver debe cobrar en persona (documentado en notification).
+      if (cancelFee > 0 && ride.passenger_id) {
+        try {
+          const balRes = await client.query<{ balance: string }>(
+            'SELECT rapi_team_user_balance($1)::text AS balance',
+            [ride.passenger_id],
+          )
+          const balance = Number(balRes.rows[0]?.balance ?? 0)
+          if (balance >= cancelFee) {
+            await client.query(
+              `INSERT INTO wallet_transactions
+                 (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
+               VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, now())`,
+              [
+                ride.passenger_id,
+                -cancelFee,
+                Math.round((balance - cancelFee) * 100) / 100,
+                `Cancelación viaje ${id} (S/${cancelFee.toFixed(2)})`,
+                id,
+              ],
+            )
+          } else {
+            // Sin saldo: la fee queda como deuda pendiente (evita bloqueo total
+            // pero no cobrada — TODO: cobrar en la siguiente recarga).
+            console.warn(`[rides/cancel] fee ${cancelFee} > balance ${balance} para user ${ride.passenger_id}`)
+          }
+        } catch (e) {
+          console.warn('[rides/cancel] fee application failed:', e)
+        }
+      }
 
       // Liberar al driver: sin esto queda marcado como "ocupado" hasta que
       // corra el janitor del admin/live. Bloquea nuevas asignaciones del

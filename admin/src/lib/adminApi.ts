@@ -455,13 +455,15 @@ class AdminApi {
       try {
         data = JSON.parse(text)
       } catch {
-        // Respuesta no es JSON. Preservar el status para que el llamador pueda
-        // razonar sobre 401/500/etc, y devolver el body como mensaje truncado.
-        const preview = text.length > 200 ? text.slice(0, 200) + '…' : text
+        // Respuesta no es JSON. Ronda 20 MEDIUM#3: no incluir el body raw en el
+        // mensaje — si un componente lo renderiza con dangerouslySetInnerHTML
+        // (comun para "raw error preview"), un gateway comprometido puede
+        // inyectar <script> con acceso al localStorage (tokens). Solo el status
+        // + code genérico.
         throw new AdminApiError(
           r.status,
           r.ok ? 'invalid_json_response' : 'gateway_error',
-          `Respuesta no válida del servidor: ${preview}`,
+          `Respuesta no válida del servidor (HTTP ${r.status})`,
         )
       }
     }

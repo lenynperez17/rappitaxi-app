@@ -37,8 +37,19 @@ export async function GET(
   const { key: parts } = await ctx.params
   const storageKey = parts.join('/')
 
-  // Path traversal defense
-  if (storageKey.includes('..') || storageKey.startsWith('/')) {
+  // Path traversal defense — endurecido (Ronda 20 MEDIUM#1). El check anterior
+  // solo bloqueaba `..` literal, no URL-encoded (%2E%2E, %2e%2e), backslashes
+  // (Windows-style), NUL bytes, ni double-slash. Aunque Next.js normalmente
+  // decodifica antes de aquí, cualquier variante que sobreviva se combina con
+  // X-Accel-Redirect + normalización de nginx → riesgo de leer /etc/passwd.
+  // Whitelist mejor que blacklist: solo permitir alfanuméricos + guiones/dots/slash.
+  if (storageKey.length === 0 || storageKey.length > 512) {
+    return NextResponse.json({ error: 'invalid_key' }, { status: 400 })
+  }
+  if (!/^[A-Za-z0-9._\/-]+$/.test(storageKey)) {
+    return NextResponse.json({ error: 'invalid_key' }, { status: 400 })
+  }
+  if (storageKey.includes('..') || storageKey.startsWith('/') || storageKey.includes('//') || storageKey.startsWith('.')) {
     return NextResponse.json({ error: 'invalid_key' }, { status: 400 })
   }
 
