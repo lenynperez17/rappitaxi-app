@@ -129,7 +129,12 @@ export async function POST(
 
   let payload: { amount?: unknown; etaSeconds?: unknown; message?: unknown } = {}
   try {
-    payload = await req.json()
+    const raw = await req.json()
+    // Ronda 72: JSON válido null/array crasheaba en payload.amount → 500.
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json({ success: false, error: 'bad_body' }, { status: 400 })
+    }
+    payload = raw
   } catch {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
