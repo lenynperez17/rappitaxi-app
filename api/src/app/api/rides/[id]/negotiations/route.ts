@@ -249,6 +249,19 @@ export async function POST(
       { status: 201 },
     )
   } catch (err) {
+    // Ronda 73: mapear business errors del re-check TOCTOU antes del 500.
+    // Sin esto, "ride cerrado entre load y insert" salía como 500 y la UI
+    // no distinguía "refresca" vs "servidor caído" → reintentos infinitos.
+    const known = err as { code?: string; message?: string }
+    if (known?.code === 'ride_not_found') {
+      return NextResponse.json({ success: false, error: 'ride_not_found' }, { status: 404 })
+    }
+    if (known?.code === 'ride_not_negotiable') {
+      return NextResponse.json({
+        success: false, error: 'ride_not_negotiable',
+        message: known.message ?? 'El viaje ya no acepta contraofertas',
+      }, { status: 409 })
+    }
     console.error('[rides/negotiations] POST error:', err)
     return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 })
   }
