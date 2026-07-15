@@ -235,17 +235,20 @@ export async function POST(
         )
       }
 
-      return { id: row.id, createdAt: row.created_at }
+      return { id: row.id, createdAt: row.created_at, senderName }
     })
 
+    // Ronda 40 Bug#2: shape simetrica con GET (senderName + readAt=null)
     return NextResponse.json(
       {
         success: true,
         message: {
           id: result.id,
           senderId: auth.userId,
+          senderName: result.senderName,
           body,
           attachmentUrl,
+          readAt: null,
           createdAt: result.createdAt.toISOString(),
         },
       },

@@ -48,8 +48,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const onlyUnread = searchParams.get('onlyUnread') === '1'
+  // Ronda 40 Bug#1: clamp en vez de fallback silencioso. Antes ?limit=201
+   // → 50 sin señalar el ajuste; ahora clamp explícito al rango [1, 200].
   const limitRaw = Number(searchParams.get('limit') ?? 50)
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? Math.floor(limitRaw) : 50
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(Math.max(Math.floor(limitRaw), 1), 200)
+    : 50
 
   const filters: string[] = [`user_id = $1`]
   const params: unknown[] = [auth.userId]
