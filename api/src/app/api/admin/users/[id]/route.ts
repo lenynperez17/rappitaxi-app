@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne, tx, isUniqueViolation } from '@/lib/db'
+import { deleteFile } from '@/lib/storage'
 
 export const runtime = 'nodejs'
 
@@ -197,7 +198,31 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return NextResponse.json({ success: false, error: 'already_deleted' }, { status: 409 })
     }
 
+    // Ronda 16 MEDIUM#4: borrar físicamente los archivos PII del user
+    // (DNI frontal/reverso, antecedentes, licencia, SOAT). Sin esto, la
+    // fila users queda anonimizada pero los archivos siguen en /var/www/
+    // Rapi-Team-Storage/ + accesibles vía /api/media/[key] por cualquier
+    // admin. GDPR / LPDP-Perú "derecho al olvido" no se cumpliría.
+    const piiScopes = ['identity_front', 'identity_back', 'criminal_record', 'driver_license', 'soat']
+    const piiFiles = await query<{ id: string; storage_key: string }>(
+      `SELECT id, storage_key FROM storage_files WHERE user_id = $1 AND scope = ANY($2::text[])`,
+      [id, piiScopes],
+    )
+    for (const f of piiFiles) {
+      try { await deleteFile(f.storage_key) }
+      catch (e) { console.warn(`[admin/users DELETE] no se pudo borrar ${f.storage_key}:`, e) }
+    }
+
     await tx(async (client) => {
+      // Purgar registro de storage_files (los archivos físicos ya se intentó
+      // borrar arriba). Si algún deleteFile falló, el archivo huérfano queda
+      // en disco pero al menos el índice deja de referenciarlo.
+      if (piiFiles.length > 0) {
+        await client.query(
+          `DELETE FROM storage_files WHERE id = ANY($1::uuid[])`,
+          [piiFiles.map((f) => f.id)],
+        )
+      }
       // Soft delete + anonimización PII para liberar email/phone únicos
       await client.query(
         `UPDATE users SET
