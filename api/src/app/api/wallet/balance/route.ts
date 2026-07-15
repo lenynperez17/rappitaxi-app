@@ -32,10 +32,13 @@ export async function GET(req: NextRequest) {
     [auth.userId],
   )
 
+  // Excluir type='commission' del listado — es bucket contable interno
+  // (ver migración 019) y mostrarlo confunde al pasajero + expone ledger
+  // legal como evidencia en disputas.
   const txns = await query<Tx>(
     `SELECT id, type, amount::text, description, status, ride_id, external_ref, created_at
        FROM wallet_transactions
-       WHERE user_id = $1
+       WHERE user_id = $1 AND type != 'commission'
        ORDER BY created_at DESC
        LIMIT 30`,
     [auth.userId],

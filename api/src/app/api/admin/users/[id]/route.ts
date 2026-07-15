@@ -198,20 +198,20 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return NextResponse.json({ success: false, error: 'already_deleted' }, { status: 409 })
     }
 
-    // Ronda 16 MEDIUM#4: borrar físicamente los archivos PII del user
-    // (DNI frontal/reverso, antecedentes, licencia, SOAT). Sin esto, la
-    // fila users queda anonimizada pero los archivos siguen en /var/www/
-    // Rapi-Team-Storage/ + accesibles vía /api/media/[key] por cualquier
-    // admin. GDPR / LPDP-Perú "derecho al olvido" no se cumpliría.
-    const piiScopes = ['identity_front', 'identity_back', 'criminal_record', 'driver_license', 'soat']
-    const piiFiles = await query<{ id: string; storage_key: string }>(
-      `SELECT id, storage_key FROM storage_files WHERE user_id = $1 AND scope = ANY($2::text[])`,
-      [id, piiScopes],
+    // Borrar físicamente TODOS los archivos del user — no solo PII (Ronda 18
+    // MEDIUM#5). El array previo de piiScopes dejaba profile_photo, vehicle_*
+    // y chat_attachment servibles a admins vía /api/media/[...key] porque el
+    // isAdmin bypass ignora si el user fue eliminado. GDPR/LPDP "right to
+    // erasure" es todo-o-nada — un borrado parcial es un borrado incumplido.
+    const allFiles = await query<{ id: string; storage_key: string }>(
+      `SELECT id, storage_key FROM storage_files WHERE user_id = $1`,
+      [id],
     )
-    for (const f of piiFiles) {
+    for (const f of allFiles) {
       try { await deleteFile(f.storage_key) }
       catch (e) { console.warn(`[admin/users DELETE] no se pudo borrar ${f.storage_key}:`, e) }
     }
+    const piiFiles = allFiles
 
     await tx(async (client) => {
       // Purgar registro de storage_files (los archivos físicos ya se intentó

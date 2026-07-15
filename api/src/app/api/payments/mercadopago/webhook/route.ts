@@ -182,8 +182,19 @@ export async function POST(req: NextRequest) {
 
   try {
     if (newStatus === 'approved' && mpRow.status !== 'approved') {
-      // Aplicar el crédito en transacción — idempotente por unique en external_ref
+      // Aplicar el crédito en transacción con SELECT FOR UPDATE en mp_payments
+      // para serializar webhooks concurrentes. Sin este lock, dos POSTs simultáneos
+      // ambos ven status='pending', ambos entran a esta rama, ambos INSERT
+      // wallet_transactions con external_ref = payment.id → doble crédito.
+      // El isUniqueViolation catch de abajo NO ayudaba porque external_ref
+      // tiene índice no-único (004_domain.sql:66). Ronda 18 HIGH#1.
       await tx(async (client) => {
+        const locked = await client.query<{ status: string }>(
+          `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
+          [externalRef],
+        )
+        // Re-check bajo lock: si otro webhook ya lo aprobó, no dupliquemos.
+        if (locked.rows[0]?.status === 'approved') return
         await client.query(
           `UPDATE mp_payments
              SET mp_payment_id = $1, status = 'approved', raw = $2, updated_at = now()
@@ -204,7 +215,8 @@ export async function POST(req: NextRequest) {
             ],
           )
         } catch (e) {
-          // Si ya existe (webhook duplicado) — ignorar
+          // Con el FOR UPDATE lock la ruta duplicada ya no llega aquí, pero
+          // conservamos el catch por si alguna migración futura sí añade el UNIQUE.
           if (!isUniqueViolation(e)) throw e
         }
       })

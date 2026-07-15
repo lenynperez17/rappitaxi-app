@@ -65,12 +65,15 @@ export async function GET(req: NextRequest) {
     [auth.userId],
   )
 
-  // Wallet transactions
+  // Wallet transactions — excluir type='commission' (ver migración 019).
+  // Esas filas usan user_id como bucket contable, no representan transacción
+  // real del usuario. Incluirlas en el export GDPR/LPDP crea evidencia legal
+  // firmada donde el sistema declara "+ S/X por comisión de viaje" al pasajero.
   const walletTx = await query(
     `SELECT id, type, amount, description, status, ride_id, external_ref,
             balance_after, completed_at, created_at
        FROM wallet_transactions
-       WHERE user_id = $1
+       WHERE user_id = $1 AND type != 'commission'
        ORDER BY created_at DESC LIMIT 5000`,
     [auth.userId],
   )

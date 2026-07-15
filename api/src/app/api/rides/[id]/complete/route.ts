@@ -99,6 +99,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'invalid_status', message: `El viaje debe estar en curso (in_progress) para completarse. Estado actual: ${ride.status}` }
       }
 
+      // Aplicar descuento de vale si el passenger lo consumió con /vales/apply
+      // pre-viaje (Ronda 18 HIGH#3). Sin este SELECT + resta, el vale se marcaba
+      // "usado" pero el debit iba por el finalFare completo — el usuario perdía
+      // el uso del vale sin recibir descuento.
+      let valeDiscount = 0
+      try {
+        const valeRes = await client.query<{ total: string }>(
+          `SELECT COALESCE(SUM(discount_applied), 0)::text AS total
+             FROM vale_usages WHERE ride_id = $1`,
+          [id],
+        )
+        valeDiscount = Number(valeRes.rows[0]?.total ?? 0)
+      } catch (e) {
+        // Si la tabla no existe todavía en algún ambiente, continuar sin descuento.
+        console.warn('[rides/complete] vale_usages query failed:', e)
+      }
+      const adjustedFare = Math.max(0, Math.round((finalFare - valeDiscount) * 100) / 100)
+
       // Cap contra wallet-drain — 2 cotas:
       // 1) Si hay estimated_fare, cobrar más de 1.5× requiere disputa manual.
       // 2) Cap absoluto de S/ 750 SIEMPRE (incluso si estimated_fare es NULL).
@@ -162,15 +180,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           [updated.passenger_id],
         )
         const currentBalance = Number(balRes.rows[0]?.balance ?? 0)
-        if (currentBalance < finalFare) {
+        // Cobro real = finalFare - descuento_vale (Ronda 18 HIGH#3)
+        if (currentBalance < adjustedFare) {
           throw {
             code: 'insufficient_funds',
             message: 'Saldo insuficiente en wallet para completar el cobro',
             balance: currentBalance,
-            required: finalFare,
+            required: adjustedFare,
           }
         }
-        const newBalance = Math.round((currentBalance - finalFare) * 100) / 100
+        const newBalance = Math.round((currentBalance - adjustedFare) * 100) / 100
 
         // Comisión platform (Rapi Team) sobre finalFare. Configurable via
         // app_settings; default 20% (típico ride-hailing Perú).
@@ -178,10 +197,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           `SELECT value_num FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
         )
         const commissionRate = Number(commissionRateRes.rows[0]?.value_num ?? 0.20)
-        const commissionAmount = Math.round(finalFare * commissionRate * 100) / 100
-        const driverEarning = Math.round((finalFare - commissionAmount) * 100) / 100
+        // Comisión + driver earning se calculan sobre adjustedFare (post vale).
+        // El vale es descuento al pasajero absorbido por la plataforma, no por el driver.
+        const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100
+        const driverEarning = Math.round((adjustedFare - commissionAmount) * 100) / 100
 
-        // 1) DEBIT al passenger (dinero sale)
+        // 1) DEBIT al passenger (dinero sale) — sobre adjustedFare
         const debitRes = await client.query<WalletTxRow>(
           `INSERT INTO wallet_transactions
              (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
@@ -189,9 +210,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
            RETURNING id, amount::text, type, status, balance_after::text, created_at`,
           [
             updated.passenger_id,
-            -finalFare,
+            -adjustedFare,
             newBalance,
-            `Cobro por viaje ${id}`,
+            valeDiscount > 0
+              ? `Cobro viaje ${id} (descuento vale S/${valeDiscount.toFixed(2)})`
+              : `Cobro por viaje ${id}`,
             id,
           ],
         )
