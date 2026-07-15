@@ -68,20 +68,18 @@ export async function GET(
     )
   }
 
-  // ¿Es el propio driver?
-  const isSelf = requesterId === driverId
-
-  // Cargar datos del requester para saber si es admin
-  let isAdmin = false
-  if (!isSelf) {
-    const requester = await maybeOne<RequesterRow>(
-      'SELECT is_admin, user_type FROM users WHERE id = $1',
-      [requesterId],
-    )
-    if (requester && (requester.is_admin || requester.user_type === 'admin')) {
-      isAdmin = true
-    }
-  }
+  // Ronda 89: cargar user_type del requester SIEMPRE para validar que
+  // isSelf solo aplica si es realmente driver/dual. Sin esto, un passenger
+  // con el mismo UUID por edge case (merge de cuentas, seed corrupto)
+  // bypasseaba el chequeo de ride activo.
+  const requester = await maybeOne<RequesterRow>(
+    'SELECT is_admin, user_type FROM users WHERE id = $1',
+    [requesterId],
+  )
+  const isAdmin = !!requester && (requester.is_admin || requester.user_type === 'admin')
+  const isSelf = requesterId === driverId &&
+    !!requester &&
+    (requester.user_type === 'driver' || requester.user_type === 'dual')
 
   // Si no es él mismo ni admin, comprobar que sea passenger con un ride activo
   // con este driver.
