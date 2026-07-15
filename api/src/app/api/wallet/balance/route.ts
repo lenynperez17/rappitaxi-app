@@ -3,7 +3,9 @@
  * Auth: Bearer <access_token>
  *
  * Devuelve balance actual + últimas 30 transacciones.
- * Balance = SUM(amount) de wallet_transactions status='completed'.
+ * Balance = SUM(amount) de wallet_transactions con status IN ('completed','pending')
+ * Y type != 'commission' (ver migración 019). El pending está incluido para
+ * prevenir doble-gasto con withdrawals aprobables por admin (fix Ronda 15).
  * (Signo: recharge/bonus/refund > 0, debit/withdrawal < 0)
  */
 import { NextRequest, NextResponse } from 'next/server'
