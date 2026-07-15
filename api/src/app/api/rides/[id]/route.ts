@@ -190,6 +190,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
 
   if (body.paymentMethod !== undefined) {
+    // Ronda 78: typeof guard antes de .trim(). Cliente Flutter con dropdown
+    // no inicializado enviaba {paymentMethod: null} → TypeError → 500.
+    if (typeof body.paymentMethod !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'invalid_payment_method', message: 'paymentMethod debe ser string' },
+        { status: 400 },
+      )
+    }
     const pm = body.paymentMethod.trim()
     if (!ALLOWED_PAYMENT_METHODS.includes(pm)) {
       return NextResponse.json(
