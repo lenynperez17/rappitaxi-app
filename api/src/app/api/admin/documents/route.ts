@@ -30,7 +30,7 @@ interface DocumentRow {
   driver_full_name: string | null
   driver_email: string | null
   driver_phone: string | null
-  total_count: string
+  total_count?: string
 }
 
 const VALID_STATUS = new Set(['pending', 'approved', 'rejected', 'expired', 'all'])
@@ -45,8 +45,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_status' }, { status: 400 })
   }
   const driverIdFilter = searchParams.get('driverId')?.trim() || null
-  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize') ?? 50)))
-  const page = Math.max(1, Number(searchParams.get('page') ?? 1))
+  // Ronda 28: NaN-safe pagination
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? 50)
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 50
+  const pageRaw = Number(searchParams.get('page') ?? 1)
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
   const offset = (page - 1) * pageSize
 
   const clauses: string[] = []
@@ -61,26 +64,29 @@ export async function GET(req: NextRequest) {
   }
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
 
-  params.push(pageSize)
-  params.push(offset)
+  // Ronda 28 Bug#2: SELECT COUNT(*) separado. COUNT(*) OVER() reportaba 0
+  // cuando la página estaba fuera de rango (rows vacío) → UI paginación rota.
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM driver_documents d ${where}`,
+    params,
+  )
+  const total = Number(totalRes[0]?.total ?? 0)
 
+  const pagedParams = [...params, pageSize, offset]
   const rows = await query<DocumentRow>(
     `SELECT d.id, d.driver_id, d.doc_type, d.file_url, d.status,
             d.rejection_reason, d.reviewed_by, d.reviewed_at, d.expires_at,
             d.metadata, d.created_at, d.updated_at,
             u.full_name AS driver_full_name,
             u.email AS driver_email,
-            u.phone AS driver_phone,
-            COUNT(*) OVER()::text AS total_count
+            u.phone AS driver_phone
        FROM driver_documents d
        JOIN users u ON u.id = d.driver_id
        ${where}
        ORDER BY d.created_at DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params,
+       LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+    pagedParams,
   )
-
-  const total = rows[0] ? Number(rows[0].total_count) : 0
 
   return NextResponse.json({
     success: true,

@@ -23,7 +23,6 @@ interface EmRow {
   created_at: Date
   user_name: string | null
   user_phone: string | null
-  total: string
 }
 
 export async function GET(req: NextRequest) {
@@ -33,8 +32,11 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
   const type = searchParams.get('type')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize') ?? '100')))
+  // Ronda 28 Bug#1: pagination NaN-safe + placeholders parametrizados
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '100')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 100
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
@@ -43,18 +45,26 @@ export async function GET(req: NextRequest) {
   if (type) { params.push(type); where.push(`e.type = $${params.length}`) }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+  // Ronda 28 Bug#2: total lo obtenemos con SELECT COUNT(*) separado — el
+  // COUNT(*) OVER() reportaba 0 cuando la página estaba fuera de rango
+  // (rows.length===0), ocultando al frontend que sí hay datos.
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM emergencies e ${whereSql}`,
+    params,
+  )
+  const total = Number(totalRes[0]?.total ?? 0)
+
+  const pagedParams = [...params, pageSize, offset]
+  const limitIdx = pagedParams.length - 1
   const rows = await query<EmRow>(
-    `SELECT e.*, u.full_name AS user_name, u.phone AS user_phone,
-            COUNT(*) OVER() AS total
+    `SELECT e.*, u.full_name AS user_name, u.phone AS user_phone
        FROM emergencies e
        LEFT JOIN users u ON u.id = e.user_id
        ${whereSql}
        ORDER BY e.created_at DESC
-       LIMIT ${pageSize} OFFSET ${offset}`,
-    params,
+       LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`,
+    pagedParams,
   )
-
-  const total = rows.length ? Number(rows[0].total) : 0
   return NextResponse.json({
     success: true,
     emergencies: rows.map((e) => ({
