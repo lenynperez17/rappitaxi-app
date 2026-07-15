@@ -97,7 +97,10 @@ export async function POST(req: NextRequest) {
       )
 
       // Check idempotency: si ya existe withdrawal con este key para este
-      // driver, retornarlo sin crear nuevo.
+      // driver, retornarlo — PERO validar coincidencia de payload primero.
+      // Ronda 81: sin este check, un attacker con key capturado podía POST
+      // con bankAccountId/amount distintos y recibir el withdrawal viejo
+      // como si fuera nuevo (violación contract idempotencia RFC).
       if (idempotencyKey) {
         const existing = await client.query<WithdrawalRow>(
           `SELECT id, bank_account_id, amount, fee, net_amount, status, external_ref,
@@ -106,7 +109,17 @@ export async function POST(req: NextRequest) {
             WHERE driver_id = $1 AND idempotency_key = $2 LIMIT 1`,
           [auth.userId, idempotencyKey],
         )
-        if (existing.rows[0]) return existing.rows[0]
+        if (existing.rows[0]) {
+          const row = existing.rows[0]
+          if (row.bank_account_id !== bankAccountId || Math.abs(Number(row.amount) - amount) > 0.001) {
+            throw {
+              code: 'idempotency_key_conflict',
+              status: 409,
+              message: 'La misma idempotency-key ya se usó con parámetros distintos.',
+            }
+          }
+          return row
+        }
       }
 
       // Verificar que la cuenta bancaria pertenece al driver
