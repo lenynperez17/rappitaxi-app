@@ -13,8 +13,12 @@ import '../utils/error_messages.dart';
 /// interfaz pública que ya usan las pantallas.
 
 class PreferencesProvider extends ChangeNotifier {
-  late SharedPreferences _prefs;
-  
+  // Nullable: si SharedPreferences.getInstance() falla en init (xml corrupto,
+  // disco lleno, restricciones Android 14 storage), _prefs queda null y los
+  // setters se convierten en no-ops en vez de crashear con LateInitializationError
+  // en cualquier tap trivial de la UI (auditor Ronda 16 MEDIUM#5).
+  SharedPreferences? _prefs;
+
   // Estado de inicialización
   bool _isInitialized = false;
   bool _isLoading = false;
@@ -137,47 +141,47 @@ class PreferencesProvider extends ChangeNotifier {
   Future<void> loadPreferences() async {
     try {
       // Preferencias generales
-      _notificationsEnabled = _prefs.getBool('notifications_enabled') ?? true;
-      _locationServices = _prefs.getBool('location_services') ?? true;
-      _darkMode = _prefs.getBool('dark_mode') ?? false;
-      _language = _prefs.getString('language') ?? 'es';
-      _currency = _prefs.getString('currency') ?? 'PEN';
+      _notificationsEnabled = _prefs?.getBool('notifications_enabled') ?? true;
+      _locationServices = _prefs?.getBool('location_services') ?? true;
+      _darkMode = _prefs?.getBool('dark_mode') ?? false;
+      _language = _prefs?.getString('language') ?? 'es';
+      _currency = _prefs?.getString('currency') ?? 'PEN';
       
       // Preferencias de privacidad
-      _shareLocation = _prefs.getBool('share_location') ?? true;
-      _shareTrips = _prefs.getBool('share_trips') ?? false;
-      _analytics = _prefs.getBool('analytics') ?? true;
-      _crashReports = _prefs.getBool('crash_reports') ?? true;
+      _shareLocation = _prefs?.getBool('share_location') ?? true;
+      _shareTrips = _prefs?.getBool('share_trips') ?? false;
+      _analytics = _prefs?.getBool('analytics') ?? true;
+      _crashReports = _prefs?.getBool('crash_reports') ?? true;
       
       // Preferencias de notificaciones
-      _pushNotifications = _prefs.getBool('push_notifications') ?? true;
-      _emailNotifications = _prefs.getBool('email_notifications') ?? true;
-      _smsNotifications = _prefs.getBool('sms_notifications') ?? false;
-      _tripUpdates = _prefs.getBool('trip_updates') ?? true;
-      _promotions = _prefs.getBool('promotions') ?? true;
-      _newsUpdates = _prefs.getBool('news_updates') ?? false;
+      _pushNotifications = _prefs?.getBool('push_notifications') ?? true;
+      _emailNotifications = _prefs?.getBool('email_notifications') ?? true;
+      _smsNotifications = _prefs?.getBool('sms_notifications') ?? false;
+      _tripUpdates = _prefs?.getBool('trip_updates') ?? true;
+      _promotions = _prefs?.getBool('promotions') ?? true;
+      _newsUpdates = _prefs?.getBool('news_updates') ?? false;
       
       // Preferencias de seguridad
-      _biometricAuth = _prefs.getBool('biometric_auth') ?? false;
-      _twoFactorAuth = _prefs.getBool('two_factor_auth') ?? false;
-      _autoLockTime = _prefs.getInt('auto_lock_time') ?? 5;
+      _biometricAuth = _prefs?.getBool('biometric_auth') ?? false;
+      _twoFactorAuth = _prefs?.getBool('two_factor_auth') ?? false;
+      _autoLockTime = _prefs?.getInt('auto_lock_time') ?? 5;
       
       // Preferencias de la app
-      _autoUpdate = _prefs.getBool('auto_update') ?? true;
-      _offlineMaps = _prefs.getBool('offline_maps') ?? false;
-      _mapStyle = _prefs.getString('map_style') ?? 'standard';
-      _soundEffects = _prefs.getBool('sound_effects') ?? true;
-      _hapticFeedback = _prefs.getBool('haptic_feedback') ?? true;
+      _autoUpdate = _prefs?.getBool('auto_update') ?? true;
+      _offlineMaps = _prefs?.getBool('offline_maps') ?? false;
+      _mapStyle = _prefs?.getString('map_style') ?? 'standard';
+      _soundEffects = _prefs?.getBool('sound_effects') ?? true;
+      _hapticFeedback = _prefs?.getBool('haptic_feedback') ?? true;
       
       // Preferencias de datos
-      _syncOnWiFiOnly = _prefs.getBool('sync_on_wifi_only') ?? false;
-      _compressImages = _prefs.getBool('compress_images') ?? true;
-      _cacheSize = _prefs.getString('cache_size') ?? '150 MB';
+      _syncOnWiFiOnly = _prefs?.getBool('sync_on_wifi_only') ?? false;
+      _compressImages = _prefs?.getBool('compress_images') ?? true;
+      _cacheSize = _prefs?.getString('cache_size') ?? '150 MB';
       
       // Preferencias de conductor
-      _autoAcceptRides = _prefs.getBool('auto_accept_rides') ?? false;
-      _searchRadius = _prefs.getInt('search_radius') ?? 5000;
-      _saveHistory = _prefs.getBool('save_history') ?? true;
+      _autoAcceptRides = _prefs?.getBool('auto_accept_rides') ?? false;
+      _searchRadius = _prefs?.getInt('search_radius') ?? 5000;
+      _saveHistory = _prefs?.getBool('save_history') ?? true;
       
       debugPrint('📱 Preferencias cargadas desde SharedPreferences');
     } catch (e) {
@@ -219,47 +223,47 @@ class PreferencesProvider extends ChangeNotifier {
   Future<void> _saveAllToPrefs() async {
     try {
       // Preferencias generales
-      await _prefs.setBool('notifications_enabled', _notificationsEnabled);
-      await _prefs.setBool('location_services', _locationServices);
-      await _prefs.setBool('dark_mode', _darkMode);
-      await _prefs.setString('language', _language);
-      await _prefs.setString('currency', _currency);
+      await _prefs?.setBool('notifications_enabled', _notificationsEnabled);
+      await _prefs?.setBool('location_services', _locationServices);
+      await _prefs?.setBool('dark_mode', _darkMode);
+      await _prefs?.setString('language', _language);
+      await _prefs?.setString('currency', _currency);
       
       // Preferencias de privacidad
-      await _prefs.setBool('share_location', _shareLocation);
-      await _prefs.setBool('share_trips', _shareTrips);
-      await _prefs.setBool('analytics', _analytics);
-      await _prefs.setBool('crash_reports', _crashReports);
+      await _prefs?.setBool('share_location', _shareLocation);
+      await _prefs?.setBool('share_trips', _shareTrips);
+      await _prefs?.setBool('analytics', _analytics);
+      await _prefs?.setBool('crash_reports', _crashReports);
       
       // Preferencias de notificaciones
-      await _prefs.setBool('push_notifications', _pushNotifications);
-      await _prefs.setBool('email_notifications', _emailNotifications);
-      await _prefs.setBool('sms_notifications', _smsNotifications);
-      await _prefs.setBool('trip_updates', _tripUpdates);
-      await _prefs.setBool('promotions', _promotions);
-      await _prefs.setBool('news_updates', _newsUpdates);
+      await _prefs?.setBool('push_notifications', _pushNotifications);
+      await _prefs?.setBool('email_notifications', _emailNotifications);
+      await _prefs?.setBool('sms_notifications', _smsNotifications);
+      await _prefs?.setBool('trip_updates', _tripUpdates);
+      await _prefs?.setBool('promotions', _promotions);
+      await _prefs?.setBool('news_updates', _newsUpdates);
       
       // Preferencias de seguridad
-      await _prefs.setBool('biometric_auth', _biometricAuth);
-      await _prefs.setBool('two_factor_auth', _twoFactorAuth);
-      await _prefs.setInt('auto_lock_time', _autoLockTime);
+      await _prefs?.setBool('biometric_auth', _biometricAuth);
+      await _prefs?.setBool('two_factor_auth', _twoFactorAuth);
+      await _prefs?.setInt('auto_lock_time', _autoLockTime);
       
       // Preferencias de la app
-      await _prefs.setBool('auto_update', _autoUpdate);
-      await _prefs.setBool('offline_maps', _offlineMaps);
-      await _prefs.setString('map_style', _mapStyle);
-      await _prefs.setBool('sound_effects', _soundEffects);
-      await _prefs.setBool('haptic_feedback', _hapticFeedback);
+      await _prefs?.setBool('auto_update', _autoUpdate);
+      await _prefs?.setBool('offline_maps', _offlineMaps);
+      await _prefs?.setString('map_style', _mapStyle);
+      await _prefs?.setBool('sound_effects', _soundEffects);
+      await _prefs?.setBool('haptic_feedback', _hapticFeedback);
       
       // Preferencias de datos
-      await _prefs.setBool('sync_on_wifi_only', _syncOnWiFiOnly);
-      await _prefs.setBool('compress_images', _compressImages);
-      await _prefs.setString('cache_size', _cacheSize);
+      await _prefs?.setBool('sync_on_wifi_only', _syncOnWiFiOnly);
+      await _prefs?.setBool('compress_images', _compressImages);
+      await _prefs?.setString('cache_size', _cacheSize);
       
       // Preferencias de conductor
-      await _prefs.setBool('auto_accept_rides', _autoAcceptRides);
-      await _prefs.setInt('search_radius', _searchRadius);
-      await _prefs.setBool('save_history', _saveHistory);
+      await _prefs?.setBool('auto_accept_rides', _autoAcceptRides);
+      await _prefs?.setInt('search_radius', _searchRadius);
+      await _prefs?.setBool('save_history', _saveHistory);
       
       debugPrint('💾 Preferencias guardadas en SharedPreferences');
     } catch (e) {
@@ -271,13 +275,13 @@ class PreferencesProvider extends ChangeNotifier {
   
   Future<void> setNotificationsEnabled(bool value) async {
     _notificationsEnabled = value;
-    await _prefs.setBool('notifications_enabled', value);
+    await _prefs?.setBool('notifications_enabled', value);
     notifyListeners();
   }
   
   Future<void> setLocationServices(bool value) async {
     _locationServices = value;
-    await _prefs.setBool('location_services', value);
+    await _prefs?.setBool('location_services', value);
     notifyListeners();
   }
 
@@ -285,7 +289,7 @@ class PreferencesProvider extends ChangeNotifier {
     AppLogger.debug('🌙 DEBUG: setDarkMode llamado con value=$value');
     _darkMode = value;
     AppLogger.debug('🌙 DEBUG: _darkMode actualizado a $_darkMode');
-    await _prefs.setBool('dark_mode', value);
+    await _prefs?.setBool('dark_mode', value);
     AppLogger.debug('🌙 DEBUG: SharedPreferences guardado');
     notifyListeners();
     AppLogger.debug('🌙 DEBUG: notifyListeners() ejecutado');
@@ -293,13 +297,13 @@ class PreferencesProvider extends ChangeNotifier {
 
   Future<void> setLanguage(String value) async {
     _language = value;
-    await _prefs.setString('language', value);
+    await _prefs?.setString('language', value);
     notifyListeners();
   }
 
   Future<void> setCurrency(String value) async {
     _currency = value;
-    await _prefs.setString('currency', value);
+    await _prefs?.setString('currency', value);
     notifyListeners();
   }
   
@@ -307,25 +311,25 @@ class PreferencesProvider extends ChangeNotifier {
 
   Future<void> setShareLocation(bool value) async {
     _shareLocation = value;
-    await _prefs.setBool('share_location', value);
+    await _prefs?.setBool('share_location', value);
     notifyListeners();
   }
   
   Future<void> setShareTrips(bool value) async {
     _shareTrips = value;
-    await _prefs.setBool('share_trips', value);
+    await _prefs?.setBool('share_trips', value);
     notifyListeners();
   }
   
   Future<void> setAnalytics(bool value) async {
     _analytics = value;
-    await _prefs.setBool('analytics', value);
+    await _prefs?.setBool('analytics', value);
     notifyListeners();
   }
   
   Future<void> setCrashReports(bool value) async {
     _crashReports = value;
-    await _prefs.setBool('crash_reports', value);
+    await _prefs?.setBool('crash_reports', value);
     notifyListeners();
   }
   
@@ -333,37 +337,37 @@ class PreferencesProvider extends ChangeNotifier {
   
   Future<void> setPushNotifications(bool value) async {
     _pushNotifications = value;
-    await _prefs.setBool('push_notifications', value);
+    await _prefs?.setBool('push_notifications', value);
     notifyListeners();
   }
   
   Future<void> setEmailNotifications(bool value) async {
     _emailNotifications = value;
-    await _prefs.setBool('email_notifications', value);
+    await _prefs?.setBool('email_notifications', value);
     notifyListeners();
   }
   
   Future<void> setSmsNotifications(bool value) async {
     _smsNotifications = value;
-    await _prefs.setBool('sms_notifications', value);
+    await _prefs?.setBool('sms_notifications', value);
     notifyListeners();
   }
   
   Future<void> setTripUpdates(bool value) async {
     _tripUpdates = value;
-    await _prefs.setBool('trip_updates', value);
+    await _prefs?.setBool('trip_updates', value);
     notifyListeners();
   }
   
   Future<void> setPromotions(bool value) async {
     _promotions = value;
-    await _prefs.setBool('promotions', value);
+    await _prefs?.setBool('promotions', value);
     notifyListeners();
   }
   
   Future<void> setNewsUpdates(bool value) async {
     _newsUpdates = value;
-    await _prefs.setBool('news_updates', value);
+    await _prefs?.setBool('news_updates', value);
     notifyListeners();
   }
   
@@ -371,19 +375,19 @@ class PreferencesProvider extends ChangeNotifier {
   
   Future<void> setBiometricAuth(bool value) async {
     _biometricAuth = value;
-    await _prefs.setBool('biometric_auth', value);
+    await _prefs?.setBool('biometric_auth', value);
     notifyListeners();
   }
   
   Future<void> setTwoFactorAuth(bool value) async {
     _twoFactorAuth = value;
-    await _prefs.setBool('two_factor_auth', value);
+    await _prefs?.setBool('two_factor_auth', value);
     notifyListeners();
   }
   
   Future<void> setAutoLockTime(int value) async {
     _autoLockTime = value;
-    await _prefs.setInt('auto_lock_time', value);
+    await _prefs?.setInt('auto_lock_time', value);
     notifyListeners();
   }
   
@@ -391,31 +395,31 @@ class PreferencesProvider extends ChangeNotifier {
   
   Future<void> setAutoUpdate(bool value) async {
     _autoUpdate = value;
-    await _prefs.setBool('auto_update', value);
+    await _prefs?.setBool('auto_update', value);
     notifyListeners();
   }
   
   Future<void> setOfflineMaps(bool value) async {
     _offlineMaps = value;
-    await _prefs.setBool('offline_maps', value);
+    await _prefs?.setBool('offline_maps', value);
     notifyListeners();
   }
   
   Future<void> setMapStyle(String value) async {
     _mapStyle = value;
-    await _prefs.setString('map_style', value);
+    await _prefs?.setString('map_style', value);
     notifyListeners();
   }
   
   Future<void> setSoundEffects(bool value) async {
     _soundEffects = value;
-    await _prefs.setBool('sound_effects', value);
+    await _prefs?.setBool('sound_effects', value);
     notifyListeners();
   }
   
   Future<void> setHapticFeedback(bool value) async {
     _hapticFeedback = value;
-    await _prefs.setBool('haptic_feedback', value);
+    await _prefs?.setBool('haptic_feedback', value);
     notifyListeners();
   }
   
@@ -423,19 +427,19 @@ class PreferencesProvider extends ChangeNotifier {
   
   Future<void> setSyncOnWiFiOnly(bool value) async {
     _syncOnWiFiOnly = value;
-    await _prefs.setBool('sync_on_wifi_only', value);
+    await _prefs?.setBool('sync_on_wifi_only', value);
     notifyListeners();
   }
   
   Future<void> setCompressImages(bool value) async {
     _compressImages = value;
-    await _prefs.setBool('compress_images', value);
+    await _prefs?.setBool('compress_images', value);
     notifyListeners();
   }
   
   Future<void> setCacheSize(String value) async {
     _cacheSize = value;
-    await _prefs.setString('cache_size', value);
+    await _prefs?.setString('cache_size', value);
     notifyListeners();
   }
   
@@ -443,19 +447,19 @@ class PreferencesProvider extends ChangeNotifier {
 
   Future<void> setAutoAcceptRides(bool value) async {
     _autoAcceptRides = value;
-    await _prefs.setBool('auto_accept_rides', value);
+    await _prefs?.setBool('auto_accept_rides', value);
     notifyListeners();
   }
 
   Future<void> setSearchRadius(int value) async {
     _searchRadius = value;
-    await _prefs.setInt('search_radius', value);
+    await _prefs?.setInt('search_radius', value);
     notifyListeners();
   }
 
   Future<void> setSaveHistory(bool value) async {
     _saveHistory = value;
-    await _prefs.setBool('save_history', value);
+    await _prefs?.setBool('save_history', value);
     notifyListeners();
   }
 
@@ -516,7 +520,7 @@ class PreferencesProvider extends ChangeNotifier {
   /// Limpiar todas las preferencias
   Future<void> clearAll() async {
     try {
-      await _prefs.clear();
+      await _prefs?.clear();
       await resetToDefaults();
       debugPrint('🗑️ Todas las preferencias limpiadas');
     } catch (e) {
@@ -545,7 +549,7 @@ class PreferencesProvider extends ChangeNotifier {
     try {
       // En una implementación real, aquí limpiarías el caché
       _cacheSize = '0 MB';
-      await _prefs.setString('cache_size', _cacheSize);
+      await _prefs?.setString('cache_size', _cacheSize);
       debugPrint('🧹 Caché limpiado');
       notifyListeners();
     } catch (e) {
