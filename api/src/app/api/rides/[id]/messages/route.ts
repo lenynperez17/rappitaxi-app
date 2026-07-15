@@ -148,10 +148,24 @@ export async function POST(
     typeof payload.body === 'string' && payload.body.trim().length > 0
       ? payload.body.trim().slice(0, 4000)
       : null
-  const attachmentUrl =
+  // Ronda 22 MEDIUM#2: validar scheme del attachmentUrl. Sin esto se aceptaba
+  // javascript:, data:text/html, file:///etc/passwd — el cliente contraparte
+  // renderizaba en <a href> o <img src> con potencial XSS/SSRF/phishing.
+  // Whitelist: https:// (URLs remotas) o /api/media/ (uploads propios).
+  const rawAttachment =
     typeof payload.attachmentUrl === 'string' && payload.attachmentUrl.trim().length > 0
       ? payload.attachmentUrl.trim().slice(0, 2048)
       : null
+  const attachmentUrl = rawAttachment && (
+    rawAttachment.startsWith('https://') ||
+    rawAttachment.startsWith('/api/media/')
+  ) ? rawAttachment : null
+  if (rawAttachment && !attachmentUrl) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_attachment_url', message: 'attachmentUrl debe ser https:// o /api/media/' },
+      { status: 400 },
+    )
+  }
 
   if (!body && !attachmentUrl) {
     return NextResponse.json(

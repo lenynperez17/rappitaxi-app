@@ -250,9 +250,28 @@ export async function refreshSession(
       throw new InvalidRefreshError('invalid_refresh', 'unknown refresh');
     }
 
-    // 2. Sesión revocada → reuse detection. Revocar TODAS las del user
-    //    Y COMMIT antes de tirar para que la revocación masiva persista.
+    // 2. Sesión revocada — dos escenarios muy distintos:
+    //   (a) Retry legítimo del cliente: perdió red tras enviar el refresh, el
+    //       servidor ya rotó (revoked_at reciente + replaced_by_session_id set),
+    //       cliente reintenta. NO es ataque — solo un retry benigno con la misma
+    //       ventana de red. Devolver invalid_refresh sin revocar todas: el cliente
+    //       ya no tiene el token válido (single-flight en Flutter lo protege),
+    //       simplemente pide login. Ronda 22 HIGH#1.
+    //   (b) Reuse REAL después de la ventana: token robado y usado por atacante
+    //       horas después. Sigue revocando todas las sesiones defensivamente.
+    // Ventana idempotente: 30s desde el revoke Y el revoke fue por rotación
+    // (replaced_by_session_id set). Si ambas condiciones, es retry benigno.
     if (row.revoked_at) {
+      const revokedAgeMs = Date.now() - new Date(row.revoked_at).getTime();
+      const isBenignRetry = revokedAgeMs < 30_000 && row.replaced_by_session_id !== null;
+      if (isBenignRetry) {
+        await client.query('COMMIT');
+        committed = true;
+        throw new InvalidRefreshError(
+          'invalid_refresh',
+          `benign retry of recently-rotated refresh (sid=${row.id}, age=${revokedAgeMs}ms)`,
+        );
+      }
       await client.query(
         `UPDATE sessions
             SET revoked_at = now()
@@ -263,7 +282,7 @@ export async function refreshSession(
       committed = true;
       throw new InvalidRefreshError(
         'reuse_detected',
-        `reuse of revoked refresh token (sid=${row.id})`,
+        `reuse of revoked refresh token (sid=${row.id}, age=${revokedAgeMs}ms)`,
       );
     }
 

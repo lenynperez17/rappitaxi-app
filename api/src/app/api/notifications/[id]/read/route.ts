@@ -15,10 +15,18 @@ interface UpdRow {
   read_at: Date | null
 }
 
+// UUID v4 pattern — evita que Postgres tire 22P02 (invalid syntax) al
+// pasar el string al UPDATE, que sin catch se convertía en 500.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const rows = await query<UpdRow>(
     `UPDATE notifications
