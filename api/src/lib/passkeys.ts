@@ -124,19 +124,22 @@ async function consumeChallenge(
   challenge: string,
   purpose: 'registration' | 'authentication'
 ): Promise<{ user_id: string | null } | null> {
-  // DELETE ... RETURNING garantiza atomicidad (un challenge no se puede usar 2x).
+  // DELETE ... RETURNING atómico (un challenge no se puede usar 2x).
+  // Ronda 59 Bug#1: incluir purpose en WHERE para evitar que un flujo
+  // ajeno queme el challenge del otro. Antes: registration challenge
+  // podía ser deleted por authentication endpoint, forzando al user
+  // a reiniciar enrollment.
   const row = await maybeOne<{
     user_id: string | null;
     expires_at: Date;
     purpose: string;
   }>(
     `DELETE FROM webauthn_challenges
-      WHERE challenge = $1
+      WHERE challenge = $1 AND purpose = $2
       RETURNING user_id, expires_at, purpose`,
-    [challenge]
+    [challenge, purpose]
   );
   if (!row) return null;
-  if (row.purpose !== purpose) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) return null;
   return { user_id: row.user_id };
 }

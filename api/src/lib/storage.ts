@@ -43,7 +43,13 @@ export function sniffMime(buf: Buffer): string | null {
   if (hex.startsWith('89504e470d0a1a0a')) return 'image/png'
   if (hex.startsWith('52494646') && buf.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
   if (hex.startsWith('25504446')) return 'application/pdf'
-  if (buf.subarray(4, 12).toString('ascii').includes('ftypheic')) return 'image/heic'
+  // Ronda 59 Bug#2: HEIC file-type box es 'ftyp' en offset 4 + brand en 8..12.
+  // iPhone iOS 11+ emite 'mif1' como brand por defecto; antes solo detectábamos
+  // literal 'ftypheic' → HEICs de iPhone se rechazaban como mime_not_allowed.
+  if (buf.length >= 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buf.subarray(8, 12).toString('ascii')
+    if (/^(heic|heix|heim|heis|hevc|hevx|mif1|msf1)$/.test(brand)) return 'image/heic'
+  }
   return null
 }
 
