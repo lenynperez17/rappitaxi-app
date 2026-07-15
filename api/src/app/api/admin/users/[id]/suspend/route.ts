@@ -46,6 +46,35 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       [id, reason],
     )
     await client.query('DELETE FROM sessions WHERE user_id = $1', [id])
+    // Cancelar rides activos donde user es passenger o driver — sin esto,
+    // rides quedan zombies con user suspendido (contraparte no puede avanzar).
+    const activeStates = ['requested', 'searching', 'accepted', 'on_way', 'arrived', 'in_progress']
+    const cancelled = await client.query<{ id: string; driver_id: string | null }>(
+      `UPDATE rides
+          SET status = 'cancelled',
+              cancelled_by = $1,
+              cancelled_reason = 'user_suspended',
+              completed_at = now()
+        WHERE (passenger_id = $1 OR driver_id = $1)
+          AND status = ANY($2::text[])
+        RETURNING id, driver_id`,
+      [id, activeStates],
+    )
+    // Liberar drivers contraparte con active_ride_id apuntando a ride cancelado
+    const otherDriverIds = cancelled.rows.map((r) => r.driver_id).filter((d): d is string => d !== null && d !== id)
+    if (otherDriverIds.length > 0) {
+      await client.query(
+        `UPDATE driver_presence SET active_ride_id = NULL, updated_at = now()
+          WHERE driver_id = ANY($1::text[]) AND active_ride_id = ANY($2::uuid[])`,
+        [otherDriverIds, cancelled.rows.map((r) => r.id)],
+      )
+    }
+    // Limpiar propia driver_presence
+    await client.query(
+      `UPDATE driver_presence SET is_online = false, active_ride_id = NULL, updated_at = now()
+        WHERE driver_id = $1`,
+      [id],
+    )
   })
 
   await query(
