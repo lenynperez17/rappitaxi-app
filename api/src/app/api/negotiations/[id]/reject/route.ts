@@ -71,25 +71,32 @@ export async function POST(
       if (!caller.is_active || caller.suspended_at) throw { code: 'account_disabled', status: 403 }
 
       if (negotiation.proposed_by_role === 'passenger') {
-        // Rechaza un driver. Debe ser driver o dual, y tener un ride_offer
-        // previo para este ride (haber postulado) — igual que en accept.
+        // Ronda 47 Bug#1: rechazo por driver retira SU offer (no marca la
+        // negotiation entera como 'rejected'). Antes: Driver B, competidor de
+        // Driver A, rechazaba la negociación entre A↔P y P recibía notif
+        // "rechazada" por decisión que A no tomó (griefing entre drivers).
+        // Ahora: el driver retira su oferta y la negociation queda viva
+        // para otros drivers. Si el driver no tenía offer previa, 403.
         if (caller.user_type !== 'driver' && caller.user_type !== 'dual') {
           throw { code: 'not_a_driver', status: 403 }
         }
         const offerRes = await client.query<{ id: string }>(
-          `SELECT id FROM ride_offers
-             WHERE ride_id = $1 AND driver_id = $2 AND status IN ('pending','accepted')`,
+          `UPDATE ride_offers
+              SET status = 'withdrawn', responded_at = now()
+            WHERE ride_id = $1 AND driver_id = $2 AND status IN ('pending','accepted')
+            RETURNING id`,
           [negotiation.ride_id, auth.userId],
         )
         if (offerRes.rowCount === 0) {
           throw { code: 'no_prior_offer', status: 403,
             message: 'Debes postularte al viaje primero para poder rechazar ofertas.' }
         }
-      } else {
-        // Rechaza el passenger — debe ser el passenger del ride
-        if (ride.passenger_id !== auth.userId) {
-          throw { code: 'not_authorized', status: 403 }
-        }
+        // Salir sin tocar la negotiation — otros drivers pueden aceptarla.
+        return { negotiationId, rideId: negotiation.ride_id, offerWithdrawn: true }
+      }
+      // proposed_by_role='driver' → rechaza el passenger, debe ser owner del ride
+      if (ride.passenger_id !== auth.userId) {
+        throw { code: 'not_authorized', status: 403 }
       }
 
       await client.query(
@@ -117,14 +124,23 @@ export async function POST(
         ],
       )
 
-      return { rideId: negotiation.ride_id, amount }
+      return { rideId: negotiation.ride_id, amount, offerWithdrawn: false }
     })
+
+    if ((result as { offerWithdrawn?: boolean }).offerWithdrawn) {
+      return NextResponse.json({
+        success: true,
+        negotiationId,
+        rideId: (result as { rideId: string }).rideId,
+        message: 'Oferta retirada; la negociación sigue disponible para otros conductores.',
+      })
+    }
 
     return NextResponse.json({
       success: true,
       negotiationId,
       rideId: result.rideId,
-      amount: result.amount,
+      amount: (result as { amount: number }).amount,
     })
   } catch (err) {
     const e = err as { code?: string; status?: number; currentStatus?: string }

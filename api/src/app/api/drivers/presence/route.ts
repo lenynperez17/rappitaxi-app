@@ -81,15 +81,24 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Verificar que el usuario sea driver o dual
-  const user = await maybeOne<UserTypeRow>(
-    'SELECT user_type FROM users WHERE id = $1',
+  // Ronda 47 Bug#2: verificar deleted_at + is_active + suspended_at. Sin esto
+  // un driver soft-deleted o suspendido seguía haciendo heartbeats hasta que
+  // expirara su JWT (hasta 1h), apareciendo online en /admin/live y recibiendo
+  // asignaciones. Ahora la revocación de cuenta surte efecto inmediato.
+  const user = await maybeOne<UserTypeRow & { is_active: boolean; suspended_at: Date | null; deleted_at: Date | null }>(
+    'SELECT user_type, is_active, suspended_at, deleted_at FROM users WHERE id = $1',
     [driverId],
   )
-  if (!user) {
+  if (!user || user.deleted_at) {
     return NextResponse.json(
       { success: false, error: 'user_not_found' },
       { status: 404 },
+    )
+  }
+  if (!user.is_active || user.suspended_at) {
+    return NextResponse.json(
+      { success: false, error: 'account_disabled', message: 'Cuenta suspendida' },
+      { status: 403 },
     )
   }
   if (user.user_type !== 'driver' && user.user_type !== 'dual') {
