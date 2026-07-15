@@ -35,14 +35,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
 
-  const amount = Number(body.amount)
-  if (!Number.isFinite(amount) || amount < MIN_AMOUNT || amount > MAX_AMOUNT) {
+  const amountRaw = Number(body.amount)
+  if (!Number.isFinite(amountRaw) || amountRaw < MIN_AMOUNT || amountRaw > MAX_AMOUNT) {
     return NextResponse.json({
       success: false,
       error: 'invalid_amount',
       message: `Monto entre S/ ${MIN_AMOUNT} y S/ ${MAX_AMOUNT}`,
     }, { status: 400 })
   }
+  // Ronda 82: rechazar >2 decimales. Antes {amount:5.999} pasaba, MP redondeaba
+  // a 2 decimales y el webhook comparaba contra 5.999 → ledger descuadrado.
+  const amountCents = Math.round(amountRaw * 100)
+  if (Math.abs(amountCents - amountRaw * 100) > 0.001) {
+    return NextResponse.json({
+      success: false,
+      error: 'invalid_amount',
+      message: 'Monto debe tener máximo 2 decimales',
+    }, { status: 400 })
+  }
+  const amount = amountCents / 100
 
   // Registrar mp_payment antes de llamar a MP (para tener external_reference)
   const payment = await maybeOne<{ id: string }>(
