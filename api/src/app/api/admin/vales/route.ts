@@ -72,7 +72,10 @@ export async function POST(req: NextRequest) {
   const code = body.code?.trim().toUpperCase()
   const dt = body.discountType
   const dv = Number(body.discountValue ?? 0)
-  if (!code || !dt || !['percent', 'flat'].includes(dt) || dv <= 0) {
+  // Ronda 31 Bug#1: Number('abc') = NaN; NaN <= 0 es false, NaN > 100/500 es
+  // false → validación pasaba y NaN se persistía en discount_value (Postgres
+  // numeric acepta NaN) → toda math futura sobre el vale devolvía NaN.
+  if (!code || !dt || !['percent', 'flat'].includes(dt) || !Number.isFinite(dv) || dv <= 0) {
     return NextResponse.json({ success: false, error: 'invalid_input' }, { status: 400 })
   }
   // Cap: percent no puede exceder 100 (típo daría vale > costo del viaje);
