@@ -95,8 +95,37 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const radiusKm = Math.min(25, Math.max(0.1, toNumber(body.radiusKm, 3)))
-  const limit = Math.min(50, Math.max(1, Math.floor(toNumber(body.limit, 10))))
+  // Ronda 86: si el cliente envía valores fuera de rango explícitamente,
+  // rechazar con 400 en vez de clamp silencioso. Solo se usa default si el
+  // campo viene omitido/null/undefined.
+  const radiusRaw = body.radiusKm
+  let radiusKm: number
+  if (radiusRaw === undefined || radiusRaw === null) {
+    radiusKm = 3
+  } else {
+    const n = Number(radiusRaw)
+    if (!Number.isFinite(n) || n <= 0 || n > 25) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_radius', message: 'radiusKm debe estar entre 0 y 25' },
+        { status: 400 },
+      )
+    }
+    radiusKm = Math.max(0.1, n)
+  }
+  const limitRaw = body.limit
+  let limit: number
+  if (limitRaw === undefined || limitRaw === null) {
+    limit = 10
+  } else {
+    const n = Math.floor(Number(limitRaw))
+    if (!Number.isFinite(n) || n < 1 || n > 50) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_limit', message: 'limit debe estar entre 1 y 50' },
+        { status: 400 },
+      )
+    }
+    limit = n
+  }
   const vehicleType =
     typeof body.vehicleType === 'string' && body.vehicleType.trim() !== ''
       ? body.vehicleType.trim()
