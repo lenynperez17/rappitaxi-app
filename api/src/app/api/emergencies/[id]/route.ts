@@ -122,35 +122,23 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ success: false, error: 'invalid_status' }, { status: 400 })
   }
 
-  // Validar transición contra el estado actual — mismo state machine que
-  // /api/admin/emergencies/[id]. Sin esto, un admin podría revertir un
-  // 'resolved' a 'active' desde este endpoint y confundir auditoría.
-  if (body.status !== undefined) {
-    const current = await maybeOne<{ status: string }>(
-      'SELECT status FROM emergencies WHERE id = $1',
-      [id],
-    )
-    if (!current) {
-      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
-    }
-    if (current.status !== body.status) {
-      const allowed = ALLOWED_TRANSITIONS[current.status] ?? []
-      if (!allowed.includes(body.status)) {
-        return NextResponse.json({
-          success: false,
-          error: 'invalid_transition',
-          message: `No se permite pasar de '${current.status}' a '${body.status}'`,
-          currentStatus: current.status,
-        }, { status: 409 })
-      }
-    }
+  // Ronda 41 Bug#2: resolvedBy solo aceptable cuando también se setea
+  // status='resolved'. Sin este guard, PATCH { resolvedBy: X } dejaba fila
+  // con resolved_by poblado + status='active' + resolved_at=NULL rompiendo
+  // el invariante y confundiendo reportes filtrados por resolved_at.
+  const nextStatus = body.status
+  const willResolve = nextStatus === 'resolved'
+  if (body.resolvedBy !== undefined && !willResolve) {
+    return NextResponse.json({
+      success: false,
+      error: 'resolved_by_requires_resolve',
+      message: 'resolvedBy solo se acepta cuando status=resolved',
+    }, { status: 400 })
   }
 
   const updates: string[] = []
   const params: unknown[] = []
   let idx = 1
-  const nextStatus = body.status
-  const willResolve = nextStatus === 'resolved'
 
   if (nextStatus !== undefined) {
     updates.push(`status = $${idx++}`)
@@ -183,6 +171,24 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   try {
     const result = await tx(async (client) => {
+      // Ronda 41 Bug#1: SELECT FOR UPDATE dentro de la tx para atomicidad.
+      // Antes: SELECT fuera → dos admins con PATCH concurrente pasaban ambos
+      // ALLOWED_TRANSITIONS y el UPDATE second ganaba en silencio (podía
+      // materializar resolved→cancelled o vv, prohibido por el state machine).
+      if (nextStatus !== undefined) {
+        const cur = await client.query<{ status: string }>(
+          `SELECT status FROM emergencies WHERE id = $1 FOR UPDATE`,
+          [id],
+        )
+        if (cur.rowCount === 0) throw { code: 'not_found' }
+        const currentStatus = cur.rows[0]!.status
+        if (currentStatus !== nextStatus) {
+          const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? []
+          if (!allowed.includes(nextStatus)) {
+            throw { code: 'invalid_transition', currentStatus, nextStatus }
+          }
+        }
+      }
       const upd = await client.query<EmergencyRow>(
         `UPDATE emergencies SET ${updates.join(', ')}
            WHERE id = $${idx}
@@ -225,8 +231,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     return NextResponse.json({ success: true, emergency: serialize(result) })
   } catch (err) {
-    if ((err as { code?: string })?.code === 'not_found') {
+    const known = err as { code?: string; currentStatus?: string; nextStatus?: string }
+    if (known?.code === 'not_found') {
       return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+    }
+    if (known?.code === 'invalid_transition') {
+      return NextResponse.json({
+        success: false,
+        error: 'invalid_transition',
+        message: `No se permite pasar de '${known.currentStatus}' a '${known.nextStatus}'`,
+        currentStatus: known.currentStatus,
+      }, { status: 409 })
     }
     console.error('[emergencies/PATCH] error:', err)
     return NextResponse.json({ success: false, error: 'server_error' }, { status: 500 })
