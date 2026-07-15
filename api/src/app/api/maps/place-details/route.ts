@@ -28,23 +28,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'missing_placeId' }, { status: 400 })
   }
 
-  // Nominatim: los placeId de nuestro autocomplete son osm_id o place_id de OSM
-  // El detalle se obtiene con /lookup?osm_ids=... o con /details?place_id=...
+  // Nominatim: autocomplete emite placeIds como "osm:<place_id>" (prefijo),
+  // pero pueden llegar también "N123"/"W456"/"R789" (osm_id explícito) o
+  // numéricos plain. Ronda 53 Bug#2: para numéricos plain usar /details
+  // (place_id) NO /lookup (que requiere osm_id != place_id).
   try {
     let details: OsmDetails | null = null
 
-    // Intento 1: /details (más rico, requiere osm_type prefijo)
-    // placeIds del autocomplete vienen como "N123", "W456", "R789" u osmId numérico
-    let osmIds = ''
-    if (/^[NWR]\d+$/i.test(placeId)) {
-      osmIds = placeId
-    } else if (/^\d+$/.test(placeId)) {
-      osmIds = `N${placeId}`
-    }
+    // Strip prefijo "osm:" del autocomplete
+    const rawId = placeId.startsWith('osm:') ? placeId.slice(4) : placeId
 
-    if (osmIds) {
+    // Ruta A: "N123"/"W456"/"R789" → lookup con osm_ids
+    if (/^[NWR]\d+$/i.test(rawId)) {
       const r = await fetch(
-        `https://nominatim.openstreetmap.org/lookup?osm_ids=${encodeURIComponent(osmIds)}&format=json&addressdetails=1&accept-language=es`,
+        `https://nominatim.openstreetmap.org/lookup?osm_ids=${encodeURIComponent(rawId)}&format=json&addressdetails=1&accept-language=es`,
         { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
       )
       if (r.ok) {
@@ -53,10 +50,36 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback: /search con el placeId como query si nada funcionó
+    // Ruta B: place_id numérico → /details endpoint (más confiable)
+    if (!details && /^\d+$/.test(rawId)) {
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/details?place_id=${encodeURIComponent(rawId)}&format=json&addressdetails=1&accept-language=es`,
+        { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
+      )
+      if (r.ok) {
+        const obj = (await r.json()) as {
+          centroid?: { coordinates?: [number, number] }
+          localname?: string
+          address?: Record<string, string>
+          osm_id?: number
+        }
+        if (obj?.centroid?.coordinates) {
+          const [lonNum, latNum] = obj.centroid.coordinates
+          details = {
+            lat: String(latNum),
+            lon: String(lonNum),
+            display_name: obj.localname ?? '',
+            address: obj.address ?? {},
+            place_id: rawId,
+          }
+        }
+      }
+    }
+
+    // Ruta C fallback: /search con placeId como query (raro pero por si acaso)
     if (!details) {
       const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeId)}&format=json&limit=1&addressdetails=1&accept-language=es`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(rawId)}&format=json&limit=1&addressdetails=1&accept-language=es`,
         { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
       )
       if (r.ok) {

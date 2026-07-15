@@ -51,7 +51,12 @@ export async function POST(req: NextRequest) {
   if (!code || code.length < 3 || code.length > 32) {
     return NextResponse.json({ success: false, error: 'invalid_code' }, { status: 400 })
   }
-  const rideAmount = Number(body.rideAmount ?? 0)
+  // Ronda 53 Bug#1: distinguir pre-check (sin rideAmount) de check real.
+  // Sin esto, POST {code} sin rideAmount → 0 → below_minimum, y la UI mostraba
+  // "código inválido" para vales válidos aún no aplicados a un viaje.
+  const rideAmountRaw = body.rideAmount
+  const hasRideAmount = typeof rideAmountRaw === 'number' && Number.isFinite(rideAmountRaw) && rideAmountRaw > 0
+  const rideAmount = hasRideAmount ? rideAmountRaw : 0
 
   const vale = await maybeOne<Vale>(
     'SELECT * FROM vales WHERE code = $1 LIMIT 1',
@@ -74,7 +79,9 @@ export async function POST(req: NextRequest) {
   if (vale.max_uses !== null && vale.used_count >= vale.max_uses) {
     return NextResponse.json({ success: false, error: 'exhausted', message: 'Código agotado' }, { status: 410 })
   }
-  if (vale.min_ride_amount !== null && rideAmount < Number(vale.min_ride_amount)) {
+  // Solo aplicar el check de monto mínimo si el cliente envió rideAmount real
+  // (Ronda 53 Bug#1). Pre-check sin monto → devolver success con discount=null.
+  if (hasRideAmount && vale.min_ride_amount !== null && rideAmount < Number(vale.min_ride_amount)) {
     return NextResponse.json({
       success: false,
       error: 'below_minimum',
@@ -89,7 +96,8 @@ export async function POST(req: NextRequest) {
     [vale.id, auth.userId],
   )
   const userUses = Number(usageRow?.n ?? 0)
-  if (userUses >= vale.per_user_limit) {
+  // Ronda 23 pattern: per_user_limit NULL = ilimitado
+  if (vale.per_user_limit !== null && userUses >= vale.per_user_limit) {
     return NextResponse.json({
       success: false,
       error: 'user_limit_reached',
