@@ -82,8 +82,11 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type')
   const search = (searchParams.get('search') ?? '').trim()
   const status = searchParams.get('status')  // active | suspended | deleted | all
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? '20')))
+  // Ronda 30 Bug#1: NaN-safe pagination
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '20')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 20
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
@@ -104,26 +107,40 @@ export async function GET(req: NextRequest) {
     where.push('deleted_at IS NULL')
   }
   if (search) {
-    params.push(`%${search.toLowerCase()}%`)
-    where.push(`(
-      LOWER(full_name) LIKE $${params.length}
-      OR LOWER(email) LIKE $${params.length}
-      OR phone LIKE $${params.length}
-      OR phone_number LIKE $${params.length}
-    )`)
+    // Ronda 30 Bug#2: separar búsqueda por texto (lowercase) de búsqueda por
+    // teléfono (dígitos). Sin esto, "999" matcheaba email 'abc999@x.com' vía
+    // el LIKE contra `phone`. Detectamos "es teléfono" si tiene solo dígitos
+    // opcionalmente con + inicial y ≥5 chars.
+    const isPhoneLike = /^\+?\d{5,}$/.test(search)
+    const searchLower = `%${search.toLowerCase()}%`
+    if (isPhoneLike) {
+      // Solo buscar en columnas phone (evita falsos positivos cruzados)
+      params.push(`%${search}%`)
+      where.push(`(phone LIKE $${params.length} OR phone_number LIKE $${params.length})`)
+    } else {
+      // Solo buscar en texto (nombre/email)
+      params.push(searchLower)
+      where.push(`(LOWER(full_name) LIKE $${params.length} OR LOWER(email) LIKE $${params.length})`)
+    }
   }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const rows = await query<UserRow & { total: string }>(
-    `SELECT *, COUNT(*) OVER() AS total
+  // Ronda 30 Bug#1: total con SELECT COUNT(*) separado + LIMIT parametrizado
+  const totalRes = await query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM users ${whereSql}`,
+    params,
+  )
+  const total = Number(totalRes[0]?.total ?? 0)
+
+  const pagedParams = [...params, pageSize, offset]
+  const rows = await query<UserRow>(
+    `SELECT *
        FROM users
        ${whereSql}
        ORDER BY created_at DESC
-       LIMIT ${pageSize} OFFSET ${offset}`,
-    params,
+       LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+    pagedParams,
   )
-
-  const total = rows.length ? Number(rows[0].total) : 0
   return NextResponse.json({
     success: true,
     users: rows.map(serializeUser),
