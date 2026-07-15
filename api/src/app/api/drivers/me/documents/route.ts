@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
+import { deleteFile } from '@/lib/storage'
 
 export const runtime = 'nodejs'
 
@@ -140,6 +141,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await tx(async (client) => {
+      // Ronda 19 MEDIUM#2: si ya existe un documento de este tipo, capturar el
+      // file_url previo para borrar el archivo físico después. Sin esto, cada
+      // re-upload deja un huérfano en storage — LPDP/GDPR data-minimization roto.
+      const prevRes = await client.query<{ file_url: string | null }>(
+        `SELECT file_url FROM driver_documents WHERE driver_id = $1 AND doc_type = $2 LIMIT 1`,
+        [driverId, docType],
+      )
+      const prevFileUrl = prevRes.rows[0]?.file_url ?? null
+
       const upsert = await client.query<DocRow & { was_new: boolean }>(
         `INSERT INTO driver_documents
            (driver_id, doc_type, file_url, status)
@@ -158,6 +168,32 @@ export async function POST(req: NextRequest) {
       )
       const row = upsert.rows[0]!
       const wasNew = row.was_new
+
+      // Borrar archivo físico previo si el file_url apuntaba a storage local
+      // (formato /api/media/{key} o URL completa). Fuera de la tx (fs unlink
+      // no es transaccional) pero dentro del scope del try — si el DELETE
+      // storage_files falla, la fila DB ya fue actualizada.
+      if (prevFileUrl && prevFileUrl !== fileUrl) {
+        const keyMatch = prevFileUrl.match(/\/api\/media\/(.+)$/)
+        if (keyMatch) {
+          try {
+            const prevFile = await client.query<{ id: string; storage_key: string }>(
+              `SELECT id, storage_key FROM storage_files WHERE storage_key = $1 LIMIT 1`,
+              [keyMatch[1]],
+            )
+            if (prevFile.rows[0]) {
+              await client.query(`DELETE FROM storage_files WHERE id = $1`, [prevFile.rows[0].id])
+              // El fs unlink se hace fuera de la tx (post-commit) para no bloquearla.
+              setImmediate(async () => {
+                try { await deleteFile(prevFile.rows[0].storage_key) }
+                catch (e) { console.warn('[drivers/me/documents] no se pudo borrar archivo previo:', e) }
+              })
+            }
+          } catch (e) {
+            console.warn('[drivers/me/documents] cleanup previo fallo:', e)
+          }
+        }
+      }
 
       await client.query(
         `INSERT INTO notifications (user_id, type, title, body, data)

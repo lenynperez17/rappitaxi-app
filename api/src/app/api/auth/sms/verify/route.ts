@@ -64,12 +64,19 @@ export async function POST(req: NextRequest) {
 
   const phoneKey = phoneNumber.replace('+', '')
 
-  // Path test phone: validación local sin llamar a Twilio
+  // Ronda 19 HIGH#1: doble guard — la rama test-phone requiere BOTH
+  //   (a) TEST_PHONES_ENABLED=true en el env actual
+  //   (b) is_test_phone=true en la fila
+  // Sin la condición (a), un dump de DB de staging importado a prod dejaba filas
+  // is_test_phone=true persistidas → cualquiera con el código fijo obtiene sesión
+  // sin tocar Twilio. Además invalidamos test_code tras uso exitoso para bloquear
+  // OTP replay dentro de la ventana de 1h.
+  const testPhonesEnabled = process.env.TEST_PHONES_ENABLED === 'true'
   const testRow = await maybeOne<{ test_code: string | null; test_code_expires: Date | null; is_test_phone: boolean }>(
     'SELECT test_code, test_code_expires, is_test_phone FROM phone_verifications WHERE phone_key = $1',
     [phoneKey],
   )
-  const isTestPhone = testRow?.is_test_phone && testRow?.test_code
+  const isTestPhone = testPhonesEnabled && testRow?.is_test_phone && testRow?.test_code
   if (isTestPhone) {
     const expired = testRow!.test_code_expires && new Date(testRow!.test_code_expires) < new Date()
     if (expired) {
@@ -78,6 +85,11 @@ export async function POST(req: NextRequest) {
     if (code !== testRow!.test_code) {
       return NextResponse.json({ success: false, error: 'code_incorrect' }, { status: 400 })
     }
+    // Invalidar el test_code tras uso exitoso — evita replay dentro de la ventana
+    await query(
+      `UPDATE phone_verifications SET test_code = NULL, test_code_expires = NULL WHERE phone_key = $1`,
+      [phoneKey],
+    )
   } else {
     // Path Twilio real
     const twilio = new TwilioVerifyService()

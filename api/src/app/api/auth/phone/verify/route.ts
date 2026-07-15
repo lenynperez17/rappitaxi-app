@@ -81,12 +81,13 @@ export async function POST(req: NextRequest) {
 
   const phoneKey = phoneNumber.replace('+', '')
 
-  // Path test phones
+  // Ronda 19 HIGH#1: doble guard test-phone (env + DB row) + invalidación tras uso
+  const testPhonesEnabled = process.env.TEST_PHONES_ENABLED === 'true'
   const testRow = await maybeOne<{ test_code: string | null; test_code_expires: Date | null; is_test_phone: boolean }>(
     'SELECT test_code, test_code_expires, is_test_phone FROM phone_verifications WHERE phone_key = $1',
     [phoneKey],
   )
-  const isTestPhone = testRow?.is_test_phone && testRow?.test_code
+  const isTestPhone = testPhonesEnabled && testRow?.is_test_phone && testRow?.test_code
   if (isTestPhone) {
     const expired = testRow!.test_code_expires && new Date(testRow!.test_code_expires) < new Date()
     if (expired) {
@@ -95,6 +96,10 @@ export async function POST(req: NextRequest) {
     if (code !== testRow!.test_code) {
       return NextResponse.json({ success: false, error: 'code_incorrect' }, { status: 400 })
     }
+    await query(
+      `UPDATE phone_verifications SET test_code = NULL, test_code_expires = NULL WHERE phone_key = $1`,
+      [phoneKey],
+    )
   } else {
     const twilio = new TwilioVerifyService()
     const result = await twilio.checkVerification(phoneNumber, code)
