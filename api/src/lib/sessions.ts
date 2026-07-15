@@ -191,9 +191,11 @@ export async function createSession(
 // refreshSession (rotation)
 // --------------------------------------------------------------------------
 
+export type InvalidRefreshCode = 'invalid_refresh' | 'reuse_detected' | 'account_suspended';
+
 export class InvalidRefreshError extends Error {
-  code: 'invalid_refresh' | 'reuse_detected';
-  constructor(code: 'invalid_refresh' | 'reuse_detected', message?: string) {
+  code: InvalidRefreshCode;
+  constructor(code: InvalidRefreshCode, message?: string) {
     super(message ?? code);
     this.code = code;
     this.name = 'InvalidRefreshError';
@@ -231,23 +233,33 @@ export async function refreshSession(
     await client.query('BEGIN');
 
     // 1. Buscar la sesión por hash (FOR UPDATE para evitar carrera).
+    // Ronda 38 HIGH: JOIN users para chequear is_active. Sin esto, un user
+    // suspendido después del login podía seguir rotando tokens indefinidamente
+    // cada 30 días — solo el ban al access token no bastaba para expulsarlo.
     const found = await client.query<{
       id: string;
       user_id: string;
       expires_at: string;
       revoked_at: string | null;
       replaced_by_session_id: string | null;
+      is_active: boolean;
+      deleted_at: string | null;
     }>(
-      `SELECT id, user_id, expires_at, revoked_at, replaced_by_session_id
-         FROM sessions
-        WHERE refresh_token_hash = $1
-        FOR UPDATE`,
+      `SELECT s.id, s.user_id, s.expires_at, s.revoked_at, s.replaced_by_session_id,
+              u.is_active, u.deleted_at
+         FROM sessions s
+         JOIN users u ON u.id = s.user_id
+        WHERE s.refresh_token_hash = $1
+        FOR UPDATE OF s`,
       [tokenHash],
     );
 
     const row = found.rows[0];
     if (!row) {
       throw new InvalidRefreshError('invalid_refresh', 'unknown refresh');
+    }
+    if (!row.is_active || row.deleted_at) {
+      throw new InvalidRefreshError('account_suspended', `user ${row.user_id} inactive`);
     }
 
     // 2. Sesión revocada — dos escenarios muy distintos:

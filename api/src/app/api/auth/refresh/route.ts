@@ -13,14 +13,19 @@ import { deviceInfoFromHeaders } from '@/lib/sessions'
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
-  let body: { refreshToken?: string }
+  let body: { refreshToken?: unknown }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
 
-  const refreshToken = body.refreshToken?.trim()
+  // Ronda 38 LOW: validar typeof antes de trim(). Cliente que envía
+  // {refreshToken: 123} o {refreshToken: {...}} lanzaba TypeError → 500.
+  if (typeof body.refreshToken !== 'string') {
+    return NextResponse.json({ success: false, error: 'missing_refresh_token' }, { status: 400 })
+  }
+  const refreshToken = body.refreshToken.trim()
   if (!refreshToken) {
     return NextResponse.json({ success: false, error: 'missing_refresh_token' }, { status: 400 })
   }
@@ -48,6 +53,12 @@ export async function POST(req: NextRequest) {
     // Los aliases viejos (`invalid_refresh_token`, `expired_refresh_token`)
     // se mantienen por compat con clientes antiguos.
     const code = (err as { code?: string })?.code
+    if (code === 'account_suspended') {
+      return NextResponse.json(
+        { success: false, error: 'account_suspended', message: 'Cuenta suspendida' },
+        { status: 403 },
+      )
+    }
     if (
       code === 'reuse_detected' ||
       code === 'invalid_refresh' ||
