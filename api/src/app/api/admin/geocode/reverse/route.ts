@@ -44,7 +44,23 @@ export async function GET(req: NextRequest) {
         signal: AbortSignal.timeout(6000),
       },
     )
-    const data = (await r.json()) as NominatimResponse
+    // Ronda 63: verificar r.ok antes de r.json(). Nominatim puede devolver
+    // 403/429/503 con body HTML → SyntaxError. Además si retorna JSON de error
+    // con status parseable, evitar responder success con fallback "lat,lng"
+    // engañando al admin.
+    if (!r.ok) {
+      return NextResponse.json(
+        { success: false, error: 'upstream_error', status: r.status },
+        { status: 502 },
+      )
+    }
+    const data = (await r.json()) as NominatimResponse & { error?: string }
+    if (data.error || (!data.address && !data.display_name)) {
+      return NextResponse.json(
+        { success: false, error: 'no_address_found', message: data.error ?? 'sin resultados' },
+        { status: 404 },
+      )
+    }
     const road = data.address?.road
     const houseNumber = data.address?.house_number
     const suburb = data.address?.suburb ?? data.address?.neighbourhood
