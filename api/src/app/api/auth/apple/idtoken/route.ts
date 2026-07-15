@@ -77,16 +77,18 @@ export async function POST(req: NextRequest) {
     payload.email_verified === true || payload.email_verified === 'true'
   const fullName = body.fullName?.trim() || null
 
-  // Ronda 36 CRITICAL B#1: cross-provider takeover. Igual que Google:
-  // matcheo por email solo si la fila no está reclamada por otro provider.
+  // Ronda 36/37 CRITICAL: matcheo por email SOLO si (a) Apple verificó,
+  // (b) auth_provider EXPLÍCITAMENTE 'apple', (c) email_verified=true en DB,
+  // (d) sin claim de otro provider. Ver comentario simétrico en google/idtoken.
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users
            WHERE apple_uid = $1
               OR (email IS NOT NULL AND LOWER(email) = $2
+                  AND email_verified = true
                   AND apple_uid IS NULL AND google_uid IS NULL
-                  AND (auth_provider = 'apple' OR auth_provider IS NULL))
+                  AND auth_provider = 'apple')
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users

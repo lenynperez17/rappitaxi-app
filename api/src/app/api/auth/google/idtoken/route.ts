@@ -73,22 +73,24 @@ export async function POST(req: NextRequest) {
   const fullName = payload.name ?? null
   const picture = payload.picture ?? null
 
-  // Ronda 36 CRITICAL B#1: cross-provider takeover. El match por email debe
-  // condicionarse al MISMO proveedor (no cualquier user con ese email). Sin
-  // este filtro, un attacker con Google+mismo email podía tomar cuentas
-  // creadas via Apple, SMS o admin — el UPDATE asignaba su google_uid a la
-  // cuenta existente + JWT sobre user.id de la víctima → takeover completo.
-  // Match por email SOLO cuando (a) Google verificó el email Y (b) la fila
-  // existente NO tiene google_uid Y (c) fue creada via 'google' o el email
-  // no está reclamado por otro provider (email_verified de OTRO provider).
+  // Ronda 36/37 CRITICAL: cross-provider account takeover.
+  // Match por email SOLO cuando TODAS aplican:
+  //   (a) Google verificó el email (emailVerified true del token)
+  //   (b) La fila existente tiene auth_provider EXPLÍCITAMENTE 'google'
+  //       (no NULL — legacy/admin-created son vulnerables si dejamos el OR)
+  //   (c) La fila existente tiene email_verified=true en DB (rows sin verify
+  //       fueron creadas por invitación/import y no deben tomarse por email)
+  //   (d) NO tiene otro provider claim (google_uid+apple_uid NULL)
+  // El login por google_uid=$1 sigue funcionando en cualquier caso.
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
            WHERE google_uid = $1
               OR (email IS NOT NULL AND LOWER(email) = $2
+                  AND email_verified = true
                   AND google_uid IS NULL AND apple_uid IS NULL
-                  AND (auth_provider = 'google' OR auth_provider IS NULL))
+                  AND auth_provider = 'google')
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
