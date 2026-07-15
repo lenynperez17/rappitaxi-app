@@ -41,8 +41,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const lat = Number(searchParams.get('lat'))
   const lng = Number(searchParams.get('lng'))
-  const radiusKm = Math.min(50, Math.max(0.1, Number(searchParams.get('radiusKm') ?? '5')))
-  const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? '20')))
+  // Ronda 33 Bug#1: NaN-safe. Sin fallback, Number('abc')=NaN se propagaba
+  // como $3::numeric al haversine → Postgres 22P02 → 500 en vez de 400.
+  const radiusRaw = Number(searchParams.get('radiusKm') ?? '5')
+  const radiusKm = Number.isFinite(radiusRaw) ? Math.min(50, Math.max(0.1, radiusRaw)) : 5
+  const limitRaw = Number(searchParams.get('limit') ?? '20')
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 20
   const vehicleType = searchParams.get('vehicleType')
 
   if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {

@@ -178,6 +178,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     sets.push(`destination_lat = $${params.length}`)
     params.push(body.destination.lng)
     sets.push(`destination_lng = $${params.length}`)
+    // Ronda 33 Bug#2: invalidar estimated_fare + distance_meters cuando cambia
+    // el destino. Sin esto, ofertas ya emitidas siguen usando el fare del
+    // destino viejo — passenger termina cobrando por A un viaje a B (30 km
+    // más lejos por el mismo precio).
+    sets.push(`estimated_fare = NULL`)
+    sets.push(`distance_meters = NULL`)
+    sets.push(`duration_seconds = NULL`)
+    // Ademas invalidar ofertas pending del destino viejo
+    sets.push(`status = CASE WHEN status = 'searching' THEN 'requested' ELSE status END`)
   }
 
   if (body.paymentMethod !== undefined) {
@@ -201,6 +210,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     `UPDATE rides SET ${sets.join(', ')} WHERE id = $${params.length}`,
     params,
   )
+
+  // Si cambio destination, invalidar ride_offers pendientes (Ronda 33 Bug#2 fu)
+  if (body.destination) {
+    await query(
+      `UPDATE ride_offers SET status = 'expired', responded_at = now()
+        WHERE ride_id = $1 AND status = 'pending'`,
+      [id],
+    )
+  }
 
   const updated = await maybeOne<RideDetailRow>(
     `SELECT r.*,
