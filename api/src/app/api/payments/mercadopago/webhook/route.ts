@@ -220,6 +220,49 @@ export async function POST(req: NextRequest) {
           if (!isUniqueViolation(e)) throw e
         }
       })
+    } else if ((newStatus === 'refunded' || newStatus === 'cancelled') && mpRow.status === 'approved') {
+      // Ronda 83 CRITICAL: refund/chargeback DESPUÉS de approved requiere
+      // reversar el crédito al wallet, sino usuario mantiene saldo + MP le
+      // devuelve el dinero = doble beneficio / pérdida directa para la plataforma.
+      await tx(async (client) => {
+        const locked = await client.query<{ status: string }>(
+          `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
+          [externalRef],
+        )
+        if (locked.rows[0]?.status !== 'approved') return // ya procesado
+        await client.query(
+          `UPDATE mp_payments SET status = $1, raw = $2, updated_at = now() WHERE id = $3`,
+          [newStatus, JSON.stringify(payment), externalRef],
+        )
+        // Insertar reversión (compensating transaction) idempotente por external_ref
+        const refundRef = `refund:${payment.id}`
+        const existing = await client.query(
+          `SELECT 1 FROM wallet_transactions WHERE external_ref = $1 LIMIT 1`,
+          [refundRef],
+        )
+        if (existing.rowCount === 0) {
+          const balRes = await client.query<{ balance: string }>(
+            'SELECT rapi_team_user_balance($1)::text AS balance',
+            [mpRow.user_id],
+          )
+          const balAfter = Math.round(
+            (Number(balRes.rows[0]?.balance ?? 0) - payment.transaction_amount) * 100,
+          ) / 100
+          await client.query(
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount, balance_after, description, status, external_ref, metadata, completed_at)
+             VALUES ($1, 'refund', $2, $3, $4, 'completed', $5, $6::jsonb, now())`,
+            [
+              mpRow.user_id,
+              -payment.transaction_amount,
+              balAfter,
+              `Reverso ${newStatus} MP #${payment.id}`,
+              refundRef,
+              JSON.stringify({ mp_payment_id: payment.id, reason: newStatus, external_reference: externalRef }),
+            ],
+          )
+        }
+      })
     } else {
       // Actualización de estado no-approved
       await query(
