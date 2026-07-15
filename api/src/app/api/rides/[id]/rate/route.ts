@@ -3,8 +3,15 @@
  *   Calificar al otro participante (passenger califica driver o viceversa).
  *   Body: { stars, comment? }
  *   Inserta en ride_ratings. UNIQUE(ride_id, rated_by) evita doble rate.
- *   Actualiza el rating agregado del user calificado en la propia tabla `rides`
- *   (passenger_rating/driver_rating) para lectura rápida.
+ *
+ *   Persistencia:
+ *   - `ride_ratings` es la fuente de verdad (una fila por rating individual).
+ *   - `rides.driver_rating` / `rides.passenger_rating` guardan el rating INDIVIDUAL
+ *     del viaje (no un promedio) para lectura rápida del historial.
+ *   - El rating agregado del user (promedio global) se calcula con AVG(stars)
+ *     sobre ride_ratings desde admin/live u otros consumidores.
+ *   Ronda 21 MEDIUM: docblock corregido — antes decía "actualiza el rating
+ *   agregado" pero el código siempre guardó el individual.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'

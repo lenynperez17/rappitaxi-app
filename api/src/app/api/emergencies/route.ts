@@ -265,34 +265,33 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 4) Notificar a admins (auditoría en la app)
-      const adminsRes = await client.query<{ id: string }>(
-        `SELECT id FROM users
+      // 4) Notificar a admins con INSERT bulk (Ronda 21 MEDIUM).
+      // Antes: N+1 dentro de la transacción → SOS de emergencia demoraba en
+      // organizaciones con >20 admins bloqueando el panic button (crítico UX).
+      // INSERT ... SELECT es 1 query independientemente del N.
+      const emergencyData = JSON.stringify({
+        emergencyId: emergency.id,
+        type,
+        latitude,
+        longitude,
+        address,
+        triggeredBy: auth.userId,
+        triggeredByName: userName,
+        rideId,
+      })
+      await client.query(
+        `INSERT INTO notifications (user_id, type, title, body, data)
+         SELECT id, 'emergency_alert', $1, $2, $3::jsonb
+           FROM users
           WHERE (is_admin = true OR user_type = 'admin')
             AND is_active = true
             AND deleted_at IS NULL`,
+        [
+          `Emergencia activada: ${type}`,
+          `${userName} activó una alerta SOS. Revisa el panel de emergencias.`,
+          emergencyData,
+        ],
       )
-      for (const admin of adminsRes.rows) {
-        await client.query(
-          `INSERT INTO notifications (user_id, type, title, body, data)
-           VALUES ($1, 'emergency_alert', $2, $3, $4)`,
-          [
-            admin.id,
-            `Emergencia activada: ${type}`,
-            `${userName} activó una alerta SOS. Revisa el panel de emergencias.`,
-            JSON.stringify({
-              emergencyId: emergency.id,
-              type,
-              latitude,
-              longitude,
-              address,
-              triggeredBy: auth.userId,
-              triggeredByName: userName,
-              rideId,
-            }),
-          ],
-        )
-      }
 
       // 5) Auditoría en auth_events
       await client.query(

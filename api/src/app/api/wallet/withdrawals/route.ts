@@ -140,13 +140,17 @@ export async function POST(req: NextRequest) {
       )
       const w = wRes.rows[0]
 
-      // Debitar del wallet (transaction pending)
+      // Debitar del wallet (transaction pending) — con balance_after para audit
+      // trail consistente (Ronda 21 MEDIUM). Sin esto, el ledger tiene rows con
+      // balance_after=NULL y no se puede reconstruir historial ORDER BY created_at.
+      const newBalance = Math.round((balance - amount) * 100) / 100
       await client.query(
-        `INSERT INTO wallet_transactions (user_id, type, amount, description, status, external_ref, metadata)
-         VALUES ($1, 'withdrawal', $2, $3, 'pending', $4, $5::jsonb)`,
+        `INSERT INTO wallet_transactions (user_id, type, amount, balance_after, description, status, external_ref, metadata)
+         VALUES ($1, 'withdrawal', $2, $3, $4, 'pending', $5, $6::jsonb)`,
         [
           auth.userId,
           -amount, // negativo por débito
+          newBalance,
           `Retiro a cuenta bancaria`,
           w.id,
           JSON.stringify({ withdrawalId: w.id, bankAccountId, fee }),

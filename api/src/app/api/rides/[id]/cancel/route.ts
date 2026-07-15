@@ -115,6 +115,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       // el driver debe cobrar en persona (documentado en notification).
       if (cancelFee > 0 && ride.passenger_id) {
         try {
+          // Ronda 21 HIGH: advisory lock sobre passenger_id (mismo patron que
+          // /complete:87-92) — sin esto, cancel de ride A y complete de ride B
+          // del mismo passenger corren concurrentes, leen mismo balance, insertan
+          // ambos wallet_transactions con balance_after inconsistente.
+          await client.query(
+            `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+            [ride.passenger_id],
+          )
           const balRes = await client.query<{ balance: string }>(
             'SELECT rapi_team_user_balance($1)::text AS balance',
             [ride.passenger_id],
