@@ -77,9 +77,17 @@ export async function POST(
         throw { code: 'ride_already_assigned', status: 409 }
       }
 
-      // Prevenir double-booking del driver: si el driver de esta oferta ya
-      // tiene otro ride activo, rechazar la aceptación del passenger para
-      // que el passenger elija otra oferta y el driver no quede tirando 2 rides.
+      // Ronda 46 CRITICAL: materializar driver_presence ANTES del SELECT FOR
+      // UPDATE (mismo fix que Ronda 24 en rides/accept). Sin esto, drivers que
+      // nunca fueron online no tienen fila → FOR UPDATE no bloquea nada →
+      // dos passengers accepting offers del mismo driver en paralelo pasaban
+      // ambos el check y ambos rides quedaban en 'accepted'.
+      await client.query(
+        `INSERT INTO driver_presence (driver_id, is_online, updated_at)
+         VALUES ($1, false, now())
+         ON CONFLICT (driver_id) DO NOTHING`,
+        [offer.driver_id],
+      )
       const busyRes = await client.query<{ active_ride_id: string | null }>(
         `SELECT active_ride_id FROM driver_presence
           WHERE driver_id = $1 FOR UPDATE`,

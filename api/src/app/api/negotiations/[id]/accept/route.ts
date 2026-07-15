@@ -127,10 +127,17 @@ export async function POST(
         throw { code: 'ride_already_assigned', status: 409 }
       }
 
-      // Prevenir double-booking del driver — mismo check que rides/accept y
-      // offers/accept. Sin este bloqueo, un driver puede aceptar N negociaciones
-      // en paralelo y dejar tirados a N-1 passengers.
+      // Prevenir double-booking del driver — Ronda 46: materializar
+      // driver_presence antes del FOR UPDATE (mismo fix que rides/accept
+      // Ronda 24 y offers/accept). Sin el INSERT ON CONFLICT DO NOTHING,
+      // drivers sin fila presence bypasseaban el lock → double-booking.
       if (newDriverId) {
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, is_online, updated_at)
+           VALUES ($1, false, now())
+           ON CONFLICT (driver_id) DO NOTHING`,
+          [newDriverId],
+        )
         const busyRes = await client.query<{ active_ride_id: string | null }>(
           `SELECT active_ride_id FROM driver_presence
             WHERE driver_id = $1 FOR UPDATE`,
