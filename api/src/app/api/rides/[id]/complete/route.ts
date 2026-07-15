@@ -221,14 +221,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         walletDebit = debitRes.rows[0]!
 
         // 2) CREDIT al driver (netamente de la comisión) — cierra la doble entrada
+        // Ronda 77: setear balance_after para audit trail contable. Antes NULL
+        // rompía cualquier query "reconstruir historial ORDER BY created_at".
         if (updated.driver_id && driverEarning > 0) {
+          const driverBalRes = await client.query<{ balance: string }>(
+            'SELECT rapi_team_user_balance($1)::text AS balance',
+            [updated.driver_id],
+          )
+          const driverBalAfter = Math.round(
+            (Number(driverBalRes.rows[0]?.balance ?? 0) + driverEarning) * 100,
+          ) / 100
           await client.query(
             `INSERT INTO wallet_transactions
-               (user_id, type, amount, description, status, ride_id, metadata, completed_at)
-             VALUES ($1, 'credit', $2, $3, 'completed', $4, $5::jsonb, now())`,
+               (user_id, type, amount, balance_after, description, status, ride_id, metadata, completed_at)
+             VALUES ($1, 'credit', $2, $3, $4, 'completed', $5, $6::jsonb, now())`,
             [
               updated.driver_id,
               driverEarning,
+              driverBalAfter,
               `Ganancia viaje ${id} (comisión ${(commissionRate * 100).toFixed(0)}%)`,
               id,
               JSON.stringify({ finalFare, commissionRate, commissionAmount, driverEarning }),
