@@ -73,8 +73,11 @@ export async function GET(req: NextRequest) {
   if (fromDate) { params.push(fromDate); where.push(`cn.issued_at >= $${params.length}`) }
   if (toDate) { params.push(toDate); where.push(`cn.issued_at <= $${params.length}`) }
   if (search) {
+    // Ronda 43 Bug#1: apply LOWER + LPAD para matchear el formato mostrado
+    // en UI (FC01-00000123). Antes fallaba tanto por casing como por padding
+    // ("FC01-123" vs búsqueda "fc01-00000123").
     params.push(`%${search}%`)
-    where.push(`(LOWER(i.customer_name) LIKE $${params.length} OR cn.series || '-' || cn.correlative::text LIKE $${params.length})`)
+    where.push(`(LOWER(i.customer_name) LIKE $${params.length} OR LOWER(cn.series || '-' || LPAD(cn.correlative::text, 8, '0')) LIKE $${params.length})`)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
@@ -178,6 +181,16 @@ export async function POST(req: NextRequest) {
              RETURNING *`,
             [series, correlative, body.invoiceId, body.reason, body.reasonNotes ?? null, amt, auth.userId],
           )
+          // Ronda 43 Bug#2: si es anulación total, voidear la factura DENTRO
+          // de la misma tx. Antes se hacía fuera con query() → si el pool caía
+          // entre commit y UPDATE, factura quedaba sin voidar y la NC ya
+          // devuelta al cliente rompía la contabilidad.
+          if (body.reason === 'anulacion' && Math.abs(amt - invoiceTotal) < 0.01) {
+            await client.query(
+              `UPDATE invoices SET status = 'voided', voided_at = NOW() WHERE id = $1`,
+              [body.invoiceId],
+            )
+          }
           return { row: insRes.rows[0]!, invoiceTotal, amt }
         })
         created = outcome.row
@@ -209,16 +222,8 @@ export async function POST(req: NextRequest) {
     console.error('[credit-notes POST] correlative collision after retries:', attemptError)
     return NextResponse.json({ success: false, error: 'insert_failed' }, { status: 500 })
   }
-  const amount = Number(created.amount)
-  const invoiceTotal = invoiceTotalOut
-
-  // Si es anulación total, marcar la factura como voided
-  if (body.reason === 'anulacion' && amount === invoiceTotal) {
-    await query(
-      `UPDATE invoices SET status = 'voided', voided_at = NOW() WHERE id = $1`,
-      [body.invoiceId],
-    )
-  }
+  // El voideo de invoices ya se hace dentro del tx (Ronda 43 Bug#2)
+  void invoiceTotalOut
 
   return NextResponse.json({ success: true, creditNote: serialize(created) }, { status: 201 })
 }
