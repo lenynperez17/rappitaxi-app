@@ -95,6 +95,10 @@ export async function GET(
 
   const limit = Math.min(Math.max(parseInt(limitRaw ?? '100', 10) || 100, 1), 500)
 
+  // Ronda 71: para carga inicial (sin since), traer los N MÁS RECIENTES
+  // (DESC + LIMIT), luego revertimos a orden ascendente para render normal.
+  // Con since, mantenemos ASC porque el cliente pide "novedades post-timestamp".
+  const orderDir = since ? 'ASC' : 'DESC'
   const rows = await query<MessageRow>(
     `SELECT m.id,
             m.sender_id,
@@ -107,10 +111,11 @@ export async function GET(
        LEFT JOIN users u ON u.id = m.sender_id
        WHERE m.ride_id = $1
          AND ($2::timestamptz IS NULL OR m.created_at > $2::timestamptz)
-       ORDER BY m.created_at ASC
+       ORDER BY m.created_at ${orderDir}
        LIMIT $3`,
     [rideId, since, limit],
   )
+  if (!since) rows.reverse() // devolver siempre ASC al cliente
 
   const messages = rows.map((r) => ({
     id: r.id,
