@@ -99,15 +99,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'invalid_status', message: 'Solo el conductor o soporte pueden cerrar un viaje en curso.' }
       }
 
+      // Ronda 76: NO poner cancelFee en final_fare — contaminaría reports GMV
+      // que suman SUM(final_fare) FROM rides. La fee vive solo en
+      // wallet_transactions (audit trail) + metadata del ride. Además drivers
+      // veian final_fare=2.00 creyendo que les tocaba comisión sobre eso.
       await client.query(
         `UPDATE rides
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancelled_reason = $2,
                 completed_at = now(),
-                final_fare = $3
+                final_fare = NULL,
+                metadata = COALESCE(metadata, '{}'::jsonb)
+                         || jsonb_build_object('cancellationFee', $3::numeric)
           WHERE id = $4`,
-        [auth.userId, reason, cancelFee > 0 ? cancelFee : null, id],
+        [auth.userId, reason, cancelFee > 0 ? cancelFee : 0, id],
       )
 
       // Aplicar cancel fee al passenger si corresponde (via wallet debit).
