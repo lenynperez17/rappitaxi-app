@@ -16,7 +16,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
-import { query, tx } from '@/lib/db'
+import { tx } from '@/lib/db'
 import { revokeAllUserSessions } from '@/lib/sessions'
 
 export const runtime = 'nodejs'
@@ -158,6 +158,17 @@ export async function POST(req: NextRequest) {
       // Auth events: purgar (contienen IP + UA de sesiones del user)
       await client.query('DELETE FROM auth_events WHERE user_id = $1', [auth.userId])
 
+      // Ronda 58 Bug#2: INSERT audit trail 'account_deleted' DENTRO del tx
+      // (después del DELETE de auth_events viejos). Antes: se hacía fuera del
+      // tx → si pool caía entre commit y el INSERT, quedaba cuenta borrada
+      // sin rastro (GDPR Art. 30 records-of-processing incumplido).
+      await client.query(
+        `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
+         VALUES ($1, 'account_deleted', NULL, $2, $3, $4)`,
+        [auth.userId, getClientIp(req), req.headers.get('user-agent'),
+         JSON.stringify({ reason: body.reason ?? null })],
+      )
+
       // Notifications: borrar (contienen data.name/phone del user en payloads)
       await client.query('DELETE FROM notifications WHERE user_id = $1', [auth.userId])
 
@@ -184,15 +195,9 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Revocar TODAS las sesiones
+    // Revocar TODAS las sesiones (fuera del tx — es idempotente y no rompe
+    // el borrado si falla; audit ya se hizo atómicamente dentro del tx arriba).
     await revokeAllUserSessions(auth.userId)
-
-    // Auditoría
-    await query(
-      `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
-       VALUES ($1, 'account_deleted', NULL, $2, $3, $4)`,
-      [auth.userId, getClientIp(req), req.headers.get('user-agent'), JSON.stringify({ reason: body.reason ?? null })],
-    )
 
     return NextResponse.json({
       success: true,
