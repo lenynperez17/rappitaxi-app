@@ -47,8 +47,12 @@ export async function GET(req: NextRequest) {
   const search = (searchParams.get('search') ?? '').trim().toLowerCase()
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize') ?? '50')))
+  // Ronda 27 Bug#1: Number('abc')=NaN, Math.max(1, NaN)=NaN → LIMIT NaN
+  // → Postgres syntax error → 500. Guardar con isFinite antes de propagar.
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '50')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = []

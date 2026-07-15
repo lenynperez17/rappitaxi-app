@@ -88,8 +88,11 @@ export async function GET(req: NextRequest) {
   const search = (searchParams.get('search') ?? '').trim().toLowerCase()
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? '50')))
+  // Ronda 27 Bug#1: NaN-safe pagination (?page=abc no debe romper el endpoint)
+  const pageRaw = Number(searchParams.get('page') ?? '1')
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const pageSizeRaw = Number(searchParams.get('pageSize') ?? '50')
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
@@ -101,7 +104,11 @@ export async function GET(req: NextRequest) {
   if (toDate) { params.push(toDate); where.push(`issued_at <= $${params.length}`) }
   if (search) {
     params.push(`%${search}%`)
-    where.push(`(LOWER(customer_name) LIKE $${params.length} OR LOWER(customer_email) LIKE $${params.length} OR customer_doc LIKE $${params.length} OR series || '-' || correlative::text LIKE $${params.length})`)
+    // Ronda 27 Bug#2: aplicar LOWER() a series||'-'||correlative — el search
+    // patron es lowercase pero series es MAYUSCULA (F001, B001, R001), así
+    // que sin LOWER el LIKE nunca matcheaba. Bug: buscar "F001-00000123" no
+    // encontraba la factura correspondiente.
+    where.push(`(LOWER(customer_name) LIKE $${params.length} OR LOWER(customer_email) LIKE $${params.length} OR LOWER(customer_doc) LIKE $${params.length} OR LOWER(series || '-' || correlative::text) LIKE $${params.length})`)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
