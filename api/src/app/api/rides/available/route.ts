@@ -47,7 +47,19 @@ export async function GET(req: NextRequest) {
   const radiusKm = Number.isFinite(radiusRaw) ? Math.min(50, Math.max(0.1, radiusRaw)) : 5
   const limitRaw = Number(searchParams.get('limit') ?? '20')
   const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 20
-  const vehicleType = searchParams.get('vehicleType')
+  // Ronda 80: whitelist vehicleType (consistente con POST /api/rides).
+  // Antes: cualquier string arbitrario pasaba y filtraba 0 rides silenciosamente
+  // (ej. "%20"), o forzaba full-scan sobre vehicle_type con strings inutiles.
+  const ALLOWED_VEHICLE_TYPES = ['taxi', 'moto', 'moto_taxi', 'car', 'van', 'truck', 'bicycle']
+  const vehicleTypeRaw = searchParams.get('vehicleType')?.trim() || null
+  if (vehicleTypeRaw && !ALLOWED_VEHICLE_TYPES.includes(vehicleTypeRaw)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_vehicle_type',
+        message: `vehicleType debe ser uno de: ${ALLOWED_VEHICLE_TYPES.join(', ')}` },
+      { status: 400 },
+    )
+  }
+  const vehicleType = vehicleTypeRaw
 
   if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return NextResponse.json(
