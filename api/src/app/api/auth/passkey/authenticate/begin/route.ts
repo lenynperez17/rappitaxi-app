@@ -11,7 +11,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { generateAuthentication } from '@/lib/passkeys';
-import { maybeOne } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,23 +31,17 @@ export async function POST(req: NextRequest) {
     body = {};
   }
 
-  let userForOptions: { id: string } | undefined;
-  if (body.email && typeof body.email === 'string') {
-    const email = body.email.trim().toLowerCase();
-    if (email.length > 0) {
-      const u = await maybeOne<{ id: string }>(
-        `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
-        [email]
-      );
-      // Si el email no existe NO devolvemos error (evita user-enumeration).
-      // Caemos a flow discoverable: el browser pedirá selección y el verify
-      // fallará si no hay credencial registrada.
-      if (u) userForOptions = { id: u.id };
-    }
-  }
+  // Ronda 65: user-enumeration real. Antes: si email existía, allowCredentials
+  // se poblaba con los credentialID del user; si no existía, allowCredentials
+  // vacío. Attacker distinguía existencia + obtenía IDs públicos de credenciales.
+  // Fix: SIEMPRE flow discoverable (allowCredentials omitido) sin importar si
+  // el email fue provisto o no. El browser prompteará selección + verify fail
+  // si no hay credencial válida. Ignoramos body.email intencionalmente para
+  // no leak-ear diferencias observables en la respuesta.
+  void body.email
 
   try {
-    const options = await generateAuthentication({ user: userForOptions });
+    const options = await generateAuthentication({ user: undefined });
     return NextResponse.json({ success: true, options }, { status: 200 });
   } catch (err) {
     console.error('[passkey/authenticate/begin] error:', err);
