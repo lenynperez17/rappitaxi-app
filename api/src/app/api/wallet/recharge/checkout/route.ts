@@ -76,11 +76,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Ronda 23 Bug#2: X-Idempotency-Key con externalRef evita que retry del
+    // cliente cree preferencias duplicadas (usuario cobrado 2x). MP acepta
+    // este header y devuelve la misma preferencia si ya se creó con esa key.
     const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${mpToken}`,
         'Content-Type': 'application/json',
+        'X-Idempotency-Key': externalRef,
       },
       body: JSON.stringify(prefBody),
       signal: AbortSignal.timeout(10_000),
@@ -88,6 +92,11 @@ export async function POST(req: NextRequest) {
     const data = await r.json()
     if (!r.ok) {
       console.error('[wallet/recharge] MP error', r.status, data)
+      // Purgar mp_payment huérfano — sin esto la fila 'created' queda para
+      // siempre y es imposible reconciliar el ledger.
+      try {
+        await maybeOne(`DELETE FROM mp_payments WHERE id = $1 AND status = 'created'`, [externalRef])
+      } catch (_) {}
       return NextResponse.json({ success: false, error: 'mp_error', status: r.status }, { status: 502 })
     }
 
@@ -106,6 +115,10 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[wallet/recharge] fetch error', err)
+    // Purgar mp_payment huérfano en fetch failure
+    try {
+      await maybeOne(`DELETE FROM mp_payments WHERE id = $1 AND status = 'created'`, [externalRef])
+    } catch (_) {}
     return NextResponse.json({ success: false, error: 'mp_fetch_failed' }, { status: 502 })
   }
 }

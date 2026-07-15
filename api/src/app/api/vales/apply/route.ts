@@ -80,7 +80,11 @@ export async function POST(req: NextRequest) {
         'SELECT COUNT(*)::int as n FROM vale_usages WHERE vale_id = $1 AND user_id = $2',
         [vale.id, auth.userId],
       )
-      if (usesRes.rows[0].n >= vale.per_user_limit) {
+      // Ronda 23 Bug#1: per_user_limit NULL = ilimitado (patrón consistente
+       // con max_uses/min_ride_amount arriba). Sin este guard, `n >= null` es
+       // false en JS y silenciosamente bypasea el check — cualquier vale con
+       // per_user_limit NULL permitía uso infinito por usuario.
+      if (vale.per_user_limit !== null && usesRes.rows[0].n >= vale.per_user_limit) {
         throw { code: 'user_limit_reached' }
       }
 
