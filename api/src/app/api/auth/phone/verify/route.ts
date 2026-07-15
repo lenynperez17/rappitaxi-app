@@ -81,6 +81,22 @@ export async function POST(req: NextRequest) {
 
   const phoneKey = phoneNumber.replace('+', '')
 
+  // Ronda 66 CRITICAL: verificar que el user autenticado sea el mismo que
+  // inició el /send-code. Sin esto, un attacker que obtiene el código por
+  // SIM-swap podía asociar el phone a su cuenta en vez de a la víctima.
+  // initiated_by=NULL se acepta (fila legacy pre-migración 020 o test).
+  const initiatorRow = await maybeOne<{ initiated_by: string | null }>(
+    'SELECT initiated_by FROM phone_verifications WHERE phone_key = $1',
+    [phoneKey],
+  )
+  if (initiatorRow?.initiated_by && initiatorRow.initiated_by !== auth.userId) {
+    return NextResponse.json(
+      { success: false, error: 'initiator_mismatch',
+        message: 'Este código fue solicitado por otra sesión. Solicita uno nuevo desde tu cuenta.' },
+      { status: 403 },
+    )
+  }
+
   // Ronda 19 HIGH#1: doble guard test-phone (env + DB row) + invalidación tras uso
   const testPhonesEnabled = process.env.TEST_PHONES_ENABLED === 'true'
   const testRow = await maybeOne<{ test_code: string | null; test_code_expires: Date | null; is_test_phone: boolean }>(

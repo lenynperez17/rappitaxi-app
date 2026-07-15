@@ -68,15 +68,18 @@ export async function POST(req: NextRequest) {
   const phoneKey = phoneNumber.replace('+', '')
 
   // Test phones bypass — código fijo y no llama Twilio
+  // Ronda 66 CRITICAL: persistir initiated_by para prevenir hijack por SIM-swap.
+  // Si user A envía código para su phone y attacker B lo verifica con auth de B,
+  // /phone/verify puede rechazar por mismatch de initiated_by.
   if (testPhonesEnabled() && TEST_PHONE_NUMBERS[phoneNumber]) {
     const testCode = TEST_PHONE_NUMBERS[phoneNumber]!
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
     await query(
-      `INSERT INTO phone_verifications (phone_key, phone_number, test_code, test_code_expires, is_test_phone, last_sent_at)
-       VALUES ($1,$2,$3,$4,true,now())
+      `INSERT INTO phone_verifications (phone_key, phone_number, test_code, test_code_expires, is_test_phone, last_sent_at, initiated_by)
+       VALUES ($1,$2,$3,$4,true,now(),$5)
        ON CONFLICT (phone_key) DO UPDATE
-         SET test_code=$3, test_code_expires=$4, is_test_phone=true, last_sent_at=now()`,
-      [phoneKey, phoneNumber, testCode, expiresAt],
+         SET test_code=$3, test_code_expires=$4, is_test_phone=true, last_sent_at=now(), initiated_by=$5`,
+      [phoneKey, phoneNumber, testCode, expiresAt, auth.userId],
     )
     return NextResponse.json({ success: true, provider: 'test', status: 'pending' })
   }
@@ -120,10 +123,10 @@ export async function POST(req: NextRequest) {
   }
 
   await query(
-    `INSERT INTO phone_verifications (phone_key, phone_number, last_sent_at)
-     VALUES ($1,$2,now())
-     ON CONFLICT (phone_key) DO UPDATE SET last_sent_at = now()`,
-    [phoneKey, phoneNumber],
+    `INSERT INTO phone_verifications (phone_key, phone_number, last_sent_at, initiated_by)
+     VALUES ($1,$2,now(),$3)
+     ON CONFLICT (phone_key) DO UPDATE SET last_sent_at = now(), initiated_by = $3`,
+    [phoneKey, phoneNumber, auth.userId],
   )
 
   return NextResponse.json({ success: true, provider: 'sms', status: 'pending' })
