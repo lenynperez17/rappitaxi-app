@@ -58,6 +58,15 @@ export async function GET(
       { status: 400 },
     )
   }
+  // Ronda 48 Bug#2: validar UUID antes de query. Sin esto, un id no-UUID
+  // (ej. "abc") hace que Postgres tire 22P02 → 500 en vez de 400 controlado.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!UUID_RE.test(driverId)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_id' },
+      { status: 400 },
+    )
+  }
 
   // ¿Es el propio driver?
   const isSelf = requesterId === driverId

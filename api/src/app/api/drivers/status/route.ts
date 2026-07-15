@@ -83,15 +83,32 @@ export async function PUT(req: NextRequest) {
 
   try {
     await tx(async (client) => {
-      // UPSERT del estado
-      await client.query(
-        `INSERT INTO driver_presence (driver_id, is_online, updated_at)
-         VALUES ($1, $2, now())
-         ON CONFLICT (driver_id) DO UPDATE SET
-           is_online = EXCLUDED.is_online,
-           updated_at = now()`,
-        [driverId, isOnline],
-      )
+      // Ronda 48 Bug#1: al pasar a offline, limpiar lat/lng/heading/last_heartbeat.
+      // Sin esto, el driver seguía apareciendo con su última posición al passenger
+      // aunque hubiera desconectado. GET /drivers/[id]/location entregaba coord
+      // congeladas como si el conductor siguiera activo.
+      if (isOnline) {
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, is_online, updated_at)
+           VALUES ($1, true, now())
+           ON CONFLICT (driver_id) DO UPDATE SET
+             is_online = true, updated_at = now()`,
+          [driverId],
+        )
+      } else {
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, is_online, latitude, longitude, heading, last_heartbeat, updated_at)
+           VALUES ($1, false, NULL, NULL, NULL, NULL, now())
+           ON CONFLICT (driver_id) DO UPDATE SET
+             is_online = false,
+             latitude = NULL,
+             longitude = NULL,
+             heading = NULL,
+             last_heartbeat = NULL,
+             updated_at = now()`,
+          [driverId],
+        )
+      }
 
       // Auditoría
       await client.query(
