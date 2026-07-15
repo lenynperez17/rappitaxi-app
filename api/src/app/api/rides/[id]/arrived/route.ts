@@ -58,11 +58,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return updated
     })
 
-    await query(
-      `INSERT INTO auth_events (user_id, event_type, provider, metadata)
-       VALUES ($1, 'ride_driver_arrived', 'app', $2)`,
-      [auth.userId, JSON.stringify({ rideId: id })],
-    )
+    // Ronda 32 Bug#2: audit log non-blocking (mismo patrón que /start)
+    try {
+      await query(
+        `INSERT INTO auth_events (user_id, event_type, provider, metadata)
+         VALUES ($1, 'ride_driver_arrived', 'app', $2)`,
+        [auth.userId, JSON.stringify({ rideId: id })],
+      )
+    } catch (auditErr) {
+      console.warn('[rides/arrived] audit_events insert failed (non-blocking):', auditErr)
+    }
 
     return NextResponse.json({
       success: true,

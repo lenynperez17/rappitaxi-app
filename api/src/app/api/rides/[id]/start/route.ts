@@ -32,7 +32,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const ride = rideRes.rows[0]
       if (!ride) throw { code: 'not_found' }
       if (ride.driver_id !== auth.userId) throw { code: 'forbidden' }
-      if (ride.status !== 'accepted' && ride.status !== 'arrived') {
+      // Ronda 32 Bug#1: state machine consistente con /arrive — aceptar también
+      // 'on_way'. Antes /arrive aceptaba accepted|on_way pero /start solo
+      // accepted|arrived, obligando a un driver en 'on_way' a pasar por
+      // 'arrived' antes de iniciar (aunque el arribo pudo ser skipeado por
+      // el flujo real).
+      if (!['accepted', 'on_way', 'arrived'].includes(ride.status)) {
         throw { code: 'invalid_status', message: `Estado actual: ${ride.status}` }
       }
 
@@ -61,11 +66,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return updated
     })
 
-    await query(
-      `INSERT INTO auth_events (user_id, event_type, provider, metadata)
-       VALUES ($1, 'ride_started', 'app', $2)`,
-      [auth.userId, JSON.stringify({ rideId: id })],
-    )
+    // Ronda 32 Bug#2: audit log en try-catch silencioso. Si el INSERT falla
+    // (constraint/DB glitch), NO devolver 500 porque el UPDATE del ride ya se
+    // commiteó — un 500 provoca que el cliente reintente y reciba 409
+    // (status ya cambió), quedando UI desincronizada.
+    try {
+      await query(
+        `INSERT INTO auth_events (user_id, event_type, provider, metadata)
+         VALUES ($1, 'ride_started', 'app', $2)`,
+        [auth.userId, JSON.stringify({ rideId: id })],
+      )
+    } catch (auditErr) {
+      console.warn('[rides/start] audit_events insert failed (non-blocking):', auditErr)
+    }
 
     return NextResponse.json({
       success: true,
