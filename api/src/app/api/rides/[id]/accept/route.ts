@@ -60,9 +60,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'cannot_accept_own_ride' }
       }
 
-      // Prevenir double-booking: si el driver ya tiene un ride activo distinto,
-      // rechazar la aceptación. Sin este check, un driver puede aceptar N
-      // rides simultáneos y dejar tirados a los primeros passengers.
+      // Prevenir double-booking (Ronda 24 Bug#2): materializar la fila
+      // driver_presence ANTES del SELECT FOR UPDATE. Sin esto, drivers que
+      // nunca fueron online no tenían fila → FOR UPDATE no bloqueaba nada
+      // → dos requests concurrentes pasaban ambos el check y aceptaban dos
+      // rides distintos. INSERT ... ON CONFLICT DO NOTHING crea la fila
+      // vacía si falta, luego el FOR UPDATE bloquea correctamente.
+      await client.query(
+        `INSERT INTO driver_presence (driver_id, is_online, updated_at)
+         VALUES ($1, false, now())
+         ON CONFLICT (driver_id) DO NOTHING`,
+        [auth.userId],
+      )
       const busyRes = await client.query<{ active_ride_id: string | null }>(
         `SELECT active_ride_id FROM driver_presence
           WHERE driver_id = $1 FOR UPDATE`,

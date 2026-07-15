@@ -71,8 +71,17 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const latitude = Number(body.latitude)
-  const longitude = Number(body.longitude)
+  // Ronda 24 Bug#1: Number(null)===0, Number('')===0 bypasean el finite check
+  // → query con coords (0,0) devolvía lista vacía sin señalar el error al
+  // cliente. Requiere que ambos campos sean explícitamente numéricos.
+  if (typeof body.latitude !== 'number' || typeof body.longitude !== 'number') {
+    return NextResponse.json(
+      { success: false, error: 'invalid_input', message: 'latitude/longitude deben ser numéricos' },
+      { status: 400 },
+    )
+  }
+  const latitude = body.latitude
+  const longitude = body.longitude
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return NextResponse.json(
       { success: false, error: 'invalid_input', message: 'latitude/longitude requeridos' },
