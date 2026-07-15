@@ -124,6 +124,18 @@ export async function POST(req: NextRequest) {
   // ningún heartbeat puede setear el campo a NULL.
   const clearActiveRide = body.clearActiveRide === true
 
+  // Ronda 88: rechazar payload contradictorio (clearActiveRide + activeRideId).
+  // Antes: el INSERT path guardaba activeRideId pero el UPDATE lo clearaba
+  // → primer heartbeat OK, subsecuentes lo borraban → driver aparecía "libre"
+  // en /admin/live aunque estuviera en ride → dispatcher asignaba 2do viaje.
+  if (clearActiveRide && rawActiveRideId) {
+    return NextResponse.json(
+      { success: false, error: 'contradictory_payload',
+        message: 'No envíes activeRideId con clearActiveRide=true simultáneamente' },
+      { status: 400 },
+    )
+  }
+
   // B#15: si el driver envía `activeRideId`, verificar que ese ride existe
   // y está asignado a este mismo driver. Sin este check, un driver malicioso
   // envenena driver_presence.active_ride_id con IDs ajenos → confunde
