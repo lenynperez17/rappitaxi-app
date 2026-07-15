@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
-import { maybeOne } from '@/lib/db'
+import { tx } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -44,42 +44,64 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'invalid_status' }, { status: 400 })
   }
 
-  const current = await maybeOne<{ status: string }>(
-    `SELECT status FROM emergencies WHERE id = $1`,
-    [id],
-  )
-  if (!current) return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+  // Ronda 56 Bug#2: SELECT FOR UPDATE + WHERE status=$current + rowCount.
+  // Sin esto, dos admins concurrentes con PATCH dispatched→resolved ambos
+  // pasaban validación y el 2do sobrescribía resolved_by/resolved_at del 1ero.
+  try {
+    const result = await tx(async (client) => {
+      const cur = await client.query<{ status: string }>(
+        `SELECT status FROM emergencies WHERE id = $1 FOR UPDATE`,
+        [id],
+      )
+      if (cur.rowCount === 0) throw { code: 'not_found' }
+      const currentStatus = cur.rows[0]!.status
 
-  const allowed = ALLOWED_TRANSITIONS[current.status] ?? []
-  if (!allowed.includes(body.status)) {
-    return NextResponse.json(
-      { success: false, error: 'invalid_transition', message: `No se puede pasar de "${current.status}" a "${body.status}".` },
-      { status: 409 },
-    )
+      const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? []
+      if (!allowed.includes(body.status!)) {
+        throw { code: 'invalid_transition', currentStatus, nextStatus: body.status }
+      }
+
+      const isFinal = body.status === 'resolved' || body.status === 'cancelled'
+      const upd = await client.query<{ id: string; status: string; resolved_at: Date | null }>(
+        `UPDATE emergencies
+            SET status = $1,
+                resolved_by = CASE WHEN $2 THEN $3 ELSE resolved_by END,
+                resolved_at = CASE WHEN $2 THEN NOW() ELSE resolved_at END,
+                metadata = COALESCE(metadata, '{}'::jsonb)
+                         || jsonb_build_object(
+                              'lastUpdatedBy', $3::text,
+                              'lastUpdatedAt', NOW()::text,
+                              'adminNotes', COALESCE($4::text, metadata->>'adminNotes')
+                            )
+          WHERE id = $5 AND status = $6
+          RETURNING id, status, resolved_at`,
+        [body.status, isFinal, auth.userId, body.notes ?? null, id, currentStatus],
+      )
+      if (upd.rowCount === 0) throw { code: 'concurrent_update' }
+      return upd.rows[0]!
+    })
+    return NextResponse.json({
+      success: true,
+      emergency: { id: result.id, status: result.status, resolvedAt: result.resolved_at },
+    })
+  } catch (err) {
+    const known = err as { code?: string; currentStatus?: string; nextStatus?: string }
+    if (known?.code === 'not_found') {
+      return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
+    }
+    if (known?.code === 'invalid_transition') {
+      return NextResponse.json({
+        success: false, error: 'invalid_transition',
+        message: `No se puede pasar de "${known.currentStatus}" a "${known.nextStatus}".`,
+      }, { status: 409 })
+    }
+    if (known?.code === 'concurrent_update') {
+      return NextResponse.json({
+        success: false, error: 'concurrent_update',
+        message: 'Otro admin actualizó esta emergencia; recarga y reintenta.',
+      }, { status: 409 })
+    }
+    console.error('[admin/emergencies PATCH] error:', err)
+    return NextResponse.json({ success: false, error: 'internal_error' }, { status: 500 })
   }
-
-  const isFinal = body.status === 'resolved' || body.status === 'cancelled'
-  const updated = await maybeOne<{ id: string; status: string; resolved_at: Date | null }>(
-    `UPDATE emergencies
-        SET status = $1,
-            resolved_by = CASE WHEN $2 THEN $3 ELSE resolved_by END,
-            resolved_at = CASE WHEN $2 THEN NOW() ELSE resolved_at END,
-            metadata = COALESCE(metadata, '{}'::jsonb)
-                     || jsonb_build_object(
-                          'lastUpdatedBy', $3::text,
-                          'lastUpdatedAt', NOW()::text,
-                          'adminNotes', COALESCE($4::text, metadata->>'adminNotes')
-                        )
-      WHERE id = $5
-      RETURNING id, status, resolved_at`,
-    [body.status, isFinal, auth.userId, body.notes ?? null, id],
-  )
-  if (!updated) {
-    return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
-  }
-
-  return NextResponse.json({
-    success: true,
-    emergency: { id: updated.id, status: updated.status, resolvedAt: updated.resolved_at },
-  })
 }
