@@ -22,6 +22,7 @@ interface RideTimestampsRow {
   accepted_at: Date | null
   started_at: Date | null
   completed_at: Date | null
+  updated_at: Date | null
 }
 
 interface HistoryEntry {
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const ride = await maybeOne<RideTimestampsRow>(
     `SELECT id, passenger_id, driver_id, status,
             cancelled_by, cancelled_reason,
-            created_at, accepted_at, started_at, completed_at
+            created_at, accepted_at, started_at, completed_at, updated_at
        FROM rides
        WHERE id = $1`,
     [id],
@@ -69,17 +70,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (ride.started_at) {
     history.push({ status: 'in_progress', at: ride.started_at, actorId: ride.driver_id })
   }
-  if (ride.completed_at) {
-    if (ride.status === 'cancelled') {
-      history.push({
-        status: 'cancelled',
-        at: ride.completed_at,
-        actorId: ride.cancelled_by,
-        reason: ride.cancelled_reason,
-      })
-    } else {
-      history.push({ status: 'completed', at: ride.completed_at, actorId: ride.driver_id })
-    }
+  // Ronda 50 Bug#1: cancelaciones tempranas no tienen completed_at (solo se
+  // rellena al finalizar exitosamente). Antes: cancel en 'requested' o
+  // 'accepted' no aparecía en history. Ahora usar ride.status === 'cancelled'
+  // como fuente independiente + completed_at OR updated_at fallback.
+  if (ride.status === 'cancelled') {
+    history.push({
+      status: 'cancelled',
+      at: ride.completed_at ?? ride.updated_at ?? ride.created_at,
+      actorId: ride.cancelled_by,
+      reason: ride.cancelled_reason,
+    })
+  } else if (ride.completed_at) {
+    history.push({ status: 'completed', at: ride.completed_at, actorId: ride.driver_id })
   }
 
   history.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())

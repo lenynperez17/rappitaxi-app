@@ -88,7 +88,24 @@ export async function POST(req: NextRequest) {
 
   try {
     const method = await tx(async (client) => {
-      if (isDefault) {
+      // Ronda 50 Bug#2: advisory lock por user_id + auto-primary si es el primero.
+      // Sin el lock, doble tap con isDefault:true dejaba dos defaults simultáneos.
+      // Sin auto-primary, primer método sin isDefault dejaba usuario sin default.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 249))`,
+        [auth.userId],
+      )
+      let effectiveDefault = isDefault
+      if (!effectiveDefault) {
+        const existing = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM user_payment_methods WHERE user_id = $1`,
+          [auth.userId],
+        )
+        if (Number(existing.rows[0]?.count ?? '0') === 0) {
+          effectiveDefault = true
+        }
+      }
+      if (effectiveDefault) {
         await client.query(
           `UPDATE user_payment_methods SET is_default = false WHERE user_id = $1`,
           [auth.userId],
@@ -98,7 +115,7 @@ export async function POST(req: NextRequest) {
         `INSERT INTO user_payment_methods (user_id, method_type, label, is_default, metadata)
          VALUES ($1, $2, $3, $4, $5::jsonb)
          RETURNING id, user_id, method_type, label, is_default, metadata, created_at`,
-        [auth.userId, methodType, label, isDefault, metadataJson],
+        [auth.userId, methodType, label, effectiveDefault, metadataJson],
       )
       return res.rows[0]!
     })
