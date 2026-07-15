@@ -32,6 +32,7 @@ export interface CheckVerificationResult {
   accepted: boolean
   reason?: CheckRejectReason
   error?: string
+  rateLimited?: boolean
 }
 
 export class TwilioVerifyService {
@@ -77,12 +78,26 @@ export class TwilioVerifyService {
       console.log(`[Twilio Verify] check ${toPhone}: status=${check.status} accepted=${accepted}`)
       if (accepted) return { success: true, accepted: true }
 
-      // Otros status: 'pending', 'canceled'. Twilio ya no diferencia expirado
-      // vs incorrecto — trata todo como incorrecto.
+      // Ronda 61 Bug#2: 'canceled' es distinto de 'incorrect'. Twilio auto-cancela
+      // tras 5 intentos fallidos → next check da 60510 'expired' inconsistente.
+      // Mejor mapear canceled → expired para que el cliente pida un nuevo OTP.
+      if (check.status === 'canceled') {
+        return { success: true, accepted: false, reason: 'expired' }
+      }
+      // 'pending' y otros → tratar como incorrecto (el user aún puede reintentar).
       return { success: true, accepted: false, reason: 'incorrect' }
     } catch (error: unknown) {
-      const { msg, isExpired, isNotFound } = this.parseError(error)
+      const { msg, isExpired, isNotFound, isRateLimit, isAuthFailure, isInfrastructure } = this.parseError(error)
       console.warn(`[Twilio Verify] check ${toPhone} falló: ${msg}`)
+      // Ronda 61 Bug#1: NO enmascarar errores de infraestructura (auth
+      // token rotado, 5xx, timeout) como "code incorrect". Si es infra
+      // devolver success:false para que el caller alerte + no confunda al user.
+      if (isAuthFailure || isInfrastructure) {
+        return { success: false, accepted: false, error: msg }
+      }
+      if (isRateLimit) {
+        return { success: false, rateLimited: true, accepted: false, error: msg }
+      }
       return {
         success: true,
         accepted: false,
@@ -110,6 +125,8 @@ export class TwilioVerifyService {
     isNoBalance: boolean
     isExpired: boolean
     isNotFound: boolean
+    isAuthFailure: boolean
+    isInfrastructure: boolean
   } {
     const e = error as {
       code?: number | string
@@ -138,6 +155,12 @@ export class TwilioVerifyService {
 
     const isNotFound = code === '60510'
 
-    return { msg: `Twilio ${code}: ${msg}`, isRateLimit, isNoBalance, isExpired, isNotFound }
+    // Ronda 61 Bug#1: distinguir errores de infraestructura vs código incorrecto
+    const isAuthFailure = code === '20003' || /authentication failed|auth token/i.test(msg)
+    const isInfrastructure =
+      httpStatus >= 500 ||
+      /timeout|ECONNRESET|ENOTFOUND|network|econn/i.test(msg)
+
+    return { msg: `Twilio ${code}: ${msg}`, isRateLimit, isNoBalance, isExpired, isNotFound, isAuthFailure, isInfrastructure }
   }
 }
