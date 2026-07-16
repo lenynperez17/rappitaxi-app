@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Loader2, AlertCircle, ShieldCheck, Phone, Mail, CheckCircle2, ChevronRight } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
@@ -13,7 +13,11 @@ export function VerificationsPage() {
   const [status, setStatus] = useState<'unverified' | 'verified' | 'all'>('unverified')
   const [error, setError] = useState<string | null>(null)
 
+  // Ronda 113: request id (mismo patrón Rondas 111/112).
+  const requestSeq = useRef(0)
+
   const load = async () => {
+    const seq = ++requestSeq.current
     setLoading(true); setError(null)
     try {
       const resp = await adminApi.listDrivers({
@@ -21,13 +25,15 @@ export function VerificationsPage() {
         search: search || undefined,
         pageSize: 100,
       })
+      if (seq !== requestSeq.current) return
       setDrivers(resp.drivers); setTotal(resp.total)
     } catch (err) {
+      if (seq !== requestSeq.current) return
       setError(err instanceof AdminApiError ? err.message : 'Error cargando verificaciones')
-    } finally { setLoading(false) }
+    } finally { if (seq === requestSeq.current) setLoading(false) }
   }
 
-  useEffect(() => { void load() }, [status])
+  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
   useEffect(() => {
     const t = setTimeout(() => void load(), 350)
     return () => clearTimeout(t)
