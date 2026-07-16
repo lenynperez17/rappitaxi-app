@@ -216,15 +216,20 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
-  // Verificar si todos los documentos están completos
+  // Verificar si todos los documentos están completos.
+  // Ronda 95: un doc rechazado NO cuenta como completo. Antes:
+  // containsKey era true aunque status='rejected' → requestVerification pasaba
+  // con documentos que debían re-subirse y forzaba local under_review
+  // ocultando al usuario que aún tenía rechazos pendientes.
   bool areAllDocumentsComplete() {
     if (_driverDocuments == null) return false;
 
     for (var doc in requiredDocuments) {
       if (doc['required'] == true) {
-        if (!_driverDocuments!.containsKey(doc['id'])) {
-          return false;
-        }
+        final docId = doc['id'] as String;
+        if (!_driverDocuments!.containsKey(docId)) return false;
+        final status = getDocumentStatus(docId);
+        if (status == 'rejected' || status == 'expired') return false;
       }
     }
     return true;
