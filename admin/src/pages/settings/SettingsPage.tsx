@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 
@@ -36,6 +36,8 @@ export function SettingsPage() {
   const [edited, setEdited] = useState<Record<string, unknown>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // Ronda 177: ref síncrono contra doble-submit del formulario de settings.
+  const savingRef = useRef(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
   const load = async () => {
@@ -63,6 +65,8 @@ export function SettingsPage() {
   const dirty = Object.keys(edited).length > 0
 
   const save = async () => {
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     try {
       await adminApi.updateSettings(edited)
@@ -71,6 +75,7 @@ export function SettingsPage() {
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof Error ? err.message : 'Error guardando' })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
