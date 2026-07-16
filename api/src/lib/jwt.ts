@@ -165,12 +165,23 @@ function decodeStatePart(s: string): string {
   return decodeURIComponent(s);
 }
 
+// Ronda 121: helper compartido para validar longitud del secret. Antes las
+// funciones de state CSRF saltaban el chequeo `secret.length >= 32` de
+// getJwtSecretBytes y aceptaban claves cortas → brute-force offline factible.
+function getOauthSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('[jwt] JWT_SECRET no definido para state CSRF');
+  if (secret.length < 32) {
+    throw new Error(`[jwt] JWT_SECRET demasiado corto (${secret.length} chars). Mínimo 32.`);
+  }
+  return secret;
+}
+
 export function issueOauthState(
   extra: Record<string, string> = {},
   ttlMs = 10 * 60 * 1000
 ): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('[jwt] JWT_SECRET no definido para state CSRF');
+  const secret = getOauthSecret();
   const ts = Date.now().toString();
   const nonce = randomBytes(12).toString('hex');
   const extraStr = Object.entries(extra)
@@ -188,8 +199,13 @@ export type OauthStateCheck =
   | { ok: false; reason: string };
 
 export function verifyOauthState(state: string): OauthStateCheck {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return { ok: false, reason: 'no_secret' };
+  let secret: string;
+  try {
+    secret = getOauthSecret();
+  } catch {
+    // Simetría con issueOauthState — misma validación de longitud (Ronda 121)
+    return { ok: false, reason: 'no_secret' };
+  }
   if (!state) return { ok: false, reason: 'missing' };
   let decoded: string;
   try {
