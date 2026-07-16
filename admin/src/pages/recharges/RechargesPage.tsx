@@ -53,7 +53,13 @@ export function RechargesPage() {
     return () => clearTimeout(t)
   }, [flash])
 
-  const totalMonto = recharges.reduce((a, r) => r.status === 'completed' ? a + r.amount : a, 0)
+  // Ronda 114: sumar tanto 'completed' como 'approved' (MP usa este último).
+  // Antes: solo 'completed' → recargas MP aprobadas se contaban visualmente
+  // como verdes en la tabla pero no en el KPI → descuadre contable.
+  const totalMonto = recharges.reduce(
+    (a, r) => (r.status === 'completed' || r.status === 'approved') ? a + r.amount : a,
+    0,
+  )
 
   return (
     <div className="space-y-6">
