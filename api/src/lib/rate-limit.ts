@@ -23,15 +23,26 @@ function purgeExpired(now: number): void {
 // spoofeado desde el cliente. X-Forwarded-For sí es forjable si Next.js está
 // expuesto directamente (aunque nginx nos protege, defense-in-depth).
 // Fallback 'unknown' se conserva pero rate-limit externo (nginx) atrapa DoS.
+// Ronda 125: normalizar IPv4-mapped IPv6 + case IPv6 para evitar buckets
+// duplicados. Cliente dual-stack alternando IPv4/IPv6 (o WiFi/cellular)
+// producía buckets separados y ipRateLimit efectivamente doblado → un
+// attacker lo exploitaba alternando familias IP para brute-force.
+function normalizeIp(ip: string): string {
+  let s = ip.toLowerCase().trim()
+  // Strip IPv4-mapped IPv6 prefix: ::ffff:1.2.3.4 → 1.2.3.4
+  if (s.startsWith('::ffff:')) s = s.slice(7)
+  return s
+}
+
 function extractClientIp(req: NextRequest): string {
   const realIp = req.headers.get('x-real-ip')?.trim()
-  if (realIp && realIp.length > 0) return realIp
+  if (realIp && realIp.length > 0) return normalizeIp(realIp)
   const xff = req.headers.get('x-forwarded-for')
   if (xff) {
     // Con XFF confiamos SOLO en la última IP (la que nuestro proxy agrega),
     // no la primera (que el cliente puede haber forjado).
     const parts = xff.split(',').map((s) => s.trim()).filter(Boolean)
-    if (parts.length > 0) return parts[parts.length - 1]
+    if (parts.length > 0) return normalizeIp(parts[parts.length - 1])
   }
   return 'unknown'
 }
