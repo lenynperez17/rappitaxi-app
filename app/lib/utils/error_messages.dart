@@ -62,9 +62,17 @@ String userFriendlyError(Object? error, {String? fallback}) {
       case 'no_active_vehicle':
         return 'Registra un vehículo activo antes de continuar.';
       default:
-        return error.message?.isNotEmpty == true
-            ? error.message!
-            : defaultMsg;
+        // Ronda 101: NUNCA mostrar HTML crudo/JSON raw/stack al user. Antes
+        // 'unexpected_response' con body '<html>...502 Bad Gateway...</html>'
+        // caía al default y se pintaba en el SnackBar. Ahora solo permitimos
+        // strings cortos sin markup/newlines.
+        final msg = error.message ?? '';
+        final isSafe = msg.isNotEmpty
+            && msg.length <= 120
+            && !msg.contains('<')
+            && !msg.contains('\n')
+            && !msg.contains('{');
+        return isSafe ? msg : defaultMsg;
     }
   }
 
