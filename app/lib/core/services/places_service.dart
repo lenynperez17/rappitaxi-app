@@ -212,12 +212,20 @@ class PlacesService {
     double longitude,
   ) async {
     try {
-      final url = Uri.parse(
-        '$_baseUrl/geocode/json'
-        '?latlng=$latitude,$longitude'
-        '&key=${AppConfig.googleMapsApiKey}'
-        '&language=es'
-      );
+      // Ronda 99: en Web usar proxy backend para evitar CORS y no exponer
+      // googleMapsApiKey en DevTools (mismo patrón que searchPlaces).
+      final Uri url = kIsWeb
+          ? Uri.parse(
+              '$_proxyUrl/places/geocode'
+              '?latlng=$latitude,$longitude'
+              '&language=es',
+            )
+          : Uri.parse(
+              '$_baseUrl/geocode/json'
+              '?latlng=$latitude,$longitude'
+              '&key=${AppConfig.googleMapsApiKey}'
+              '&language=es'
+            );
 
       Logger.info('Reverse geocoding: $latitude, $longitude');
       
@@ -245,13 +253,21 @@ class PlacesService {
   // Geocodificación directa (dirección a coordenadas)
   static Future<PlaceDetails?> getCoordinatesFromAddress(String address) async {
     try {
-      final url = Uri.parse(
-        '$_baseUrl/geocode/json'
-        '?address=${Uri.encodeComponent(address)}'
-        '&key=${AppConfig.googleMapsApiKey}'
-        '&language=es'
-        '&components=country:pe'
-      );
+      // Ronda 99: en Web usar proxy (mismo patrón que reverse geocoding).
+      final Uri url = kIsWeb
+          ? Uri.parse(
+              '$_proxyUrl/places/geocode'
+              '?address=${Uri.encodeComponent(address)}'
+              '&language=es'
+              '&components=country:pe',
+            )
+          : Uri.parse(
+              '$_baseUrl/geocode/json'
+              '?address=${Uri.encodeComponent(address)}'
+              '&key=${AppConfig.googleMapsApiKey}'
+              '&language=es'
+              '&components=country:pe'
+            );
 
       Logger.info('Geocoding address: $address');
       
