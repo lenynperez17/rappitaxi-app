@@ -67,8 +67,16 @@ class AdminProvider extends ChangeNotifier {
       _notSupported('updateSettings');
   Future<void> loadSettings() async => _notSupported('loadSettings');
 
-  void searchUsers(String query) => _notSupported('searchUsers');
-  void searchDrivers(String query) => _notSupported('searchDrivers');
+  // Ronda 96: no-op reales (mismo patrón que clearError). Antes: _notSupported
+  // es Never (throws UnimplementedError) → el throw sync se propaga al caller
+  // reventando el frame de Flutter cuando la UI residual invoca estos stubs
+  // esperando comportamiento silencioso como decía el docstring del header.
+  void searchUsers(String query) {
+    // No-op: la búsqueda ya se hace directamente en el panel admin (React).
+  }
+  void searchDrivers(String query) {
+    // No-op: idem searchUsers.
+  }
 
   void clearError() {
     // No-op: el provider ya no mantiene estado de error real.
