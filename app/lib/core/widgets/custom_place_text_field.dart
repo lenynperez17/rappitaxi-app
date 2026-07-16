@@ -158,6 +158,15 @@ class _CustomPlaceTextFieldState extends State<CustomPlaceTextField> {
         // Actualizar el texto del campo
         widget.controller.text = suggestion.description;
 
+        // Ronda 104: si el backend ya devolvió lat/lng (fallback OSM/Nominatim),
+        // emitir directo sin llamar a Google Places (que fallaría con
+        // INVALID_REQUEST por el placeId de OSM). Antes: user tocaba sugerencia
+        // OSM y no pasaba nada porque details=null.
+        if (suggestion.lat != null && suggestion.lng != null) {
+          widget.onPlaceSelected(suggestion);
+          return;
+        }
+
         // Obtener detalles completos (lat, lng)
         final details = await _getPlaceDetails(suggestion.placeId);
 
