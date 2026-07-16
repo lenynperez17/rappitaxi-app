@@ -69,11 +69,21 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult> {
   return { ok: true, userId: payload.sub }
 }
 
-/** Extrae la IP del cliente desde headers estándar. */
+/**
+ * Extrae la IP del cliente desde headers estándar.
+ * Ronda 138: validar que sea IPv4/IPv6 plausible y devolver null si no. Sin
+ * esto, XFF="" o "unknown" (fallback de proxies antiguos/CDNs) llegaba a
+ * INSERTs sobre columnas INET → PostgreSQL rechazaba "invalid input syntax
+ * for type inet" → 500 después de operaciones exitosas (SOS registrado en
+ * emergencias pero sin auth_event, similar al bug de sms/verify Ronda 128).
+ */
 export function getClientIp(req: NextRequest): string | null {
-  return (
+  const raw =
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
+    req.headers.get('x-real-ip')?.trim() ??
     null
-  )
+  if (!raw) return null
+  if (raw.length > 45) return null
+  if (!/^[0-9a-fA-F:.]+$/.test(raw)) return null
+  return raw
 }
