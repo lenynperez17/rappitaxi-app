@@ -18,6 +18,11 @@ ALTER TABLE driver_recharges
   ADD CONSTRAINT driver_recharges_driver_id_fkey
     FOREIGN KEY (driver_id) REFERENCES users(id) ON DELETE RESTRICT;
 
+-- NOTA deploy: driver_bank_accounts está historial-mente owned por 'postgres'
+-- (bug de deploy inicial). Antes de correr esta migración por primera vez:
+--   sudo -u postgres psql <db> -c "ALTER TABLE driver_bank_accounts OWNER TO rapi_team_user"
+-- El ALTER OWNER es idempotente. Estas dos ALTER TABLE fallan silenciosamente
+-- si no se es dueño, así que en re-runs no rompen.
 ALTER TABLE driver_bank_accounts
   DROP CONSTRAINT IF EXISTS driver_bank_accounts_driver_id_fkey;
 ALTER TABLE driver_bank_accounts
