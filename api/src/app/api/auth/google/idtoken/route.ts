@@ -83,19 +83,26 @@ export async function POST(req: NextRequest) {
   //       fueron creadas por invitación/import y no deben tomarse por email)
   //   (d) NO tiene otro provider claim (google_uid+apple_uid NULL)
   // El login por google_uid=$1 sigue funcionando en cualquier caso.
+  // Ronda 159 SECURITY: filtrar deleted_at. Sin esto, un user borrado
+  // (anonimizado por /account/delete) mantenía is_active=false pero el
+  // UPDATE de línea "COALESCE(google_uid, $2)" abajo re-escribía el
+  // google_uid válido en su fila → "reviviendo" el user borrado desde el
+  // punto de vista de auth_provider linking. El chequeo is_active corta el
+  // login, pero el side-effect de restaurar PII es indeseado post-delete.
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
-           WHERE google_uid = $1
-              OR (email IS NOT NULL AND LOWER(email) = $2
-                  AND email_verified = true
-                  AND google_uid IS NULL AND apple_uid IS NULL
-                  AND auth_provider = 'google')
+           WHERE deleted_at IS NULL
+             AND (google_uid = $1
+                OR (email IS NOT NULL AND LOWER(email) = $2
+                    AND email_verified = true
+                    AND google_uid IS NULL AND apple_uid IS NULL
+                    AND auth_provider = 'google'))
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url
            FROM users
-           WHERE google_uid = $1
+           WHERE google_uid = $1 AND deleted_at IS NULL
            LIMIT 1`,
     emailVerified && email ? [googleUid, email] : [googleUid],
   )

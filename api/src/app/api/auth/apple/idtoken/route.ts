@@ -81,19 +81,21 @@ export async function POST(req: NextRequest) {
   // Ronda 36/37 CRITICAL: matcheo por email SOLO si (a) Apple verificó,
   // (b) auth_provider EXPLÍCITAMENTE 'apple', (c) email_verified=true en DB,
   // (d) sin claim de otro provider. Ver comentario simétrico en google/idtoken.
+  // Ronda 159 SECURITY: filtrar deleted_at para no resucitar users borrados.
   let user = await maybeOne<UserRow>(
     emailVerified && email
       ? `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users
-           WHERE apple_uid = $1
-              OR (email IS NOT NULL AND LOWER(email) = $2
-                  AND email_verified = true
-                  AND apple_uid IS NULL AND google_uid IS NULL
-                  AND auth_provider = 'apple')
+           WHERE deleted_at IS NULL
+             AND (apple_uid = $1
+                OR (email IS NOT NULL AND LOWER(email) = $2
+                    AND email_verified = true
+                    AND apple_uid IS NULL AND google_uid IS NULL
+                    AND auth_provider = 'apple'))
            LIMIT 1`
       : `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
            FROM users
-           WHERE apple_uid = $1
+           WHERE apple_uid = $1 AND deleted_at IS NULL
            LIMIT 1`,
     emailVerified && email ? [appleUid, email] : [appleUid],
   )
