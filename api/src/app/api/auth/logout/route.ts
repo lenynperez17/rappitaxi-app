@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
       // access token actual. Antes era no-op silencioso → cliente veía logout
       // exitoso pero sesión seguía viva hasta expirar JWT. Extraemos el `sid`
       // del claim del bearer y revocamos esa sesión específica.
-      const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+      // Ronda 150: usar ` +` (solo espacios ASCII, RFC 6750) — misma corrección
+      // que auth-middleware.ts Ronda 124. \s+ permite \t/\n/etc → smuggling.
+      const bearer = req.headers.get('authorization')?.replace(/^Bearer +/i, '')
       if (bearer) {
         const claims = await verifyAccessToken(bearer)
         if (claims?.sid && typeof claims.sid === 'string') {
