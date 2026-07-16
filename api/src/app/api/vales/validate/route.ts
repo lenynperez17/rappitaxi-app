@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne } from '@/lib/db'
+import { keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -40,6 +41,15 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
 
+  // Ronda 148 SECURITY: enumeration attack. Un JWT puede brute-forcear el
+  // espacio de códigos revelando toda la promo table (activos, agotados,
+  // expirados) por las distintas status codes que devolvía el handler.
+  // Rate-limit por userId corta el sweep masivo.
+  const rl = keyedRateLimit(`vale-validate:${auth.userId}`, { max: 20, windowMs: 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
+
   let body: { code?: string; rideAmount?: number } = {}
   try {
     body = await req.json()
@@ -62,23 +72,21 @@ export async function POST(req: NextRequest) {
     'SELECT * FROM vales WHERE code = $1 LIMIT 1',
     [code],
   )
-  if (!vale) {
-    return NextResponse.json({ success: false, error: 'not_found', message: 'Código no encontrado' }, { status: 404 })
-  }
+  // Ronda 148: colapsar TODOS los estados "no usable" a la misma respuesta
+  // genérica. Antes: 404 (no existe) vs 410 inactive/expired/exhausted
+  // (existe) diferenciaban existencia — attacker mapeaba toda la promo table.
+  // Solo below_minimum (accionable por el user) mantiene código específico.
+  const genericInvalid = NextResponse.json(
+    { success: false, error: 'invalid_code', message: 'Código no válido' },
+    { status: 404 },
+  )
+  if (!vale) return genericInvalid
 
   const now = new Date()
-  if (!vale.is_active) {
-    return NextResponse.json({ success: false, error: 'inactive', message: 'Código inactivo' }, { status: 410 })
-  }
-  if (vale.starts_at && new Date(vale.starts_at) > now) {
-    return NextResponse.json({ success: false, error: 'not_yet_active', message: 'Aún no válido' }, { status: 410 })
-  }
-  if (vale.expires_at && new Date(vale.expires_at) < now) {
-    return NextResponse.json({ success: false, error: 'expired', message: 'Código expirado' }, { status: 410 })
-  }
-  if (vale.max_uses !== null && vale.used_count >= vale.max_uses) {
-    return NextResponse.json({ success: false, error: 'exhausted', message: 'Código agotado' }, { status: 410 })
-  }
+  if (!vale.is_active) return genericInvalid
+  if (vale.starts_at && new Date(vale.starts_at) > now) return genericInvalid
+  if (vale.expires_at && new Date(vale.expires_at) < now) return genericInvalid
+  if (vale.max_uses !== null && vale.used_count >= vale.max_uses) return genericInvalid
   // Solo aplicar el check de monto mínimo si el cliente envió rideAmount real
   // (Ronda 53 Bug#1). Pre-check sin monto → devolver success con discount=null.
   if (hasRideAmount && vale.min_ride_amount !== null && rideAmount < Number(vale.min_ride_amount)) {
@@ -97,12 +105,10 @@ export async function POST(req: NextRequest) {
   )
   const userUses = Number(usageRow?.n ?? 0)
   // Ronda 23 pattern: per_user_limit NULL = ilimitado
+  // Ronda 148: colapsar user_limit_reached a invalid_code para no revelar
+  // existencia del código a usuarios que ya lo usaron (enumeration oracle).
   if (vale.per_user_limit !== null && userUses >= vale.per_user_limit) {
-    return NextResponse.json({
-      success: false,
-      error: 'user_limit_reached',
-      message: 'Ya usaste este código',
-    }, { status: 409 })
+    return genericInvalid
   }
 
   const discount = rideAmount > 0 ? computeDiscount(vale, rideAmount) : null

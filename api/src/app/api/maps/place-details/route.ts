@@ -5,6 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
+import { ipRateLimit, keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,17 @@ interface OsmDetails {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 147 FINANZAS: Place Details ~$17/1000 requests. Rate limit para
+  // que attacker con JWT no queme quota Google Maps.
+  const ipRl = ipRateLimit(req, 'maps-place-details', { max: 40, windowMs: 60_000 })
+  if (!ipRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
+  const userRl = keyedRateLimit(`maps-place-details:${auth.userId}`, { max: 120, windowMs: 60_000 })
+  if (!userRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
 
   const placeId = req.nextUrl.searchParams.get('placeId')?.trim()
   if (!placeId) {

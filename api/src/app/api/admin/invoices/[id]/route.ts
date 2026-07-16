@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { maybeOne, tx } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -38,6 +39,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
   const row = await maybeOne<Row>(`SELECT * FROM invoices WHERE id = $1`, [id])
   if (!row) return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
   return NextResponse.json({ success: true, invoice: serialize(row) })
@@ -47,6 +51,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: { status?: string; notes?: string } = {}
   try { body = await req.json() } catch {

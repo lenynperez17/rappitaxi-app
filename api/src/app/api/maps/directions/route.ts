@@ -11,6 +11,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
+import { ipRateLimit, keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -119,6 +120,18 @@ async function fromOsrm(originLat: string, originLng: string, destLat: string, d
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 147 FINANZAS: Directions API cobra ~$5/1000 requests. Rate limit
+  // más estricto que autocomplete porque el uso legítimo es 1 request por
+  // decisión de ruta, no per-keystroke.
+  const ipRl = ipRateLimit(req, 'maps-directions', { max: 30, windowMs: 60_000 })
+  if (!ipRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
+  const userRl = keyedRateLimit(`maps-directions:${auth.userId}`, { max: 60, windowMs: 60_000 })
+  if (!userRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
 
   const { searchParams } = new URL(req.url)
   const originLat = searchParams.get('originLat')

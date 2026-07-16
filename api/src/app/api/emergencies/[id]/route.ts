@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { maybeOne, tx } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -76,6 +77,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const emergency = await maybeOne<EmergencyRow>(
     `SELECT id, user_id, ride_id, type, status,
@@ -110,6 +114,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: { status?: string; resolvedBy?: string | null; description?: string | null }
   try {

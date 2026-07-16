@@ -12,6 +12,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
+import { ipRateLimit, keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -135,6 +136,18 @@ async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Pre
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 147 FINANZAS: Google Places cobra ~$2.83/request. Sin rate limit
+  // un solo JWT haciendo 100 req/s × 1h = $1,000 USD quemados sin señal.
+  // Doble bucket (IP + userId) protege contra spoofing y sharing de tokens.
+  const ipRl = ipRateLimit(req, 'maps-autocomplete', { max: 60, windowMs: 60_000 })
+  if (!ipRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
+  const userRl = keyedRateLimit(`maps-autocomplete:${auth.userId}`, { max: 200, windowMs: 60_000 })
+  if (!userRl.ok) {
+    return NextResponse.json({ success: false, error: 'rate_limited' }, { status: 429 })
+  }
 
   const { searchParams } = new URL(req.url)
   const q = (searchParams.get('q') ?? '').trim()
