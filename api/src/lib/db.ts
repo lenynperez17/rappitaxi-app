@@ -224,6 +224,11 @@ export async function tx<T>(
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await getPool().connect();
+  // Ronda 119: si ROLLBACK falla (socket muerto, admin_shutdown 57P01), el
+  // cliente queda en estado corrupto. Marcamos el release con el error para
+  // que pg lo DESCARTE del pool en vez de reciclarlo — sin esto la próxima
+  // request recibía "Client is not queryable" o queries falladas silenciosas.
+  let releaseErr: Error | undefined;
   try {
     await client.query('BEGIN');
     const result = await fn(client);
@@ -234,10 +239,11 @@ export async function tx<T>(
       await client.query('ROLLBACK');
     } catch (rollbackErr) {
       console.error('[db] error durante ROLLBACK:', rollbackErr);
+      releaseErr = rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr));
     }
     throw err;
   } finally {
-    client.release();
+    client.release(releaseErr);
   }
 }
 
