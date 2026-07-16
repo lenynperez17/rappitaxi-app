@@ -7,6 +7,7 @@
  *   quedan approved, marca users.is_verified=true automáticamente.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isUuid } from '@/lib/uuid'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
@@ -44,6 +45,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: { status?: string; rejectionReason?: string; expiresAt?: string }
   try {
@@ -97,11 +101,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
       // Si TODOS los documentos requeridos del driver están approved,
       // auto-verificar al driver.
+      // Ronda 131 SECURITY/LEGAL: filtrar por expires_at. Un documento
+      // aprobado en 2024 con expires_at=2025 seguía contando como válido
+      // años después → driver con SOAT vencido queda is_verified=true, y en
+      // un siniestro no hay cobertura + expone al operador a responsabilidad
+      // civil/penal. NULL en expires_at = documento sin vencimiento (ok).
       const requiredList = Array.from(REQUIRED_DOC_TYPES)
       const approvedRes = await client.query<{ doc_type: string }>(
         `SELECT doc_type FROM driver_documents
           WHERE driver_id = $1 AND status = 'approved'
-            AND doc_type = ANY($2::text[])`,
+            AND doc_type = ANY($2::text[])
+            AND (expires_at IS NULL OR expires_at > now())`,
         [doc.driver_id, requiredList],
       )
       const approvedTypes = new Set(approvedRes.rows.map((r) => r.doc_type))
@@ -114,7 +124,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           [doc.driver_id],
         )
         driverVerified = true
-      } else if ((newStatus === 'rejected' || newStatus === 'expired') && REQUIRED_DOC_TYPES.has(doc.doc_type)) {
+      } else if (
+        (newStatus === 'rejected' || newStatus === 'expired') &&
+        REQUIRED_DOC_TYPES.has(doc.doc_type)
+      ) {
         // Ronda 67: solo desverificar cuando el documento rechazado/expirado
         // ES uno de los REQUERIDOS. Antes: rechazar un doc opcional
         // (vehicle_photo, etc) apagaba is_verified aunque los 5 requeridos
@@ -203,6 +216,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const doc = await maybeOne<DocumentRow & { driver_full_name: string | null; driver_email: string | null; driver_phone: string | null }>(
     `SELECT d.*, u.full_name AS driver_full_name, u.email AS driver_email, u.phone AS driver_phone
