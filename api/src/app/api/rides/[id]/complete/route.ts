@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, tx } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -44,6 +45,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: {
     finalFare?: number

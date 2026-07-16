@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -96,6 +97,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 145: UUID guard (evita 22P02 → 500).
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const ride = await maybeOne<RideDetailRow>(
     `SELECT r.*,
@@ -134,6 +139,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: {
     destination?: PointInput
