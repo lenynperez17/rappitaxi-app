@@ -214,6 +214,19 @@ class RapiSseClient {
         case 'negotiation':
           if (!_negotiationCtrl.isClosed) _negotiationCtrl.add(json);
           break;
+        case 'session_revoked':
+          // Ronda 170: backend (events/stream.ts Ronda 144) emite este evento
+          // cuando el user hace logout desde otro device o su session fue
+          // revocada por admin. Detener el stream inmediatamente para no
+          // reintentar reconexión infinita — el próximo cold-start pedirá
+          // login. Sin este handler, el cliente entraba en loop de
+          // reconexión con backoff hasta agotar sesión secundaria.
+          debugPrint('[sse] session revoked by server; stopping');
+          _running = false;
+          _reconnectTimer?.cancel();
+          _sub?.cancel();
+          if (!_connectedCtrl.isClosed) _connectedCtrl.add(false);
+          break;
         default:
           // Evento desconocido — ignorar por forward compatibility
           break;
