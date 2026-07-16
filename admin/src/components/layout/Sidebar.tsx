@@ -50,8 +50,14 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) {
+  // Ronda 118: aria-hidden sincronizado con la visibilidad real.
+  // En móvil cuando mobileOpen=false y viewport <lg, el aside está fixed
+  // pero display:none — screen readers y focus trap deben saberlo.
+  const isVisiblyHidden = !mobileOpen // en desktop lg:flex lo ignora naturalmente
   return (
     <aside
+      aria-hidden={isVisiblyHidden ? true : undefined}
+      inert={isVisiblyHidden ? true : undefined}
       className={clsx(
         'flex flex-col bg-gray-900 text-white transition-all duration-300 z-30',
         'hidden lg:flex',
