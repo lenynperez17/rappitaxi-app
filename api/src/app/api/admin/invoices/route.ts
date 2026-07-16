@@ -100,8 +100,12 @@ export async function GET(req: NextRequest) {
   if (status) { params.push(status); where.push(`status = $${params.length}`) }
   if (type) { params.push(type); where.push(`document_type = $${params.length}`) }
   if (customerId) { params.push(customerId); where.push(`customer_id = $${params.length}`) }
-  if (fromDate) { params.push(fromDate); where.push(`issued_at >= $${params.length}`) }
-  if (toDate) { params.push(toDate); where.push(`issued_at <= $${params.length}`) }
+  if (fromDate) { params.push(fromDate); where.push(`issued_at >= $${params.length}::date`) }
+  // Ronda 168 SUNAT: toDate como 'YYYY-MM-DD' se cast a TIMESTAMP 00:00:00,
+  // así issued_at <= toDate excluía TODAS las facturas emitidas ese día.
+  // Reportes mensuales (PLE 14.1, declaración) sub-declaraban sistemáticamente
+  // el último día del período → sub-declaración fiscal. Usar `< toDate + 1 day`.
+  if (toDate) { params.push(toDate); where.push(`issued_at < ($${params.length}::date + interval '1 day')`) }
   if (search) {
     params.push(`%${search}%`)
     // Ronda 27 Bug#2: aplicar LOWER() a series||'-'||correlative — el search

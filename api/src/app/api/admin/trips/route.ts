@@ -61,8 +61,10 @@ export async function GET(req: NextRequest) {
   if (status) { params.push(status); where.push(`r.status = $${params.length}`) }
   if (passengerId) { params.push(passengerId); where.push(`r.passenger_id = $${params.length}`) }
   if (driverId) { params.push(driverId); where.push(`r.driver_id = $${params.length}`) }
-  if (fromDate) { params.push(fromDate); where.push(`r.created_at >= $${params.length}`) }
-  if (toDate) { params.push(toDate); where.push(`r.created_at <= $${params.length}`) }
+  if (fromDate) { params.push(fromDate); where.push(`r.created_at >= $${params.length}::date`) }
+  // Ronda 168: same off-by-one fix — toDate='YYYY-MM-DD' → TIMESTAMP 00:00:00
+  // excluye viajes de todo el día final. Reports mensuales sub-cuentan.
+  if (toDate) { params.push(toDate); where.push(`r.created_at < ($${params.length}::date + interval '1 day')`) }
   if (search) {
     params.push(`%${search}%`)
     where.push(`(LOWER(r.pickup_address) LIKE $${params.length} OR LOWER(r.destination_address) LIKE $${params.length})`)

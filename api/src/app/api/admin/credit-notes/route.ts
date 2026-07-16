@@ -76,8 +76,10 @@ export async function GET(req: NextRequest) {
   const params: unknown[] = []
   if (status) { params.push(status); where.push(`cn.status = $${params.length}`) }
   if (invoiceId) { params.push(invoiceId); where.push(`cn.invoice_id = $${params.length}`) }
-  if (fromDate) { params.push(fromDate); where.push(`cn.issued_at >= $${params.length}`) }
-  if (toDate) { params.push(toDate); where.push(`cn.issued_at <= $${params.length}`) }
+  if (fromDate) { params.push(fromDate); where.push(`cn.issued_at >= $${params.length}::date`) }
+  // Ronda 168: same off-by-one fix — toDate excluía notas de crédito emitidas
+  // el día final. Fix simétrico a admin/invoices.
+  if (toDate) { params.push(toDate); where.push(`cn.issued_at < ($${params.length}::date + interval '1 day')`) }
   if (search) {
     // Ronda 43 Bug#1: apply LOWER + LPAD para matchear el formato mostrado
     // en UI (FC01-00000123). Antes fallaba tanto por casing como por padding
