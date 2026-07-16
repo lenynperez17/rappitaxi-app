@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AlertCircle, Loader2, Eye, EyeOff, Mail } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -10,6 +10,10 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // Ronda 176: ref síncrono cierra la ventana de race entre Enter/click y el
+  // re-render de setSubmitting(true). Doble Enter rápido evitaba doble
+  // login → potencial doble session + adelantar al rate-limit del backend.
+  const submittingRef = useRef(false)
 
   // Ronda 109: no desmontar durante submit para evitar "state update on
    // unmounted component" en el finally. Redirigir solo cuando el submit
@@ -20,11 +24,13 @@ export function LoginPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
     setError('')
     if (!email.trim() || !password) {
       setError('Ingresa correo y contraseña')
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     try {
       await login(email.trim().toLowerCase(), password)
@@ -39,6 +45,7 @@ export function LoginPage() {
         setError('Correo o contraseña incorrectos.')
       }
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
