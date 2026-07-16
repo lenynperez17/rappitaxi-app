@@ -62,8 +62,14 @@ export async function GET(req: NextRequest) {
   const search = (searchParams.get('search') ?? '').trim().toLowerCase()
   const fromDate = searchParams.get('fromDate')
   const toDate = searchParams.get('toDate')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? '50')))
+  // Ronda 137: mismo fix que Ronda 136 en rides/route.ts. Number("abc") = NaN
+  // → Math.max(1, NaN) = NaN → LIMIT NaN OFFSET NaN → 500 opaco.
+  const rawPage = Number(searchParams.get('page') ?? '1')
+  const rawPageSize = Number(searchParams.get('pageSize') ?? '50')
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(100, Math.max(1, Math.floor(rawPageSize)))
+    : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
