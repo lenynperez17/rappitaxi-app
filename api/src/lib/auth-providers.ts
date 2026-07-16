@@ -41,20 +41,23 @@ export async function getAuthProvidersForUsers(
     batches.push(auth.getUsers(slice));
   }
 
-  try {
-    const results = await Promise.all(batches);
-    for (const result of results) {
-      for (const userRecord of result.users) {
+  // Ronda 127 BUG: Promise.all es fail-fast. Si UNA batch tira (típico:
+  // timeout de red a Firebase Auth con 300+ uids), el catch descarta TODAS
+  // las batches — incluso las que sí resolvieron. El comentario decía
+  // "devolvemos lo que hayamos podido recolectar" pero el código NO lo hacía.
+  // allSettled preserva las batches exitosas y solo loggea las que fallaron.
+  const results = await Promise.allSettled(batches);
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      for (const userRecord of result.value.users) {
         providersByUid.set(
           userRecord.uid,
           userRecord.providerData.map(p => normalizeProviderId(p.providerId)),
         );
       }
+    } else {
+      console.error('Error obteniendo authProviders desde Firebase Auth (batch parcial):', result.reason);
     }
-  } catch (error) {
-    // Si Firebase Auth falla, devolvemos lo que hayamos podido recolectar.
-    // No bloqueamos la lista de usuarios por esto.
-    console.error('Error obteniendo authProviders desde Firebase Auth:', error);
   }
 
   return providersByUid;
