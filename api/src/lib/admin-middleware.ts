@@ -20,7 +20,18 @@ interface AdminCheck {
 
 export async function requireAdmin(req: NextRequest): Promise<AdminAuthResult> {
   const auth = await requireAuth(req)
-  if (!auth.ok) return auth
+  if (!auth.ok) {
+    // Ronda 123 defense-in-depth: si una futura regresión de requireAuth deja
+    // response=undefined, garantizar 401 estructurado en vez de propagar
+    // undefined al handler (que responderia 500 opaco).
+    if (!auth.response) {
+      return {
+        ok: false,
+        response: NextResponse.json({ success: false, error: 'unauthenticated' }, { status: 401 }),
+      }
+    }
+    return auth
+  }
 
   const user = await maybeOne<AdminCheck>(
     'SELECT is_admin, user_type, is_active FROM users WHERE id = $1',
