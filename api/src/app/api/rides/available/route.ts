@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
+import { keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -37,6 +38,20 @@ interface AvailableRideRow {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 175 PRIVACY: rate limit por driverId. /rides/available devuelve
+  // passenger_name + photo_url a cualquier driver online. Sin este límite,
+  // un driver malicioso podía llamar cada 500ms → farm names/photos de
+  // pasajeros de la ciudad, alimentando dataset de OSINT/stalking.
+  // App legítima poll cada 5-10s (12-6 req/min); 60/min deja headroom
+  // para retries + reconexión pero corta el scraping intensivo.
+  const rl = keyedRateLimit(`rides-available:${auth.userId}`, { max: 60, windowMs: 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': '5' } },
+    )
+  }
 
   const { searchParams } = new URL(req.url)
   const lat = Number(searchParams.get('lat'))
