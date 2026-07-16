@@ -517,14 +517,28 @@ class PreferencesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Limpiar todas las preferencias
-  Future<void> clearAll() async {
+  /// Limpiar todas las preferencias.
+  /// Ronda 97: si el disk-write falla (Android 14 storage restricted, disco
+  /// lleno) tras `_prefs?.clear()`, RAM tiene defaults + SharedPreferences vacío
+  /// → biometricAuth/twoFactorAuth vuelven silenciosamente a false = degradación
+  /// de seguridad sin aviso. Ahora verificamos éxito y exponemos _error.
+  Future<bool> clearAll() async {
+    _error = null;
     try {
-      await _prefs?.clear();
+      final cleared = await _prefs?.clear() ?? false;
+      if (!cleared) {
+        _error = 'No se pudieron limpiar las preferencias';
+        notifyListeners();
+        return false;
+      }
       await resetToDefaults();
       debugPrint('🗑️ Todas las preferencias limpiadas');
+      return true;
     } catch (e) {
+      _error = userFriendlyError(e, fallback: 'Error limpiando preferencias');
       debugPrint('❌ Error limpiando preferencias: $e');
+      notifyListeners();
+      return false;
     }
   }
   
