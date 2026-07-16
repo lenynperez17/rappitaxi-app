@@ -9,7 +9,7 @@
  * Uso: tras login Google/Apple, en la pantalla de completar perfil.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth-middleware'
+import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
 import { TwilioVerifyService } from '@/services/TwilioVerifyService'
 import { ipRateLimit } from '@/lib/rate-limit'
@@ -157,14 +157,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 404 })
   }
 
-  // Auditoría
+  // Auditoría — Ronda 156: getClientIp valida IPv4/IPv6 antes de INSERT INET.
+  // Antes: XFF="" o "unknown" (proxies antiguos/CDNs) → INSERT fallaba con
+  // 22P02 después de que el usuario ya verificó phone. Auth quedaba
+  // huérfano (phone verified pero sin auth_event).
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent)
      VALUES ($1, 'phone_verified', $2, $3, $4)`,
     [
       auth.userId,
       updated.auth_provider ?? 'phone',
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      getClientIp(req),
       req.headers.get('user-agent'),
     ],
   )

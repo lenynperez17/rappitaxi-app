@@ -12,6 +12,7 @@ import { OAuth2Client, TokenPayload } from 'google-auth-library'
 import { query, maybeOne } from '@/lib/db'
 import { createSession } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
+import { getClientIp } from '@/lib/auth-middleware'
 
 export const runtime = 'nodejs'
 
@@ -136,7 +137,7 @@ export async function POST(req: NextRequest) {
      VALUES ($1, 'login_google', 'google', $2, $3, $4)`,
     [
       user!.id,
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      getClientIp(req),
       req.headers.get('user-agent'),
       JSON.stringify({ isNewUser, email }),
     ],
