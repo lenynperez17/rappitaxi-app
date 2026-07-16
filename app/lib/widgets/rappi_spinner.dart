@@ -58,11 +58,15 @@ class RappiSpinner extends StatelessWidget {
 
   /// Loading row para uso inline dentro de un widget (ej. dentro de un
   /// botón que está deshabilitado durante submit).
-  static Widget row(String label, {bool onDark = false}) {
+  /// Ronda 106: strokeWidth propagable + default proporcional al size=16.
+  /// Antes: stroke 2.5 (default de tamaño 20) en spinner de 16px se veía
+  /// desproporcionadamente grueso (~31% del radio) e inconsistente con
+  /// otros usos manuales de RappiSpinner(size:16, strokeWidth:2.0).
+  static Widget row(String label, {bool onDark = false, double strokeWidth = 2.0}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        RappiSpinner(size: 16, onDark: onDark),
+        RappiSpinner(size: 16, onDark: onDark, strokeWidth: strokeWidth),
         const SizedBox(width: 8),
         Text(
           label,
