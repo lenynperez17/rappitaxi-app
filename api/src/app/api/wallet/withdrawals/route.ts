@@ -182,6 +182,29 @@ export async function POST(req: NextRequest) {
         ],
       )
 
+      // Ronda 172 CONTABLE/SUNAT: registrar el fee como wallet_transaction
+      // 'commission' (mismo patrón que rides/complete, ya excluido del balance
+      // del driver por migración 019). Antes: los S/2 de fee retenidos NUNCA
+      // se registraban en el ledger — SUM(amount) global desfasado por -fee
+      // en cada retiro. En 5000 retiros/mes = S/10 000 en revenue nunca
+      // contabilizado ni reportable a SUNAT. Rompe invariante dual-entry.
+      // status='pending' + external_ref=w.id: si el withdrawal se cancela,
+      // el DELETE handler ya hace `WHERE external_ref=$1 AND user_id=$2 AND
+      // status='pending'` — cancela AMBAS filas de una.
+      if (fee > 0) {
+        await client.query(
+          `INSERT INTO wallet_transactions (user_id, type, amount, description, status, external_ref, metadata)
+           VALUES ($1, 'commission', $2, $3, 'pending', $4, $5::jsonb)`,
+          [
+            auth.userId,
+            fee, // positivo — bucket contable de la plataforma (mig 019 lo excluye del balance del user)
+            `Comisión retiro ${w.id}`,
+            w.id,
+            JSON.stringify({ withdrawalId: w.id, kind: 'withdrawal_fee' }),
+          ],
+        )
+      }
+
       // Notificación al usuario
       await client.query(
         `INSERT INTO notifications (user_id, type, title, body, data)
