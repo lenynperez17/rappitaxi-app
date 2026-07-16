@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Loader2, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
@@ -14,6 +14,10 @@ export function DriverVerificationDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  // Ronda 165: useRef síncrono cierra la ventana de race entre onClick y el
+  // re-render de setBusy(true) — dos taps rápidos evitan doble PATCH →
+  // dobles push, doble audit log, dobles side-effects (bonos, credit seed).
+  const busyRef = useRef(false)
 
   useEffect(() => {
     if (!driverId) return
@@ -38,7 +42,8 @@ export function DriverVerificationDetailPage() {
   }, [flash])
 
   const verify = async () => {
-    if (!driverId) return
+    if (!driverId || busyRef.current) return
+    busyRef.current = true
     setBusy(true)
     try {
       const updated = await adminApi.updateUser(driverId, { isVerified: true })
@@ -47,7 +52,10 @@ export function DriverVerificationDetailPage() {
       // NO usamos setError(): eso descartaría la vista completa. En su lugar,
       // mostramos el error en un banner sin bloquear el resto del contenido.
       setActionError(err instanceof AdminApiError ? err.message : 'Error verificando')
-    } finally { setBusy(false) }
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   if (loading) return (
@@ -136,6 +144,9 @@ function DocumentsSection({ driverId, onFlash, onError }: {
   const [docs, setDocs] = useState<Array<{ id: string; docType: string; fileUrl: string; status: string; rejectionReason: string | null; createdAt: string }>>([])
   const [loading, setLoading] = useState(true)
   const [reviewingId, setReviewingId] = useState<string | null>(null)
+  // Ronda 165: ref síncrono cierra ventana de race que setReviewingId(id)
+  // (asíncrono via React state) deja abierta entre onClick y re-render.
+  const reviewingRef = useRef<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -150,13 +161,14 @@ function DocumentsSection({ driverId, onFlash, onError }: {
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [driverId])
 
   const review = async (id: string, status: 'approved' | 'rejected') => {
-    if (reviewingId) return
+    if (reviewingRef.current) return
     let rejectionReason: string | undefined
     if (status === 'rejected') {
       const r = window.prompt('Motivo del rechazo (obligatorio):')
       if (!r?.trim()) return
       rejectionReason = r.trim()
     }
+    reviewingRef.current = id
     setReviewingId(id)
     try {
       const res = await adminApi.reviewDocument(id, { status, rejectionReason })
@@ -166,7 +178,10 @@ function DocumentsSection({ driverId, onFlash, onError }: {
       await load()
     } catch (e) {
       onError(e instanceof AdminApiError ? e.message : 'Error revisando documento')
-    } finally { setReviewingId(null) }
+    } finally {
+      reviewingRef.current = null
+      setReviewingId(null)
+    }
   }
 
   const STATUS_BADGE: Record<string, string> = {

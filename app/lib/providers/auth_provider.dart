@@ -25,6 +25,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -110,14 +111,37 @@ class AuthProvider with ChangeNotifier {
 
   static const String _kCachedUserPref = 'rapi_cached_user_v1';
 
+  // Ronda 164 SECURITY/LEY 29733: PII (DNI, phone, email, fecha nacimiento)
+  // se guardaba en SharedPreferences plaintext XML → accesible con root o
+  // adb backup si allowBackup=true. Migrar a flutter_secure_storage
+  // (Keychain iOS / EncryptedSharedPreferences Android). Los JWT ya usaban
+  // secure storage; el user cache se olvidó en la migración inicial.
+  static const _secureUserStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+  );
+
   Future<void> _loadCachedUser() async {
     try {
+      // 1) Intentar secure storage primero (nuevo).
+      final secureRaw = await _secureUserStorage.read(key: _kCachedUserPref);
+      if (secureRaw != null && secureRaw.isNotEmpty) {
+        final json = jsonDecode(secureRaw) as Map<String, dynamic>;
+        _currentUser = _userFromApi(json);
+        _updateVerificationFlags();
+        return;
+      }
+      // 2) Migración: user cache legacy en SharedPreferences → mover a secure
+      //    y borrar de SharedPreferences para no dejar PII plaintext atrás.
       final sp = await SharedPreferences.getInstance();
-      final raw = sp.getString(_kCachedUserPref);
-      if (raw == null || raw.isEmpty) return;
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      _currentUser = _userFromApi(json);
-      _updateVerificationFlags();
+      final legacyRaw = sp.getString(_kCachedUserPref);
+      if (legacyRaw != null && legacyRaw.isNotEmpty) {
+        await _secureUserStorage.write(key: _kCachedUserPref, value: legacyRaw);
+        await sp.remove(_kCachedUserPref);
+        final json = jsonDecode(legacyRaw) as Map<String, dynamic>;
+        _currentUser = _userFromApi(json);
+        _updateVerificationFlags();
+      }
     } catch (e) {
       AppLogger.error('loadCachedUser fallo', e);
     }
@@ -126,9 +150,8 @@ class AuthProvider with ChangeNotifier {
   Future<void> _saveCachedUser() async {
     try {
       if (_currentUser == null) return;
-      final sp = await SharedPreferences.getInstance();
       final json = _currentUser!.toJson();
-      await sp.setString(_kCachedUserPref, jsonEncode(json));
+      await _secureUserStorage.write(key: _kCachedUserPref, value: jsonEncode(json));
     } catch (e) {
       AppLogger.error('saveCachedUser fallo', e);
     }
@@ -440,6 +463,11 @@ class AuthProvider with ChangeNotifier {
       await gsi.signOut();
     } catch (_) {}
     // Limpiar cache del user para que la próxima apertura offline no lo revierta.
+    // Ronda 164: borrar de ambos storages (secure primary + legacy sp) para
+    // asegurar que ningún residuo PII quede después del logout.
+    try {
+      await _secureUserStorage.delete(key: _kCachedUserPref);
+    } catch (_) {}
     try {
       final sp = await SharedPreferences.getInstance();
       await sp.remove(_kCachedUserPref);
