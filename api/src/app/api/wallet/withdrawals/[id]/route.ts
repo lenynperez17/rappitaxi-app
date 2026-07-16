@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { tx } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 import type { PoolClient } from 'pg'
 
 export const runtime = 'nodejs'
@@ -13,6 +14,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 142: sin UUID guard, Postgres tira 22P02 → 500 opaco.
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   try {
     await tx(async (client: PoolClient) => {

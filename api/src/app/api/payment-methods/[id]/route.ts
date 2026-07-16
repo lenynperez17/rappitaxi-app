@@ -12,10 +12,16 @@ import { tx } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 142: UUID guard — sin esto Postgres tira 22P02 → 500 opaco.
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   try {
     const result = await tx(async (client) => {

@@ -10,6 +10,7 @@ import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne, tx, isUniqueViolation } from '@/lib/db'
 import { deleteFile } from '@/lib/storage'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -72,6 +73,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 142: UUID guard.
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const user = await maybeOne<UserRow>('SELECT * FROM users WHERE id = $1', [id])
   if (!user) return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
@@ -85,6 +90,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: {
     fullName?: string | null
@@ -216,6 +224,9 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   if (id === auth.userId) {
     return NextResponse.json(
