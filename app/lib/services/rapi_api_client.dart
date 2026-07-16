@@ -20,6 +20,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/logger.dart';
+
 class RapiApiException implements Exception {
   final int statusCode;
   final String code;
@@ -340,8 +342,17 @@ class RapiApiClient {
       completer.complete(true);
       return true;
     } catch (e, st) {
-      completer.completeError(e, st);
-      rethrow;
+      // Ronda 167 UX/BATTERY: en excepción (timeout, red caída, DNS fail)
+      // NO propagar el error. Antes: completer.completeError → rethrow
+      // hacía que la request original abortara con TimeoutException en vez
+      // de manejarse como 401. Peor: los callers no atrapaban esto y
+      // reintentaban infinito, drain batería + datos en zonas con red mala.
+      // Ahora: log del error, tratar como refresh fallido (false), NO
+      // limpiar la sesión (para reintentar cuando vuelva la red), y los
+      // callers que ven false pueden mostrar "sin conexión" al user.
+      AppLogger.error('[refresh] network error', e, st);
+      completer.complete(false);
+      return false;
     } finally {
       _refreshInFlight = null;
     }

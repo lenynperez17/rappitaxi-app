@@ -42,7 +42,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2) Recuperar datos del usuario (email + display_name) — sin requerir password
+  // 2) Recuperar datos del usuario (email + display_name) — sin requerir password.
+  // Ronda 166: filtrar deleted_at + is_active. Sin esto, JWT vigente de un
+  // user borrado pasaba y generaba challenge en webauthn_challenges (bloat
+  // + posible surface para verificaciones futuras si el user "resurge"
+  // por bug en /account/delete o restore desde backup).
   const user = await maybeOne<{
     id: string;
     email: string | null;
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
   }>(
     `SELECT id, email, display_name, full_name
        FROM users
-      WHERE id = $1`,
+      WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
     [claims.sub]
   );
 
