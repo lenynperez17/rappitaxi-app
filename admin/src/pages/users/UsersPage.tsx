@@ -71,13 +71,21 @@ export function UsersPage() {
   useEffect(() => { void load() }, [typeFilter, statusFilter, page])
 
   // Debounce del search: reseteamos page a 1 y dejamos que el efecto de arriba
-  // (que depende de page) haga el fetch. Sin esto, había doble fetch y una
-  // race con el estado stale desde el closure del setTimeout.
+  // (que depende de page) haga el fetch. Ronda 110: usar functional setPage
+  // que devuelve el prev anterior + evaluar en tiempo real para saber si
+  // efectivamente cambió. Si cambió, el efecto de arriba dispara (skip load);
+  // si no cambió (ya era 1), forzamos load. Antes: closure de setTimeout leía
+  // page al momento de programar → doble fetch cuando el user tipeaba en page>1.
   useEffect(() => {
     const t = setTimeout(() => {
-      setPage((prev) => (prev === 1 ? prev : 1))
-      // Si page ya era 1, el efecto de arriba no dispara — forzamos load
-      if (page === 1) void load()
+      let pageChanged = false
+      setPage((prev) => {
+        if (prev !== 1) { pageChanged = true; return 1 }
+        return prev
+      })
+      // Solo si NO cambió page (ya era 1), el efecto de arriba no disparará
+      // → forzamos load. Si cambió, el efecto lo hará y evitamos duplicado.
+      if (!pageChanged) void load()
     }, 350)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
