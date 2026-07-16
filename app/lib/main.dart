@@ -205,7 +205,11 @@ void main() {
       final fallbackProvider = PreferencesProvider();
       await fallbackProvider.init();
       runApp(RappiTeamApp(preferencesProvider: fallbackProvider));
-    } catch (_) {
+    } catch (fallbackErr, fallbackStack) {
+      // Ronda 98: no descartar silenciosamente el segundo error. Antes: el
+      // catch (_) mudo dejaba un provider sin init pasado a la app → prefs
+      // devolvían valores por defecto silenciosamente (tema, biometría, idioma).
+      AppLogger.error('Fallback también falló', fallbackErr, fallbackStack);
       runApp(RappiTeamApp(preferencesProvider: PreferencesProvider()));
     }
   }
