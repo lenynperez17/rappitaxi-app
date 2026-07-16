@@ -397,14 +397,35 @@ export async function verifyAuthentication(opts: {
 
   const newCounter = verification.authenticationInfo.newCounter;
 
-  // 3) Actualizar counter + last_used_at en una sola transacción
+  // Ronda 122 SECURITY: prevenir replay attack. WebAuthn requiere counter
+  // MONOTÓNICAMENTE creciente. Sin este chequeo, un attacker que captura una
+  // assertion antigua (counter=N-5) puede replayearla incluso después de que
+  // el authenticator avanzó a N — el UPDATE retrocedía el counter y todos
+  // los assertions capturados quedaban reusables. Además previene race con
+  // requests concurrentes del mismo assertion.
+  // Excepción: authenticators counter=0 (algunos platform auth) — el counter
+  // legítimo puede quedarse en 0 → aceptar solo si stored.counter también 0.
   await tx(async (client) => {
-    await client.query(
+    if (newCounter === 0 && Number(stored.counter) === 0) {
+      // Authenticator que no soporta counter — solo actualizar last_used_at.
+      await client.query(
+        `UPDATE passkey_credentials SET last_used_at = now() WHERE id = $1`,
+        [stored.id]
+      );
+      return;
+    }
+    const upd = await client.query(
       `UPDATE passkey_credentials
           SET counter = $1, last_used_at = now()
-        WHERE id = $2`,
+        WHERE id = $2 AND counter < $1`,
       [newCounter, stored.id]
     );
+    if (upd.rowCount === 0) {
+      throw new PasskeyError(
+        'VERIFY_FAILED',
+        'Counter no creciente — posible replay de assertion',
+      );
+    }
   });
 
   return {
