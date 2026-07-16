@@ -98,8 +98,8 @@ export async function signAccessToken(
  * Verifica un access token. Devuelve los claims si es válido, `null` si no.
  *
  * (Convencionalmente devuelve null en vez de tirar para que los callers puedan
- *  hacer `if (!claims) return 401` sin try/catch — la mayoría de routes así lo
- *  usan. El middleware-bearer.ts envuelve en try/catch igualmente.)
+ *  hacer `if (!claims) return 401` sin try/catch — la mayoría de routes así
+ *  lo usan.)
  */
 export async function verifyAccessToken(
   token: string
@@ -123,8 +123,7 @@ export async function verifyAccessToken(
 }
 
 /**
- * Lee el `iss` de un JWT sin verificar la firma. Útil para enrutar entre
- * "JWT propio" y "Firebase ID token" en `middleware-bearer.ts`.
+ * Lee el `iss` de un JWT sin verificar la firma.
  */
 export function peekIssuer(token: string): string | null {
   if (!token || typeof token !== 'string') return null;
