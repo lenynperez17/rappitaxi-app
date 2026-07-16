@@ -26,6 +26,28 @@ export type StorageScope =
   | 'chat_attachment'
   | 'misc'
 
+// Ronda 126 SECURITY: whitelist runtime de scopes. StorageScope es solo
+// tipo TS (compile-time). Sin este set, un route handler que pase el scope
+// desde body/query permite path traversal — un client con
+// scope="../../etc/cron.d" escribe fuera de STORAGE_ROOT.
+export const ALLOWED_SCOPES: ReadonlySet<StorageScope> = new Set<StorageScope>([
+  'profile_photo',
+  'driver_license',
+  'vehicle_photo',
+  'vehicle_registration',
+  'criminal_record',
+  'identity_front',
+  'identity_back',
+  'soat',
+  'chat_attachment',
+  'misc',
+])
+function assertValidScope(scope: string): asserts scope is StorageScope {
+  if (!(ALLOWED_SCOPES as Set<string>).has(scope)) {
+    throw new Error('invalid_scope')
+  }
+}
+
 const ALLOWED_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
@@ -70,6 +92,9 @@ export async function saveBuffer(
 ): Promise<{ key: string; absPath: string; sha256: string; size: number }> {
   const ext = extForMime(mime)
   if (!ext) throw new Error('mime_not_allowed')
+
+  // Ronda 126 SECURITY: validar scope en runtime (path traversal previa).
+  assertValidScope(scope)
 
   // Sanitizar userId: solo hex/uuid — reject barra o dots
   if (!/^[a-zA-Z0-9-]{6,64}$/.test(userId)) {
