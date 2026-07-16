@@ -83,6 +83,10 @@ function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
+      {/* Ronda 108: catch-all top-level para URLs fuera del árbol protegido.
+          Antes el * anidado dentro de "/" no matcheaba desde ciertas rutas
+          y dejaba shell vacío entre re-evaluaciones de router. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
