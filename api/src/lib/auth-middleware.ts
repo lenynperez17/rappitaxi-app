@@ -16,7 +16,9 @@ export type AuthResult = AuthOk | AuthFail
 
 export async function requireAuth(req: NextRequest): Promise<AuthResult> {
   const authHeader = req.headers.get('authorization') ?? ''
-  const match = authHeader.match(/^Bearer\s+(.+)$/i)
+  // Ronda 124: usar ` +` (solo espacios ASCII, RFC 6750) en vez de \s+ que
+  // permite \n\t → smuggling con caracteres de control.
+  const match = authHeader.match(/^Bearer +(.+)$/i)
   if (!match) {
     return {
       ok: false,
@@ -24,6 +26,13 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult> {
     }
   }
   const token = match[1]!.trim()
+  // Ronda 124: rechazar token vacío ("Bearer   " tras trim → '').
+  if (!token) {
+    return {
+      ok: false,
+      response: NextResponse.json({ success: false, error: 'unauthorized', message: 'Token vacío' }, { status: 401 }),
+    }
+  }
   const payload = await verifyAccessToken(token)
   if (!payload || !payload.sub) {
     return {
