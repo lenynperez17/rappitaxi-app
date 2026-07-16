@@ -119,7 +119,15 @@ export async function POST(req: NextRequest) {
       [newId, googleUid, email, emailVerified, fullName, picture],
     )
   } else {
-    // Rellenar campos que puedan faltar
+    // Ronda 160 SECURITY: mover el check is_active ANTES del UPDATE.
+    // Antes: UPDATE soldaba google_uid = $2 en una fila suspendida →
+    // cuando admin des-suspendía, el llamante entraba por fast path
+    // (google_uid = $1) sin re-verificación por email. Ahora los users
+    // suspendidos NUNCA reciben write al google_uid — mantienen su estado
+    // congelado hasta reactivación explícita.
+    if (!user.is_active) {
+      return NextResponse.json({ success: false, error: 'account_suspended' }, { status: 403 })
+    }
     await query(
       `UPDATE users
          SET google_uid = COALESCE(google_uid, $2),
@@ -128,7 +136,7 @@ export async function POST(req: NextRequest) {
              full_name = COALESCE(full_name, $5),
              profile_photo_url = COALESCE(profile_photo_url, $6),
              updated_at = now()
-       WHERE id = $1`,
+       WHERE id = $1 AND is_active = true AND deleted_at IS NULL`,
       [user.id, googleUid, email, emailVerified, fullName, picture],
     )
   }

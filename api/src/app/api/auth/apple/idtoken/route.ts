@@ -112,6 +112,13 @@ export async function POST(req: NextRequest) {
       [newId, appleUid, email, emailVerified, fullName],
     )
   } else {
+    // Ronda 160 SECURITY: check is_active ANTES del UPDATE. Espejo del fix
+    // simétrico en google/idtoken. Sin esto, UPDATE soldaba apple_uid en
+    // una fila suspendida → cuando admin des-suspendía, el llamante entraba
+    // por fast path sin re-verificación.
+    if (!user.is_active) {
+      return NextResponse.json({ success: false, error: 'account_suspended' }, { status: 403 })
+    }
     await query(
       `UPDATE users
          SET apple_uid = COALESCE(apple_uid, $2),
@@ -119,7 +126,7 @@ export async function POST(req: NextRequest) {
              email_verified = COALESCE(email_verified, false) OR $4,
              full_name = COALESCE(full_name, $5),
              updated_at = now()
-       WHERE id = $1`,
+       WHERE id = $1 AND is_active = true AND deleted_at IS NULL`,
       [user.id, appleUid, email, emailVerified, fullName],
     )
   }

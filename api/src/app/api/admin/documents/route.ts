@@ -47,9 +47,9 @@ export async function GET(req: NextRequest) {
   const driverIdFilter = searchParams.get('driverId')?.trim() || null
   // Ronda 28: NaN-safe pagination
   const pageSizeRaw = Number(searchParams.get('pageSize') ?? 50)
-  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 50
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, Math.floor(pageSizeRaw))) : 50
   const pageRaw = Number(searchParams.get('page') ?? 1)
-  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1
   const offset = (page - 1) * pageSize
 
   const clauses: string[] = []

@@ -84,9 +84,9 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status')  // active | suspended | deleted | all
   // Ronda 30 Bug#1: NaN-safe pagination
   const pageRaw = Number(searchParams.get('page') ?? '1')
-  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1
   const pageSizeRaw = Number(searchParams.get('pageSize') ?? '20')
-  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 20
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, Math.floor(pageSizeRaw))) : 20
   const offset = (page - 1) * pageSize
 
   const where: string[] = []

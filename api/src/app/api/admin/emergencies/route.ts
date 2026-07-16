@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type')
   // Ronda 28 Bug#1: pagination NaN-safe + placeholders parametrizados
   const pageRaw = Number(searchParams.get('page') ?? '1')
-  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1
   const pageSizeRaw = Number(searchParams.get('pageSize') ?? '100')
-  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, pageSizeRaw)) : 100
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, Math.floor(pageSizeRaw))) : 100
   const offset = (page - 1) * pageSize
 
   const where: string[] = []

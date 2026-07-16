@@ -90,9 +90,9 @@ export async function GET(req: NextRequest) {
   const toDate = searchParams.get('toDate')
   // Ronda 27 Bug#1: NaN-safe pagination (?page=abc no debe romper el endpoint)
   const pageRaw = Number(searchParams.get('page') ?? '1')
-  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1
+  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1
   const pageSizeRaw = Number(searchParams.get('pageSize') ?? '50')
-  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 50
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, Math.floor(pageSizeRaw))) : 50
   const offset = (page - 1) * pageSize
 
   const where: string[] = []
