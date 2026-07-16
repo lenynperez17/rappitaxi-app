@@ -458,9 +458,14 @@ export async function touchSession(sessionId: string): Promise<void> {
  * Devuelve cuántas filas se borraron.
  */
 export async function cleanupExpired(): Promise<number> {
+  // Ronda 120: preservar filas expired durante 7 días adicionales para que
+  // la detección de reuse siga funcionando cuando un refresh robado se usa
+  // post-expiración. Antes: DELETE inmediato al expirar → SELECT en
+  // refreshSession no encontraba fila → retornaba invalid_refresh en vez
+  // de reuse_detected → NO se revocaban otras sesiones activas del user.
   const rows = await query<{ id: string }>(
     `DELETE FROM sessions
-      WHERE expires_at < now()
+      WHERE expires_at < now() - interval '7 days'
          OR (revoked_at IS NOT NULL AND revoked_at < now() - interval '7 days')
       RETURNING id`,
   );
