@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { generateAuthentication } from '@/lib/passkeys';
+import { ipRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,17 @@ interface ReqBody {
 }
 
 export async function POST(req: NextRequest) {
+  // Ronda 158 DoS: sin rate limit, attacker anónimo hacía flood → INSERT en
+  // webauthn_challenges TTL 5min. 3000 req/s × 5min = 900K filas vivas →
+  // índice degradado, DB CPU-bound. Rate limit por IP (público, sin JWT).
+  const rl = ipRateLimit(req, 'passkey-auth-begin', { max: 15, windowMs: 60_000 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': '30' } },
+    );
+  }
+
   let body: ReqBody = {};
   // Body opcional. Si llega vacío o malformado, asumimos discoverable.
   try {

@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSession, deviceInfoFromHeaders } from '@/lib/sessions';
 import { verifyAuthentication, PasskeyError } from '@/lib/passkeys';
 import { maybeOne } from '@/lib/db';
+import { ipRateLimit } from '@/lib/rate-limit';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 
 export const runtime = 'nodejs';
@@ -34,6 +35,16 @@ interface ReqBody {
 }
 
 export async function POST(req: NextRequest) {
+  // Ronda 158 DoS: verifyAuthenticationResponse hace ECDSA/RSA verification —
+  // costoso en CPU. Sin rate limit, botnet satura el CPU con verify inválidos.
+  const rl = ipRateLimit(req, 'passkey-auth-finish', { max: 30, windowMs: 60_000 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': '30' } },
+    );
+  }
+
   let body: ReqBody;
   try {
     body = (await req.json()) as ReqBody;
