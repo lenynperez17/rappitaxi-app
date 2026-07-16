@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, AlertCircle, Route, Search, MapPin, MapPinned } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminTrip } from '../../lib/adminApi'
@@ -30,7 +30,13 @@ export function TripsPage() {
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // Ronda 112: request id para descartar respuestas caducas (mismo patrón
+  // que DriversPage Ronda 111). Antes: mount inicial disparaba 2 loads
+  // (status + debounced search) → race con respuestas fuera de orden.
+  const requestSeq = useRef(0)
+
   const load = async () => {
+    const seq = ++requestSeq.current
     setLoading(true); setError(null)
     try {
       const resp = await adminApi.listTrips({
@@ -38,14 +44,16 @@ export function TripsPage() {
         search: search || undefined,
         pageSize: 100,
       })
+      if (seq !== requestSeq.current) return
       setTrips(resp.trips); setTotal(resp.total)
     } catch (err) {
+      if (seq !== requestSeq.current) return
       setError(err instanceof AdminApiError ? err.message : 'Error cargando viajes')
       setTrips([])
-    } finally { setLoading(false) }
+    } finally { if (seq === requestSeq.current) setLoading(false) }
   }
 
-  useEffect(() => { void load() }, [status])
+  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
   useEffect(() => {
     const t = setTimeout(() => void load(), 350)
     return () => clearTimeout(t)
