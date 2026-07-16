@@ -60,7 +60,10 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
         arguments: {'rideId': rideId},
       );
       
-      debugPrint(userFriendlyError(rideId, fallback: 'Navegando al viaje'));
+      // Ronda 105: log directo con el rideId real. Antes: userFriendlyError(rideId)
+      // trataba el UUID como error y lo mapeaba/mostraba "Navegando al viaje"
+      // sin el ID, dificultando trazabilidad de deep-links.
+      debugPrint('Navegando al viaje $rideId');
     } else if (payload == 'ride_request') {
       // Nueva solicitud de viaje para conductores
       _navigateToDriverHome();
