@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Search, Phone, Mail, Star, Car, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
@@ -22,7 +22,14 @@ export function DriversPage() {
   const [status, setStatus] = useState<StatusFilter>('all')
   const [error, setError] = useState<string | null>(null)
 
+  // Ronda 111: request id incrementable para descartar respuestas caducas.
+  // Antes: cambiar status mientras había un debounce pendiente de search
+  // producía 2 requests que resolvían en orden no determinista → la última
+  // sobrescribia con datos que no matcheaban los filtros visibles.
+  const requestSeq = useRef(0)
+
   const load = async () => {
+    const seq = ++requestSeq.current
     setLoading(true)
     setError(null)
     try {
@@ -31,17 +38,19 @@ export function DriversPage() {
         search: search || undefined,
         pageSize: 100,
       })
+      if (seq !== requestSeq.current) return // stale — descartamos
       setDrivers(resp.drivers)
       setTotal(resp.total)
     } catch (err) {
+      if (seq !== requestSeq.current) return
       setError(err instanceof AdminApiError ? err.message : 'Error cargando conductores')
       setDrivers([])
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [status])
+  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
   useEffect(() => {
     const t = setTimeout(() => void load(), 350)
     return () => clearTimeout(t)
