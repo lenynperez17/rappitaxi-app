@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne } from '@/lib/db'
+import { keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +23,19 @@ const APP_URL = process.env.APP_PUBLIC_URL ?? 'https://rapi-team-api.nynelmkt.cl
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 169: rate limit por userId. Sin esto, cada POST crea una fila
+  // mp_payments 'created' + llama MP con timeout 10s. Un attacker con JWT
+  // hace 1000 req/s → 1000 filas huérfanas + saturación pool de conns +
+  // Rate limit anti-abuso de MP eventualmente rechaza al negocio real.
+  // Un usuario legítimo hace <5 recargas/hora en el peor caso.
+  const rl = keyedRateLimit(`recharge-checkout:${auth.userId}`, { max: 20, windowMs: 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited', message: 'Demasiadas recargas seguidas. Espera un momento.' },
+      { status: 429 },
+    )
+  }
 
   const mpToken = process.env.MP_ACCESS_TOKEN
   if (!mpToken) {
