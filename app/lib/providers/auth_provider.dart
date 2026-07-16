@@ -303,6 +303,8 @@ class AuthProvider with ChangeNotifier {
       if (userJson != null) {
         _currentUser = _userFromApi(userJson);
         _updateVerificationFlags();
+        // Ronda 90: persistir cache para offline (mismo patrón que updateProfile)
+        await _saveCachedUser();
       }
       _pendingPhoneNumber = null;
       RapiSseClient.instance.start();
@@ -510,6 +512,10 @@ class AuthProvider with ChangeNotifier {
       if (userJson != null) {
         _currentUser = _userFromApi(userJson);
         _updateVerificationFlags();
+        // Ronda 90: persistir cache al actualizar perfil. Sin esto, al matar
+        // la app y reabrirla sin red, mostraba datos viejos hasta el próximo
+        // refresh online exitoso.
+        await _saveCachedUser();
         return true;
       }
       return false;
@@ -566,6 +572,8 @@ class AuthProvider with ChangeNotifier {
       if (userJson != null) {
         _currentUser = _userFromApi(userJson);
         _updateVerificationFlags();
+        // Ronda 90: persistir cache tras switch de modo
+        await _saveCachedUser();
         return true;
       }
       return false;
