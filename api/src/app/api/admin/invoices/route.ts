@@ -234,15 +234,17 @@ export async function POST(req: NextRequest) {
       total: Number((qty * unitPrice).toFixed(2)),
     }
   })
-  // Sistema de redondeo estable: si el usuario pasa precios YA con IGV,
-  // subtotal = round(sum(items) / (1 + IGV)) y igv = round(subtotal * IGV) →
-  // total efectivo = subtotal + igv (puede diferir 1 centavo del total tipeado).
-  // Si NO incluye IGV, subtotal = sum(items) y total = subtotal (receipt).
+  // Ronda 152 SUNAT: derivar IGV de la resta rawSum-subtotal, NO re-multiplicar
+  // el subtotal redondeado por IGV_RATE. Con precios "redondos" (ej. unitPrice
+  // 100 IGV-incluido → subtotal=84.75, subtotal*0.18=15.255 round→15.26, pero
+  // rawSum-subtotal=15.25). El descuadre de 1 centavo hace que
+  // montoImporteVenta != Σ item.montoTotal → SUNAT rechaza con error 2019
+  // ("monto total no cuadra") y el correlativo queda gastado.
   const includeIgv = body.includeIgv !== false && body.documentType !== 'receipt'
-  const rawSum = normalizedItems.reduce((acc, it) => acc + it.total, 0)
-  const subtotal = includeIgv ? Number((rawSum / (1 + IGV_RATE)).toFixed(2)) : Number(rawSum.toFixed(2))
-  const igv = includeIgv ? Number((subtotal * IGV_RATE).toFixed(2)) : 0
-  const total = Number((subtotal + igv).toFixed(2))
+  const rawSum = Number(normalizedItems.reduce((acc, it) => acc + it.total, 0).toFixed(2))
+  const subtotal = includeIgv ? Number((rawSum / (1 + IGV_RATE)).toFixed(2)) : rawSum
+  const igv = includeIgv ? Number((rawSum - subtotal).toFixed(2)) : 0
+  const total = includeIgv ? rawSum : subtotal
 
   // Serie según tipo
   const series =

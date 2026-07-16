@@ -184,11 +184,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_vehicle_type' }, { status: 400 })
   }
 
-  const allowedStatuses = new Set([
-    'requested', 'searching', 'accepted', 'on_way',
-    'arrived', 'in_progress', 'completed', 'cancelled', 'no_drivers',
+  // Ronda 153: crear rides directamente en estado terminal
+  // (completed/cancelled/no_drivers) dejaba al driver con active_ride_id
+  // apuntando a un ride ya cerrado — no podía aceptar rides reales hasta
+  // intervención manual + FCM push confuso "nueva oferta" para un ride
+  // 'completed'. También faltaban campos requeridos (final_fare,
+  // completed_at, cancelled_by, cancelled_reason). Los estados terminales
+  // deben lograrse via los endpoints de transición (complete/cancel), no
+  // via POST /admin/trips.
+  const CREATE_ALLOWED = new Set([
+    'requested', 'searching', 'accepted', 'on_way', 'arrived', 'in_progress',
   ])
-  const status = body.status && allowedStatuses.has(body.status)
+  if (body.status && !CREATE_ALLOWED.has(body.status)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'invalid_status',
+        message: `Solo estados iniciales al crear: ${Array.from(CREATE_ALLOWED).join(', ')}. Para cerrar, usar /rides/[id]/complete o /cancel.`,
+      },
+      { status: 400 },
+    )
+  }
+  const status = body.status
     ? body.status
     : (body.driverId ? 'accepted' : 'requested')
 

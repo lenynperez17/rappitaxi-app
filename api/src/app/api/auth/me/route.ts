@@ -109,6 +109,44 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_email' }, { status: 400 })
   }
 
+  // Ronda 151: validar campos user-editable antes de tocar la DB.
+  //  - fullName ≤ 200 chars (schema típico VARCHAR(255)) evita overflow 22001
+  //  - birthDate: ISO date YYYY-MM-DD, año entre 1900 y hoy
+  //  - identityDocument: 8-15 chars alfanuméricos (DNI/CE/PAS peruanos)
+  if (body.fullName !== undefined && typeof body.fullName === 'string') {
+    const trimmed = body.fullName.trim()
+    if (trimmed.length === 0 || trimmed.length > 200) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_full_name', message: 'fullName debe tener 1-200 caracteres' },
+        { status: 400 },
+      )
+    }
+  }
+  if (body.birthDate !== undefined && body.birthDate !== null) {
+    if (typeof body.birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.birthDate)) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_birth_date', message: 'birthDate debe ser YYYY-MM-DD' },
+        { status: 400 },
+      )
+    }
+    const d = new Date(body.birthDate)
+    const year = d.getFullYear()
+    if (Number.isNaN(d.getTime()) || year < 1900 || d > new Date()) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_birth_date', message: 'birthDate fuera de rango' },
+        { status: 400 },
+      )
+    }
+  }
+  if (body.identityDocument !== undefined && body.identityDocument !== null && body.identityDocument !== '') {
+    if (typeof body.identityDocument !== 'string' || !/^[A-Za-z0-9]{6,15}$/.test(body.identityDocument.trim())) {
+      return NextResponse.json(
+        { success: false, error: 'invalid_identity_document', message: 'DNI/CE/Pasaporte inválido' },
+        { status: 400 },
+      )
+    }
+  }
+
   // Construir SET dinámico con solo los campos enviados
   const sets: string[] = []
   const params: unknown[] = []
