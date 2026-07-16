@@ -138,13 +138,22 @@ export async function POST(req: NextRequest) {
   // Session JWT propia — sin Firebase
   const session = await createSession(user!.id, (body.deviceInfo as Record<string, unknown>) ?? {})
 
-  // Auditoría
+  // Auditoría.
+  // Ronda 128 BUG: X-Forwarded-For puede venir vacío ("") o con texto no-IP
+  // ("unknown", legado de proxies antiguos/CDNs). `?? null` NO convierte
+  // "" a null (nullish coalescing solo agarra null/undefined), y la columna
+  // ip_address es INET → PostgreSQL rechaza "invalid input syntax for type
+  // inet" y tira 500 DESPUÉS de que Twilio consumió el OTP y de que se creó
+  // la session. Cliente queda sin token con OTP quemado. Validamos con
+  // regex y forzamos NULL cuando no es una IPv4/IPv6 plausible.
+  const xffRaw = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  const clientIp = xffRaw && /^[0-9a-fA-F:.]+$/.test(xffRaw) && xffRaw.length <= 45 ? xffRaw : null
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
      VALUES ($1, 'login_phone', 'phone', $2, $3, $4)`,
     [
       user!.id,
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      clientIp,
       req.headers.get('user-agent'),
       JSON.stringify({ isNewUser }),
     ],
