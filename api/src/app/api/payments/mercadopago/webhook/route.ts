@@ -174,10 +174,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'amount_discrepancy' }, { status: 422 })
   }
 
+  // Ronda 134 SECURITY/DINERO: charged_back (chargeback resuelto a favor del
+  // comprador por el banco) es status oficial de MP y NO estaba mapeado.
+  // Sin el mapeo caía al fallback 'pending' → rama else final sobreescribía
+  // approved→pending SIN reversar el wallet → usuario mantiene saldo + banco
+  // le devuelve dinero = pérdida directa.
   const newStatus = payment.status === 'approved' ? 'approved'
     : payment.status === 'rejected' ? 'rejected'
     : payment.status === 'cancelled' ? 'cancelled'
     : payment.status === 'refunded' ? 'refunded'
+    : payment.status === 'charged_back' ? 'charged_back'
     : 'pending'
 
   try {
@@ -220,10 +226,14 @@ export async function POST(req: NextRequest) {
           if (!isUniqueViolation(e)) throw e
         }
       })
-    } else if ((newStatus === 'refunded' || newStatus === 'cancelled') && mpRow.status === 'approved') {
+    } else if (
+      (newStatus === 'refunded' || newStatus === 'cancelled' || newStatus === 'charged_back')
+      && mpRow.status === 'approved'
+    ) {
       // Ronda 83 CRITICAL: refund/chargeback DESPUÉS de approved requiere
       // reversar el crédito al wallet, sino usuario mantiene saldo + MP le
       // devuelve el dinero = doble beneficio / pérdida directa para la plataforma.
+      // Ronda 134: charged_back agregado — chargeback bancario resuelto.
       await tx(async (client) => {
         const locked = await client.query<{ status: string }>(
           `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
