@@ -11,7 +11,10 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  if (!isLoading && isAuthenticated) {
+  // Ronda 109: no desmontar durante submit para evitar "state update on
+   // unmounted component" en el finally. Redirigir solo cuando el submit
+  // terminó (submitting=false).
+  if (!isLoading && isAuthenticated && !submitting) {
     return <Navigate to="/dashboard" replace />
   }
 
