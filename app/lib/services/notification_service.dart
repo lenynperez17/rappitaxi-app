@@ -281,7 +281,16 @@ class NotificationService {
       category: channelId == 'rappi_emergency'
           ? AndroidNotificationCategory.alarm
           : AndroidNotificationCategory.call,
-      visibility: NotificationVisibility.public,
+      // Ronda 192 PRIVACY: canales con PII (chat = nombre + mensaje,
+      // emergency = ubicación + tipo, payments = monto + método) usan
+      // visibility.private → título ocultado en lockscreen si el device
+      // está bloqueado con PIN/biometric. Otros canales (ride status
+      // genérico, marketing) pueden ser públicos.
+      visibility: (channelId == 'rappi_chat' ||
+              channelId == 'rappi_emergency' ||
+              channelId == 'rappi_payments')
+          ? NotificationVisibility.private
+          : NotificationVisibility.public,
     );
   }
 

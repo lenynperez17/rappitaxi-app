@@ -215,6 +215,11 @@ export async function POST(
       }
 
       // 4. UPSERT: UNIQUE(ride_id, driver_id) — si repite, UPDATE
+      // Ronda 186: WHERE en ON CONFLICT bloquea re-post de un offer que el
+      // pasajero YA rechazó recientemente. Antes: driver podía spam-repostear
+      // borrando el audit trail de rejected + re-notificando al pasajero.
+      // Cooldown 30s permite al driver mejorar precio, pero no spam. Si el
+      // upsert no afectó filas (rechazo reciente), devolvemos 429.
       const upsertRes = await client.query<{ id: string; created_at: Date; is_new: boolean }>(
         `INSERT INTO ride_offers (ride_id, driver_id, amount, eta_seconds, message, status)
          VALUES ($1, $2, $3, $4, $5, 'pending')
@@ -225,12 +230,17 @@ export async function POST(
                 status = 'pending',
                 responded_at = NULL,
                 created_at = ride_offers.created_at
+            WHERE ride_offers.status <> 'rejected'
+               OR ride_offers.responded_at < now() - interval '30 seconds'
          RETURNING id,
                    created_at,
                    (xmax = 0) AS is_new`,
         [rideId, auth.userId, amount, etaSeconds, message],
       )
-      const offer = upsertRes.rows[0]!
+      const offer = upsertRes.rows[0]
+      if (!offer) {
+        throw { code: 'recently_rejected', status: 429 }
+      }
 
       // 5. Nombre del driver para el push
       const driverName = await client.query<{ name: string | null }>(

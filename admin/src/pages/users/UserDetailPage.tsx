@@ -21,15 +21,24 @@ export function UserDetailPage() {
 
   useEffect(() => {
     if (!userId) return
-    // Reset explícito para evitar stale data del user anterior al cambiar userId.
+    // Ronda 190 IDOR-UI: cancellation al cambiar userId. Antes: si el fetch
+    // de user A resolvía DESPUÉS del de B (navegación rápida A→B), setUser
+    // sobrescribía con datos de A → panel mostraba PII de A pero URL decía B.
+    let cancelled = false
     setUser(null)
     setError(null)
+    setLoading(true)
     void (async () => {
-      setLoading(true)
-      try { setUser(await adminApi.getUser(userId)) }
-      catch (err) { setError(err instanceof AdminApiError ? err.message : 'Error cargando usuario') }
-      finally { setLoading(false) }
+      try {
+        const u = await adminApi.getUser(userId)
+        if (!cancelled) setUser(u)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof AdminApiError ? err.message : 'Error cargando usuario')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     })()
+    return () => { cancelled = true }
   }, [userId])
 
   if (loading) return (

@@ -68,6 +68,12 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
+            // Ronda 179: minificar + shrink reduce el AAB y remueve debug info.
+            // debuggable false explícito para evitar override accidental.
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

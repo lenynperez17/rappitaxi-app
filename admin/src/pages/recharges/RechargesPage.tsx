@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, CreditCard, Plus, X, CheckCircle2 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminRecharge, type AdminDriver } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
@@ -157,6 +157,8 @@ function CreateRechargeModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Ronda 188 FINANCIERO: ref síncrono contra doble-recarga contable.
+  const submittingRef = useRef(false)
 
   const [driversError, setDriversError] = useState<string | null>(null)
   useEffect(() => {
@@ -177,17 +179,22 @@ function CreateRechargeModal({ onClose, onCreated }: { onClose: () => void; onCr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
     setError(null)
     const amt = Number(amount)
     if (!driverId) return setError('Selecciona un conductor')
     if (!Number.isFinite(amt) || amt <= 0) return setError('Monto inválido')
+    submittingRef.current = true
     setSubmitting(true)
     try {
       await adminApi.createRecharge({ driverId, amount: amt, method, reference: reference || undefined, notes: notes || undefined })
       onCreated()
     } catch (err) {
       setError(err instanceof AdminApiError ? err.message : 'Error registrando recarga')
-    } finally { setSubmitting(false) }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
 
   return (

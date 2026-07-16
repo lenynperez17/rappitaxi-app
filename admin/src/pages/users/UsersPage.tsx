@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Search, Phone, Mail, Plus, MoreVertical, Trash2, Edit, Ban, CheckCircle2,
@@ -45,6 +45,8 @@ export function UsersPage() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
+  // Ronda 189: ref-set síncrono contra doble-delete por user.
+  const deletingRef = useRef<Set<string>>(new Set())
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
 
   const load = async () => {
@@ -133,16 +135,20 @@ export function UsersPage() {
   }
 
   const handleDelete = async (u: AdminUser) => {
+    if (deletingRef.current.has(u.id)) return
     const label = u.fullName ?? u.email ?? u.phone ?? u.id.slice(0, 8)
     if (!window.confirm(`¿Eliminar permanentemente a "${label}"?\n\nEsta acción anonimiza la cuenta (soft delete) y revoca todas sus sesiones. NO se puede deshacer.`)) return
+    deletingRef.current.add(u.id)
     try {
       await adminApi.deleteUser(u.id)
       setFlash({ kind: 'ok', msg: 'Usuario eliminado' })
       await load()
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error eliminando' })
+    } finally {
+      deletingRef.current.delete(u.id)
+      setOpenMenuId(null)
     }
-    setOpenMenuId(null)
   }
 
   const handleResetPassword = (u: AdminUser) => {

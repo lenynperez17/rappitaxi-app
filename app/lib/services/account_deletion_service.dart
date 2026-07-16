@@ -31,15 +31,30 @@ class AccountDeletionService {
   }) async {
     try {
       final data = await _api.deleteAccount(reason: reason);
+      // Ronda 191 GDPR: NO hardcodear firestoreDeleted:true si el server
+      // no lo confirmó. Antes: la UI mostraba "cuenta eliminada" cuando
+      // el backend respondía success:false + errors:[] → violation del
+      // derecho de supresión (GDPR Art. 17 / Ley 29733 art. 20).
+      final success = data['success'] == true;
+      final errors = (data['errors'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          const <String>[];
+      if (!success || errors.isNotEmpty) {
+        throw AccountDeletionException(
+          'Eliminación incompleta: ${errors.isNotEmpty ? errors.join("; ") : "el servidor rechazó la operación"}',
+          code: 'PARTIAL_DELETE',
+        );
+      }
       return DeleteAccountResult(
-        success: data['success'] == true,
+        success: true,
         uid: data['userId']?.toString() ?? '',
-        firestoreDeleted: true,
-        driversSubcolDeleted: true,
-        walletDeleted: true,
+        firestoreDeleted: data['firestoreDeleted'] == true,
+        driversSubcolDeleted: data['driversSubcolDeleted'] == true,
+        walletDeleted: data['walletDeleted'] == true,
         storageFilesDeleted: (data['storageFilesDeleted'] as num?)?.toInt() ?? 0,
-        errors: (data['errors'] as List?)?.map((e) => e.toString()).toList() ??
-            const [],
+        errors: errors,
       );
     } on RapiApiException catch (e) {
       throw AccountDeletionException(

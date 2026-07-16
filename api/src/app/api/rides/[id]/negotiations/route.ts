@@ -204,16 +204,33 @@ export async function POST(
           ],
         )
       } else if (role.role === 'passenger') {
-        // Fan-out a drivers online (mismos criterios que /rides/available filter).
+        // Ronda 187 SPAM/UX: fan-out con filtro geográfico + dedup + ORDER.
+        // Antes: LIMIT 30 sin ORDER BY notificaba drivers no-determinísticos
+        // globales — pasajero en Lima despertaba drivers en Cusco. Además
+        // re-posts creaban notificaciones duplicadas.
+        // Ahora: solo drivers dentro de 8km del pickup, no duplicar dentro
+        // de 2 minutos, ordenar por proximidad.
         await client.query(
           `INSERT INTO notifications (user_id, type, title, body, data)
            SELECT dp.driver_id, 'negotiation_new', $1, $2, $3::jsonb
              FROM driver_presence dp
              JOIN users u ON u.id = dp.driver_id
+             JOIN rides r ON r.id = $4
             WHERE dp.is_online = true
               AND dp.active_ride_id IS NULL
               AND u.deleted_at IS NULL
               AND (dp.last_heartbeat IS NULL OR dp.last_heartbeat > NOW() - INTERVAL '5 minutes')
+              AND dp.latitude IS NOT NULL AND dp.longitude IS NOT NULL
+              AND r.pickup_lat IS NOT NULL AND r.pickup_lng IS NOT NULL
+              AND haversine_km(dp.latitude, dp.longitude, r.pickup_lat, r.pickup_lng) <= 8
+              AND NOT EXISTS (
+                SELECT 1 FROM notifications n
+                 WHERE n.user_id = dp.driver_id
+                   AND n.type = 'negotiation_new'
+                   AND n.data->>'rideId' = $4::text
+                   AND n.created_at > NOW() - INTERVAL '2 minutes'
+              )
+            ORDER BY haversine_km(dp.latitude, dp.longitude, r.pickup_lat, r.pickup_lng) ASC
             LIMIT 30`,
           [
             'Nueva oferta del pasajero',
@@ -225,6 +242,7 @@ export async function POST(
               proposedBy: auth.userId,
               proposedByRole: role.role,
             }),
+            rideId,
           ],
         )
       }

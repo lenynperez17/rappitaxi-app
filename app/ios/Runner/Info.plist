@@ -61,12 +61,14 @@
 		<string>Rappi Team necesita tu ubicación para mostrarte conductores cercanos y calcular rutas.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Rappi Team necesita tu ubicación en segundo plano para el seguimiento de viajes en tiempo real.</string>
-		<key>NSLocationAlwaysUsageDescription</key>
-		<string>Rappi Team necesita tu ubicación en segundo plano para el seguimiento de viajes.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>Rappi Team necesita acceso a la cámara para tomar fotos de perfil y documentos.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Rappi Team necesita acceso a tus fotos para seleccionar imágenes de perfil.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Rappi Team necesita guardar comprobantes de viaje en tu galería.</string>
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Rappi Team necesita acceso al micrófono para llamadas de voz.</string>
 		<key>CFBundleURLTypes</key>

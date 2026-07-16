@@ -53,51 +53,58 @@ class SecurityService {
 
   /// Registrar intento fallido
   Future<void> recordFailedAttempt(String identifier, String attemptType) async {
-    final key = '$attemptType:$identifier';
-    _failedAttemptsMap[key] = (_failedAttemptsMap[key] ?? 0) + 1;
-    
-    final attempts = _failedAttemptsMap[key]!;
-    
+    // Ronda 193 PRIVACY/LEY 29733: usar identifier HASHEADO como parte de la
+    // clave persistida. Antes guardaba 'failed_attempts_login:user@ex.com'
+    // plaintext en SharedPreferences → cualquier extractor de datos (adb
+    // backup, root, forensics) recuperaba el email real. Con hash sha256
+    // el email queda irreversible.
+    final safeKey = '$attemptType:${_hashIdentifier(identifier)}';
+    _failedAttemptsMap[safeKey] = (_failedAttemptsMap[safeKey] ?? 0) + 1;
+
+    final attempts = _failedAttemptsMap[safeKey]!;
+
     // Log de seguridad
     await logSecurityEvent('FAILED_ATTEMPT', {
       'identifier': _hashIdentifier(identifier),
       'attempt_type': attemptType,
       'attempts': attempts,
     });
-    
+
     // Bloquear después de muchos intentos
     if (attempts >= OAuthConfig.maxLoginAttempts) {
       await lockAccount(identifier, attemptType);
     }
-    
-    // Guardar en preferencias locales
+
+    // Guardar en preferencias locales (con clave HASHEADA)
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('failed_attempts_$key', attempts);
-    await prefs.setString('last_failed_attempt_$key', DateTime.now().toIso8601String());
+    await prefs.setInt('failed_attempts_$safeKey', attempts);
+    await prefs.setString('last_failed_attempt_$safeKey', DateTime.now().toIso8601String());
   }
 
   /// Bloquear cuenta temporalmente
   Future<void> lockAccount(String identifier, String reason) async {
-    final key = '$reason:$identifier';
+    // Ronda 193: mismo patrón — clave persistida con hash irreversible.
+    final safeKey = '$reason:${_hashIdentifier(identifier)}';
     final lockoutUntil = DateTime.now().add(
       Duration(minutes: OAuthConfig.lockoutDurationMinutes),
     );
-    
-    _lockoutMap[key] = lockoutUntil;
-    
+
+    _lockoutMap[safeKey] = lockoutUntil;
+
     // Guardar en preferencias
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('lockout_$key', lockoutUntil.toIso8601String());
-    
+    await prefs.setString('lockout_$safeKey', lockoutUntil.toIso8601String());
+
     // Log de seguridad crítico
     await logSecurityEvent('ACCOUNT_LOCKED', {
-      'identifier': _hashIdentifier(identifier),
+      'identifier_hash': _hashIdentifier(identifier),
       'reason': reason,
       'locked_until': lockoutUntil.toIso8601String(),
     });
-    
+
+    // Ronda 193: NO loguear el identifier plaintext (email/phone) — solo el hash.
     AppLogger.warning('Cuenta bloqueada', {
-      'identifier': identifier,
+      'identifier_hash': _hashIdentifier(identifier),
       'reason': reason,
       'duration_minutes': OAuthConfig.lockoutDurationMinutes,
     });
