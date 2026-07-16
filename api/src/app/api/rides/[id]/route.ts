@@ -174,9 +174,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const params: unknown[] = []
 
   if (body.destination) {
-    if (typeof body.destination.lat !== 'number' || typeof body.destination.lng !== 'number') {
+    // Ronda 163: validar rango (paralelo al POST /rides). Sin esto un client
+    // puede editar destino a (9999, -8888) → contaminó Haversine + crashea
+    // Google Maps client + envenenó analytics.
+    const { lat, lng } = body.destination
+    if (typeof lat !== 'number' || typeof lng !== 'number'
+        || !Number.isFinite(lat) || !Number.isFinite(lng)
+        || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       return NextResponse.json(
-        { success: false, error: 'invalid_destination', message: 'destination.lat y destination.lng son obligatorios' },
+        { success: false, error: 'invalid_destination', message: 'destination.lat ∈ [-90,90] y destination.lng ∈ [-180,180]' },
         { status: 400 },
       )
     }
