@@ -503,19 +503,35 @@ Ver detalles: https://rapiteam.app/emergency/$alertId
     }
   }
 
-  // Obtener ubicación actual
+  // Obtener ubicación actual — Ronda 94 CRITICAL: manejar permisos correctamente.
+  // Antes: si el user denegaba, el catch tragaba PermissionDeniedException y
+  // SOS fallaba con "No se pudo obtener la ubicación" sin guiar a Ajustes.
+  // En una emergencia real (SOS), un fallo silencioso es riesgo de seguridad.
   Future<void> _getCurrentLocation() async {
     try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        await Geolocator.requestPermission();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _error = 'Activa el GPS/ubicación del dispositivo';
+        return;
       }
-
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _error = 'Permiso de ubicación bloqueado. Habilítalo en Ajustes → Rapi Team → Ubicación → Siempre.';
+        return;
+      }
+      if (permission == LocationPermission.denied) {
+        _error = 'El SOS necesita acceso a tu ubicación para enviar tu posición a los contactos de emergencia.';
+        return;
+      }
       _currentLocation = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
     } catch (e) {
       AppLogger.error('Error obteniendo ubicación', e);
+      _error = 'No se pudo obtener tu ubicación. Verifica que el GPS esté activo.';
     }
   }
 
