@@ -173,9 +173,15 @@ class NavigationHelper {
     String message = 'Cargando...',
     bool barrierDismissible = false,
   }) {
+    // Ronda 103: routeName único para poder cerrar SOLO este dialog por
+    // settings.name, sin colisionar con rutas superiores empujadas después
+    // (bottom sheets, nueva pantalla). Antes: hideLoadingDialog cerraba lo
+    // que estuviera arriba y dejaba el loader bloqueando la UI.
     showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: barrierDismissible,
+      routeSettings: const RouteSettings(name: '_rappi_loading_dialog'),
       builder: (context) => AlertDialog(
         content: Row(
           children: [
@@ -191,11 +197,22 @@ class NavigationHelper {
     );
   }
 
-  /// Cerrar loading dialog
+  /// Cerrar loading dialog — solo si la ruta superior es el loader propio.
   static void hideLoadingDialog(BuildContext context) {
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
+    final nav = Navigator.of(context, rootNavigator: true);
+    // Popuntil sobre el loader específico: si el user empujó una pantalla
+    // encima entre showLoadingDialog y hideLoadingDialog, cerramos esa
+    // pantalla + el dialog, o solo el dialog si sigue arriba.
+    nav.popUntil((route) {
+      if (route.settings.name == '_rappi_loading_dialog') {
+        // Cerrar el dialog con un pop adicional después de popUntil
+        Future.microtask(() {
+          if (nav.canPop()) nav.pop();
+        });
+        return true;
+      }
+      return route.isFirst; // No pop más allá del root
+    });
   }
 
   /// Navegación segura con validación de argumentos
