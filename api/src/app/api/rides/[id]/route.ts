@@ -50,7 +50,23 @@ interface RideDetailRow {
   driver_photo_url: string | null
 }
 
+// Ronda 174 PRIVACY: PII de la contraparte solo visible mientras el ride
+// está ACTIVO. Antes: /rides/[id] devolvía passengerPhone/driverPhone/
+// nombres/fotos sin importar el estado, y como driver_id queda escrito para
+// siempre, cualquier driver que estuvo asignado podía consultar el phone
+// real del passenger meses después → stalking/acoso. Uber/Cabify enmascaran
+// vía proxy Twilio, pero como fallback mínimo: nombre → primera letra,
+// phone → null tras el ride finalizado.
+const ACTIVE_STATUSES = new Set(['accepted', 'on_way', 'arrived', 'in_progress'])
+function maskName(name: string | null): string | null {
+  if (!name) return name
+  const t = name.trim()
+  if (!t) return t
+  return t.charAt(0) + '.'
+}
+
 function serializeRideDetail(r: RideDetailRow) {
+  const isActive = ACTIVE_STATUSES.has(r.status)
   return {
     id: r.id,
     passengerId: r.passenger_id,
@@ -81,12 +97,12 @@ function serializeRideDetail(r: RideDetailRow) {
     startedAt: r.started_at,
     completedAt: r.completed_at,
     metadata: r.metadata,
-    passengerName: r.passenger_name,
-    passengerPhone: r.passenger_phone,
-    passengerPhotoUrl: r.passenger_photo_url,
-    driverName: r.driver_name,
-    driverPhone: r.driver_phone,
-    driverPhotoUrl: r.driver_photo_url,
+    passengerName: isActive ? r.passenger_name : maskName(r.passenger_name),
+    passengerPhone: isActive ? r.passenger_phone : null,
+    passengerPhotoUrl: isActive ? r.passenger_photo_url : null,
+    driverName: isActive ? r.driver_name : maskName(r.driver_name),
+    driverPhone: isActive ? r.driver_phone : null,
+    driverPhotoUrl: isActive ? r.driver_photo_url : null,
   }
 }
 
