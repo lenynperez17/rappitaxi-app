@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
-import { query } from '@/lib/db'
+import { query, maybeOne } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -37,16 +37,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_platform' }, { status: 400 })
   }
 
-  // SEGURIDAD: si el token ya está registrado para OTRO user, no lo reasignamos
-  // silenciosamente (eso permitía secuestro de push notifications ajenas).
-  // En su lugar, borramos el registro antiguo (el dispositivo del otro user
-  // re-registrará en el próximo boot con su propio token) e insertamos el
-  // nuevo. Esto asume que en la práctica NO hay 2 users legítimos compartiendo
-  // el mismo token FCM (los tokens son per-instalación).
-  await query(
-    `DELETE FROM fcm_tokens WHERE token = $1 AND user_id <> $2`,
-    [token, auth.userId],
+  // Ronda 140 SECURITY: hijack de push notifications ajenas.
+  // Antes: DELETE ... WHERE user_id <> $2 borraba silenciosamente el binding
+  // del owner legítimo. Un attacker que obtenía un FCM token ajeno (leak en
+  // logs, backup en la nube compartido, otra vuln) llamaba register-token con
+  // su Bearer JWT + tokenX → server reasignaba tokenX al attacker. Todo push
+  // futuro (ride offers, chat, emergencias) del attacker llegaba al celular
+  // de la víctima → info leak + phishing. La víctima dejaba de recibir sus
+  // propias notifs sin señal hasta el próximo boot.
+  // Fix: rechazar con 409 si el token ya pertenece a otro user.
+  const existing = await maybeOne<{ user_id: string }>(
+    `SELECT user_id FROM fcm_tokens WHERE token = $1`,
+    [token],
   )
+  if (existing && existing.user_id !== auth.userId) {
+    return NextResponse.json(
+      { success: false, error: 'token_owned_by_other_user' },
+      { status: 409 },
+    )
+  }
   await query(
     `INSERT INTO fcm_tokens (user_id, token, platform, device_info, last_seen_at)
      VALUES ($1, $2, $3, $4, now())
