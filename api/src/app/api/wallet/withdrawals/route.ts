@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
 }
 
 const MIN_WITHDRAWAL = 20      // S/ mínimo
+const MAX_WITHDRAWAL = 10000   // S/ tope por operación (evita mistap + fraude)
 const WITHDRAWAL_FEE = 2       // S/ fee fijo
 
 export async function POST(req: NextRequest) {
@@ -71,10 +72,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
   const bankAccountId = body.bankAccountId?.trim()
-  const amount = Number(body.amount ?? 0)
-  if (!bankAccountId || amount < MIN_WITHDRAWAL) {
+  const amount = Number(body.amount)
+  // Ronda 130 SECURITY: NaN/Infinity envenenaban wallet_transactions.amount
+  // (Postgres numeric acepta 'NaN'). NaN < MIN_WITHDRAWAL = false, y
+  // balance < NaN = false → validación bypasseada, ledger contaminado
+  // permanentemente: balance = SUM(NaN, ...) = NaN para siempre.
+  // Además chequeamos tope máximo y 2 decimales.
+  if (
+    !bankAccountId ||
+    !Number.isFinite(amount) ||
+    amount < MIN_WITHDRAWAL ||
+    amount > MAX_WITHDRAWAL ||
+    Math.round(amount * 100) !== amount * 100
+  ) {
     return NextResponse.json({ success: false, error: 'invalid_input',
-      message: `Monto mínimo S/ ${MIN_WITHDRAWAL}` }, { status: 400 })
+      message: `Monto entre S/ ${MIN_WITHDRAWAL} y S/ ${MAX_WITHDRAWAL}, máximo 2 decimales` }, { status: 400 })
   }
 
   // Idempotency: la app móvil envía este header para que un tap-tap accidental
