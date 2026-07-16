@@ -196,7 +196,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         const commissionRateRes = await client.query<{ value_num: string | null }>(
           `SELECT value_num FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
         )
-        const commissionRate = Number(commissionRateRes.rows[0]?.value_num ?? 0.20)
+        // Ronda 139: si app_settings.value_num es NULL, malformado o fuera de
+        // rango, forzar 0.20 (default). Sin este guard, admin panel guardando
+        // "20%" (string no-numérico) o migración corrupta → Number = NaN →
+        // commissionAmount = NaN → wallet_transactions.amount = NaN →
+        // rapi_team_user_balance() = NaN permanentemente (poison ledger).
+        const rawRate = Number(commissionRateRes.rows[0]?.value_num)
+        const commissionRate = Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1
+          ? rawRate
+          : 0.20
         // Comisión + driver earning se calculan sobre adjustedFare (post vale).
         // El vale es descuento al pasajero absorbido por la plataforma, no por el driver.
         const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100
