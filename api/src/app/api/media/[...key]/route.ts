@@ -53,6 +53,16 @@ export async function GET(
     return NextResponse.json({ error: 'invalid_key' }, { status: 400 })
   }
 
+  // Ronda 132 SECURITY: autenticar ANTES del SELECT.
+  //   1. DoS amplification: request anónimo disparaba una query pg;
+  //      spammear /api/media/<random> saturaba Postgres sin costo (sin
+  //      pasar por rate-limit de auth).
+  //   2. Enumeration oracle: key inexistente → 404, key existente pero
+  //      sin auth → 401 → attacker deduce existencia de archivos ajenos
+  //      con solo curl + random UUIDs.
+  const auth = await requireAuth(req)
+  if (!auth.ok) return auth.response
+
   const file = await maybeOne<StorageRow>(
     `SELECT id, user_id, storage_key, mime, is_public, deleted_at
        FROM storage_files WHERE storage_key = $1 LIMIT 1`,
@@ -61,10 +71,6 @@ export async function GET(
   if (!file || file.deleted_at) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
   }
-
-  // Autenticación siempre requerida (mismo si is_public — no exponer sin JWT)
-  const auth = await requireAuth(req)
-  if (!auth.ok) return auth.response
 
   const isOwner = file.user_id === auth.userId
   // Los admins pueden ver cualquier archivo (necesario para verificación
