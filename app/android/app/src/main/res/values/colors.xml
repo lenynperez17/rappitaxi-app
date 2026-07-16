@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Naranja Rappi Team (antes #E31E24 rojo intenso — el user reportó
-         que se veía muy rojo detrás del logo). -->
-    <color name="ic_launcher_background">#FF6B00</color>
+    <!-- Blanco (igual al ícono iOS oficial: fondo blanco + letras rojas
+         del logo). Historia: #E31E24 rojo intenso rechazado, luego #FF6B00
+         naranja rechazado, ahora #FFFFFF blanco confirmado por el user. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>
