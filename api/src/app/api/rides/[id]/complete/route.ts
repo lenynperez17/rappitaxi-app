@@ -197,18 +197,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
         // Comisión platform (Rapi Team) sobre finalFare. Configurable via
         // app_settings; default 20% (típico ride-hailing Perú).
-        const commissionRateRes = await client.query<{ value_num: string | null }>(
-          `SELECT value_num FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
+        // Ronda 149 CRITICAL: app_settings NO tiene columna value_num — solo
+        // (key, value JSONB, description, updated_by, updated_at). La query
+        // anterior `SELECT value_num` tiraba "column does not exist" →
+        // rollback de la tx → 500 en /rides/complete → NINGÚN driver podía
+        // completar viajes. Bug latente desde Ronda 139 hasta ahora — no se
+        // notó porque el default 0.20 nunca se alcanzaba: fallaba antes.
+        // Fix: leer `value` (JSONB) y castear a numeric.
+        const commissionRateRes = await client.query<{ value: unknown }>(
+          `SELECT value FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
         )
-        // Ronda 139: si app_settings.value_num es NULL, malformado o fuera de
-        // rango, forzar 0.20 (default). Sin este guard, admin panel guardando
-        // "20%" (string no-numérico) o migración corrupta → Number = NaN →
-        // commissionAmount = NaN → wallet_transactions.amount = NaN →
-        // rapi_team_user_balance() = NaN permanentemente (poison ledger).
+        // Ronda 139 (mantenido): si el JSONB es NULL, malformado o fuera de
+        // rango, forzar 0.20 (default). Los admins pueden guardar cualquier
+        // tipo en JSONB — number, string, null. Aceptamos solo number 0..1.
         // Tradeoff: fallback silente puede desalinear al admin (cree que cobra
         // 0.25 pero cobra 0.20). Loggear WARN para detección temprana en logs.
-        const rawSettingVal = commissionRateRes.rows[0]?.value_num
-        const rawRate = Number(rawSettingVal)
+        const rawSettingVal = commissionRateRes.rows[0]?.value
+        const rawRate = typeof rawSettingVal === 'number'
+          ? rawSettingVal
+          : Number(rawSettingVal)
         let commissionRate = 0.20
         if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1) {
           commissionRate = rawRate
