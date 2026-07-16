@@ -312,8 +312,16 @@ class ChatProvider extends ChangeNotifier {
           ? Map<String, dynamic>.from(event['message'] as Map)
           : event;
 
-      final msgId = (raw['id'] ?? raw['messageId'] ?? '').toString();
-      if (msgId.isEmpty) return;
+      // Ronda 93: aceptar variantes de id (id, messageId, _id de Mongo) y si
+      // ninguna existe, generar un id sintético con senderId+timestamp para
+      // no descartar mensajes SSE silenciosamente. Antes: el user dejaba de
+      // ver mensajes en tiempo real y solo aparecían tras reabrir la pantalla.
+      String msgId = (raw['id'] ?? raw['messageId'] ?? raw['_id'] ?? '').toString();
+      if (msgId.isEmpty) {
+        final sender = (raw['senderId'] ?? raw['sender_id'] ?? 'unknown').toString();
+        final ts = (raw['createdAt'] ?? raw['created_at'] ?? DateTime.now().toIso8601String()).toString();
+        msgId = 'synth:$sender:$ts';
+      }
 
       // Evitar duplicados si el mensaje ya esta en la lista (p. ej. si fue
       // agregado optimisticamente al enviar)
