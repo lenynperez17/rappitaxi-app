@@ -127,7 +127,13 @@ class RapiSseClient {
           if (!refreshed) {
             debugPrint('[SSE] Refresh fallido tras 401 — deteniendo reconnect');
             _updateConnected(false);
-            // No reprogramamos: el usuario tiene que rehacer login.
+            // Ronda 92: resetear _running para que un futuro start() (tras
+            // re-login sin reiniciar la app) pueda reconectar. Sin esto,
+            // SSE quedaba muerto permanentemente y no llegaban ride_update
+            // ni new_message ni notifications hasta reinicio total.
+            _running = false;
+            _reconnectTimer?.cancel();
+            _reconnectTimer = null;
             return;
           }
         }
