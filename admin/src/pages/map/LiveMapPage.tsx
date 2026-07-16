@@ -291,6 +291,7 @@ function CreateTripOverlay({
   const [vehicleType, setVehicleType] = useState('car')
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [fare, setFare] = useState('')
+  const [fareEditedManually, setFareEditedManually] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Cálculo de tarifa auto según distancia (Haversine)
@@ -299,12 +300,16 @@ function CreateTripOverlay({
     return haversineKm(pickup.lat, pickup.lng, destination.lat, destination.lng)
   }, [pickup, destination])
 
+  // Ronda 115: recalcular fare cuando cambia el destino, salvo que el admin
+  // haya editado manualmente. Antes: la guarda `!fare` bloqueaba el recálculo
+  // si el admin cambiaba destino después del primer cómputo → se cobraba
+  // tarifa vieja para un recorrido nuevo.
   useEffect(() => {
-    if (distanceKm != null && !fare) {
+    if (distanceKm != null && !fareEditedManually) {
       // Tarifa base S/5 + S/2 por km. Ajustable manualmente.
       setFare((5 + distanceKm * 2).toFixed(2))
     }
-  }, [distanceKm, fare])
+  }, [distanceKm, fareEditedManually])
 
   const canSubmit = passenger && pickup && destination && step === 'confirm'
 
@@ -377,7 +382,7 @@ function CreateTripOverlay({
               driverId={driverId} onDriverChange={setDriverId}
               vehicleType={vehicleType} onVehicleChange={setVehicleType}
               paymentMethod={paymentMethod} onPaymentChange={setPaymentMethod}
-              fare={fare} onFareChange={setFare}
+              fare={fare} onFareChange={(v) => { setFare(v); setFareEditedManually(true) }}
             />
           )}
         </div>
