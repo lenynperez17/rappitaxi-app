@@ -439,6 +439,7 @@ class RapiApiClient {
   Future<Map<String, dynamic>> uploadFile({
     required File file,
     required String scope,
+    bool _retried = false,
   }) async {
     await _ensureFreshAccess();
     final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/storage/upload'))
@@ -448,9 +449,14 @@ class RapiApiClient {
     final streamed = await req.send();
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode == 401) {
+      // Ronda 91: retry counter — sin esto, un 401 persistente (sesión revocada
+      // por ban admin/rotación forzada) causaba recursión infinita: refresh
+      // rota → upload 401 → refresh rota → ... loop con re-lectura del archivo
+      // cada iteración (banda + batería + stack).
+      if (_retried) throw const RapiApiException(401, 'refresh_failed_after_retry');
       final refreshed = await refreshAccessToken();
       if (!refreshed) throw const RapiApiException(401, 'refresh_failed');
-      return uploadFile(file: file, scope: scope);
+      return uploadFile(file: file, scope: scope, _retried: true);
     }
     return _decodeOrThrow(resp);
   }
