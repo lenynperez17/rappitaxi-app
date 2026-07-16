@@ -249,6 +249,23 @@ export async function GET(req: NextRequest) {
         if (closed || polling) return
         polling = true
         try {
+          // Ronda 144 SECURITY: verificar que el user tenga AL MENOS una
+          // sesión activa antes de servir datos. Sin esto, el SSE stream
+          // sobrevive al logout: un attacker con ticket consumido sigue
+          // recibiendo notifs, rides, driver GPS, chat en vivo horas después
+          // de que la víctima haya hecho POST /account/logout (que llama
+          // revokeAllUserSessions). El chequeo cierra streams huérfanos.
+          const alive = await maybeOne<{ id: string }>(
+            `SELECT id FROM sessions
+              WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+              LIMIT 1`,
+            [userId],
+          )
+          if (!alive) {
+            send(sseEvent('session_revoked', { at: new Date().toISOString() }))
+            cleanup()
+            return
+          }
           // 4.1) notificaciones nuevas para este user
           const notifs = await query<NotificationRow>(
             `SELECT id, user_id, type, title, body, data, read_at, created_at

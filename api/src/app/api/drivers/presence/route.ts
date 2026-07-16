@@ -27,6 +27,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
+import { keyedRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -55,6 +56,19 @@ export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const driverId = auth.userId
+
+  // Ronda 143 DoS: sin rate limit por driverId, un solo JWT (o script del
+  // driver malicioso) hacía 5000 POST/s → cada POST dispara 2-3 queries pg
+  // → satura el pool → todos los otros endpoints (rides, nearby, auth) se
+  // detienen. App legítima llama cada 5-15s; tope de 30 heartbeats/min
+  // (uno cada 2s) deja headroom pero corta el spam.
+  const rl = keyedRateLimit(`presence:${driverId}`, { max: 30, windowMs: 60_000 })
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': '2' } },
+    )
+  }
 
   let body: PresenceBody = {}
   try {
