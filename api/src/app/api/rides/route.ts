@@ -233,8 +233,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const role = searchParams.get('role') ?? 'passenger'
   const status = searchParams.get('status')
-  const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') ?? '20')))
+  // Ronda 136: Number("abc") = NaN, Math.max(1, NaN) = NaN → offset NaN →
+  // `LIMIT NaN OFFSET NaN` en SQL string-interpolado tira syntax error 500.
+  // Usar Number.isFinite antes de aplicar bounds.
+  const rawPage = Number(searchParams.get('page') ?? '1')
+  const rawPageSize = Number(searchParams.get('pageSize') ?? '20')
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(100, Math.max(1, Math.floor(rawPageSize)))
+    : 20
   const offset = (page - 1) * pageSize
 
   if (role !== 'passenger' && role !== 'driver') {
