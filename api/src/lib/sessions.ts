@@ -229,6 +229,13 @@ export async function refreshSession(
   // la revocación masiva.
   const client = await pool.connect();
   let committed = false;
+  // Ronda 135: releaseErr para descartar cliente corrupto (patrón db.ts:tx).
+  // Si el ROLLBACK falla la conexión pg queda con transacción abierta y estado
+  // inconsistente. release(undefined) la reingresa al pool → siguiente request
+  // recibe cliente roto que tira "transaction already in progress" hasta que
+  // el pool health-check lo descarte (puede tardar minutos). release(err)
+  // fuerza pg a destruir la conexión.
+  let releaseErr: Error | undefined;
   try {
     await client.query('BEGIN');
 
@@ -348,11 +355,12 @@ export async function refreshSession(
         await client.query('ROLLBACK');
       } catch (rollbackErr) {
         console.error('[sessions] ROLLBACK error:', rollbackErr);
+        releaseErr = rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr));
       }
     }
     throw err;
   } finally {
-    client.release();
+    client.release(releaseErr);
   }
 }
 
