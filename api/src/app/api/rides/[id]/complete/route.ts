@@ -201,10 +201,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         // "20%" (string no-numérico) o migración corrupta → Number = NaN →
         // commissionAmount = NaN → wallet_transactions.amount = NaN →
         // rapi_team_user_balance() = NaN permanentemente (poison ledger).
-        const rawRate = Number(commissionRateRes.rows[0]?.value_num)
-        const commissionRate = Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1
-          ? rawRate
-          : 0.20
+        // Tradeoff: fallback silente puede desalinear al admin (cree que cobra
+        // 0.25 pero cobra 0.20). Loggear WARN para detección temprana en logs.
+        const rawSettingVal = commissionRateRes.rows[0]?.value_num
+        const rawRate = Number(rawSettingVal)
+        let commissionRate = 0.20
+        if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1) {
+          commissionRate = rawRate
+        } else if (rawSettingVal !== null && rawSettingVal !== undefined) {
+          console.warn(
+            `[rides/complete] app_settings.rides.commission_rate inválido (${String(rawSettingVal)}) — usando fallback 0.20. Corregir en admin.`,
+          )
+        }
         // Comisión + driver earning se calculan sobre adjustedFare (post vale).
         // El vale es descuento al pasajero absorbido por la plataforma, no por el driver.
         const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100

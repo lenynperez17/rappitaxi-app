@@ -149,6 +149,14 @@ export async function DELETE(req: NextRequest) {
       { status: 400 },
     )
   }
+  // Ronda 141: sin UUID guard, Postgres tira 22P02 (invalid syntax for UUID) →
+  // 500 opaco. El check da 400 explícito.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_id' },
+      { status: 400 },
+    )
+  }
 
   const rows = await query<{ id: string }>(
     `DELETE FROM emergency_contacts WHERE id = $1 AND user_id = $2 RETURNING id`,
