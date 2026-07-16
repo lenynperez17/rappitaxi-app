@@ -1,5 +1,4 @@
 import { Filter, Calendar } from 'lucide-react'
-import { useState } from 'react'
 
 export type DriverFilterMode = 'online_now' | 'today' | 'week' | 'month' | 'custom'
 
@@ -31,10 +30,13 @@ export function DriverFilterBar({
   ghostCount,
   offlineCount,
 }: DriverFilterBarProps) {
-  const [showCustom, setShowCustom] = useState(value.mode === 'custom')
+  // Ronda 117: derivar directamente del prop en vez de useState local.
+  // Antes: si el padre cambiaba value.mode programáticamente (restore desde
+  // URL/localStorage), el select se actualizaba pero el datetime-local no
+  // aparecía porque showCustom quedaba stale desde el primer render.
+  const showCustom = value.mode === 'custom'
 
   const handleModeChange = (mode: DriverFilterMode) => {
-    setShowCustom(mode === 'custom')
     onChange({ mode, customFrom: mode === 'custom' ? value.customFrom ?? null : null })
   }
 
