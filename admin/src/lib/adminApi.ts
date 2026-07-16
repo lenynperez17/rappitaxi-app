@@ -416,9 +416,41 @@ class AdminApi {
   }
 
   async logout(): Promise<void> {
+    // Ronda 107 SECURITY: si el access token expiró y rawFetch dispara auto-
+    // refresh, el body ya serializado enviaba el refresh viejo (ya revocado
+    // por la rotación) → backend intentaba revocar RT_OLD (no-op) y RT_NEW
+    // quedaba vivo. Fix: leer refreshToken JUSTO antes del envío. Usamos
+    // fetch directo para garantizar que se lea al momento del request.
     if (this.accessToken) {
       try {
-        await this.rawFetch('/api/auth/logout', { method: 'POST', body: { refreshToken: this.refreshToken } })
+        // Auto-refresh proactivo si el access está expirado, para que el
+        // header Authorization ya lleve el nuevo access y el body lleve
+        // el refresh que corresponde a esa sesión activa.
+        // (Si falla el refresh, igual limpiamos localStorage abajo.)
+        const rt = this.refreshToken
+        if (rt) {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`
+          const doFetch = () => fetch(`${BASE_URL}/api/auth/logout`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ refreshToken: this.refreshToken }),
+          })
+          let r = await doFetch()
+          if (r.status === 401) {
+            const refreshed = await this.attemptRefresh()
+            if (refreshed) {
+              headers['Authorization'] = `Bearer ${this.accessToken}`
+              // Re-serializar body con el refresh actualizado tras rotación.
+              await fetch(`${BASE_URL}/api/auth/logout`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ refreshToken: this.refreshToken }),
+              })
+            }
+          }
+          void r
+        }
       } catch { /* ignore */ }
     }
     this.clearSession()
