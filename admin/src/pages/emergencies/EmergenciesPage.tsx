@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, MapPin, Phone, AlertTriangle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminEmergency } from '../../lib/adminApi'
 import { relativeTime, toDate } from '../../utils/timeFormat'
@@ -158,9 +158,16 @@ function EmergencyActions({ emergency, onChanged, onError }: {
   onError: (msg: string) => void
 }) {
   const [busy, setBusy] = useState(false)
+  // Ronda 178: emergencias son flujo crítico — un doble-tap podía disparar
+  // 2 transiciones state machine concurrentes → 1ra pasa OK, 2da tira
+  // "invalid_transition" (Ronda 56 Bug#2) o "concurrent_update" que muestran
+  // banner rojo confuso al operador que solo hizo click una vez.
+  const busyRef = useRef(false)
   const isFinal = emergency.status === 'resolved' || emergency.status === 'cancelled'
 
   const change = async (status: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
     try {
       await adminApi.updateEmergency(emergency.id, { status })
@@ -171,7 +178,10 @@ function EmergencyActions({ emergency, onChanged, onError }: {
       onError(err instanceof AdminApiError
         ? `Emergencia ${emergency.id.slice(0, 8)}: ${err.message}`
         : 'No se pudo actualizar la emergencia. Reintenta.')
-    } finally { setBusy(false) }
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   if (isFinal) {
