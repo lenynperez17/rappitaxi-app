@@ -52,5 +52,10 @@ platform :ios do
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false
     )
+    # Ronda 196: Apple no permite activar `hasAccessToAllBuilds=true` via
+    # API pública. Como workaround, tras el upload distribuimos el build
+    # nuevo al grupo "Team Rapi Interno" automáticamente. Requiere el key
+    # ID + issuer del bloque anterior.
+    sh("cd .. && ./fastlane/distribute_to_internal_group.sh")
   end
 end

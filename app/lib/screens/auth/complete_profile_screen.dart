@@ -143,22 +143,22 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     );
   }
 
-  // Ronda 195 UX: manejar back button — si estamos en el paso OTP, volver al
-  // paso phone (no salir de la pantalla). Si estamos en el paso phone y el
-  // user quiere entrar con otro provider, dejar salir a login screen.
-  Future<bool> _handleBack() async {
-    if (_otpSent) {
-      setState(() => _otpSent = false);
-      return false; // no salir de la pantalla
-    }
-    // En paso phone: cerrar sesión provider social + volver a login.
+  // Ronda 195 UX (Ronda 197 fix): manejar back button.
+  // Si estamos en el paso OTP → volver al paso phone (no salir).
+  // Si estamos en el paso phone → logout + REEMPLAZAR ruta con /login.
+  // Antes: Navigator.pop() a stack vacío (llegamos aquí via
+  //   pushReplacementNamed desde splash) → pantalla NEGRA.
+  Future<void> _goBackFromPhoneStep() async {
     try {
       final auth = context.read<AuthProvider>();
       await auth.logout();
     } catch (e) {
       AppLogger.error('logout on back from complete_profile', e);
     }
-    return true; // permitir salir
+    if (!mounted) return;
+    // Reemplazar TODA la pila con /login — evita pantalla negra si
+    // llegamos aquí por pushReplacementNamed desde splash o rebuild.
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
   @override
@@ -167,10 +167,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        final canPop = await _handleBack();
-        if (canPop && mounted) {
-          Navigator.of(context).pop();
+        if (_otpSent) {
+          setState(() => _otpSent = false);
+          return;
         }
+        await _goBackFromPhoneStep();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -180,10 +181,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black87),
             onPressed: () async {
-              final canPop = await _handleBack();
-              if (canPop && mounted) {
-                Navigator.of(context).pop();
+              if (_otpSent) {
+                setState(() => _otpSent = false);
+                return;
               }
+              await _goBackFromPhoneStep();
             },
           ),
         ),
