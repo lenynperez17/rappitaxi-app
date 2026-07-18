@@ -3,9 +3,8 @@
 
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/config/app_config.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import '../../services/maps_service.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -799,48 +798,26 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     }
   }
 
+  // Ronda 213 BUG FIX: antes usaba PolylinePoints con la key móvil restringida
+  // → REQUEST_DENIED silencioso → línea recta invisible. Ahora va por
+  // MapsService (proxy backend con cascada OSRM/Mapbox/Google, key oculta).
   Future<List<LatLng>> _getRoutePolylinePoints(LatLng origin, LatLng destination) async {
-    // Retry up to 2 times (API can fail on first attempt after cold start)
+    // Retry hasta 2 veces (backend puede tener cold start del proveedor).
     for (int attempt = 0; attempt < 2; attempt++) {
-      try {
-        debugPrint('Getting route: ${origin.latitude},${origin.longitude} -> ${destination.latitude},${destination.longitude}');
-
-        PolylinePoints polylinePoints = PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
-
-        PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
-          request: PolylineRequest(
-            origin: PointLatLng(origin.latitude, origin.longitude),
-            destination: PointLatLng(destination.latitude, destination.longitude),
-            mode: TravelMode.driving,
-          ),
-        );
-
-        debugPrint('Result: ${result.points.length} points, status: ${result.status}, error: ${result.errorMessage}');
-
-        if (result.points.isNotEmpty) {
-          List<LatLng> polylineCoordinates = result.points
-              .map((point) => LatLng(point.latitude, point.longitude))
-              .toList();
-
-          debugPrint('Route obtained with ${polylineCoordinates.length} points');
-          return polylineCoordinates;
-        } else {
-          debugPrint('Empty points. Error: ${result.errorMessage}');
-          if (attempt == 0) {
-            await Future.delayed(const Duration(seconds: 2));
-            continue;
-          }
-          return [origin, destination];
-        }
-      } catch (e) {
-        debugPrint(userFriendlyError(e, fallback: 'Exception getting route (attempt $attempt)'));
-        if (attempt == 0) {
-          await Future.delayed(const Duration(seconds: 2));
-          continue;
-        }
-        return [origin, destination];
+      final route = await MapsService().getDirections(
+        origin: origin,
+        destination: destination,
+      );
+      if (route != null && route.points.isNotEmpty) {
+        debugPrint('Route (${route.provider}): ${route.points.length} pts');
+        return route.points;
+      }
+      if (attempt == 0) {
+        await Future.delayed(const Duration(seconds: 2));
+        continue;
       }
     }
+    debugPrint('MapsService falló tras 2 intentos → fallback recta');
     return [origin, destination];
   }
 

@@ -6,6 +6,7 @@ import '../../services/google_maps_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart' as poly;
 import '../../core/config/app_config.dart';
+import '../../services/maps_service.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -1984,6 +1985,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       },
       child: Scaffold(
         key: _scaffoldKey,
+        // Ronda 213: sheets inline con inputs se levantaban demasiado con
+        // teclado (triple ajuste del viewInsets). Ver comentario homólogo
+        // en modern_passenger_home.dart.
+        resizeToAvoidBottomInset: false,
         drawer: _buildDriverDrawer(currentUser),
         body: SafeArea(
           child: _currentTabIndex == 1
@@ -3075,24 +3080,18 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
     _loadRoute();
   }
 
+  // Ronda 213 BUG FIX: antes llamaba Directions API directo con key móvil
+  // restringida → REQUEST_DENIED silencioso → mini-mapa sin ruta.
+  // Ahora va por MapsService (proxy backend).
   Future<void> _loadRoute() async {
-    try {
-      // Use same proven API as passenger screen
-      final polylinePoints = poly.PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
-      final result = await polylinePoints.getRouteBetweenCoordinates(
-        request: poly.PolylineRequest(
-          origin: poly.PointLatLng(widget.pickup.latitude, widget.pickup.longitude),
-          destination: poly.PointLatLng(widget.destination.latitude, widget.destination.longitude),
-          mode: poly.TravelMode.driving,
-        ),
-      );
-      if (result.points.isNotEmpty && mounted) {
-        setState(() {
-          _routePoints = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
-        });
-      }
-    } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error loading mini-map route'));
+    final route = await MapsService().getDirections(
+      origin: widget.pickup,
+      destination: widget.destination,
+    );
+    if (route != null && route.points.isNotEmpty && mounted) {
+      setState(() {
+        _routePoints = route.points;
+      });
     }
   }
 

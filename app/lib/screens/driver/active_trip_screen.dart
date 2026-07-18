@@ -16,10 +16,9 @@ import '../../core/utils/payment_utils.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:flutter/services.dart';
-import '../../core/config/app_config.dart';
 import '../../core/constants/app_colors.dart';
+import '../../services/maps_service.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
 import '../../services/rapi_api_client.dart';
@@ -525,30 +524,21 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     }
   }
 
+  // Ronda 213 BUG FIX: antes llamaba Routes API v2 directo con key móvil
+  // restringida → REQUEST_DENIED silencioso. Ahora va por MapsService
+  // (proxy backend con cascada OSRM/Mapbox/Google, key oculta).
   Future<List<LatLng>> _getRoutePoints(LatLng origin, LatLng destination) async {
-    try {
-      debugPrint('🚗 _getRoutePoints: from=$origin to=$destination');
-      // API nueva Routes v2 — reemplaza PolylineRequest (deprecated)
-      final polylinePoints = PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
-      final result = await polylinePoints.getRouteBetweenCoordinatesV2(
-        request: RoutesApiRequest(
-          origin: PointLatLng(origin.latitude, origin.longitude),
-          destination: PointLatLng(destination.latitude, destination.longitude),
-          travelMode: TravelMode.driving,
-        ),
-      );
-      final pts = result.routes.isNotEmpty ? result.routes.first.polylinePoints : null;
-      if (pts != null && pts.isNotEmpty) {
-        debugPrint('🚗 Route OK: ${pts.length} points');
-        return pts
-            .map((p) => LatLng(p.latitude, p.longitude))
-            .toList();
-      }
-      debugPrint('🚗 Route: no points found, error=${result.errorMessage}');
-    } catch (e) {
-      debugPrint('🚗 Error getting route: $e');
+    debugPrint('🚗 _getRoutePoints: from=$origin to=$destination');
+    final route = await MapsService().getDirections(
+      origin: origin,
+      destination: destination,
+    );
+    if (route != null && route.points.isNotEmpty) {
+      debugPrint('🚗 Route OK (${route.provider}): ${route.points.length} pts');
+      return route.points;
     }
-    return []; // No fallback to straight line — only real routes
+    debugPrint('🚗 Route: MapsService retornó null');
+    return []; // Sin fallback a línea recta — solo rutas reales.
   }
 
   // ==================== WAITING TIMER ====================

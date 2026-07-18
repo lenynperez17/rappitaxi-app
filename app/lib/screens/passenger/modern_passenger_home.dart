@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/config/app_config.dart';
+// hide PlacePrediction: modern_passenger_home ya usa la de custom_place_text_field
+import '../../services/maps_service.dart' show MapsService;
 import '../../core/utils/responsive_bottom_sheet.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -1542,6 +1544,16 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         }
       },
       child: Scaffold(
+      // Ronda 213 BUG FIX: bottom sheets inline (DraggableScrollableSheet) con
+      // TextFields de origen/destino y precio se levantaban DEMASIADO al abrir
+      // el teclado. Causa: triple ajuste del viewInsets.bottom:
+      //   1) Scaffold encoge el body → viewInsets.bottom
+      //   2) DraggableScrollableSheet fraccional se recalcula sobre altura reducida
+      //   3) SizedBox(height: viewInsets.bottom) al final del sheet suma otra vez
+      // Al fijar resizeToAvoidBottomInset:false, el Scaffold no reajusta y el
+      // sheet queda a la altura correcta; el SizedBox interno del sheet se
+      // encarga de dejarle espacio al teclado una sola vez.
+      resizeToAvoidBottomInset: false,
       appBar: null,
       drawer: PassengerDrawer(
         onFavoriteSelected: (address, lat, lng) {
@@ -4680,29 +4692,23 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     return double.parse(totalPrice.toStringAsFixed(2));
   }
 
+  // Ronda 213 BUG FIX: antes llamaba directo a Google Directions API con
+  // AppConfig.googleMapsApiKey. Esa key móvil está restringida a Maps SDK
+  // (Bundle-ID/SHA), NO a Directions API → Google devolvía REQUEST_DENIED
+  // y la app caía al fallback [origin, destination] (línea recta invisible).
+  // Ahora va por el proxy backend: /api/maps/directions con cascada
+  // OSRM (gratis) → Mapbox → Google, key oculta.
   Future<List<LatLng>> _getRoutePolylinePoints(LatLng origin, LatLng destination) async {
-    try {
-      AppLogger.info('Obteniendo ruta real desde Google Directions API');
-      PolylinePoints polylinePoints = PolylinePoints(apiKey: AppConfig.googleMapsApiKey);
-      PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
-        request: PolylineRequest(
-          origin: PointLatLng(origin.latitude, origin.longitude),
-          destination: PointLatLng(destination.latitude, destination.longitude),
-          mode: TravelMode.driving,
-        ),
-      );
-      if (result.points.isNotEmpty) {
-        List<LatLng> polylineCoordinates = result.points.map((point) => LatLng(point.latitude, point.longitude)).toList();
-        AppLogger.info('Ruta real obtenida con ${polylineCoordinates.length} puntos');
-        return polylineCoordinates;
-      } else {
-        AppLogger.warning('No se pudo obtener ruta. Error: ${result.errorMessage}');
-        return [origin, destination];
-      }
-    } catch (e, stackTrace) {
-      AppLogger.error('Error obteniendo ruta', e, stackTrace);
-      return [origin, destination];
+    final route = await MapsService().getDirections(
+      origin: origin,
+      destination: destination,
+    );
+    if (route != null && route.points.isNotEmpty) {
+      AppLogger.info('Ruta obtenida (${route.provider}): ${route.points.length} puntos, ${route.distanceMeters}m');
+      return route.points;
     }
+    AppLogger.warning('MapsService.getDirections retornó null → fallback recta');
+    return [origin, destination];
   }
 
   Future<void> _updateRoutePolyline() async {
