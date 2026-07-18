@@ -416,6 +416,19 @@ class RapiApiClient {
         'rideAmount': rideAmount,
       }))!;
 
+  /// Reverse geocode: convierte lat/lng en una dirección legible.
+  /// Ronda 216: usa el backend proxy (Nominatim) — antes la app llamaba
+  /// Google directo con key expuesta.
+  Future<Map<String, dynamic>> mapsReverseGeocode({
+    required double lat,
+    required double lng,
+  }) async {
+    return (await _authedGet(
+      '/api/maps/reverse-geocode',
+      queryParams: {'lat': lat.toString(), 'lng': lng.toString()},
+    ))!;
+  }
+
   Future<Map<String, dynamic>> mapsAutocomplete({
     required String query,
     String? session,

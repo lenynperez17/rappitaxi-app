@@ -721,19 +721,27 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
   /// Reverse geocode camera target to update pickup address.
   ///
-  /// Ronda 214: la implementación anterior llamaba directamente a
-  /// `maps.googleapis.com` con `AppConfig.googleMapsApiKey`, exponiendo la
-  /// key en cada request desde el APK. Además de la exposición, la key móvil
-  /// está restringida a Maps SDK (no Geocoding API), así que TODAS las
-  /// llamadas devolvían REQUEST_DENIED silencioso y el pickup nunca se
-  /// actualizaba. El backend por ahora no expone reverse-geocode; en su
-  /// lugar mostramos "Punto en el mapa" con las coordenadas y guardamos las
-  /// coords para que el backend derive el address desde el ride.
+  /// Ronda 216: llama al backend proxy `/api/maps/reverse-geocode` que usa
+  /// Nominatim (gratis, sin key). Antes (Ronda 214) puse un placeholder que
+  /// mostraba coordenadas — funcionalmente correcto (guarda las coords) pero
+  /// horrible para el UX. Ahora vuelve a mostrar la dirección real como en
+  /// la versión pre-Ronda 214 (que llamaba Google directo con key expuesta).
   Future<void> _reverseGeocodeMapCenter() async {
     final target = _lastCameraTarget;
     if (target == null || !mounted) return;
+    // Actualizar coords inmediatamente para no bloquear el flujo si el reverse
+    // geocode tarda o falla.
+    _pickupCoordinates = target;
+    // Placeholder mientras carga
+    if (mounted) {
+      setState(() {
+        _pickupController.text = 'Buscando dirección…';
+      });
+    }
+    final address = await MapsService().reverseGeocode(target);
+    if (!mounted) return;
     setState(() {
-      _pickupController.text =
+      _pickupController.text = address ??
           'Punto seleccionado (${target.latitude.toStringAsFixed(5)}, ${target.longitude.toStringAsFixed(5)})';
       _pickupCoordinates = target;
     });

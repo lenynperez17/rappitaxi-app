@@ -74,6 +74,35 @@ class MapsService {
   }
 
   // ───────────────────────────────────────────────────────────
+  // REVERSE GEOCODE — coord → dirección legible
+  // ───────────────────────────────────────────────────────────
+
+  /// Convierte lat/lng en una dirección legible.
+  /// Ronda 216: reemplaza la llamada directa a Google Geocoding que estaba
+  /// en modern_passenger_home con la key expuesta. Ahora va por el proxy
+  /// backend (Nominatim, gratis, sin key).
+  Future<String?> reverseGeocode(LatLng location) async {
+    try {
+      final data = await _api.mapsReverseGeocode(
+        lat: location.latitude,
+        lng: location.longitude,
+      );
+      final address = data['address'] as String?;
+      if (address != null && address.isNotEmpty) {
+        AppLogger.debug('[MapsService] reverse-geocode OK ${data['provider']}');
+        return address;
+      }
+      return null;
+    } on RapiApiException catch (e) {
+      AppLogger.warning('[MapsService] reverse-geocode ${e.code}: ${e.message}');
+      return null;
+    } catch (e) {
+      AppLogger.error('[MapsService] reverse-geocode error', e);
+      return null;
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
   // PLACES AUTOCOMPLETE
   // ───────────────────────────────────────────────────────────
 
