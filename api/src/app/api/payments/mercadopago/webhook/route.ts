@@ -213,14 +213,24 @@ export async function POST(req: NextRequest) {
            WHERE id = $3`,
           [String(payment.id), JSON.stringify(payment), externalRef],
         )
+        // Ronda 209: setear balance_after (Ronda 21/77 documenta que NULL rompe
+        // extractos ORDER BY created_at + reconciliación admin/financial).
+        const balRes = await client.query<{ balance: string }>(
+          'SELECT rapi_team_user_balance($1)::text AS balance',
+          [mpRow.user_id],
+        )
+        const balAfter = Math.round(
+          (Number(balRes.rows[0]?.balance ?? 0) + payment.transaction_amount) * 100,
+        ) / 100
         try {
           await client.query(
             `INSERT INTO wallet_transactions
-               (user_id, type, amount, description, status, external_ref, metadata, completed_at)
-             VALUES ($1, 'recharge', $2, $3, 'completed', $4, $5, now())`,
+               (user_id, type, amount, balance_after, description, status, external_ref, metadata, completed_at)
+             VALUES ($1, 'recharge', $2, $3, $4, 'completed', $5, $6, now())`,
             [
               mpRow.user_id,
               payment.transaction_amount,
+              balAfter,
               `Recarga MercadoPago #${payment.id}`,
               String(payment.id),
               JSON.stringify({ mp_payment_id: payment.id, external_reference: externalRef }),

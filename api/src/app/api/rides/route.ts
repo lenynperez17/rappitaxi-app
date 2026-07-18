@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
+import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
 
 export const runtime = 'nodejs'
 
@@ -215,6 +216,38 @@ export async function POST(req: NextRequest) {
        VALUES ($1, 'ride_created', 'app', $2)`,
       [auth.userId, JSON.stringify({ rideId: ride.id, vehicleType, paymentMethod })],
     )
+
+    // Ronda 208 CRÍTICO: fan-out FCM a drivers cercanos. Antes: solo el SSE
+    // stream avisaba, así que drivers con la app en background NUNCA se
+    // enteraban del ride → 90s de espera → pasajero cancela → churn.
+    // notifyRideOffer inserta notifications + envía push FCM real. Fire &
+    // forget: si FCM falla no rompe la respuesta al pasajero.
+    try {
+      const nearby = await findNearbyOnlineDrivers(pickup.lat!, pickup.lng!, 5, vehicleType)
+      if (nearby.length > 0) {
+        // Nombre del passenger para el push (opcional).
+        const paxName = await maybeOne<{ name: string | null }>(
+          `SELECT COALESCE(display_name, full_name) AS name FROM users WHERE id = $1`,
+          [auth.userId],
+        )
+        void notifyRideOffer(nearby, {
+          rideId: ride.id,
+          pickupAddress: ride.pickup_address,
+          destinationAddress: ride.destination_address,
+          pickupLat: Number(ride.pickup_lat ?? 0),
+          pickupLng: Number(ride.pickup_lng ?? 0),
+          destinationLat: Number(ride.destination_lat ?? 0),
+          destinationLng: Number(ride.destination_lng ?? 0),
+          estimatedFare: proposedFare,
+          passengerName: paxName?.name ?? null,
+          passengerPhone: null,
+          vehicleType,
+          paymentMethod,
+        })
+      }
+    } catch (fanoutErr) {
+      console.warn('[rides POST] FCM fanout falló (best-effort):', fanoutErr)
+    }
 
     return NextResponse.json({ success: true, ride: serializeRide(ride) }, { status: 201 })
   } catch (err) {

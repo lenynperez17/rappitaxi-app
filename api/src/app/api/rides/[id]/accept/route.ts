@@ -28,9 +28,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 
-  // Validar que el user autenticado sea driver o dual
-  const driver = await maybeOne<{ user_type: string; full_name: string | null }>(
-    'SELECT user_type, full_name FROM users WHERE id = $1',
+  // Validar que el user sea driver verificado (Ronda 207 SAFETY/LEGAL)
+  const driver = await maybeOne<{ user_type: string; full_name: string | null; is_verified: boolean }>(
+    'SELECT user_type, full_name, is_verified FROM users WHERE id = $1',
     [auth.userId],
   )
   if (!driver) {
@@ -39,6 +39,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (driver.user_type !== 'driver' && driver.user_type !== 'dual') {
     return NextResponse.json(
       { success: false, error: 'forbidden', message: 'Solo un conductor puede aceptar' },
+      { status: 403 },
+    )
+  }
+  if (!driver.is_verified) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'driver_not_verified',
+        message: 'Debes completar la verificación de documentos antes de aceptar viajes.',
+      },
       { status: 403 },
     )
   }

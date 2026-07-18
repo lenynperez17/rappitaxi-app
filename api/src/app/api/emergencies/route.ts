@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
+import { messaging } from '@/lib/firebase-admin'
 
 export const runtime = 'nodejs'
 
@@ -307,6 +308,63 @@ export async function POST(req: NextRequest) {
 
       return { emergency, notifiedCount, smsRecipients }
     })
+
+    // Ronda 210 SAFETY CRÍTICO: fan-out FCM real. Antes: notifications
+    // insertadas en DB dependían SOLO del SSE stream para llegar → si la
+    // app del contacto o admin está en BACKGROUND, no recibe nada → panic
+    // button silencioso. Buscamos TODOS los fcm_tokens de contactos in-app
+    // + admins y disparamos push. Best-effort: fallos individuales ignorados.
+    try {
+      const triggerName = (await maybeOne<{ n: string | null }>(
+        'SELECT COALESCE(display_name, full_name) AS n FROM users WHERE id = $1',
+        [auth.userId],
+      ))?.n ?? 'Un usuario'
+      const emergencyDataStr = JSON.stringify({
+        emergencyId: result.emergency.id,
+        type,
+        latitude,
+        longitude,
+        address,
+        triggeredBy: auth.userId,
+        rideId,
+      })
+      const tokenRows = await query<{ token: string }>(
+        `SELECT DISTINCT t.token
+           FROM fcm_tokens t
+           JOIN users u ON u.id = t.user_id
+          WHERE u.deleted_at IS NULL AND u.is_active = true
+            AND (
+              u.phone = ANY(
+                SELECT phone FROM emergency_contacts WHERE user_id = $1
+              )
+              OR u.is_admin = true
+              OR u.user_type = 'admin'
+            )
+            AND u.id <> $1`,
+        [auth.userId],
+      )
+      if (tokenRows.length > 0) {
+        const title = `SOS de ${triggerName}`
+        const body = address ? `Emergencia en ${address}` : 'Emergencia activada'
+        void Promise.allSettled(
+          tokenRows.map((t) =>
+            messaging.send({
+              token: t.token,
+              notification: { title, body },
+              data: {
+                type: 'emergency_alert',
+                emergencyId: result.emergency.id,
+                json: emergencyDataStr,
+              },
+              android: { priority: 'high', notification: { channelId: 'rappi_emergency' } },
+              apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default', contentAvailable: true } } },
+            }),
+          ),
+        )
+      }
+    } catch (pushErr) {
+      console.warn('[emergencies] FCM push falló (best-effort):', pushErr instanceof Error ? pushErr.message : pushErr)
+    }
 
     // 6) SMS a contactos externos (fuera de la transacción — no bloquear).
     // Best-effort: fallos individuales se loguean pero no revierten la

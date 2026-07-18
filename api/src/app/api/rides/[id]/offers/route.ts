@@ -172,17 +172,26 @@ export async function POST(
 
   try {
     const result = await tx(async (client) => {
-      // 1. Verificar que el user es driver
-      const userRes = await client.query<{ user_type: string }>(
-        'SELECT user_type FROM users WHERE id = $1',
+      // 1. Verificar que el user es driver Y está verificado (Ronda 207 SAFETY/LEGAL)
+      // Antes: cualquier user con user_type='driver' + is_online podía aceptar viajes
+      // aunque NUNCA hubiera subido licencia, SOAT, DNI. Riesgo: siniestro sin
+      // cobertura + responsabilidad civil/penal del operador. Ahora requerimos
+      // is_verified=true (Ronda 131 puso el flag correctamente).
+      const userRes = await client.query<{ user_type: string; is_verified: boolean }>(
+        'SELECT user_type, is_verified FROM users WHERE id = $1',
         [auth.userId],
       )
       const user = userRes.rows[0]
       if (!user) throw { code: 'user_not_found', status: 404 }
-      // B#13: aceptar 'dual' además de 'driver'. Un usuario dual ya puede
-      // aceptar negociaciones y viajes; bloquearlo solo aquí era incoherente.
       if (user.user_type !== 'driver' && user.user_type !== 'dual') {
         throw { code: 'not_a_driver', status: 403 }
+      }
+      if (!user.is_verified) {
+        throw {
+          code: 'driver_not_verified',
+          status: 403,
+          message: 'Debes completar la verificación de documentos antes de aceptar viajes.',
+        }
       }
 
       // 2. Verificar presencia online
