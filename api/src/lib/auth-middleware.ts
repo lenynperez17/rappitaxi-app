@@ -41,6 +41,32 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult> {
     }
   }
 
+  // Ronda 215 CRÍTICO SECURITY: verificar que la SESIÓN referenciada por el
+  // JWT (claim `sid`) no esté revocada. Antes: logout revocaba la fila
+  // sessions.revoked_at correctamente PERO requireAuth ignoraba ese campo,
+  // así que el JWT seguía funcionando hasta expirar (3600s TTL). Un atacante
+  // que robaba un JWT (XSS, keylogger, proxy MitM) tenía hasta 1h de acceso
+  // sin poder ser cortado — logout era cosmético. Este es el bug que un smoke
+  // test de "logout invalida el token" descubrió.
+  //
+  // Con este check: cualquier /wallet/balance, /rides, etc. tras logout
+  // devuelve 401 inmediato porque sessions.revoked_at IS NOT NULL.
+  if (payload.sid && typeof payload.sid === 'string') {
+    const session = await maybeOne<{ revoked_at: Date | null }>(
+      'SELECT revoked_at FROM sessions WHERE id = $1 LIMIT 1',
+      [payload.sid],
+    )
+    if (session?.revoked_at) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { success: false, error: 'session_revoked', message: 'Sesión cerrada. Vuelve a iniciar sesión.' },
+          { status: 401 },
+        ),
+      }
+    }
+  }
+
   // Enforcement de estado del user: si fue suspendido o eliminado desde admin,
   // rechazar el request aunque el JWT siga vigente.
   const user = await maybeOne<{ is_active: boolean; suspended_at: Date | null; deleted_at: Date | null }>(
