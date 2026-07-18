@@ -726,7 +726,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   void _startUIRefreshTimer() {
     _uiRefreshTimer?.cancel();
-    _uiRefreshTimer = Timer.periodic(Duration(seconds: 5), (_) {
+    // Ronda 203 BATERÍA: Timer(5s) rebuildaba TODO el home (Scaffold +
+    // GoogleMap + PriceNegotiationCards + Drawer) 12 veces/min solo para
+    // refrescar labels de tiempo. Cada minuto es suficiente — los timestamps
+    // "hace X min" cambian por minuto, no por segundo.
+    _uiRefreshTimer = Timer.periodic(Duration(seconds: 60), (_) {
       if (mounted && !_isDisposed && _availableRequests.isNotEmpty) {
         setState(() {});
       }
@@ -2819,7 +2823,10 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // Ronda 203 BATERÍA: era Timer(1s) que rebuildaba TODO el bottom sheet
+    // (incluye GoogleMap + ListView + Avatars) 60 veces/min solo para
+    // refrescar el label "hace X min". 30s basta — el label es minuto-nivel.
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
   }

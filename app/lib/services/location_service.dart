@@ -10,7 +10,7 @@ class LocationService {
   LocationService._internal();
 
   Position? _currentPosition;
-  StreamController<Position> _locationStreamController = StreamController<Position>.broadcast();
+  final StreamController<Position> _locationStreamController = StreamController<Position>.broadcast();
   StreamSubscription<Position>? _locationSubscription; // ✅ RESOURCE MANAGEMENT: Guardar subscription para cancelarla
 
   Stream<Position> get locationStream => _locationStreamController.stream;
@@ -109,21 +109,16 @@ class LocationService {
   }
 
   // Detener seguimiento
-  /// ✅ RESOURCE MANAGEMENT: Cancela subscription y cierra el controller correctamente
+  /// Ronda 201 BUG FIX: NO cerrar/reasignar el controller — las suscripciones
+  /// existentes quedaban pegadas al controller viejo cerrado y nunca volvían
+  /// a recibir posiciones tras restart. Escenario: passenger acepta viaje →
+  /// mapa listen → app background → stopLocationTracking → foreground →
+  /// startLocationTracking. El listener original moría → mapa deja de
+  /// actualizarse hasta reinicio. Solución: solo cancelar la subscription
+  /// interna a Geolocator; el broadcast controller sobrevive.
   void stopLocationTracking() {
-    // 1. Cancelar subscription de Geolocator primero
     _locationSubscription?.cancel();
     _locationSubscription = null;
-
-    // 2. Cerrar el StreamController si no está cerrado
-    if (!_locationStreamController.isClosed) {
-      _locationStreamController.close();
-    }
-
-    // 3. Recrear controller solo si se va a reusar (para permitir restart)
-    // ✅ LAZY INITIALIZATION: Solo se recrea cuando se llama startLocationTracking()
-    _locationStreamController = StreamController<Position>.broadcast();
-
     AppLogger.info('Location tracking detenido');
   }
 

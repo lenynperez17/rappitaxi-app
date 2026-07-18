@@ -249,7 +249,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
         SizedBox(width: double.infinity, child: OutlinedButton.icon(
           onPressed: () async {
             final messenger = ScaffoldMessenger.of(context); final navigator = Navigator.of(context);
-            try { navigator.pushReplacementNamed('/passenger-home', arguments: {'repeatTrip': true, 'pickupLocation': _trip!.pickupLocation, 'pickupAddress': _trip!.pickupAddress, 'destinationLocation': _trip!.destinationLocation, 'destinationAddress': _trip!.destinationAddress}); }
+            // Ronda 200 CRÍTICO: la ruta correcta es '/passenger/home' (con
+            // slash), no '/passenger-home'. Antes: FlutterError "Could not
+            // find a generator for route" → excepción → pantalla negra.
+            try { navigator.pushReplacementNamed('/passenger/home', arguments: {'repeatTrip': true, 'pickupLocation': _trip!.pickupLocation, 'pickupAddress': _trip!.pickupAddress, 'destinationLocation': _trip!.destinationLocation, 'destinationAddress': _trip!.destinationAddress}); }
             catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al repetir viaje')), backgroundColor: AppColors.error)); }
           },
           icon: Icon(Icons.repeat, color: AppColors.priceBlack), label: Text('Repetir Viaje', style: TextStyle(color: AppColors.priceBlack)),

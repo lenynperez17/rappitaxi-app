@@ -282,7 +282,17 @@ export async function refreshSession(
     // (replaced_by_session_id set). Si ambas condiciones, es retry benigno.
     if (row.revoked_at) {
       const revokedAgeMs = Date.now() - new Date(row.revoked_at).getTime();
-      const isBenignRetry = revokedAgeMs < 30_000 && row.replaced_by_session_id !== null;
+      // Ronda 204 SECURITY: NO revocar todas las sesiones ante un /refresh
+      // que llega justo después de un /logout manual (revoke sin
+      // replaced_by_session_id). Caso benigno: cliente Flutter tenía una
+      // request encolada por su interceptor cuando el usuario tocó "cerrar
+      // sesión" — la request llegaba 100-500ms tarde. Antes: caía en
+      // reuse_detected → revocaba TODAS las sesiones del user → mataba
+      // sesión de otros devices (tablet, admin panel abierto en desktop).
+      // Ampliamos ventana benigna para logout manual: 10s.
+      const isBenignRetry =
+        revokedAgeMs < 30_000 &&
+        (row.replaced_by_session_id !== null || revokedAgeMs < 10_000);
       if (isBenignRetry) {
         await client.query('COMMIT');
         committed = true;

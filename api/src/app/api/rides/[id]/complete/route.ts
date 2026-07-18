@@ -173,6 +173,26 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         )
       }
 
+      // Ronda 199: leer commissionRate SIEMPRE (no solo para wallet) — se usa
+      // también en cash para descontar la comisión de la plataforma al driver.
+      const commissionRateRes = await client.query<{ value: unknown }>(
+        `SELECT value FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
+      )
+      const rawSettingVal = commissionRateRes.rows[0]?.value
+      const rawRate = typeof rawSettingVal === 'number'
+        ? rawSettingVal
+        : Number(rawSettingVal)
+      let commissionRate = 0.20
+      if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1) {
+        commissionRate = rawRate
+      } else if (rawSettingVal !== null && rawSettingVal !== undefined) {
+        console.warn(
+          `[rides/complete] app_settings.rides.commission_rate inválido (${String(rawSettingVal)}) — usando fallback 0.20. Corregir en admin.`,
+        )
+      }
+      const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100
+      const driverEarning = Math.round((adjustedFare - commissionAmount) * 100) / 100
+
       // Cobro de wallet + contraparte de crédito al driver + comisión al platform.
       // Antes solo hacía el debit del passenger — desbalanceaba el libro contable:
       // el dinero del passenger "desaparecía" (SUM negativa) sin acreditar al driver.
@@ -194,40 +214,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           }
         }
         const newBalance = Math.round((currentBalance - adjustedFare) * 100) / 100
-
-        // Comisión platform (Rapi Team) sobre finalFare. Configurable via
-        // app_settings; default 20% (típico ride-hailing Perú).
-        // Ronda 149 CRITICAL: app_settings NO tiene columna value_num — solo
-        // (key, value JSONB, description, updated_by, updated_at). La query
-        // anterior `SELECT value_num` tiraba "column does not exist" →
-        // rollback de la tx → 500 en /rides/complete → NINGÚN driver podía
-        // completar viajes. Bug latente desde Ronda 139 hasta ahora — no se
-        // notó porque el default 0.20 nunca se alcanzaba: fallaba antes.
-        // Fix: leer `value` (JSONB) y castear a numeric.
-        const commissionRateRes = await client.query<{ value: unknown }>(
-          `SELECT value FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
-        )
-        // Ronda 139 (mantenido): si el JSONB es NULL, malformado o fuera de
-        // rango, forzar 0.20 (default). Los admins pueden guardar cualquier
-        // tipo en JSONB — number, string, null. Aceptamos solo number 0..1.
-        // Tradeoff: fallback silente puede desalinear al admin (cree que cobra
-        // 0.25 pero cobra 0.20). Loggear WARN para detección temprana en logs.
-        const rawSettingVal = commissionRateRes.rows[0]?.value
-        const rawRate = typeof rawSettingVal === 'number'
-          ? rawSettingVal
-          : Number(rawSettingVal)
-        let commissionRate = 0.20
-        if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1) {
-          commissionRate = rawRate
-        } else if (rawSettingVal !== null && rawSettingVal !== undefined) {
-          console.warn(
-            `[rides/complete] app_settings.rides.commission_rate inválido (${String(rawSettingVal)}) — usando fallback 0.20. Corregir en admin.`,
-          )
-        }
-        // Comisión + driver earning se calculan sobre adjustedFare (post vale).
-        // El vale es descuento al pasajero absorbido por la plataforma, no por el driver.
-        const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100
-        const driverEarning = Math.round((adjustedFare - commissionAmount) * 100) / 100
 
         // 1) DEBIT al passenger (dinero sale) — sobre adjustedFare
         const debitRes = await client.query<WalletTxRow>(
@@ -290,6 +276,69 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
             ],
           )
         }
+      } else if (
+        updated.payment_method &&
+        updated.payment_method !== 'wallet' &&
+        updated.driver_id &&
+        commissionAmount > 0
+      ) {
+        // Ronda 199 CRITICAL/DINERO: rides NO-wallet (cash, yape, plin,
+        // mercadopago directo, etc.) SÍ deben registrar la comisión de la
+        // plataforma como DÉBITO al driver. El driver recibió el fare completo
+        // en su método, pero le debe la comisión a la plataforma. Antes:
+        // TODA la lógica de commission estaba dentro del if (wallet) →
+        // platform perdía comisión de cada viaje cash → S/20 por ride cash
+        // desaparecidos permanentemente.
+        // Advisory lock por driver_id (mismo bucket 42) evita race con otros
+        // debits concurrentes.
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+          [updated.driver_id],
+        )
+        const driverBalRes = await client.query<{ balance: string }>(
+          'SELECT rapi_team_user_balance($1)::text AS balance',
+          [updated.driver_id],
+        )
+        const driverBalance = Number(driverBalRes.rows[0]?.balance ?? 0)
+        const driverBalAfter = Math.round((driverBalance - commissionAmount) * 100) / 100
+        // Débito real al driver: type='debit' entra al balance (a diferencia
+        // de 'commission' que la migración 019 excluye para audit-trail).
+        await client.query(
+          `INSERT INTO wallet_transactions
+             (user_id, type, amount, balance_after, description, status, ride_id, metadata, completed_at)
+           VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, $6::jsonb, now())`,
+          [
+            updated.driver_id,
+            -commissionAmount,
+            driverBalAfter,
+            `Comisión plataforma viaje ${id} (${updated.payment_method})`,
+            id,
+            JSON.stringify({
+              finalFare,
+              commissionRate,
+              paymentMethod: updated.payment_method,
+              kind: 'platform_commission_cash',
+            }),
+          ],
+        )
+        // Audit trail contable (excluido del balance por migración 019).
+        await client.query(
+          `INSERT INTO wallet_transactions
+             (user_id, type, amount, description, status, ride_id, metadata, completed_at)
+           VALUES ($1, 'commission', $2, $3, 'completed', $4, $5::jsonb, now())`,
+          [
+            updated.driver_id,
+            commissionAmount,
+            `Comisión plataforma viaje ${id}`,
+            id,
+            JSON.stringify({
+              finalFare,
+              commissionRate,
+              paymentMethod: updated.payment_method,
+              driverId: updated.driver_id,
+            }),
+          ],
+        )
       }
 
       // Notificar al passenger

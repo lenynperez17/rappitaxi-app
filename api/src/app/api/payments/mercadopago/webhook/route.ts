@@ -187,20 +187,26 @@ export async function POST(req: NextRequest) {
     : 'pending'
 
   try {
-    if (newStatus === 'approved' && mpRow.status !== 'approved') {
-      // Aplicar el crédito en transacción con SELECT FOR UPDATE en mp_payments
-      // para serializar webhooks concurrentes. Sin este lock, dos POSTs simultáneos
-      // ambos ven status='pending', ambos entran a esta rama, ambos INSERT
-      // wallet_transactions con external_ref = payment.id → doble crédito.
-      // El isUniqueViolation catch de abajo NO ayudaba porque external_ref
-      // tiene índice no-único (004_domain.sql:66). Ronda 18 HIGH#1.
-      await tx(async (client) => {
-        const locked = await client.query<{ status: string }>(
-          `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
-          [externalRef],
-        )
-        // Re-check bajo lock: si otro webhook ya lo aprobó, no dupliquemos.
-        if (locked.rows[0]?.status === 'approved') return
+    // Ronda 205 CRITICAL: TODO branching DENTRO de la tx con FOR UPDATE
+    // upfront. Antes: `mpRow.status` leído fuera → dos webhooks concurrentes
+    // (approved + refunded del mismo P1) veían snapshot obsoleto → refund
+    // caía al `else` (solo UPDATE status) sin insertar la fila compensatoria
+    // → wallet mantenía el crédito + MP devolvía el dinero = pérdida.
+    // Ronda 206: advisory lock por passenger_id (bucket 42, mismo que
+    // rides/complete) para serializar cross-service refund + wallet debit.
+    await tx(async (client) => {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+        [mpRow.user_id],
+      )
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
+        [externalRef],
+      )
+      const currentDbStatus = locked.rows[0]?.status
+      if (currentDbStatus === undefined) return
+
+      if (newStatus === 'approved' && currentDbStatus !== 'approved') {
         await client.query(
           `UPDATE mp_payments
              SET mp_payment_id = $1, status = 'approved', raw = $2, updated_at = now()
@@ -221,30 +227,19 @@ export async function POST(req: NextRequest) {
             ],
           )
         } catch (e) {
-          // Con el FOR UPDATE lock la ruta duplicada ya no llega aquí, pero
-          // conservamos el catch por si alguna migración futura sí añade el UNIQUE.
           if (!isUniqueViolation(e)) throw e
         }
-      })
-    } else if (
-      (newStatus === 'refunded' || newStatus === 'cancelled' || newStatus === 'charged_back')
-      && mpRow.status === 'approved'
-    ) {
-      // Ronda 83 CRITICAL: refund/chargeback DESPUÉS de approved requiere
-      // reversar el crédito al wallet, sino usuario mantiene saldo + MP le
-      // devuelve el dinero = doble beneficio / pérdida directa para la plataforma.
-      // Ronda 134: charged_back agregado — chargeback bancario resuelto.
-      await tx(async (client) => {
-        const locked = await client.query<{ status: string }>(
-          `SELECT status FROM mp_payments WHERE id = $1 FOR UPDATE`,
-          [externalRef],
-        )
-        if (locked.rows[0]?.status !== 'approved') return // ya procesado
+      } else if (
+        (newStatus === 'refunded' || newStatus === 'cancelled' || newStatus === 'charged_back')
+        && currentDbStatus === 'approved'
+      ) {
+        // Ronda 83 CRITICAL: refund/chargeback DESPUÉS de approved requiere
+        // reversar el crédito al wallet, sino usuario mantiene saldo + MP le
+        // devuelve el dinero = pérdida directa para la plataforma.
         await client.query(
           `UPDATE mp_payments SET status = $1, raw = $2, updated_at = now() WHERE id = $3`,
           [newStatus, JSON.stringify(payment), externalRef],
         )
-        // Insertar reversión (compensating transaction) idempotente por external_ref
         const refundRef = `refund:${payment.id}`
         const existing = await client.query(
           `SELECT 1 FROM wallet_transactions WHERE external_ref = $1 LIMIT 1`,
@@ -272,14 +267,14 @@ export async function POST(req: NextRequest) {
             ],
           )
         }
-      })
-    } else {
-      // Actualización de estado no-approved
-      await query(
-        `UPDATE mp_payments SET status = $1, raw = $2, updated_at = now() WHERE id = $3`,
-        [newStatus, JSON.stringify(payment), externalRef],
-      )
-    }
+      } else {
+        // Actualización de estado no-approved
+        await client.query(
+          `UPDATE mp_payments SET status = $1, raw = $2, updated_at = now() WHERE id = $3`,
+          [newStatus, JSON.stringify(payment), externalRef],
+        )
+      }
+    })
 
     return NextResponse.json({ ok: true, status: newStatus })
   } catch (err) {

@@ -200,12 +200,17 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
         ),
       );
       
-      // Navegar según el contexto
-      // ✅ CORREGIDO: Usar /passenger/home en lugar de /welcome (ruta inexistente)
-      // El registro siempre empieza como pasajero, luego puede cambiar a conductor
+      // Ronda 202: NO hardcodear /passenger/home. Un driver o admin verificando
+      // su teléfono aterrizaba en home de pasajero. Ramificar por rol.
+      final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      final home = user?.userType == 'admin'
+          ? '/admin/dashboard'
+          : (user?.userType == 'driver' || user?.currentMode == 'driver')
+              ? '/driver/home'
+              : '/passenger/home';
       Navigator.pushNamedAndRemoveUntil(
         context,
-        '/passenger/home',
+        home,
         (route) => false,
       );
     } else {

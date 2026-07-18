@@ -300,6 +300,14 @@ class _ThemedMaterialApp extends StatelessWidget {
       // Ruta inicial
       initialRoute: '/',
 
+      // Ronda 200: si alguien pushNamed a una ruta que no existe (typo,
+      // rediseño), Flutter tira excepción → pantalla negra. onUnknownRoute
+      // redirige al splash que a su vez enruta según el estado de auth.
+      onUnknownRoute: (settings) {
+        AppLogger.error('Ruta desconocida: ${settings.name}');
+        return MaterialPageRoute(builder: (_) => ModernSplashScreen());
+      },
+
       // Rutas
       routes: {
         '/': (context) => ModernSplashScreen(),
