@@ -137,17 +137,47 @@ if [[ -z "$BUILD_ID" ]]; then
 fi
 
 # ---------- assign ----------
+# Ronda 212 BUG FIX CRÍTICO: el endpoint POST /builds/{id}/relationships/betaGroups
+# devuelve 204 pero NUNCA persiste la asignación para grupos internos
+# (isInternalGroup=true). Los builds 121-124 respondieron 204 al script
+# original pero la lista `/betaGroups/{id}/builds` seguía vacía.
+# El endpoint que SÍ persiste es el inverso, desde el lado del grupo:
+#   POST /v1/betaGroups/{groupId}/relationships/builds
+# Con este endpoint el usuario recibe la notificación de TestFlight en 5-15 min.
 CODE=$(curl -sS -X POST \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
-  -d "{\"data\":[{\"type\":\"betaGroups\",\"id\":\"$INTERNAL_GROUP\"}]}" \
+  -d "{\"data\":[{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}]}" \
   -w "%{http_code}" -o /tmp/asc_assign.out \
-  "https://api.appstoreconnect.apple.com/v1/builds/$BUILD_ID/relationships/betaGroups")
+  "https://api.appstoreconnect.apple.com/v1/betaGroups/$INTERNAL_GROUP/relationships/builds")
 
-if [[ "$CODE" == "204" ]]; then
-  log "✓ Build $TARGET_BUILD ($BUILD_ID) asignado al grupo interno."
-else
-  log "ERROR HTTP $CODE:"
+if [[ "$CODE" != "204" ]]; then
+  log "ERROR HTTP $CODE en asignación:"
   cat /tmp/asc_assign.out
   exit 1
 fi
+
+# Verificar que efectivamente persistió — Apple a veces devuelve 204 y
+# la relación aparece con 1-3s de latencia; polleamos hasta 6s.
+sleep 3
+for check in 1 2 3; do
+  FOUND=$(curl -sS -H "Authorization: Bearer $JWT" \
+    "https://api.appstoreconnect.apple.com/v1/betaGroups/$INTERNAL_GROUP/builds?limit=50" \
+    | python3 -c "
+import json,sys,os
+d = json.load(sys.stdin)
+target = os.environ.get('BID')
+print('yes' if any(b['id']==target for b in d.get('data',[])) else 'no')
+" BID="$BUILD_ID")
+  if [[ "$FOUND" == "yes" ]]; then
+    log "✓ Build $TARGET_BUILD ($BUILD_ID) asignado al grupo interno (verificado)."
+    exit 0
+  fi
+  log "verificación pendiente (intento $check/3)..."
+  sleep 3
+done
+
+log "ADVERTENCIA: asignación devolvió 204 pero no se refleja en el grupo tras 12s."
+log "  Grupo: $INTERNAL_GROUP  Build: $BUILD_ID"
+log "  Puede ser latencia extendida de Apple. Verificar manualmente en ASC."
+exit 1
