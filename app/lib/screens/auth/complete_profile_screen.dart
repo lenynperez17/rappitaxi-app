@@ -143,21 +143,62 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     );
   }
 
+  // Ronda 195 UX: manejar back button — si estamos en el paso OTP, volver al
+  // paso phone (no salir de la pantalla). Si estamos en el paso phone y el
+  // user quiere entrar con otro provider, dejar salir a login screen.
+  Future<bool> _handleBack() async {
+    if (_otpSent) {
+      setState(() => _otpSent = false);
+      return false; // no salir de la pantalla
+    }
+    // En paso phone: cerrar sesión provider social + volver a login.
+    try {
+      final auth = context.read<AuthProvider>();
+      await auth.logout();
+    } catch (e) {
+      AppLogger.error('logout on back from complete_profile', e);
+    }
+    return true; // permitir salir
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 24),
-              _buildHeader(),
-              const SizedBox(height: 32),
-              _otpSent ? _buildOtpStep() : _buildPhoneStep(),
-            ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final canPop = await _handleBack();
+        if (canPop && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black87),
+            onPressed: () async {
+              final canPop = await _handleBack();
+              if (canPop && mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                _buildHeader(),
+                const SizedBox(height: 32),
+                _otpSent ? _buildOtpStep() : _buildPhoneStep(),
+              ],
+            ),
           ),
         ),
       ),
