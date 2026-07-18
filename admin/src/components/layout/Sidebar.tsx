@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -50,10 +51,23 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) {
-  // Ronda 118: aria-hidden sincronizado con la visibilidad real.
-  // En móvil cuando mobileOpen=false y viewport <lg, el aside está fixed
-  // pero display:none — screen readers y focus trap deben saberlo.
-  const isVisiblyHidden = !mobileOpen // en desktop lg:flex lo ignora naturalmente
+  // Ronda 194 BUG FIX: `inert` es HTML attribute que NO respeta CSS `lg:flex`.
+  // Antes: cuando mobileOpen=false (default en desktop), inert={true} bloqueaba
+  // TODOS los clicks del sidebar en desktop → el menú no era clickeable.
+  // Fix: detectar viewport ≥lg via matchMedia; solo aplicar aria-hidden/inert
+  // cuando realmente está oculto (viewport <lg AND !mobileOpen).
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(min-width: 1024px)').matches
+      : true,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  const isVisiblyHidden = !isDesktop && !mobileOpen
   return (
     <aside
       aria-hidden={isVisiblyHidden ? true : undefined}
