@@ -22,19 +22,23 @@ class _EmergencyDetailsScreenState extends State<EmergencyDetailsScreen> {
       body: Consumer<EmergencyProvider>(builder: (context, provider, _) {
         final emergency = provider.activeAlert;
         if (emergency == null) return _buildEmptyState();
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _buildAlertBanner(emergency), const SizedBox(height: 24),
-            _buildUserInfo(emergency), const SizedBox(height: 16),
-            _buildLocationInfo(emergency), const SizedBox(height: 16),
-            _buildEmergencyType(emergency), const SizedBox(height: 16),
-            if (emergency.tripId != null) ...[_buildTripInfo(emergency), const SizedBox(height: 16)],
-            if (emergency.description != null && emergency.description!.isNotEmpty) ...[_buildNotes(emergency), const SizedBox(height: 16)],
-            _buildEmergencyContacts(emergency), const SizedBox(height: 16),
-            _buildTimeline(emergency), const SizedBox(height: 16),
-            _buildActions(emergency),
-          ]),
+        // Ronda 214: SafeArea previene que el contenido quede tapado por
+        // notch/home indicator en iPhones nuevos.
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _buildAlertBanner(emergency), const SizedBox(height: 24),
+              _buildUserInfo(emergency), const SizedBox(height: 16),
+              _buildLocationInfo(emergency), const SizedBox(height: 16),
+              _buildEmergencyType(emergency), const SizedBox(height: 16),
+              if (emergency.tripId != null) ...[_buildTripInfo(emergency), const SizedBox(height: 16)],
+              if (emergency.description != null && emergency.description!.isNotEmpty) ...[_buildNotes(emergency), const SizedBox(height: 16)],
+              _buildEmergencyContacts(emergency), const SizedBox(height: 16),
+              _buildTimeline(emergency), const SizedBox(height: 16),
+              _buildActions(emergency),
+            ]),
+          ),
         );
       }),
     );

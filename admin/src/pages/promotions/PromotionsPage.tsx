@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Loader2, Plus, Tag, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 
@@ -138,9 +138,14 @@ function CreateValeModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [expiresAt, setExpiresAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // Ronda 214: guard contra doble-Enter rápido antes de que setSubmitting
+  // rerenderice el botón como disabled. Sin este ref, dos Enters muy juntos
+  // creaban dos vales duplicados. Mismo patrón que LoginPage.tsx.
+  const submittingRef = useRef(false)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
     if (!code.trim() || discountValue <= 0) {
       setError('Código y valor requeridos')
       return
@@ -156,6 +161,7 @@ function CreateValeModal({ onClose, onCreated }: { onClose: () => void; onCreate
       setError('El descuento fijo máximo es S/ 500')
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     setError('')
     try {
@@ -171,6 +177,7 @@ function CreateValeModal({ onClose, onCreated }: { onClose: () => void; onCreate
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error creando vale')
       setSubmitting(false)
+      submittingRef.current = false
     }
   }
 

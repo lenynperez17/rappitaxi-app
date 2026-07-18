@@ -331,10 +331,14 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     );
     if (firstOk != true || !context.mounted) return;
 
-    // Dialog 2: requiere escribir "ELIMINAR" para confirmar
+    // Dialog 2: requiere escribir "ELIMINAR" para confirmar.
+    // Ronda 214: garantizamos dispose del controller en cualquier vía de
+    // cierre (Cancel, Eliminar, back button, tap fuera).
     final controller = TextEditingController();
     final keyword = isEn ? 'DELETE' : 'ELIMINAR';
-    final confirmed = await showDialog<bool>(
+    late final bool? confirmed;
+    try {
+      confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
@@ -384,6 +388,9 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
         );
       },
     );
+    } finally {
+      controller.dispose();
+    }
     if (confirmed != true || !context.mounted) return;
 
     // Capture references before any await + pop

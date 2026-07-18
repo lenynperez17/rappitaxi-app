@@ -470,8 +470,16 @@ class _TrackingScreenState extends State<TrackingScreen>
               target: _driverPosition,
               zoom: 15,
             ),
-            // Bottom sheet covers ~55% of screen, so add extra bottom padding
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.5),
+            // Ronda 214: padding en base a un porcentaje FIJO del screen
+            // rompía en iPhone SE (667px) donde el sheet real ocupa proporcion
+            // distinta. Usamos porcentaje adaptativo con clamp para evitar
+            // que el mapa quede tapado o con exceso de padding.
+            //   - iPhone SE (667): ~250px de padding (37%)
+            //   - iPhone Pro (852): ~340px de padding (40%)
+            //   - iPad (>1000): ~400px de padding tope
+            padding: EdgeInsets.only(
+              bottom: (MediaQuery.of(context).size.height * 0.42).clamp(200.0, 400.0),
+            ),
             onMapCreated: (controller) {
               _mapController = controller;
               // Center on markers with delay so padding is applied
@@ -496,10 +504,12 @@ class _TrackingScreenState extends State<TrackingScreen>
           ),
 
           // Driver position pulse indicator
+          // Ronda 214: usamos clamp para que el pulse no quede fuera del
+          // viewport en iPad (>1000px de alto).
           if (_tripStatus == 'arriving' || _tripStatus == 'ontrip')
             Positioned(
-              top: MediaQuery.of(context).size.height * 0.4,
-              left: MediaQuery.of(context).size.width * 0.45,
+              top: (MediaQuery.of(context).size.height * 0.35).clamp(200.0, 360.0),
+              left: (MediaQuery.of(context).size.width * 0.45).clamp(120.0, 360.0),
               child: AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) {

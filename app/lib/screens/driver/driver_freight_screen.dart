@@ -357,8 +357,11 @@ class _DriverFreightScreenState extends State<DriverFreightScreen> {
     final price = (request['price'] ?? 0).toDouble();
     final controller = TextEditingController(text: price.toStringAsFixed(0));
 
+    // Ronda 214: enableDrag=false porque el sheet contiene un TextField con
+    // autofocus (contra-oferta del driver). Ver comentario en price_setting_sheet.
     showResponsiveBottomSheet(
       context: context,
+      enableDrag: false,
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(24, 24, 24, 24),
         child: Column(

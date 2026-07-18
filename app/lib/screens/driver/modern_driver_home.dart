@@ -899,6 +899,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         // Snap to road (Rapi Team)
         final snappedLocation = await RoadSnappingService.instance.snapToRoad(newLocation);
 
+        // Ronda 214: re-verificar mounted post-await. Sin esto, si el driver
+        // navegó a otra pantalla mientras corría snapToRoad, setState crashea
+        // con "setState called after dispose".
+        if (!mounted) return;
         setState(() {
           _currentLocation = snappedLocation;
           _updateMapMarkers();
@@ -1296,6 +1300,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           );
           await _checkDriverCredits();
 
+          // Ronda 214: re-verificar mounted post-await. Alto riesgo si el
+          // driver navega mientras llega el evento de aceptación.
+          if (!mounted) return;
           setState(() {
             _availableRequests.removeWhere((r) => r.id == negotiationId);
           });
@@ -2091,7 +2098,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                           Expanded(
                             child: Text(
                               'Créditos insuficientes. Toca para recargar.',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)),
                             ),
                           ),
                           Icon(Icons.chevron_right, color: ModernTheme.warning, size: 22),
@@ -2105,12 +2112,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       color: AppColors.rappiOrange.withValues(alpha:0.1),
                       child: Row(children: [
-                        Icon(Icons.info_outline, color: Colors.black87, size: 22),
+                        Icon(Icons.info_outline, color: AppColors.getTextPrimary(context), size: 22),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Resuelve estos problemas para evitar perder las mejores solicitudes',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)),
                           ),
                         ),
                         Icon(Icons.chevron_right, color: Colors.black54, size: 22),

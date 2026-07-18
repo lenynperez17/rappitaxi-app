@@ -1271,16 +1271,19 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             ),
 
             // Navigator pill (bottom-left on map)
+            // Ronda 214: bottom hardcoded 380/390 asumía sheet altura fija.
+            // En iPhone SE (667px) el pill quedaba tapado por el sheet.
+            // Usar % del screen con clamp para adaptar a todos los sizes.
             Positioned(
               left: 16,
-              bottom: 380,
+              bottom: (MediaQuery.of(context).size.height * 0.42).clamp(280.0, 420.0),
               child: _buildNavigatorPill(),
             ),
 
             // Floating round buttons (right side)
             Positioned(
               right: 16,
-              bottom: 390,
+              bottom: (MediaQuery.of(context).size.height * 0.43).clamp(290.0, 430.0),
               child: Column(
                 children: [
                   _buildRoundFloatingButton(

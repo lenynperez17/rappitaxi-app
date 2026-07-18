@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { query } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -44,7 +45,17 @@ export async function GET(req: NextRequest) {
   if (!VALID_STATUS.has(status)) {
     return NextResponse.json({ success: false, error: 'invalid_status' }, { status: 400 })
   }
-  const driverIdFilter = searchParams.get('driverId')?.trim() || null
+  // Ronda 214: validar UUID antes de meterlo en la query. Antes ?driverId=abc
+  // llegaba a Postgres como uuid inválido → 22P02 → 500 sin log estructurado
+  // (útil como oráculo de fingerprinting del backend).
+  const driverIdRaw = searchParams.get('driverId')?.trim() || null
+  if (driverIdRaw !== null && !isUuid(driverIdRaw)) {
+    return NextResponse.json(
+      { success: false, error: 'invalid_driver_id', message: 'driverId debe ser UUID válido' },
+      { status: 400 },
+    )
+  }
+  const driverIdFilter = driverIdRaw
   // Ronda 28: NaN-safe pagination
   const pageSizeRaw = Number(searchParams.get('pageSize') ?? 50)
   const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, Math.floor(pageSizeRaw))) : 50

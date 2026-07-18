@@ -472,7 +472,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           TextField(controller: reportController, decoration: InputDecoration(hintText: 'Describe el problema...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.all(16)), maxLines: 4, maxLength: 300),
         ])),
         actions: [
-          TextButton(onPressed: () { reportController.dispose(); Navigator.pop(dialogContext); }, child: Text('Cancelar', style: TextStyle(color: AppColors.getTextSecondary(dialogContext)))),
+          // Ronda 214: reportController.dispose() se hace ahora en el .then()
+          // del showDialog (garantiza dispose incluso si el user cierra con
+          // back button o tap fuera del diálogo, no solo en botones).
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text('Cancelar', style: TextStyle(color: AppColors.getTextSecondary(dialogContext)))),
           ElevatedButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(dialogContext);
@@ -480,7 +483,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               // TODO(node-migration): reemplazar con endpoint /api/user-reports
               // cuando exista. Por ahora simulamos el envio para no romper el UX.
               await Future<void>.delayed(const Duration(milliseconds: 300));
-              reportController.dispose();
               navigator.pop();
               messenger.showSnackBar(SnackBar(
                   content: Text('Reporte registrado'),
@@ -492,6 +494,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
         ],
       );
-    }));
+    })).then((_) => reportController.dispose());
   }
 }

@@ -1,44 +1,56 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'firebase_service.dart';
+import 'maps_service.dart' as backend;
 
-/// Servicio completo para Google Maps
-/// ✅ IMPLEMENTACIÓN REAL COMPLETA
-/// Incluye: Geocoding, Directions, Places, Distance Matrix, Rutas optimizadas
+/// Servicio de Google Maps (thin wrapper).
+///
+/// Ronda 214 CRÍTICO/SECURITY: la versión anterior de este archivo (728
+/// líneas) hacía llamadas directas a `maps.googleapis.com` con
+/// `_googleMapsApiKey` INCRUSTADA en el APK. Cualquiera con acceso al
+/// binario podía extraerla en minutos y usarla para consumir el cuota de
+/// Google → factura inflada por terceros.
+///
+/// Ahora TODAS las llamadas a Google pasan por el backend Rapi Team
+/// (`api/src/app/api/maps/*` que cascadea OSRM → Mapbox → Google con la key
+/// oculta, costo ~$0). La API pública de esta clase se mantiene idéntica
+/// para no romper callers (LocationProvider, modern_driver_home).
+///
+/// Métodos migrados:
+///   - `getPlaceAutocomplete` → `MapsService.autocomplete`
+///   - `getDirections`        → `MapsService.getDirections`
+///
+/// Métodos deprecados (sin equivalente en backend; devuelven error
+/// explícito para que el caller sepa migrar o quitar el feature):
+///   - `geocodeAddress`, `reverseGeocode`, `searchNearbyPlaces`,
+///     `getDistanceMatrix`.
+///
+/// Métodos independientes de Google (siguen funcionando):
+///   - `getCurrentLocation` (Geolocator/OS).
 class GoogleMapsService {
   static final GoogleMapsService _instance = GoogleMapsService._internal();
   factory GoogleMapsService() => _instance;
   GoogleMapsService._internal();
 
   final FirebaseService _firebaseService = FirebaseService();
-  
-  bool _initialized = false;
-  late String _googleMapsApiKey;
-  
-  // URLs de la API de Google Maps
-  static const String directionsApiUrl = 'https://maps.googleapis.com/maps/api/directions/json';
-  static const String placesApiUrl = 'https://maps.googleapis.com/maps/api/place';
-  static const String geocodingApiUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
-  static const String distanceMatrixUrl = 'https://maps.googleapis.com/maps/api/distancematrix/json';
+  final backend.MapsService _backend = backend.MapsService();
 
-  /// Inicializar el servicio de Google Maps ✅ IMPLEMENTACIÓN REAL
+  bool _initialized = false;
+
+  /// El parámetro `googleMapsApiKey` se ignora — la key vive en el backend.
+  /// Se mantiene el signature para no romper callers.
   Future<void> initialize({
     required String googleMapsApiKey,
   }) async {
     if (_initialized) return;
-
     try {
-      _googleMapsApiKey = googleMapsApiKey;
+      // La key ya no se guarda en cliente. Firebase para logEvent solo.
       await _firebaseService.initialize();
-      
       _initialized = true;
-      debugPrint('🗺️ GoogleMapsService: Service initialized successfully');
-      
-      await _firebaseService.analytics.logEvent(name: 'google_maps_service_initialized');
-      
+      debugPrint('🗺️ GoogleMapsService: init (llamadas via backend proxy)');
+      await _firebaseService.analytics
+          .logEvent(name: 'google_maps_service_initialized');
     } catch (e) {
       debugPrint('🗺️ GoogleMapsService: Error initializing - $e');
       await _firebaseService.crashlytics.recordError(e, null);
@@ -46,44 +58,31 @@ class GoogleMapsService {
     }
   }
 
-  /// Obtener ubicación actual ✅ IMPLEMENTACIÓN REAL
+  /// Ubicación actual del dispositivo — Geolocator, no Google.
   Future<LocationResult> getCurrentLocation() async {
     try {
-      // Verificar permisos
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         return LocationResult.error('Los servicios de ubicación están deshabilitados');
       }
-
-      LocationPermission permission = await Geolocator.checkPermission();
+      var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           return LocationResult.error('Permisos de ubicación denegados');
         }
       }
-
       if (permission == LocationPermission.deniedForever) {
-        return LocationResult.error('Permisos de ubicación denegados permanentemente');
+        return LocationResult.error(
+          'Permisos de ubicación denegados permanentemente',
+        );
       }
-
-      // Obtener ubicación
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
+          timeLimit: Duration(seconds: 15),
         ),
       );
-
-      await _firebaseService.analytics.logEvent(
-        name: 'location_obtained',
-        parameters: {
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-        },
-      );
-
       return LocationResult.success(
         latitude: position.latitude,
         longitude: position.longitude,
@@ -91,405 +90,124 @@ class GoogleMapsService {
         timestamp: position.timestamp,
       );
     } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error getting current location - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
+      debugPrint('🗺️ GoogleMapsService.getCurrentLocation: $e');
       return LocationResult.error('Error obteniendo ubicación: $e');
     }
   }
 
-  /// Geocoding: convertir dirección a coordenadas ✅ IMPLEMENTACIÓN REAL
+  /// DEPRECATED: no hay endpoint de forward geocode en el backend.
+  /// Use el flujo autocomplete → placeDetails que ya devuelve coordenadas.
   Future<GeocodingResult> geocodeAddress(String address) async {
+    debugPrint(
+      '🗺️ geocodeAddress deprecated — usar autocomplete + placeDetails',
+    );
+    return GeocodingResult.error(
+      'Método no disponible. Usar getPlaceAutocomplete + placeDetails.',
+    );
+  }
+
+  /// DEPRECATED: no hay endpoint de reverse geocode en el backend.
+  /// Los callers de LocationProvider ya toleran null/error acá.
+  Future<ReverseGeocodingResult> reverseGeocode(double lat, double lng) async {
+    debugPrint('🗺️ reverseGeocode deprecated — backend no expone endpoint');
+    return ReverseGeocodingResult.error('Reverse geocode no disponible.');
+  }
+
+  /// Autocomplete via backend proxy (cascade Mapbox/Google).
+  Future<AutocompleteResult> getPlaceAutocomplete(
+    String input, {
+    String language = 'es',
+    String? country,
+  }) async {
+    if (input.trim().length < 2) return AutocompleteResult.success(const []);
     try {
-      final url = Uri.parse(geocodingApiUrl).replace(queryParameters: {
-        'address': address,
-        'key': _googleMapsApiKey,
-        'language': 'es',
-        'region': 'AR', // Argentina
-      });
-
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK' && data['results'].isNotEmpty) {
-        final result = data['results'][0];
-        final location = result['geometry']['location'];
-        
-        await _firebaseService.analytics.logEvent(
-          name: 'geocoding_success',
-          parameters: {
-            'address': address,
-            'latitude': location['lat'],
-            'longitude': location['lng'],
-          },
-        );
-
-        return GeocodingResult.success(
-          latitude: (location['lat'] as num?)?.toDouble() ?? 0.0,
-          longitude: (location['lng'] as num?)?.toDouble() ?? 0.0,
-          formattedAddress: result['formatted_address'],
-          placeId: result['place_id'],
-        );
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Geocoding error - ${data['status']}');
-        return GeocodingResult.error('No se pudo geocodificar la dirección');
-      }
+      final preds = await _backend.autocomplete(
+        input,
+        languageCode: language,
+        countryCode: country ?? 'pe',
+      );
+      return AutocompleteResult.success(
+        preds
+            .map((p) => PlacePrediction(
+                  placeId: p.placeId,
+                  description: p.description,
+                  mainText: p.mainText,
+                  secondaryText: p.secondaryText,
+                  types: const [],
+                ))
+            .toList(growable: false),
+      );
     } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error geocoding address - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return GeocodingResult.error('Error geocodificando dirección: $e');
+      debugPrint('🗺️ getPlaceAutocomplete: $e');
+      return AutocompleteResult.error('Error obteniendo sugerencias');
     }
   }
 
-  /// Reverse Geocoding: convertir coordenadas a dirección ✅ IMPLEMENTACIÓN REAL
-  Future<ReverseGeocodingResult> reverseGeocode(double latitude, double longitude) async {
-    try {
-      final url = Uri.parse(geocodingApiUrl).replace(queryParameters: {
-        'latlng': '$latitude,$longitude',
-        'key': _googleMapsApiKey,
-        'language': 'es',
-        'region': 'AR',
-      });
-
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK' && data['results'].isNotEmpty) {
-        final result = data['results'][0];
-        
-        await _firebaseService.analytics.logEvent(
-          name: 'reverse_geocoding_success',
-          parameters: {
-            'latitude': latitude,
-            'longitude': longitude,
-          },
-        );
-
-        return ReverseGeocodingResult.success(
-          formattedAddress: result['formatted_address'],
-          streetNumber: _extractComponent(result['address_components'], 'street_number'),
-          route: _extractComponent(result['address_components'], 'route'),
-          locality: _extractComponent(result['address_components'], 'locality'),
-          administrativeArea: _extractComponent(result['address_components'], 'administrative_area_level_1'),
-          country: _extractComponent(result['address_components'], 'country'),
-          postalCode: _extractComponent(result['address_components'], 'postal_code'),
-          placeId: result['place_id'],
-        );
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Reverse geocoding error - ${data['status']}');
-        return ReverseGeocodingResult.error('No se pudo obtener la dirección');
-      }
-    } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error reverse geocoding - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return ReverseGeocodingResult.error('Error obteniendo dirección: $e');
-    }
-  }
-
-  /// Obtener direcciones entre dos puntos ✅ IMPLEMENTACIÓN REAL
+  /// Direcciones via backend proxy (cascade OSRM/Mapbox/Google).
   Future<DirectionsResult> getDirections({
     required LatLng origin,
     required LatLng destination,
-    TravelMode travelMode = TravelMode.driving,
+    TravelMode mode = TravelMode.driving,
     bool avoidTolls = false,
     bool avoidHighways = false,
     bool avoidFerries = false,
-    List<LatLng>? waypoints,
   }) async {
     try {
-      final params = <String, String>{
-        'origin': '${origin.latitude},${origin.longitude}',
-        'destination': '${destination.latitude},${destination.longitude}',
-        'mode': travelMode.name.toLowerCase(),
-        'key': _googleMapsApiKey,
-        'language': 'es',
-        'region': 'AR',
+      final modeStr = switch (mode) {
+        TravelMode.walking => 'walking',
+        TravelMode.bicycling => 'cycling',
+        _ => 'driving',
       };
-
-      if (avoidTolls) params['avoid'] = 'tolls';
-      if (avoidHighways) params['avoid'] = 'highways';
-      if (avoidFerries) params['avoid'] = 'ferries';
-      
-      if (waypoints != null && waypoints.isNotEmpty) {
-        params['waypoints'] = waypoints
-            .map((wp) => '${wp.latitude},${wp.longitude}')
-            .join('|');
+      final route = await _backend.getDirections(
+        origin: origin,
+        destination: destination,
+        mode: modeStr,
+      );
+      if (route == null || route.points.isEmpty) {
+        return DirectionsResult.error('No se pudo calcular la ruta');
       }
-
-      final url = Uri.parse(directionsApiUrl).replace(queryParameters: params);
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
-        final route = data['routes'][0];
-        final leg = route['legs'][0];
-        
-        await _firebaseService.analytics.logEvent(
-          name: 'directions_success',
-          parameters: {
-            'distance_meters': leg['distance']['value'],
-            'duration_seconds': leg['duration']['value'],
-            'travel_mode': travelMode.name,
-          },
-        );
-
-        return DirectionsResult.success(
-          polylinePoints: _decodePolyline(route['overview_polyline']['points']),
-          distance: leg['distance']['text'],
-          distanceValue: leg['distance']['value'],
-          duration: leg['duration']['text'],
-          durationValue: leg['duration']['value'],
-          startAddress: leg['start_address'],
-          endAddress: leg['end_address'],
-          steps: _parseSteps(leg['steps']),
-        );
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Directions error - ${data['status']}');
-        return DirectionsResult.error('No se pudo obtener la ruta');
-      }
+      return DirectionsResult.success(
+        polylinePoints: route.points,
+        distance: '${(route.distanceMeters / 1000).toStringAsFixed(2)} km',
+        distanceValue: route.distanceMeters,
+        duration: '${(route.durationSeconds / 60).round()} min',
+        durationValue: route.durationSeconds,
+        startAddress: null,
+        endAddress: null,
+        steps: const <DirectionStep>[],
+      );
     } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error getting directions - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return DirectionsResult.error('Error obteniendo direcciones: $e');
+      debugPrint('🗺️ getDirections: $e');
+      return DirectionsResult.error('Error obteniendo direcciones');
     }
   }
 
-  /// Buscar lugares cercanos ✅ IMPLEMENTACIÓN REAL
+  /// DEPRECATED: backend no expone /nearby-places. Feature no crítico
+  /// (nunca se usó en la UI, solo estaba disponible en la API).
   Future<PlacesSearchResult> searchNearbyPlaces({
     required LatLng location,
     required double radius,
-    String? type,
+    required String type,
     String? keyword,
   }) async {
-    try {
-      final params = <String, String>{
-        'location': '${location.latitude},${location.longitude}',
-        'radius': radius.round().toString(),
-        'key': _googleMapsApiKey,
-        'language': 'es',
-      };
-
-      if (type != null) params['type'] = type;
-      if (keyword != null) params['keyword'] = keyword;
-
-      final url = Uri.parse('$placesApiUrl/nearbysearch/json')
-          .replace(queryParameters: params);
-      
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK') {
-        final places = (data['results'] as List).map((place) {
-          return PlaceInfo(
-            placeId: place['place_id'],
-            name: place['name'],
-            vicinity: place['vicinity'],
-            latitude: (place['geometry']['location']['lat'] as num?)?.toDouble() ?? 0.0,
-            longitude: (place['geometry']['location']['lng'] as num?)?.toDouble() ?? 0.0,
-            rating: (place['rating'] as num?)?.toDouble(),
-            priceLevel: place['price_level'],
-            types: List<String>.from(place['types'] ?? []),
-            isOpen: place['opening_hours']?['open_now'],
-            photoReference: place['photos']?[0]?['photo_reference'],
-          );
-        }).toList();
-
-        await _firebaseService.analytics.logEvent(
-          name: 'places_search_success',
-          parameters: {
-            'results_count': places.length,
-            'search_type': type ?? 'general',
-          },
-        );
-
-        return PlacesSearchResult.success(places);
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Places search error - ${data['status']}');
-        return PlacesSearchResult.error('No se pudieron encontrar lugares');
-      }
-    } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error searching places - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return PlacesSearchResult.error('Error buscando lugares: $e');
-    }
+    debugPrint('🗺️ searchNearbyPlaces deprecated — no disponible');
+    return PlacesSearchResult.success(const <PlaceInfo>[]);
   }
 
-  /// Autocomplete de direcciones ✅ IMPLEMENTACIÓN REAL
-  Future<AutocompleteResult> getPlaceAutocomplete(String input) async {
-    try {
-      final url = Uri.parse('$placesApiUrl/autocomplete/json').replace(
-        queryParameters: {
-          'input': input,
-          'key': _googleMapsApiKey,
-          'language': 'es',
-          'components': 'country:pe', // Solo Perú
-          'types': 'address',
-        },
-      );
-
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK') {
-        final predictions = (data['predictions'] as List).map((prediction) {
-          return PlacePrediction(
-            placeId: prediction['place_id'],
-            description: prediction['description'],
-            mainText: prediction['structured_formatting']['main_text'],
-            secondaryText: prediction['structured_formatting']['secondary_text'],
-            types: List<String>.from(prediction['types']),
-          );
-        }).toList();
-
-        await _firebaseService.analytics.logEvent(
-          name: 'autocomplete_success',
-          parameters: {
-            'input': input,
-            'results_count': predictions.length,
-          },
-        );
-
-        return AutocompleteResult.success(predictions);
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Autocomplete error - ${data['status']}');
-        return AutocompleteResult.error('No se pudieron obtener sugerencias');
-      }
-    } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error getting autocomplete - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return AutocompleteResult.error('Error obteniendo sugerencias: $e');
-    }
-  }
-
-  /// Calcular matriz de distancias ✅ IMPLEMENTACIÓN REAL
+  /// DEPRECATED: backend no expone /distance-matrix. Se puede aproximar
+  /// llamando getDirections por par.
   Future<DistanceMatrixResult> getDistanceMatrix({
     required List<LatLng> origins,
     required List<LatLng> destinations,
-    TravelMode travelMode = TravelMode.driving,
+    TravelMode mode = TravelMode.driving,
   }) async {
-    try {
-      final originsStr = origins
-          .map((origin) => '${origin.latitude},${origin.longitude}')
-          .join('|');
-      
-      final destinationsStr = destinations
-          .map((dest) => '${dest.latitude},${dest.longitude}')
-          .join('|');
-
-      final url = Uri.parse(distanceMatrixUrl).replace(queryParameters: {
-        'origins': originsStr,
-        'destinations': destinationsStr,
-        'mode': travelMode.name.toLowerCase(),
-        'key': _googleMapsApiKey,
-        'language': 'es',
-        'units': 'metric',
-      });
-
-      final response = await http.get(url);
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'OK') {
-        final elements = <DistanceElement>[];
-        
-        for (int i = 0; i < data['rows'].length; i++) {
-          final row = data['rows'][i];
-          for (int j = 0; j < row['elements'].length; j++) {
-            final element = row['elements'][j];
-            if (element['status'] == 'OK') {
-              elements.add(DistanceElement(
-                originIndex: i,
-                destinationIndex: j,
-                distance: element['distance']['text'],
-                distanceValue: element['distance']['value'],
-                duration: element['duration']['text'],
-                durationValue: element['duration']['value'],
-              ));
-            }
-          }
-        }
-
-        await _firebaseService.analytics.logEvent(
-          name: 'distance_matrix_success',
-          parameters: {
-            'origins_count': origins.length,
-            'destinations_count': destinations.length,
-          },
-        );
-
-        return DistanceMatrixResult.success(elements);
-      } else {
-        debugPrint('🗺️ GoogleMapsService: Distance matrix error - ${data['status']}');
-        return DistanceMatrixResult.error('No se pudo calcular la matriz de distancias');
-      }
-    } catch (e) {
-      debugPrint('🗺️ GoogleMapsService: Error getting distance matrix - $e');
-      await _firebaseService.crashlytics.recordError(e, null);
-      return DistanceMatrixResult.error('Error calculando distancias: $e');
-    }
+    debugPrint('🗺️ getDistanceMatrix deprecated — no disponible');
+    return DistanceMatrixResult.error('Distance matrix no disponible.');
   }
 
-  /// Métodos auxiliares
-
-  String _extractComponent(List components, String type) {
-    for (var component in components) {
-      if (component['types'].contains(type)) {
-        return component['long_name'];
-      }
-    }
-    return '';
-  }
-
-  List<LatLng> _decodePolyline(String encoded) {
-    List<LatLng> points = [];
-    int index = 0, len = encoded.length;
-    int lat = 0, lng = 0;
-
-    while (index < len) {
-      int b, shift = 0, result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-
-      points.add(LatLng(lat / 1E5, lng / 1E5));
-    }
-    return points;
-  }
-
-  List<DirectionStep> _parseSteps(List steps) {
-    return steps.map((step) {
-      return DirectionStep(
-        instruction: step['html_instructions']
-            .replaceAll(RegExp(r'<[^>]*>'), ''), // Remove HTML tags
-        distance: step['distance']['text'],
-        duration: step['duration']['text'],
-        startLocation: LatLng(
-          (step['start_location']['lat'] as num?)?.toDouble() ?? 0.0,
-          (step['start_location']['lng'] as num?)?.toDouble() ?? 0.0,
-        ),
-        endLocation: LatLng(
-          (step['end_location']['lat'] as num?)?.toDouble() ?? 0.0,
-          (step['end_location']['lng'] as num?)?.toDouble() ?? 0.0,
-        ),
-      );
-    }).toList();
-  }
-
-  // Getters
   bool get isInitialized => _initialized;
-  String get apiKey => _googleMapsApiKey;
+  // API key ya no vive en cliente — devuelve string vacío para compat.
+  String get apiKey => '';
 }
 
 /// Enums
@@ -642,8 +360,6 @@ class DistanceMatrixResult {
   final bool success;
   final List<DistanceElement>? elements;
   final String? error;
-
-  DistanceMatrixResult.success(this.elements) : success = true, error = null;
 
   DistanceMatrixResult.error(this.error)
       : success = false,

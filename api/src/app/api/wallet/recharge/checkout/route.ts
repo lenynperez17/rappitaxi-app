@@ -117,11 +117,24 @@ export async function POST(req: NextRequest) {
     const data = await r.json()
     if (!r.ok) {
       console.error('[wallet/recharge] MP error', r.status, data)
-      // Purgar mp_payment huérfano — sin esto la fila 'created' queda para
-      // siempre y es imposible reconciliar el ledger.
-      try {
-        await maybeOne(`DELETE FROM mp_payments WHERE id = $1 AND status = 'created'`, [externalRef])
-      } catch (_) {}
+      // Ronda 214: en vez de DELETE (que si falla dejaba fila huérfana + race
+      // con webhook: MP podía llegar entre INSERT y DELETE, aprobar el pago,
+      // y luego DELETE borraba un pago APROBADO), marcamos la fila como
+      // 'cancelled' — status es finite state machine, webhook no puede
+      // sobrescribir 'cancelled' con 'approved'. Log warning (no catch vacío)
+      // para monitoreo.
+      const cancelErr = await maybeOne(
+        `UPDATE mp_payments SET status = 'cancelled', raw = COALESCE(raw, '{}'::jsonb) || $2::jsonb
+           WHERE id = $1 AND status = 'created'
+         RETURNING id`,
+        [externalRef, JSON.stringify({ cancelReason: 'mp_error', mpStatus: r.status })],
+      ).catch((e) => {
+        console.warn('[wallet/recharge] fallo marcando mp_payment cancelled:', e)
+        return null
+      })
+      if (!cancelErr) {
+        console.warn(`[wallet/recharge] mp_payment ${externalRef} no encontrado para cancelar — posible race con webhook.`)
+      }
       return NextResponse.json({ success: false, error: 'mp_error', status: r.status }, { status: 502 })
     }
 
@@ -140,10 +153,16 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[wallet/recharge] fetch error', err)
-    // Purgar mp_payment huérfano en fetch failure
-    try {
-      await maybeOne(`DELETE FROM mp_payments WHERE id = $1 AND status = 'created'`, [externalRef])
-    } catch (_) {}
+    // Mismo fix Ronda 214: UPDATE cancelled en vez de DELETE.
+    await maybeOne(
+      `UPDATE mp_payments SET status = 'cancelled', raw = COALESCE(raw, '{}'::jsonb) || $2::jsonb
+         WHERE id = $1 AND status = 'created'
+       RETURNING id`,
+      [externalRef, JSON.stringify({ cancelReason: 'mp_fetch_failed' })],
+    ).catch((e) => {
+      console.warn('[wallet/recharge] fallo marcando mp_payment cancelled tras fetch failure:', e)
+      return null
+    })
     return NextResponse.json({ success: false, error: 'mp_fetch_failed' }, { status: 502 })
   }
 }

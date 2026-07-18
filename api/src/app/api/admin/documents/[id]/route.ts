@@ -97,7 +97,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           id,
         ],
       )
-      const updatedDoc = updated.rows[0]!
+      // Ronda 214: defensive check contra rowCount. Bajo FOR UPDATE dentro de
+      // la misma tx no debería fallar, pero si el pool devolvió un cliente
+      // sucio de otra tx abortada, updated.rows[0] podría venir vacío y el
+      // ! rompía con TypeError impuro. Ahora devuelve 404 explícito.
+      const updatedDoc = updated.rows[0]
+      if (!updatedDoc) {
+        throw { code: 'not_found' }
+      }
 
       // Si TODOS los documentos requeridos del driver están approved,
       // auto-verificar al driver.

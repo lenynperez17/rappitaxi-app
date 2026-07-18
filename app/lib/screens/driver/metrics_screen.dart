@@ -324,10 +324,10 @@ class _MetricsScreenState extends State<MetricsScreen>
 
       // ✅ Identificar horas pico (top 3 horas con más viajes)
       final sortedHours = hourlyList.toList()
-        ..sort((a, b) => (b['trips'] as int).compareTo(a['trips'] as int));
+        ..sort((a, b) => ((b['trips'] as num?)?.toInt() ?? 0).compareTo((a['trips'] as num?)?.toInt() ?? 0));
       final peakHoursList = <String>[];
       for (int i = 0; i < math.min(3, sortedHours.length); i++) {
-        if ((sortedHours[i]['trips'] as int) > 0) {
+        if (((sortedHours[i]['trips'] as num?)?.toInt() ?? 0) > 0) {
           peakHoursList.add(sortedHours[i]['hour'] as String);
         }
       }

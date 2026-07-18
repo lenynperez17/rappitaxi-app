@@ -41,6 +41,54 @@ export async function PATCH(req: NextRequest) {
   if (entries.length === 0) {
     return NextResponse.json({ success: false, error: 'no_updates' }, { status: 400 })
   }
+  // Ronda 214 SECURITY: whitelist de keys admisibles. Antes admin (o cuenta
+  // comprometida) podía setear cualquier key — desde commission_rate:0
+  // hasta insertar 10.000 keys basura para degradar performance de la tabla
+  // sin auditoría estructurada. Cada key acá debe corresponder a un setting
+  // realmente usado por el runtime; añadir explícitamente al agregar features.
+  const ALLOWED_SETTING_KEYS = new Set([
+    'rides.commission_rate',
+    'rides.surge_cap',
+    'rides.max_search_radius_km',
+    'rides.min_price',
+    'rides.max_price',
+    'rides.cancel_fee',
+    'wallet.min_recharge',
+    'wallet.max_recharge',
+    'wallet.min_withdrawal',
+    'wallet.max_withdrawal',
+    'wallet.withdrawal_fee',
+    'sunat.igv_rate',
+    'sunat.default_series_invoice',
+    'sunat.default_series_boleta',
+    'sunat.emitter_ruc',
+    'sunat.emitter_business_name',
+    'notifications.push_enabled',
+    'notifications.sms_enabled',
+    'notifications.email_enabled',
+    'emergency.contact_notification_enabled',
+    'emergency.admin_notification_enabled',
+    'maps.provider_cascade',
+    'maps.cache_ttl_hours',
+    'app.min_supported_version_ios',
+    'app.min_supported_version_android',
+    'app.maintenance_mode',
+    'app.maintenance_message',
+  ])
+  const invalidKeys = entries
+    .map(([k]) => k)
+    .filter((k) => !ALLOWED_SETTING_KEYS.has(k))
+  if (invalidKeys.length > 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'unknown_setting_keys',
+        message: `Keys no permitidas: ${invalidKeys.join(', ')}. Agrégala a la whitelist si es intencional.`,
+        invalidKeys,
+      },
+      { status: 400 },
+    )
+  }
   // Ronda 31 Bug#2: multi-key upsert atómico. Antes cada key corría con
   // su propio await query() → si la conexión caía a la mitad, dejaba
   // config en estado inconsistente (ej. commission_rate updated pero

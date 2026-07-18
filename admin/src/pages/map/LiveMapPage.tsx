@@ -13,12 +13,19 @@ import { formatPEN } from '../../utils/currency'
  * un viaje visualmente con clicks en el mapa (pickup + destino).
  */
 
-// Fix para iconos por default de Leaflet en Vite
+// Fix para iconos por default de Leaflet en Vite.
+// Ronda 214: antes se cargaban desde unpkg.com — si el CDN caía o se
+// bloqueaba (firewalls corporativos), los marcadores desaparecían del mapa
+// del admin panel. Ahora se importan desde node_modules y Vite los bundlea
+// como assets (URLs con hash, servidos por el propio dominio del admin).
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
 })
 
 const DEFAULT_CENTER: [number, number] = [-12.0464, -77.0428] // Lima

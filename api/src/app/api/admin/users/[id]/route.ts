@@ -140,10 +140,24 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   // el usuario tenga que reconfirmar el nuevo dato. Sin esto, un admin
   // podía transferir un phone verificado a otro user sin OTP.
   if (body.email !== undefined) {
+    // Ronda 214: typeof guard. Antes body.email={} crasheaba con
+    // "toLowerCase is not a function" → 500 sin mensaje al admin.
+    if (body.email !== null && typeof body.email !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'invalid_email_type' },
+        { status: 400 },
+      )
+    }
     addSet('email', body.email ? body.email.toLowerCase() : null)
     addSet('email_verified', false)
   }
   if (body.phone !== undefined) {
+    if (body.phone !== null && typeof body.phone !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'invalid_phone_type' },
+        { status: 400 },
+      )
+    }
     addSet('phone', body.phone)
     addSet('phone_number', body.phone)
     addSet('phone_verified', false)
@@ -152,7 +166,34 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (body.isAdmin !== undefined) addSet('is_admin', body.isAdmin)
   if (body.isVerified !== undefined) addSet('is_verified', body.isVerified)
   if (body.profileComplete !== undefined) addSet('profile_complete', body.profileComplete)
-  if (body.profilePhotoUrl !== undefined) addSet('profile_photo_url', body.profilePhotoUrl)
+  if (body.profilePhotoUrl !== undefined) {
+    // Ronda 214 SECURITY: whitelist de origen para prevenir stored XSS.
+    // Antes admin podía pasar `javascript:alert(document.cookie)` o `data:`
+    // → un panel de otro admin renderizando <a href={photo}> ejecutaba.
+    // Solo se permiten URLs internas /api/media/ o https://.
+    if (body.profilePhotoUrl !== null) {
+      if (typeof body.profilePhotoUrl !== 'string') {
+        return NextResponse.json(
+          { success: false, error: 'invalid_photo_url_type' },
+          { status: 400 },
+        )
+      }
+      const url = body.profilePhotoUrl.trim()
+      const isInternal = url.startsWith('/api/media/')
+      const isHttps = /^https:\/\/[^\s"'<>]+$/i.test(url)
+      if (!isInternal && !isHttps) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'invalid_photo_url',
+            message: 'profilePhotoUrl debe ser /api/media/... o https://...',
+          },
+          { status: 400 },
+        )
+      }
+    }
+    addSet('profile_photo_url', body.profilePhotoUrl)
+  }
 
   if (sets.length === 0) {
     return NextResponse.json({ success: false, error: 'no_fields' }, { status: 400 })

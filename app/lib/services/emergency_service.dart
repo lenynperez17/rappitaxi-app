@@ -381,15 +381,45 @@ class EmergencyService {
     return const [];
   }
 
-  /// Obtener ubicación actual con alta precisión
+  /// Obtener ubicación actual con alta precisión.
+  ///
+  /// Ronda 214 CRÍTICO EMERGENCIA: antes retornaba `null` en cualquier fallo
+  /// GPS → el payload SOS iba con (0,0) o sin ubicación → operador central
+  /// no sabía dónde estaba la víctima. En emergencia REAL eso puede costar
+  /// vidas. Ahora:
+  ///  1) Reintenta 2 veces con timeout corto (10s cada intento).
+  ///  2) Si falla, usa la ÚLTIMA ubicación conocida del provider (mejor
+  ///     tener la ubicación de hace 30s que ninguna).
+  ///  3) Si tampoco hay última conocida, retorna null pero el caller SABE
+  ///     que debe pedirle al usuario que llame directamente al 105.
   Future<Position?> _getCurrentLocation() async {
-    try {
-      final position = await _locationService.getCurrentLocation();
-      return position;
-    } catch (e) {
-      debugPrint('🚨 EmergencyService: Error obteniendo ubicación - $e');
-      return null;
+    // Intento primario con timeout
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final position = await _locationService
+            .getCurrentLocation()
+            .timeout(const Duration(seconds: 10));
+        if (position != null) return position;
+      } catch (e) {
+        debugPrint(
+          '🚨 EmergencyService: intento ${attempt + 1}/2 obtener ubicación falló - $e',
+        );
+      }
     }
+    // Fallback: última ubicación conocida (mejor que nada en emergencia)
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        debugPrint(
+          '🚨 EmergencyService: usando lastKnownPosition '
+          '(${lastKnown.latitude}, ${lastKnown.longitude}) — GPS actual no disponible',
+        );
+        return lastKnown;
+      }
+    } catch (e) {
+      debugPrint('🚨 EmergencyService: lastKnownPosition también falló - $e');
+    }
+    return null;
   }
 
   /// Solicitar permisos necesarios para el servicio de emergencias

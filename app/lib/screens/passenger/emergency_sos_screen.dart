@@ -379,15 +379,19 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Ronda 214: antes backgroundColor: Colors.white hardcoded → ilegible
+    // en dark mode. Ahora usa el theme; en emergencia el rojo profundo
+    // se mantiene explícito para señalar peligro sin importar theme.
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: _emergencyActive ? Colors.red.shade900 : Colors.white,
+      backgroundColor: _emergencyActive ? Colors.red.shade900 : theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           '🚨 EMERGENCIA SOS',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: _emergencyActive ? Colors.red.shade700 : Colors.blue.shade600,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        foregroundColor: theme.colorScheme.onPrimary,
         elevation: 0,
       ),
       body: AnimatedBuilder(
@@ -399,8 +403,11 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
             ),
             child: LoadingOverlay(
               isLoading: _isLoading,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+              // Ronda 214: SafeArea previene que el content quede bajo el
+              // notch (top) o el home indicator (bottom) en iPhones nuevos.
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     if (_emergencyActive) _buildActiveEmergencyCard(),
@@ -412,6 +419,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
                     _buildEmergencyHistoryCard(),
                   ],
                 ),
+              ),
               ),
             ),
           );

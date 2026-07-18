@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
-import { query, maybeOne } from '@/lib/db'
+import { query, tx } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
@@ -224,20 +224,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'items_required' }, { status: 400 })
   }
 
-  // Calcular montos
-  const normalizedItems = body.items.map((it) => {
+  // Ronda 214: validación EAGER en vez de throw dentro de .map — antes el
+  // throw se propagaba como 500 "internal_error" en vez de 400 "invalid_item".
+  // El admin veía "error interno del servidor" al enviar quantity=0.
+  const normalizedItems: Array<{
+    description: string; quantity: number; unitPrice: number; total: number
+  }> = []
+  for (const it of body.items) {
     const qty = Number(it.quantity ?? 1)
     const unitPrice = Number(it.unitPrice ?? 0)
     if (!isFinite(qty) || qty <= 0 || !isFinite(unitPrice) || unitPrice <= 0) {
-      throw new Error('invalid_item')
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'invalid_item',
+          message: `Item inválido: quantity=${it.quantity}, unitPrice=${it.unitPrice}. Ambos deben ser > 0.`,
+        },
+        { status: 400 },
+      )
     }
-    return {
+    normalizedItems.push({
       description: (it.description ?? '').trim() || 'Servicio',
       quantity: qty,
       unitPrice,
       total: Number((qty * unitPrice).toFixed(2)),
-    }
-  })
+    })
+  }
   // Ronda 152 SUNAT: derivar IGV de la resta rawSum-subtotal, NO re-multiplicar
   // el subtotal redondeado por IGV_RATE. Con precios "redondos" (ej. unitPrice
   // 100 IGV-incluido → subtotal=84.75, subtotal*0.18=15.255 round→15.26, pero
@@ -256,20 +268,34 @@ export async function POST(req: NextRequest) {
     body.documentType === 'boleta' ? 'B001' :
     'R001'
 
-  // Correlativo con retry para tolerar race conditions (dos admins emitiendo
-  // al mismo tiempo). El UNIQUE (series, correlative) rechaza el segundo;
-  // reintentamos con `max+1` hasta 3 veces.
+  // Ronda 214 SUNAT CRÍTICO: advisory lock por serie. Antes el patrón era
+  // "SELECT MAX correlative + retry si UNIQUE viola" — bajo 4+ admins
+  // concurrentes se agota en el 3er intento y devuelve 500. El correlativo
+  // queda gastado (row inserted en INSERT que rechazó UNIQUE, no) → gaps
+  // en la serie que SUNAT rechaza en la declaración mensual. Ahora
+  // serializamos con advisory_xact_lock(hash('sunat_invoices'), hash(series))
+  // — bajo lock, MAX(correlative)+1 es determinístico. UNIQUE queda como
+  // safety net por si dos procesos hicieran corrupción concurrente.
+  // Narrowing local: la validación de línea 176 garantiza que customerName
+  // no es undefined/empty aquí, pero TS lo pierde en la closure del tx.
+  const customerName = body.customerName!.trim()
+
   let created: InvoiceRow | null = null
-  let lastError: unknown = null
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const last = await maybeOne<{ max_correlative: number | null }>(
-      `SELECT COALESCE(MAX(correlative), 0)::int AS max_correlative
-         FROM invoices WHERE series = $1`,
-      [series],
-    )
-    const correlative = (last?.max_correlative ?? 0) + 1
-    try {
-      created = await maybeOne<InvoiceRow>(
+  try {
+    created = await tx(async (client) => {
+      // Namespace 'sunat_invoices' (hash int stable) + hash(series) → único
+      // slot por serie. Otras tx tocando misma serie esperan aquí.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext('sunat_invoices'), hashtext($1))`,
+        [series],
+      )
+      const last = await client.query<{ max_correlative: number | null }>(
+        `SELECT COALESCE(MAX(correlative), 0)::int AS max_correlative
+           FROM invoices WHERE series = $1`,
+        [series],
+      )
+      const correlative = (last.rows[0]?.max_correlative ?? 0) + 1
+      const insertRes = await client.query<InvoiceRow>(
         `INSERT INTO invoices (
            series, correlative, document_type,
            customer_id, customer_doc_type, customer_doc, customer_name, customer_email, customer_address,
@@ -281,22 +307,16 @@ export async function POST(req: NextRequest) {
         [
           series, correlative, body.documentType,
           body.customerId ?? null, body.customerDocType ?? null, body.customerDoc ?? null,
-          body.customerName.trim(), body.customerEmail ?? null, body.customerAddress ?? null,
+          customerName, body.customerEmail ?? null, body.customerAddress ?? null,
           body.rechargeId ?? null, body.rideId ?? null,
           subtotal, igv, total, JSON.stringify(normalizedItems),
           auth.userId,
         ],
       )
-      break
-    } catch (e) {
-      lastError = e
-      const code = (e as { code?: string }).code
-      if (code !== '23505') throw e // no es unique violation → re-raise
-      // duplicate correlative → reintentar
-    }
-  }
-  if (!created) {
-    console.error('[invoices POST] correlative collision after 3 retries:', lastError)
+      return insertRes.rows[0]!
+    })
+  } catch (e) {
+    console.error('[invoices POST] error emitiendo factura:', e)
     return NextResponse.json({ success: false, error: 'insert_failed' }, { status: 500 })
   }
 

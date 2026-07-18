@@ -145,12 +145,26 @@ export async function POST(req: NextRequest) {
         [driverId, amount, method, body.reference ?? null, body.notes ?? null, auth.userId, idempotencyKey],
       )
       const newId = rechargeRes.rows[0]!.id
+      // Ronda 214: balance_after ausente rompía reconstrucción de extracto
+      // ORDER BY created_at para el driver. Ahora advisory lock por driver_id
+      // (mismo bucket 42 que /rides/complete y /rides/cancel) para serializar
+      // contra debits concurrentes, luego calcular balance_after en tx.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+        [driverId],
+      )
+      const balRes = await client.query<{ balance: string }>(
+        'SELECT rapi_team_user_balance($1)::text AS balance',
+        [driverId],
+      )
+      const currentBalance = Number(balRes.rows[0]?.balance ?? 0)
+      const balanceAfter = Math.round((currentBalance + amount) * 100) / 100
       // Refleja en wallet como crédito
       await client.query(
         `INSERT INTO wallet_transactions
-           (user_id, type, amount, description, status, external_ref, metadata, completed_at)
-         VALUES ($1, 'recharge', $2, $3, 'completed', $4, $5, now())`,
-        [driverId, amount, `Recarga admin ${method}`, newId,
+           (user_id, type, amount, balance_after, description, status, external_ref, metadata, completed_at)
+         VALUES ($1, 'recharge', $2, $3, $4, 'completed', $5, $6, now())`,
+        [driverId, amount, balanceAfter, `Recarga admin ${method}`, newId,
          JSON.stringify({ method, adminId: auth.userId, reference: body.reference })],
       )
       return newId
@@ -163,8 +177,18 @@ export async function POST(req: NextRequest) {
         [driverId, idempotencyKey],
       )
       if (existing) rechargeId = existing.id
-      else throw e
+      else {
+        // Ronda 214: log estructurado antes de propagar. Antes: throw e sin
+        // catch externo → 500 sin trace → admin veía "internal server error"
+        // sin saber si la recarga se aplicó.
+        console.error('[admin/recharges POST] error tras UNIQUE 23505:', e)
+        throw e
+      }
     } else {
+      // Ronda 214: log estructurado del error real antes de propagar. Cubre
+      // deadlocks (40P01), foreign key violations (23503), etc. — cualquier
+      // error no-23505 caía sin log y devolvía 500 opaco.
+      console.error('[admin/recharges POST] tx error:', e)
       throw e
     }
   }

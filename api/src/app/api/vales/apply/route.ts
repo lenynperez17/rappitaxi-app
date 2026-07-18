@@ -75,7 +75,18 @@ export async function POST(req: NextRequest) {
         throw { code: 'below_minimum', minRideAmount: Number(vale.min_ride_amount) }
       }
 
-      // Cuántas veces lo usó este user
+      // Ronda 214: advisory lock por (vale_id, user_id) — sin esto, dos rides
+      // concurrentes del mismo user con el último uso permitido pasaban ambos
+      // el check `n >= per_user_limit` porque el COUNT lee un snapshot y
+      // vale_usages NO estaba bloqueado (solo `vales` con FOR UPDATE). El
+      // UNIQUE(vale_id, ride_id) evitaba doble apply al mismo ride pero NO al
+      // mismo user en rides distintos → per_user_limit=1 se rompía con 2 rides
+      // paralelos.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 43))`,
+        [vale.id, auth.userId],
+      )
+      // Cuántas veces lo usó este user (ahora bajo lock)
       const usesRes = await client.query(
         'SELECT COUNT(*)::int as n FROM vale_usages WHERE vale_id = $1 AND user_id = $2',
         [vale.id, auth.userId],
@@ -89,9 +100,12 @@ export async function POST(req: NextRequest) {
       }
 
       const val = Number(vale.discount_value)
+      // Ronda 214: round consistente a 2 decimales también en el discount_type
+      // 'flat' — antes Math.min(val, rideAmount) podía propagar decimales del
+      // NUMERIC de la DB (ej. 10.0000001) y descuadrar contra finalFare - discount.
       const discount = vale.discount_type === 'percent'
         ? Math.round((rideAmount * val) / 100 * 100) / 100
-        : Math.min(val, rideAmount)
+        : Math.round(Math.min(val, rideAmount) * 100) / 100
 
       // Registrar uso; UNIQUE(vale_id, ride_id) previene doble apply
       await client.query(

@@ -152,6 +152,29 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     params.push(nextStatus)
   }
   if (body.resolvedBy !== undefined) {
+    // Ronda 214 SECURITY: validar que resolvedBy sea (a) UUID válido y (b)
+    // un admin real. Antes admin podía sembrar resolved_by='attacker-id'
+    // para culpar a otro operador y ensuciar audit trail forense.
+    if (body.resolvedBy !== null) {
+      if (typeof body.resolvedBy !== 'string' || !isUuid(body.resolvedBy)) {
+        return NextResponse.json(
+          { success: false, error: 'invalid_resolved_by' },
+          { status: 400 },
+        )
+      }
+      const adminExists = await maybeOne<{ id: string }>(
+        `SELECT id FROM users
+          WHERE id = $1 AND (is_admin = true OR user_type = 'admin')
+            AND deleted_at IS NULL`,
+        [body.resolvedBy],
+      )
+      if (!adminExists) {
+        return NextResponse.json(
+          { success: false, error: 'resolved_by_not_admin' },
+          { status: 400 },
+        )
+      }
+    }
     updates.push(`resolved_by = $${idx++}`)
     params.push(body.resolvedBy)
   } else if (willResolve) {

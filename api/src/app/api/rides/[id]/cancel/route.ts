@@ -123,41 +123,67 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       // Aplicar cancel fee al passenger si corresponde (via wallet debit).
       // Solo cobrable si el ride tenía wallet como payment method — para cash
       // el driver debe cobrar en persona (documentado en notification).
+      //
+      // Ronda 214 fixes:
+      //   1) Quitamos el try/catch silencioso que hacía que si el INSERT
+      //      wallet_transactions fallara (deadlock, FK, unique), la ride
+      //      quedaba cancelada PERO la fee no se cobraba y nadie se enteraba.
+      //      Ahora cualquier error aborta la tx entera (Postgres ROLLBACK
+      //      revierte el UPDATE del ride status). El driver reintenta.
+      //   2) Cuando el passenger no tiene saldo suficiente, en vez de solo
+      //      log-warn, registramos la fee como pending_debit en el ledger
+      //      (type='pending_debit', status='pending'). Migración 019 excluye
+      //      pending_* del balance, pero el cron nocturno o la próxima
+      //      recarga lo materializa. Antes: cancelaciones ilimitadas gratis
+      //      → revenue leak de miles S/ mes sin trazabilidad.
       if (cancelFee > 0 && ride.passenger_id) {
-        try {
-          // Ronda 21 HIGH: advisory lock sobre passenger_id (mismo patron que
-          // /complete:87-92) — sin esto, cancel de ride A y complete de ride B
-          // del mismo passenger corren concurrentes, leen mismo balance, insertan
-          // ambos wallet_transactions con balance_after inconsistente.
+        // Ronda 21 HIGH: advisory lock sobre passenger_id — sin esto, cancel de
+        // ride A y complete de ride B del mismo passenger corren concurrentes,
+        // leen mismo balance, insertan ambos wallet_transactions con
+        // balance_after inconsistente.
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+          [ride.passenger_id],
+        )
+        const balRes = await client.query<{ balance: string }>(
+          'SELECT rapi_team_user_balance($1)::text AS balance',
+          [ride.passenger_id],
+        )
+        const balance = Number(balRes.rows[0]?.balance ?? 0)
+        if (balance >= cancelFee) {
           await client.query(
-            `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
-            [ride.passenger_id],
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
+             VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, now())`,
+            [
+              ride.passenger_id,
+              -cancelFee,
+              Math.round((balance - cancelFee) * 100) / 100,
+              `Cancelación viaje ${id} (S/${cancelFee.toFixed(2)})`,
+              id,
+            ],
           )
-          const balRes = await client.query<{ balance: string }>(
-            'SELECT rapi_team_user_balance($1)::text AS balance',
-            [ride.passenger_id],
+        } else {
+          // Deuda pendiente: se cobrará en la próxima recarga del passenger.
+          // Ronda 214: antes solo se log-warn y la fee se PERDÍA. Ahora se
+          // materializa en el ledger para que el cron/nueva recarga la cierre.
+          await client.query(
+            `INSERT INTO wallet_transactions
+               (user_id, type, amount, description, status, ride_id, metadata)
+             VALUES ($1, 'pending_debit', $2, $3, 'pending', $4, $5::jsonb)`,
+            [
+              ride.passenger_id,
+              -cancelFee,
+              `Cancelación viaje ${id} — pendiente por saldo insuficiente`,
+              id,
+              JSON.stringify({
+                cancelFee,
+                balanceAtCancel: balance,
+                kind: 'cancel_fee_pending',
+              }),
+            ],
           )
-          const balance = Number(balRes.rows[0]?.balance ?? 0)
-          if (balance >= cancelFee) {
-            await client.query(
-              `INSERT INTO wallet_transactions
-                 (user_id, type, amount, balance_after, description, status, ride_id, completed_at)
-               VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, now())`,
-              [
-                ride.passenger_id,
-                -cancelFee,
-                Math.round((balance - cancelFee) * 100) / 100,
-                `Cancelación viaje ${id} (S/${cancelFee.toFixed(2)})`,
-                id,
-              ],
-            )
-          } else {
-            // Sin saldo: la fee queda como deuda pendiente (evita bloqueo total
-            // pero no cobrada — TODO: cobrar en la siguiente recarga).
-            console.warn(`[rides/cancel] fee ${cancelFee} > balance ${balance} para user ${ride.passenger_id}`)
-          }
-        } catch (e) {
-          console.warn('[rides/cancel] fee application failed:', e)
+          console.warn(`[rides/cancel] fee ${cancelFee} > balance ${balance} para user ${ride.passenger_id} — registrada como pending_debit`)
         }
       }
 

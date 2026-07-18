@@ -175,9 +175,16 @@ class DriverOfferCard extends StatelessWidget {
                         ],
                         if (totalTrips != null) ...[
                           const SizedBox(width: 6),
-                          Text(
-                            '$totalTrips viajes',
-                            style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context)),
+                          // Ronda 214: Flexible + ellipsis para prevenir
+                          // overflow horizontal cuando el rating + nombre
+                          // largo + trips no caben en la Row.
+                          Flexible(
+                            child: Text(
+                              '$totalTrips viajes',
+                              style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ],
@@ -333,13 +340,29 @@ class AcceptedDriverCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(driverName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    // Ronda 214: maxLines + ellipsis para nombres largos —
+                    // antes Text sin límite causaba wrap infinito cambiando
+                    // la altura del card y desalineando el precio badge.
+                    Text(
+                      driverName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     if (model.isNotEmpty || brand.isNotEmpty)
-                      Text('$brand $model'.trim(),
-                        style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),
+                      Text(
+                        '$brand $model'.trim(),
+                        style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     if (plate.isNotEmpty)
-                      Text(plate,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextSecondary(context))),
+                      Text(
+                        plate,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextSecondary(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                   ],
                 ),
               ),

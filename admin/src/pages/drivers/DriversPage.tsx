@@ -50,12 +50,16 @@ export function DriversPage() {
     }
   }
 
-  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+  // Ronda 214: antes había DOS useEffect (uno para status, otro para search
+  // debounced). Al montar el componente ambos disparaban → 2 requests en
+  // cascada al backend por cada apertura de página. requestSeq descartaba la
+  // stale response pero el ancho de banda se desperdiciaba. Ahora un solo
+  // useEffect con debounce corto para search y trigger inmediato para status.
   useEffect(() => {
-    const t = setTimeout(() => void load(), 350)
+    const t = setTimeout(() => void load(), search ? 350 : 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [status, search])
 
   return (
     <div className="space-y-6">

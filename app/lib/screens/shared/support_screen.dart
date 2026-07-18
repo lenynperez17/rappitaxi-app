@@ -316,6 +316,8 @@ class TicketDetailsScreen extends StatelessWidget {
 
   void _addResponse(BuildContext context) {
     final controller = TextEditingController();
+    // Ronda 214: dispose garantizado con .then() — antes controller solo se
+    // liberaba en el botón Enviar; cerrar con back o tap fuera leakeaba.
     showDialog(context: context, builder: (dialogContext) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), backgroundColor: AppColors.getSurface(dialogContext),
       title: Text('Agregar Respuesta', style: TextStyle(color: AppColors.getTextPrimary(dialogContext))),
@@ -324,7 +326,7 @@ class TicketDetailsScreen extends StatelessWidget {
         TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text('Cancelar', style: TextStyle(color: AppColors.getTextSecondary(dialogContext)))),
         ElevatedButton(onPressed: () { if (controller.text.isNotEmpty) { Navigator.pop(dialogContext); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Respuesta enviada'), backgroundColor: Colors.green)); } }, style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange, foregroundColor: Colors.white), child: Text('Enviar')),
       ],
-    ));
+    )).then((_) => controller.dispose());
   }
 }
 

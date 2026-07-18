@@ -41,6 +41,10 @@ class _CommunicationScreenState extends State<CommunicationScreen>
 
   // ✅ Flag para prevenir operaciones después de dispose
   bool _isDisposed = false;
+  // Ronda 214 CRÍTICO: guard contra doble-tap del botón Enviar. Antes cada
+  // tap creaba un mensaje con timestamp distinto (id = ms since epoch) → 2
+  // mensajes duplicados persistidos al backend con el mismo texto.
+  bool _isSending = false;
 
   // Messages
   final List<ChatMessage> _messages = [];
@@ -141,8 +145,10 @@ class _CommunicationScreenState extends State<CommunicationScreen>
   }
   
   void _sendMessage(String text) {
-    if (text.trim().isEmpty) return;
-    
+    // Ronda 214: bloquea envíos simultáneos + textos vacíos.
+    if (_isSending || text.trim().isEmpty) return;
+    _isSending = true;
+
     final message = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       text: text,
@@ -150,10 +156,17 @@ class _CommunicationScreenState extends State<CommunicationScreen>
       timestamp: DateTime.now(),
       status: MessageStatus.sending,
     );
-    
+
     setState(() {
       _messages.add(message);
       _messageController.clear();
+    });
+
+    // Liberar el guard a los 500ms (tiempo suficiente para que el UI
+    // re-renderice y el message pase a status='sent').
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      _isSending = false;
     });
     
     // Scroll to bottom

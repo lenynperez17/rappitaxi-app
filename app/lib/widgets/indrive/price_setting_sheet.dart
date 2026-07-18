@@ -327,8 +327,13 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
 
   void _showCommentDialog() {
     final controller = TextEditingController(text: _rideComment);
+    // Ronda 214: enableDrag=false porque el sheet contiene un TextField con
+    // autofocus. Con el default enableDrag=true, cualquier gesto vertical
+    // involuntario mientras el user escribe (swipe hacia arriba para pasar
+    // línea, scroll) puede minimizar el sheet y perder el input.
     showResponsiveBottomSheet(
       context: context,
+      enableDrag: false,
       builder: (ctx) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),

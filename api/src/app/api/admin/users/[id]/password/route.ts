@@ -30,9 +30,21 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   }
 
   const password = body.password
-  if (!password || password.length < 6) {
+  // Ronda 214 SECURITY: subimos a 8 chars + al menos 1 letra Y 1 número.
+  // Antes el reset admin permitía "abc123" mientras el login exigía >=8 →
+  // asimetría explotable si admin comprometido reseteaba a "123456" y el
+  // atacante entraba por brute-force offline.
+  if (!password || password.length < 8) {
     return NextResponse.json(
-      { success: false, error: 'invalid_password', message: 'Mínimo 6 caracteres' },
+      { success: false, error: 'invalid_password', message: 'Mínimo 8 caracteres' },
+      { status: 400 },
+    )
+  }
+  const hasLetter = /[A-Za-z]/.test(password)
+  const hasDigit = /\d/.test(password)
+  if (!hasLetter || !hasDigit) {
+    return NextResponse.json(
+      { success: false, error: 'weak_password', message: 'Debe contener letras y números' },
       { status: 400 },
     )
   }

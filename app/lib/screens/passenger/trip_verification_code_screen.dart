@@ -91,7 +91,11 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
     if (currentTrip != null && currentTrip.id == widget.trip.id) {
       // ✅ NUEVO: Si la verificación mutua está completa, viaje iniciado
       if (currentTrip.status == 'in_progress' && currentTrip.isMutualVerificationComplete) {
-        Navigator.pop(context);
+        // Ronda 214: canPop guard. Si el trip cambia de status durante una
+        // navegación transición (usuario navegó atrás manual + backend
+        // notifica in_progress), pop podría intentar sacar una pantalla ya
+        // desmontada → assertion error o pantalla negra.
+        if (Navigator.canPop(context)) Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('¡Verificación mutua completada! Tu viaje ha comenzado.'),
@@ -362,7 +366,9 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
 
   /// Activar emergencia real con el EmergencyServiceReal
   Future<void> _triggerRealEmergency() async {
-    Navigator.pop(context);
+    // Ronda 214: canPop guard — el dialog de confirmación puede haber sido
+    // dismissed manualmente por el usuario antes de este callback.
+    if (Navigator.canPop(context)) Navigator.pop(context);
     
     // Mostrar loading dialog
     showDialog(
@@ -392,8 +398,9 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
         userType: currentUser?.userType ?? 'passenger',
       );
 
-      // Cerrar loading dialog
-      if (mounted) Navigator.pop(context);
+      // Ronda 214: canPop guard — el loading dialog puede haber sido cerrado
+      // por otro callback concurrente (auto-dismiss timer, back manual).
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
 
       if (response.success) {
         // Mostrar confirmación
@@ -407,9 +414,9 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
       }
 
     } catch (e) {
-      // Cerrar loading dialog si aún está abierto
-      if (mounted) Navigator.pop(context);
-      
+      // Ronda 214: canPop guard — mismo motivo que arriba.
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+
       debugPrint(userFriendlyError(e, fallback: 'Error activando SOS'));
       _showEmergencyErrorDialog(userFriendlyError(e, fallback: 'Error activando emergencia'));
     }

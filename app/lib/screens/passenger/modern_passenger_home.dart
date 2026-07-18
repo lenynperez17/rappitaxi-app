@@ -556,12 +556,21 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     }
   }
   
+  // Ronda 214: guardamos la referencia al provider en un field para poder
+  // removerlo en dispose SIN acceder al context (que en dispose ya está
+  // "deactivated" y puede lanzar "Looking up a deactivated widget's ancestor
+  // is unsafe"). Sin este guard, el removeListener fallaba silenciosamente
+  // en el catch y el listener quedaba huérfano → memory leak permanente
+  // (Provider retiene la callback + closure con esta State).
+  RideProvider? _rideProviderRef;
+
   void _setupRideProviderListener() {
     if (!mounted) return;
-    
+
     AppLogger.debug('Configurando listener del RideProvider');
     try {
       final rideProvider = Provider.of<RideProvider>(context, listen: false);
+      _rideProviderRef = rideProvider;
       rideProvider.addListener(_onRideProviderChanged);
       AppLogger.debug('Listener del RideProvider configurado exitosamente');
     } catch (e) {
@@ -690,11 +699,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     _inlineDestinationController.dispose();
     _sheetController.dispose();
 
+    // Ronda 214: usamos la referencia guardada en initState en vez de
+    // Provider.of(context) porque en dispose el context ya no es válido.
     try {
-      if (mounted) {
-        final rideProvider = Provider.of<RideProvider>(context, listen: false);
-        rideProvider.removeListener(_onRideProviderChanged);
-      }
+      _rideProviderRef?.removeListener(_onRideProviderChanged);
+      _rideProviderRef = null;
     } catch (e) {
       AppLogger.debug(userFriendlyError(e, fallback: 'Error removiendo listener en dispose'));
     }
@@ -711,30 +720,23 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   void _hideKeyboard() => FocusScope.of(context).unfocus();
 
   /// Reverse geocode camera target to update pickup address.
+  ///
+  /// Ronda 214: la implementación anterior llamaba directamente a
+  /// `maps.googleapis.com` con `AppConfig.googleMapsApiKey`, exponiendo la
+  /// key en cada request desde el APK. Además de la exposición, la key móvil
+  /// está restringida a Maps SDK (no Geocoding API), así que TODAS las
+  /// llamadas devolvían REQUEST_DENIED silencioso y el pickup nunca se
+  /// actualizaba. El backend por ahora no expone reverse-geocode; en su
+  /// lugar mostramos "Punto en el mapa" con las coordenadas y guardamos las
+  /// coords para que el backend derive el address desde el ride.
   Future<void> _reverseGeocodeMapCenter() async {
     final target = _lastCameraTarget;
     if (target == null || !mounted) return;
-    try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?latlng=${target.latitude},${target.longitude}'
-        '&key=${AppConfig.googleMapsApiKey}'
-        '&language=es',
-      );
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK' && data['results'].isNotEmpty && mounted) {
-          final address = data['results'][0]['formatted_address'] as String;
-          setState(() {
-            _pickupController.text = address;
-            _pickupCoordinates = target;
-          });
-        }
-      }
-    } catch (e) {
-      AppLogger.debug(userFriendlyError(e, fallback: 'Reverse geocode error'));
-    }
+    setState(() {
+      _pickupController.text =
+          'Punto seleccionado (${target.latitude.toStringAsFixed(5)}, ${target.longitude.toStringAsFixed(5)})';
+      _pickupCoordinates = target;
+    });
   }
 
   Future<void> _addReferencePointDots(LatLng center) async {
@@ -4505,11 +4507,17 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   void _showLoadingDialog(String message) {
+    // Ronda 214 CRÍTICO: antes este dialog usaba `PopScope(canPop:false)` +
+    // `barrierDismissible:false` SIN TIMEOUT, así que si el Future subyacente
+    // (crear ride, negotiate, etc.) nunca completaba (fallo red silencioso),
+    // el dialog quedaba huérfano bloqueando TODA la UI hasta reinstalar la
+    // app. Ahora: PopScope permite pop via back button + auto-dismiss a los
+    // 30s con snackbar de error visible.
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: true, // permite back manual como escape
         child: Center(
           child: Container(
             padding: const EdgeInsets.all(24),
@@ -4529,6 +4537,21 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         ),
       ),
     );
+    // Auto-dismiss failsafe: si sigue abierto tras 30s, ciérralo y avisa.
+    Future.delayed(const Duration(seconds: 30), () {
+      if (!mounted) return;
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) {
+        nav.pop();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La operación tardó demasiado. Intenta de nuevo.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    });
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {

@@ -457,7 +457,18 @@ class RapiApiClient {
       ..headers['Authorization'] = 'Bearer $_accessCache'
       ..fields['scope'] = scope
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
-    final streamed = await req.send();
+    // Ronda 214: MultipartRequest.send() no pasa por _TimeoutClient (que solo
+    // envuelve el http.Client interno de _http). Sin este timeout explícito,
+    // subir documentos de verificación en 3G podía colgar el UI indefinidamente
+    // hasta que el SO cerrara el socket (~90s). 60s es tiempo suficiente para
+    // un DNI/licencia (fotos ~500KB-2MB) en conexiones lentas.
+    final streamed = await req.send().timeout(
+      const Duration(seconds: 60),
+      onTimeout: () {
+        throw const RapiApiException(408, 'upload_timeout',
+          'La subida tardó demasiado. Verifica tu conexión e intenta de nuevo.');
+      },
+    );
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode == 401) {
       // Ronda 91: retry counter — sin esto, un 401 persistente (sesión revocada
@@ -989,7 +1000,27 @@ class RapiApiClient {
 
   Map<String, dynamic> _decodeOrThrow(http.Response r) {
     if (r.statusCode >= 200 && r.statusCode < 300) {
-      return jsonDecode(r.body) as Map<String, dynamic>;
+      // Ronda 214: antes hacíamos `jsonDecode(r.body) as Map<String,dynamic>`
+      // en el happy-path sin try. Si nginx/proxy mal-configurado devolvía
+      // HTML de error con 200, o el server respondía con un JSON array o
+      // string, FormatException / TypeError subía UNHANDLED y los callers
+      // solo atrapaban RapiApiException → crash silencioso o "Error inesperado".
+      // Ahora también lo envolvemos.
+      try {
+        final decoded = jsonDecode(r.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+        throw RapiApiException(
+          r.statusCode,
+          'bad_response_shape',
+          'Se esperaba objeto JSON, se recibió ${decoded.runtimeType}',
+        );
+      } on FormatException catch (e) {
+        throw RapiApiException(
+          r.statusCode,
+          'bad_response_format',
+          'Server respondió con contenido no-JSON: ${e.message}',
+        );
+      }
     }
     try {
       final data = jsonDecode(r.body) as Map<String, dynamic>;

@@ -69,7 +69,15 @@ export async function POST(req: NextRequest) {
          SET test_code=$3, test_code_expires=$4, is_test_phone=true, last_sent_at=now()`,
       [phoneKey, phoneNumber, testCode, expiresAt],
     )
-    console.log(`🧪 [TEST] ${phoneNumber} código fijo ${testCode}`)
+    // Ronda 214 SECURITY: en producción NUNCA log OTP + teléfono juntos —
+    // cualquiera con acceso a pm2/journald autenticaba como las cuentas de
+    // review App Store/Play (+51999000100/101). Solo log en dev; en prod
+    // solo confirmación sin datos sensibles.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`🧪 [TEST] ${phoneNumber} código fijo ${testCode}`)
+    } else {
+      console.log(`[auth/sms] test phone OTP dispatched (code redacted)`)
+    }
     return NextResponse.json({ success: true, provider: 'test', status: 'pending' })
   }
 

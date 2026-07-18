@@ -219,32 +219,67 @@ export async function maybeOne<T extends QueryResultRow = QueryResultRow>(
  * y re-lanza el error. Si retorna, hace COMMIT y devuelve el valor.
  *
  * El callback recibe un PoolClient: usa `client.query(...)` dentro.
+ *
+ * Ronda 214: reintenta automáticamente si el error es SERIALIZATION_FAILURE
+ * (40001) o DEADLOCK_DETECTED (40P01). Bajo carga concurrente, dos txs
+ * legítimas pueden pisarse (p.ej. dos completes al mismo driver en modo
+ * dual). Antes de esto, el usuario veía 500 y la ride quedaba en estado
+ * ambiguo. Ahora reintenta hasta 3 veces con backoff exponencial (10ms,
+ * 50ms, 200ms), cada reintento con un cliente nuevo — importante porque el
+ * cliente viejo YA hizo ROLLBACK y su estado local está sucio.
  */
+const PG_SERIALIZATION_FAILURE = '40001';
+const PG_DEADLOCK_DETECTED = '40P01';
+const MAX_TX_RETRIES = 3;
+const TX_BACKOFF_MS = [10, 50, 200];
+
+function isRetryablePgError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as { code?: string }).code;
+  return code === PG_SERIALIZATION_FAILURE || code === PG_DEADLOCK_DETECTED;
+}
+
 export async function tx<T>(
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
-  const client = await getPool().connect();
-  // Ronda 119: si ROLLBACK falla (socket muerto, admin_shutdown 57P01), el
-  // cliente queda en estado corrupto. Marcamos el release con el error para
-  // que pg lo DESCARTE del pool en vez de reciclarlo — sin esto la próxima
-  // request recibía "Client is not queryable" o queries falladas silenciosas.
-  let releaseErr: Error | undefined;
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_TX_RETRIES; attempt++) {
+    const client = await getPool().connect();
+    // Ronda 119: si ROLLBACK falla (socket muerto, admin_shutdown 57P01), el
+    // cliente queda en estado corrupto. Marcamos el release con el error para
+    // que pg lo DESCARTE del pool en vez de reciclarlo — sin esto la próxima
+    // request recibía "Client is not queryable" o queries falladas silenciosas.
+    let releaseErr: Error | undefined;
     try {
-      await client.query('ROLLBACK');
-    } catch (rollbackErr) {
-      console.error('[db] error durante ROLLBACK:', rollbackErr);
-      releaseErr = rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr));
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('[db] error durante ROLLBACK:', rollbackErr);
+        releaseErr = rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr));
+      }
+      lastErr = err;
+      // Solo reintentamos si es 40001/40P01 Y no fue el último intento.
+      // Cualquier otro error (constraint violation, business logic throw,
+      // network hard fail) sube directo al caller.
+      if (attempt < MAX_TX_RETRIES - 1 && isRetryablePgError(err)) {
+        const backoff = TX_BACKOFF_MS[attempt] ?? 500;
+        // Jitter ±30% para evitar thundering herd si N txs colisionaron a la vez.
+        const jitter = backoff * (0.7 + Math.random() * 0.6);
+        await new Promise((r) => setTimeout(r, Math.round(jitter)));
+        continue;
+      }
+      throw err;
+    } finally {
+      client.release(releaseErr);
     }
-    throw err;
-  } finally {
-    client.release(releaseErr);
   }
+  // Inalcanzable en teoría — el for-loop siempre retorna o throw.
+  throw lastErr;
 }
 
 // --------------------------------------------------------------------------

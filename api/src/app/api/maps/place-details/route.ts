@@ -54,7 +54,13 @@ export async function GET(req: NextRequest) {
     if (/^[NWR]\d+$/i.test(rawId)) {
       const r = await fetch(
         `https://nominatim.openstreetmap.org/lookup?osm_ids=${encodeURIComponent(rawId)}&format=json&addressdetails=1&accept-language=es`,
-        { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
+        {
+          headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' },
+          // Ronda 214: sin timeout, Nominatim lento colgaba workers Next.js
+          // minutos y agotaba el pool. Los otros endpoints (MP, autocomplete)
+          // ya usan AbortSignal.timeout; este era la excepción.
+          signal: AbortSignal.timeout(6_000),
+        },
       )
       if (r.ok) {
         const arr = (await r.json()) as OsmDetails[]
@@ -66,7 +72,13 @@ export async function GET(req: NextRequest) {
     if (!details && /^\d+$/.test(rawId)) {
       const r = await fetch(
         `https://nominatim.openstreetmap.org/details?place_id=${encodeURIComponent(rawId)}&format=json&addressdetails=1&accept-language=es`,
-        { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
+        {
+          headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' },
+          // Ronda 214: sin timeout, Nominatim lento colgaba workers Next.js
+          // minutos y agotaba el pool. Los otros endpoints (MP, autocomplete)
+          // ya usan AbortSignal.timeout; este era la excepción.
+          signal: AbortSignal.timeout(6_000),
+        },
       )
       if (r.ok) {
         const obj = (await r.json()) as {
@@ -92,7 +104,13 @@ export async function GET(req: NextRequest) {
     if (!details) {
       const r = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(rawId)}&format=json&limit=1&addressdetails=1&accept-language=es`,
-        { headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' } },
+        {
+          headers: { 'User-Agent': 'RapiTeamApp/1.0 (support@rapiteam.local)' },
+          // Ronda 214: sin timeout, Nominatim lento colgaba workers Next.js
+          // minutos y agotaba el pool. Los otros endpoints (MP, autocomplete)
+          // ya usan AbortSignal.timeout; este era la excepción.
+          signal: AbortSignal.timeout(6_000),
+        },
       )
       if (r.ok) {
         const arr = (await r.json()) as OsmDetails[]

@@ -33,12 +33,12 @@ export function VerificationsPage() {
     } finally { if (seq === requestSeq.current) setLoading(false) }
   }
 
-  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+  // Ronda 214: un solo useEffect (evita doble fetch en mount).
   useEffect(() => {
-    const t = setTimeout(() => void load(), 350)
+    const t = setTimeout(() => void load(), search ? 350 : 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [status, search])
 
   return (
     <div className="space-y-6">

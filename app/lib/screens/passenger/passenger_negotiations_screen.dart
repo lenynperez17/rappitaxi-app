@@ -28,6 +28,11 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   // No se puede usar Provider.of(context) en dispose() porque el context ya no es válido
   PriceNegotiationProvider? _negotiationProvider;
   bool _isNavigatingToTracking = false;
+  // Ronda 214 CRÍTICO: guard contra doble-tap del botón "Aceptar oferta".
+  // Antes el usuario podía tap dos veces antes del showDialog → 2 requests
+  // paralelos de accept al backend. El segundo devolvía "already_taken" y
+  // el UI mostraba error al usuario que ya había aceptado exitosamente.
+  final Set<String> _acceptingOffers = <String>{};
 
   @override
   void initState() {
@@ -722,7 +727,9 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                 ),
                 const SizedBox(height: 4),
                 ElevatedButton(
-                  onPressed: () => _acceptOffer(negotiationId, offer.driverId),
+                  onPressed: _acceptingOffers.contains(negotiationId)
+                      ? null
+                      : () => _acceptOffer(negotiationId, offer.driverId),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.ctaGreen,
                     foregroundColor: AppColors.priceBlack,
@@ -868,6 +875,20 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
   }
 
   Future<void> _acceptOffer(String negotiationId, String driverId) async {
+    // Doble guardia: el `onPressed:null` ya bloquea desde el UI, pero por si
+    // hay tap-then-scroll rápido antes del rebuild, chequeo el set aquí.
+    if (_acceptingOffers.contains(negotiationId)) return;
+    setState(() => _acceptingOffers.add(negotiationId));
+    try {
+      await _acceptOfferInner(negotiationId, driverId);
+    } finally {
+      if (mounted) {
+        setState(() => _acceptingOffers.remove(negotiationId));
+      }
+    }
+  }
+
+  Future<void> _acceptOfferInner(String negotiationId, String driverId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

@@ -84,14 +84,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (!ride) throw { code: 'not_found' }
       if (ride.driver_id !== auth.userId) throw { code: 'forbidden' }
 
-      // Advisory lock del passenger para serializar débitos concurrentes.
-      // Sin este lock, dos rides distintos completándose en paralelo (2 drivers
-      // distintos, sin lock contention en la fila ride) leen el mismo balance
-      // y ambos hacen debit → balance negativo. Mismo patrón que /wallet/withdrawals.
-      if (ride.passenger_id) {
+      // Advisory locks de passenger + driver para serializar débitos y créditos
+      // concurrentes. Ronda 214: antes se adquiría solo el lock del passenger
+      // (dejando al driver sin lock → race en credit_after) Y los locks se
+      // pedían en orden fijo passenger→driver, lo que causaba deadlock en modo
+      // `dual` cuando dos usuarios eran passenger de un ride y driver del otro
+      // simultáneamente (rideA: X passenger, Y driver; rideB: Y passenger, X
+      // driver → 40P01).
+      //
+      // Fix: adquirir ambos locks al INICIO, ordenados ASC por hashtextextended
+      // — así toda tx concurrente los pide en el mismo orden → no hay ciclo de
+      // esperas → no hay deadlock (regla clásica de lock ordering).
+      const lockIds: string[] = []
+      if (ride.passenger_id) lockIds.push(ride.passenger_id)
+      if (ride.driver_id && ride.driver_id !== ride.passenger_id) {
+        lockIds.push(ride.driver_id)
+      }
+      if (lockIds.length > 0) {
         await client.query(
-          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
-          [ride.passenger_id],
+          `SELECT pg_advisory_xact_lock(hashtextextended(id, 42))
+             FROM unnest($1::uuid[]) AS t(id)
+             ORDER BY hashtextextended(t.id, 42) ASC`,
+          [lockIds],
         )
       }
 
@@ -107,18 +121,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       // pre-viaje (Ronda 18 HIGH#3). Sin este SELECT + resta, el vale se marcaba
       // "usado" pero el debit iba por el finalFare completo — el usuario perdía
       // el uso del vale sin recibir descuento.
-      let valeDiscount = 0
-      try {
-        const valeRes = await client.query<{ total: string }>(
-          `SELECT COALESCE(SUM(discount_applied), 0)::text AS total
-             FROM vale_usages WHERE ride_id = $1`,
-          [id],
-        )
-        valeDiscount = Number(valeRes.rows[0]?.total ?? 0)
-      } catch (e) {
-        // Si la tabla no existe todavía en algún ambiente, continuar sin descuento.
-        console.warn('[rides/complete] vale_usages query failed:', e)
-      }
+      //
+      // Ronda 214: quitamos el try/catch silencioso. Antes, si vale_usages
+      // fallaba por CUALQUIER motivo (permission denied, tabla sin migrar,
+      // lock timeout), el discount se hacía 0 y el passenger pagaba SIN
+      // descuento sin saberlo. Ahora si falla, la tx aborta → mensaje claro al
+      // usuario para que reintente. La tabla existe en TODOS los ambientes
+      // desde la migración 019; el "si no existe" era un miedo obsoleto.
+      const valeRes = await client.query<{ total: string }>(
+        `SELECT COALESCE(SUM(discount_applied), 0)::text AS total
+           FROM vale_usages WHERE ride_id = $1`,
+        [id],
+      )
+      const valeDiscount = Number(valeRes.rows[0]?.total ?? 0)
       const adjustedFare = Math.max(0, Math.round((finalFare - valeDiscount) * 100) / 100)
 
       // Cap contra wallet-drain — 2 cotas:
@@ -259,20 +274,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           )
         }
 
-        // 3) COMMISSION al platform (userId=null, contable) — audit trail
-        if (commissionAmount > 0) {
+        // 3) COMMISSION al platform (contable) — audit trail.
+        // Ronda 214: bucket ahora es driver_id, no passenger_id. La comisión
+        // es del driver hacia la plataforma; poner al passenger como user_id
+        // era conceptualmente incorrecto: cualquier export CSV filtrado por
+        // user_id=passenger exponía al passenger obligaciones de la plataforma
+        // en su historial legal. Migración 019 excluye type='commission' del
+        // balance visible, así que este cambio NO afecta al saldo del driver.
+        if (commissionAmount > 0 && updated.driver_id) {
           await client.query(
             `INSERT INTO wallet_transactions
                (user_id, type, amount, description, status, ride_id, metadata, completed_at)
              VALUES ($1, 'commission', $2, $3, 'completed', $4, $5::jsonb, now())`,
             [
-              // Platform commission bucket — usamos passenger_id como referencia (no null porque hay NOT NULL constraint)
-              // Se distingue por type='commission'. TODO: user_id='__platform__' cuando se relaje NOT NULL.
-              updated.passenger_id,
+              updated.driver_id,
               commissionAmount,
               `Comisión plataforma viaje ${id}`,
               id,
-              JSON.stringify({ finalFare, commissionRate, driverId: updated.driver_id }),
+              JSON.stringify({ finalFare, commissionRate, passengerId: updated.passenger_id }),
             ],
           )
         }
@@ -289,12 +308,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         // TODA la lógica de commission estaba dentro del if (wallet) →
         // platform perdía comisión de cada viaje cash → S/20 por ride cash
         // desaparecidos permanentemente.
-        // Advisory lock por driver_id (mismo bucket 42) evita race con otros
-        // debits concurrentes.
-        await client.query(
-          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
-          [updated.driver_id],
-        )
+        // Ronda 214: el advisory lock del driver ya se adquirió al inicio
+        // de la tx en el bloque de lock-ordering. NO reintentarlo aquí (era
+        // un no-op y confundía al lector).
         const driverBalRes = await client.query<{ balance: string }>(
           'SELECT rapi_team_user_balance($1)::text AS balance',
           [updated.driver_id],
@@ -341,7 +357,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         )
       }
 
-      // Notificar al passenger
+      // Notificar al passenger. Ronda 214: usar adjustedFare (post descuento
+      // vale), no finalFare crudo — antes el passenger veía "Total: S/50" en
+      // la notif pero solo se le cobró S/40 en wallet → reclamos a soporte.
       if (updated.passenger_id) {
         await client.query(
           `INSERT INTO notifications (user_id, type, title, body, data)
@@ -349,11 +367,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           [
             updated.passenger_id,
             'Viaje completado',
-            `Total: S/ ${finalFare.toFixed(2)}`,
+            valeDiscount > 0
+              ? `Total: S/ ${adjustedFare.toFixed(2)} (descuento vale S/ ${valeDiscount.toFixed(2)})`
+              : `Total: S/ ${adjustedFare.toFixed(2)}`,
             JSON.stringify({
               rideId: id,
               driverId: auth.userId,
               finalFare,
+              adjustedFare,
+              valeDiscount,
               paymentMethod: updated.payment_method,
               walletDebitId: walletDebit?.id ?? null,
             }),

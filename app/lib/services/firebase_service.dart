@@ -183,10 +183,22 @@ class FirebaseService {
         debugPrint('FCM Token: $token');
       }
 
+      // Ronda 214: cancelar suscripción previa antes de crear otra. Sin esto,
+      // si _setupMessaging se llama múltiples veces (nueva inicialización tras
+      // logout/login), se apilan listeners y cada refresh dispara N POSTs de
+      // registerFcmToken.
+      await _tokenRefreshSubscription?.cancel();
       _tokenRefreshSubscription = messaging.onTokenRefresh.listen((token) async {
         await _registerFcmToken(token);
       });
     }
+  }
+
+  /// Ronda 214: liberar subscription + estado. Llamar desde signOut/logout
+  /// para no arrastrar el listener del user anterior a la próxima sesión.
+  Future<void> disposeMessaging() async {
+    await _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = null;
   }
 
   /// Registra el token FCM en el backend Node (sustituye escritura en Firestore)
@@ -402,6 +414,17 @@ class FirebaseService {
   // EMERGENCIAS — delegan al backend Node
   // ==========================================================================
 
+  /// Reporta emergencia SOS al backend.
+  ///
+  /// Ronda 214 CRÍTICO: antes atrapaba TODOS los errores y solo los enviaba
+  /// a Crashlytics — el passenger veía "SOS enviado" en la UI aunque el
+  /// backend nunca recibiera el request (sin red, backend caído, token
+  /// expirado). Un SOS SILENCIOSO durante emergencia real es peor que
+  /// ningún SOS: el passenger deja de intentar otras vías creyendo que
+  /// alguien viene en camino.
+  ///
+  /// Ahora: registramos el evento y Crashlytics, PERO re-lanzamos el error
+  /// para que el UI muestre banner "SOS falló, reintenta o llama 105".
   Future<void> reportEmergency(String rideId, dynamic position) async {
     try {
       AppLogger.firebase('Reportando emergencia para viaje: $rideId');
@@ -419,6 +442,8 @@ class FirebaseService {
     } catch (e, stackTrace) {
       AppLogger.error('Error reportando emergencia', e, stackTrace);
       await recordError(e, stackTrace);
+      // Ronda 214: propagar SIEMPRE. El caller UI debe mostrar error visible.
+      rethrow;
     }
   }
 

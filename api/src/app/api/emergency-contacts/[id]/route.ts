@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { isUniqueViolation, query, tx } from '@/lib/db'
+import { isUuid } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -41,6 +42,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 214: validar UUID antes de tocar Postgres. Antes /{no-uuid} → 22P02 → 500.
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   let body: {
     name?: string
@@ -143,6 +148,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
+  // Ronda 214: validar UUID antes de tocar Postgres.
+  if (!isUuid(id)) {
+    return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
+  }
 
   const rows = await query<{ id: string }>(
     `DELETE FROM emergency_contacts WHERE id = $1 AND user_id = $2 RETURNING id`,

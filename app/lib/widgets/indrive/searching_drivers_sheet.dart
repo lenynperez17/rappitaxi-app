@@ -260,10 +260,13 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Text(
             'Elige a un conductor',
-            style: const TextStyle(
+            // Ronda 214: antes Colors.white hardcoded → invisible en light
+            // mode donde el sheet tiene fondo claro. Usar el token de texto
+            // primario respeta tanto light como dark.
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Colors.white,
+              color: AppColors.getTextPrimary(context),
             ),
           ),
         ),

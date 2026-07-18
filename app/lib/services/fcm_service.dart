@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -33,6 +34,11 @@ class FCMService {
   final RapiApiClient _api = RapiApiClient.instance;
 
   String? _lastRegisteredToken;
+  // Ronda 214: guardamos la subscription para poder cancelarla si initialize()
+  // se llama múltiples veces (típico en flujo logout→login: FcmService es
+  // singleton pero cada login re-invocaba initialize → N listeners duplicados
+  // → N POST a registerFcmToken → N filas duplicadas en el backend).
+  StreamSubscription<String>? _tokenRefreshSub;
 
   /// Inicializar servicio FCM (permisos + token + registro en backend).
   Future<void> initialize() async {
@@ -55,8 +61,11 @@ class FCMService {
         }
       }
 
-      // Refresco automático del token → re-registrar en backend.
-      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      // Ronda 214: cancelar suscripción previa antes de re-crearla. Sin esto,
+      // cada llamada a initialize() (logout/login) apilaba listeners y cada
+      // token refresh dispara N registraciones al backend.
+      await _tokenRefreshSub?.cancel();
+      _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
         debugPrint('🔄 FCM token refrescado: ${newToken.substring(0, 20)}...');
         if (_api.isSignedIn) {
           await registerDeviceTokenWithBackend(newToken);

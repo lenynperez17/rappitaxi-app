@@ -1415,6 +1415,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     ];
     String selectedBank = banks[0];
 
+    // Ronda 214: garantizar dispose de los 5 controllers cuando el diálogo
+    // cierre por CUALQUIER vía (pop programático, back button, tap fuera).
+    // Antes se disponían solo en los botones Guardar/Cancelar → cierres por
+    // back button dejaban los controllers colgados escuchando notificaciones
+    // del framework hasta el final del proceso.
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1652,7 +1657,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ],
         ),
       ),
-    );
+    ).then((_) {
+      // Ronda 214: dispose garantizado independientemente de cómo cerró.
+      accountTypeController.dispose();
+      accountNumberController.dispose();
+      cciController.dispose();
+      holderNameController.dispose();
+      holderDniController.dispose();
+    });
   }
 
   // ✅ REAL: Formulario de tarjeta de débito
@@ -1858,7 +1870,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ],
         ),
       ),
-    );
+    ).then((_) {
+      // Ronda 214: dispose de los 2 controllers del debit card form al cerrar.
+      cardNumberController.dispose();
+      cardHolderController.dispose();
+    });
   }
 
   // ✅ REAL: Información de retiro en efectivo
