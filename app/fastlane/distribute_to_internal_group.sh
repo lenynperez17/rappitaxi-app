@@ -171,6 +171,23 @@ print('yes' if any(b['id']==target for b in d.get('data',[])) else 'no')
 " BID="$BUILD_ID")
   if [[ "$FOUND" == "yes" ]]; then
     log "✓ Build $TARGET_BUILD ($BUILD_ID) asignado al grupo interno (verificado)."
+    # Ronda 215: re-asignación "toggle" — quitar y volver a agregar. Apple
+    # dispara un push notification NUEVO en cada POST /relationships/builds,
+    # pero si el build YA estaba asignado (por ejemplo por reintento del
+    # script), el POST inicial da 204 sin re-disparar. El toggle garantiza
+    # que Apple envíe la notificación al tester en cada deploy. Los ~2s de
+    # ventana entre DELETE y POST no son visibles al tester.
+    log "→ Toggle re-asignación para re-disparar push notification..."
+    curl -sS -X DELETE \
+      -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+      -d "{\"data\":[{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}]}" \
+      "https://api.appstoreconnect.apple.com/v1/betaGroups/$INTERNAL_GROUP/relationships/builds" > /dev/null
+    sleep 2
+    curl -sS -X POST \
+      -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+      -d "{\"data\":[{\"type\":\"builds\",\"id\":\"$BUILD_ID\"}]}" \
+      "https://api.appstoreconnect.apple.com/v1/betaGroups/$INTERNAL_GROUP/relationships/builds" > /dev/null
+    log "✓ Push notification re-disparada. TestFlight en el iPhone en 2-15 min."
     exit 0
   fi
   log "verificación pendiente (intento $check/3)..."
