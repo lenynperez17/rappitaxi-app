@@ -103,11 +103,22 @@ async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Pre
     const road = p.address?.road
     const houseNumber = p.address?.house_number ?? userNumber ?? null
     // mainText: "Avenida Javier Prado Oeste 1068" o solo la vía si no hay número.
+    //
+    // Ronda 219: cuando Nominatim devuelve un POI (parque, plaza, edificio),
+    // NO viene road pero el NOMBRE del POI está como PRIMER segmento del
+    // display_name. Antes el fallback iba directo a suburb → el user veía
+    // "Miraflores" en vez de "Parque John F. Kennedy" al buscar "parque
+    // kennedy". Ahora priorizamos ese primer segmento cuando no hay road.
     let main: string
     if (road && houseNumber) {
       main = `${road} ${houseNumber}`
+    } else if (road) {
+      main = road
     } else {
-      main = road ?? p.address?.suburb ?? p.address?.city ?? p.display_name?.split(',')[0] ?? ''
+      const firstSegment = p.display_name?.split(',')[0]?.trim()
+      main = firstSegment && firstSegment.length > 0
+        ? firstSegment
+        : (p.address?.suburb ?? p.address?.city ?? '')
     }
     // description: si el número no venía en display_name pero el usuario lo escribió, insertarlo.
     // Ronda 52 Bug#1: solo reemplazar en el primer segmento (antes de la
