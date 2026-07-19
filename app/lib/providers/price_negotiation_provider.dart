@@ -416,6 +416,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
   // -------------------- Crear negociación (pasajero) --------------------
   /// Crear una nueva negociación (equivale a crear un ride negociable).
+  ///
+  /// Ronda 218: acepta `knownUserId`/`knownUserName` opcionales para el caso
+  /// (frecuente) donde el caller ya tiene el user cargado desde AuthProvider.
+  /// Sin esto, dependíamos EXCLUSIVAMENTE de `_api.me()` que a veces falla
+  /// silenciosamente (JWT hipo, refresh en curso, red lenta) → `_getCurrentUserId`
+  /// retorna null → throw `Exception('Usuario no autenticado')` → el user
+  /// veía "Error al crear solicitud" aunque estuviera perfectamente logueado
+  /// (mapa cargado, sesión válida). Con este fallback, ya no rompe.
   Future<void> createNegotiation({
     required LocationPoint pickup,
     required LocationPoint destination,
@@ -426,13 +434,26 @@ class PriceNegotiationProvider extends ChangeNotifier {
     String? appliedPromotionCode,
     double? discountAmount,
     double? discountPercentage,
+    String? knownUserId,
+    String? knownUserName,
+    String? knownUserPhone,
+    String? knownUserPhoto,
   }) async {
     try {
-      final userId = await _getCurrentUserId();
-      if (userId == null) {
+      String? userId = knownUserId ?? await _getCurrentUserId();
+      if (userId == null || userId.isEmpty) {
         throw Exception('Usuario no autenticado');
       }
-      final userData = await _getCurrentUserData();
+      // Cachear para las siguientes llamadas.
+      _cachedUserId = userId;
+      final userData = knownUserId != null
+          ? {
+              'id': knownUserId,
+              if (knownUserName != null) 'displayName': knownUserName,
+              if (knownUserPhone != null) 'phone': knownUserPhone,
+              if (knownUserPhoto != null) 'photoUrl': knownUserPhoto,
+            }
+          : await _getCurrentUserData();
 
       // Cancelar cualquier negociación activa previa del pasajero (una por usuario).
       for (final n in List<PriceNegotiation>.from(_activeNegotiations)) {

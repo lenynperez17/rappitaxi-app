@@ -1362,12 +1362,20 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           'dest=(${destination.latitude},${destination.longitude}) '
           'offeredPrice=$_offeredPrice paymentMethod=${paymentMethodEnum.name}');
       try {
+        // Ronda 218: pasamos userId/name/phone/photo del AuthProvider que YA
+        // los tiene cargados. Sin esto, createNegotiation dependía de _api.me()
+        // que a veces falla silenciosamente y hacía throw "Usuario no
+        // autenticado" aunque el user estuviera perfectamente logueado.
         await negotiationProvider.createNegotiation(
           pickup: pickup,
           destination: destination,
           offeredPrice: _offeredPrice,
           paymentMethod: paymentMethodEnum,
           notes: null,
+          knownUserId: user.id,
+          knownUserName: user.fullName,
+          knownUserPhone: user.phone,
+          knownUserPhoto: user.profilePhotoUrl,
         );
         AppLogger.info('✅ Negociación creada exitosamente');
         // Start listening for real-time driver offers on this negotiation
