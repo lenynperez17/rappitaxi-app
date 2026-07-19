@@ -1354,6 +1354,13 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           paymentMethodEnum = models.PaymentMethod.cash;
       }
 
+      // Ronda 217 diagnostic: exponer detalle real del error. Antes el fallback
+      // "Error al crear solicitud" era opaco — el user no sabía si era red,
+      // auth, precio inválido, backend caído. Ahora mostramos el error real
+      // durante max 6s.
+      AppLogger.info('🚕 Preparando createNegotiation: pickup=(${pickup.latitude},${pickup.longitude}) '
+          'dest=(${destination.latitude},${destination.longitude}) '
+          'offeredPrice=$_offeredPrice paymentMethod=${paymentMethodEnum.name}');
       try {
         await negotiationProvider.createNegotiation(
           pickup: pickup,
@@ -1365,19 +1372,21 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         AppLogger.info('✅ Negociación creada exitosamente');
         // Start listening for real-time driver offers on this negotiation
         negotiationProvider.startListeningToMyNegotiations();
-      } catch (e) {
-        AppLogger.error('❌ Error creando negociación: $e');
+      } catch (e, st) {
+        AppLogger.error('❌ Error creando negociación: $e', e, st);
         if (!mounted) return;
         setState(() {
           _isWaitingForDriver = false;
           _isSearchingDriver = false;
           _showPriceNegotiation = false;
         });
+        // Mostrar el error específico en vez del fallback opaco.
+        final detail = userFriendlyError(e, fallback: e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al crear solicitud')),
+            content: Text('No se pudo crear la solicitud: $detail'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 6),
           ),
         );
         return;
