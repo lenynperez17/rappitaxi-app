@@ -782,40 +782,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     if (mounted) setState(() {});
   }
 
+  // Ronda 216: Roads API nunca funcionó desde la app porque
+  // AppConfig.googleMapsApiKey está restringida a Maps SDK únicamente. Siempre
+  // devolvía 403 y caía al fallback (return candidates). Los dots de referencia
+  // aparecían en las coords crudas, no snappeadas al asfalto, pero como el
+  // usuario no tiene forma de saber cómo debería verse el "snap real", nunca
+  // reportó bug. Ronda 216: quitamos la llamada (misma decisión que en
+  // road_snapping_service.dart) y devolvemos los candidates crudos.
   Future<List<LatLng>> _snapToNearestRoads(List<LatLng> candidates) async {
-    try {
-      final pointsParam = candidates
-          .map((p) => '${p.latitude},${p.longitude}')
-          .join('|');
-      final url = Uri.parse(
-        'https://roads.googleapis.com/v1/nearestRoads'
-        '?points=$pointsParam'
-        '&key=${AppConfig.googleMapsApiKey}',
-      );
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final snapped = data['snappedPoints'] as List? ?? [];
-        if (snapped.isNotEmpty) {
-          const double minGap = 0.00027;
-          final result = <LatLng>[];
-          for (final p in snapped) {
-            final loc = p['location'];
-            final lat = (loc['latitude'] as num).toDouble();
-            final lng = (loc['longitude'] as num).toDouble();
-            final candidate = LatLng(lat, lng);
-            final tooClose = result.any((existing) =>
-              sqrt(pow(existing.latitude - lat, 2) + pow(existing.longitude - lng, 2)) < minGap);
-            if (!tooClose) result.add(candidate);
-          }
-          if (result.isNotEmpty) return result;
-        }
-      } else {
-        AppLogger.debug('Roads API status: ${response.statusCode}');
-      }
-    } catch (e) {
-      AppLogger.debug(userFriendlyError(e, fallback: 'Roads API error'));
-    }
     return candidates;
   }
 
@@ -1088,38 +1062,41 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     _inlineDestinationController.text = prediction.description;
     setState(() => _destinationSearchResults = []);
 
+    // Ronda 216: reemplaza llamada directa a maps.googleapis.com/place/details
+    // (con la key expuesta que Google denegaba) por MapsService.placeDetails
+    // que va por el proxy backend con cascada gratis. ESTE era el bug que
+    // impedía que la app pasara de "elegir destino" a "mostrar ruta en el
+    // mapa": el REQUEST_DENIED silencioso hacía que `data['status'] != 'OK'`
+    // y todo el bloque de `_showPriceNegotiation = true` se saltaba.
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json'
-        '?place_id=${prediction.placeId}'
-        '&key=${AppConfig.googleMapsApiKey}'
-        '&fields=geometry,formatted_address,name',
-      );
-      final response = await http.get(url);
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK') {
-          final location = data['result']['geometry']['location'];
-          final coords = LatLng(location['lat'].toDouble(), location['lng'].toDouble());
-          setState(() => _destinationCoordinates = coords);
-          await _addMarkerAndZoom(coords, 'destination_marker', false);
-
-          if (_pickupCoordinates != null && _destinationCoordinates != null) {
-            if (!_markers.any((m) => m.markerId.value == 'pickup_marker')) {
-              await _addMarkerAndZoom(_pickupCoordinates!, 'pickup_marker', true);
-            }
-            await _updateRoutePolyline();
-            if (!mounted) return;
-            setState(() {
-              _isSelectingLocation = false;
-              _showPriceNegotiation = true;
-              _markers.removeWhere((m) => m.markerId.value.startsWith('ref_dot'));
-              _markers.removeWhere((m) => m.markerId.value.startsWith('sim_driver_'));
-            });
-            await _zoomToShowBothLocations();
-          }
+      LatLng? coords;
+      if (prediction.lat != null && prediction.lng != null) {
+        // Si el autocomplete ya trajo lat/lng, usarlas directamente (Nominatim
+        // los incluye en cada prediction — evita un round-trip).
+        coords = LatLng(prediction.lat!, prediction.lng!);
+      } else {
+        final details = await MapsService().placeDetails(prediction.placeId);
+        if (details != null) {
+          coords = details.coordinates;
         }
+      }
+      if (!mounted || coords == null) return;
+      setState(() => _destinationCoordinates = coords);
+      await _addMarkerAndZoom(coords, 'destination_marker', false);
+
+      if (_pickupCoordinates != null && _destinationCoordinates != null) {
+        if (!_markers.any((m) => m.markerId.value == 'pickup_marker')) {
+          await _addMarkerAndZoom(_pickupCoordinates!, 'pickup_marker', true);
+        }
+        await _updateRoutePolyline();
+        if (!mounted) return;
+        setState(() {
+          _isSelectingLocation = false;
+          _showPriceNegotiation = true;
+          _markers.removeWhere((m) => m.markerId.value.startsWith('ref_dot'));
+          _markers.removeWhere((m) => m.markerId.value.startsWith('sim_driver_'));
+        });
+        await _zoomToShowBothLocations();
       }
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error getting place details'));
@@ -1138,33 +1115,27 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     setState(() => _isSearchingPlaces = true);
     _searchDebounceTimer = Timer(Duration(milliseconds: 400), () async {
       if (!mounted) return;
+      // Ronda 216: idem — MapsService.autocomplete via proxy backend en vez
+      // de Google directo con key expuesta.
       try {
-        final url = Uri.parse(
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-          '?input=${Uri.encodeComponent(query)}'
-          '&key=${AppConfig.googleMapsApiKey}'
-          '&language=es'
-          '&components=country:pe',
+        final preds = await MapsService().autocomplete(
+          query,
+          userLat: _pickupCoordinates?.latitude ?? _lastCameraTarget?.latitude,
+          userLng: _pickupCoordinates?.longitude ?? _lastCameraTarget?.longitude,
+          countryCode: 'pe',
         );
-        final response = await http.get(url);
         if (!mounted) return;
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['status'] == 'OK') {
-            final results = (data['predictions'] as List)
-                .map((p) => PlacePrediction.fromJson(p))
-                .toList();
-            setState(() {
-              _originSearchResults = results;
-              _isSearchingPlaces = false;
-            });
-          } else {
-            setState(() {
-              _originSearchResults = [];
-              _isSearchingPlaces = false;
-            });
-          }
-        }
+        setState(() {
+          _originSearchResults = preds
+              .map((p) => PlacePrediction(
+                    placeId: p.placeId,
+                    description: p.description,
+                    mainText: p.mainText,
+                    secondaryText: p.secondaryText,
+                  ))
+              .toList();
+          _isSearchingPlaces = false;
+        });
       } catch (e) {
         if (mounted) setState(() => _isSearchingPlaces = false);
       }
@@ -1178,29 +1149,25 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       _isEditingOrigin = false;
     });
 
+    // Ronda 216: idem al selectSearchResult del destino — proxy backend.
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json'
-        '?place_id=${prediction.placeId}'
-        '&key=${AppConfig.googleMapsApiKey}'
-        '&fields=geometry,formatted_address,name',
-      );
-      final response = await http.get(url);
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK') {
-          final location = data['result']['geometry']['location'];
-          final coords = LatLng(location['lat'].toDouble(), location['lng'].toDouble());
-          setState(() => _pickupCoordinates = coords);
-          await _addMarkerAndZoom(coords, 'pickup_marker', true);
-
-          if (_pickupCoordinates != null && _destinationCoordinates != null) {
-            await _updateRoutePolyline();
-            if (!mounted) return;
-            setState(() => _isSelectingLocation = false);
-          }
+      LatLng? coords;
+      if (prediction.lat != null && prediction.lng != null) {
+        coords = LatLng(prediction.lat!, prediction.lng!);
+      } else {
+        final details = await MapsService().placeDetails(prediction.placeId);
+        if (details != null) {
+          coords = details.coordinates;
         }
+      }
+      if (!mounted || coords == null) return;
+      setState(() => _pickupCoordinates = coords);
+      await _addMarkerAndZoom(coords, 'pickup_marker', true);
+
+      if (_pickupCoordinates != null && _destinationCoordinates != null) {
+        await _updateRoutePolyline();
+        if (!mounted) return;
+        setState(() => _isSelectingLocation = false);
       }
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error getting origin place details'));

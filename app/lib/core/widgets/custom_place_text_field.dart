@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:http/http.dart' as http;
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
@@ -75,31 +73,29 @@ class _CustomPlaceTextFieldState extends State<CustomPlaceTextField> {
     }
   }
 
-  /// ✅ Obtener detalles completos del lugar (lat, lng) cuando se selecciona
+  /// Obtener detalles completos del lugar (lat, lng) cuando se selecciona.
+  ///
+  /// Ronda 216: usa el proxy backend `/api/maps/place-details` (Nominatim +
+  /// cascada) en vez de Google Places directo. La versión anterior mandaba la
+  /// key móvil (`googleApiKey`) que está restringida a Maps SDK, así que la
+  /// llamada devolvía REQUEST_DENIED y esta función retornaba null → el
+  /// `onSelected` del TypeAhead no ejecutaba onPlaceSelected → la app se
+  /// quedaba con el texto pegado pero SIN pasar a la pantalla de ruta.
   Future<PlaceDetails?> _getPlaceDetails(String placeId) async {
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json'
-        '?place_id=$placeId'
-        '&key=${widget.googleApiKey}'
-        '&fields=geometry,formatted_address,name',
-      );
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['status'] == 'OK') {
-          return PlaceDetails.fromJson(data['result']);
-        } else {
-          AppLogger.warning('Place Details API status: ${data['status']}');
-          return null;
-        }
-      } else {
-        AppLogger.error('Place Details API error: ${response.statusCode}');
+      final data = await RapiApiClient.instance.mapsPlaceDetails(placeId);
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) {
+        AppLogger.warning('placeDetails devolvió sin lat/lng: $data');
         return null;
       }
+      return PlaceDetails(
+        formattedAddress: (data['formattedAddress'] as String?) ?? '',
+        name: (data['name'] as String?) ?? '',
+        lat: lat,
+        lng: lng,
+      );
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error obteniendo detalles del lugar'));
       return null;
