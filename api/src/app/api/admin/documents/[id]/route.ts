@@ -126,11 +126,42 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const allApproved = requiredList.every((t) => approvedTypes.has(t))
 
       let driverVerified: boolean | null = null
+      let promotedToDual = false
       if (allApproved) {
-        await client.query(
-          `UPDATE users SET is_verified = true, updated_at = now() WHERE id = $1`,
+        // Verificar que exista al menos un vehículo activo antes de promover.
+        // Sin vehículo, un driver no puede tomar rides — mejor mantenerlo
+        // como aplicante hasta que registre el vehículo (endpoint /vehicle).
+        const vehicleRes = await client.query<{ id: string }>(
+          `SELECT id FROM driver_vehicles WHERE driver_id = $1 AND is_active = true LIMIT 1`,
           [doc.driver_id],
         )
+        const hasVehicle = vehicleRes.rows.length > 0
+
+        // Ronda 224: al aprobar el último doc requerido, promover
+        // automáticamente el user_type a 'dual'. Sin esto el user quedaba
+        // is_verified=true pero user_type='passenger' → no aparece en la
+        // lista de drivers activos, no puede tomar rides, no puede cambiar
+        // a modo conductor desde la app. El usuario tenía que llamar
+        // manualmente POST /api/drivers/me/upgrade, pero ese endpoint jamás
+        // se invoca desde el flow de registro.
+        const userRes = await client.query<{ user_type: string }>(
+          `SELECT user_type FROM users WHERE id = $1`,
+          [doc.driver_id],
+        )
+        const currentType = userRes.rows[0]?.user_type
+        const shouldPromote = hasVehicle && (currentType === 'passenger' || !currentType)
+        if (shouldPromote) {
+          await client.query(
+            `UPDATE users SET user_type = 'dual', is_verified = true, updated_at = now() WHERE id = $1`,
+            [doc.driver_id],
+          )
+          promotedToDual = true
+        } else {
+          await client.query(
+            `UPDATE users SET is_verified = true, updated_at = now() WHERE id = $1`,
+            [doc.driver_id],
+          )
+        }
         driverVerified = true
       } else if (
         (newStatus === 'rejected' || newStatus === 'expired') &&
@@ -174,7 +205,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ],
       )
 
-      return { doc: updatedDoc, driverVerified }
+      return { doc: updatedDoc, driverVerified, promotedToDual }
     })
 
     // Auditoría fuera de la tx
@@ -191,6 +222,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           newStatus,
           reviewedBy: auth.userId,
           driverVerified: result.driverVerified,
+          promotedToDual: result.promotedToDual,
         }),
       ],
     )
@@ -204,9 +236,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const pushBody = newStatus === 'rejected'
       ? `Tu documento fue rechazado: ${body.rejectionReason ?? 'ver detalle'}`
       : newStatus === 'approved'
-        ? (result.driverVerified
-            ? 'Documento aprobado. Ya eres un conductor verificado 🎉'
-            : 'Documento aprobado. Sigue subiendo los que faltan.')
+        ? (result.promotedToDual
+            ? 'Documento aprobado. ¡Ya puedes activar el modo conductor! 🎉'
+            : result.driverVerified
+              ? 'Documento aprobado. Ya eres un conductor verificado 🎉'
+              : 'Documento aprobado. Sigue subiendo los que faltan.')
         : 'Debes subir el documento de nuevo.'
     void sendPush({
       userIds: [result.doc.driver_id],
@@ -238,6 +272,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         updatedAt: result.doc.updated_at,
       },
       driverVerified: result.driverVerified,
+      promotedToDual: result.promotedToDual,
     })
   } catch (err) {
     if ((err as { code?: string })?.code === 'not_found') {

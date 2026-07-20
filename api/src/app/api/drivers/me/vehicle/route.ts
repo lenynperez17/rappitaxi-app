@@ -122,9 +122,19 @@ export async function PUT(req: NextRequest) {
       { status: 404 },
     )
   }
-  if (user.user_type !== 'driver' && user.user_type !== 'dual') {
+  // Ronda 224: aceptar 'passenger' porque el flow de registro de conductor
+  // llama este endpoint ANTES de que se apruebe la solicitud (user aún es
+  // passenger). Sin esto el catch en el cliente silencia el 403, el vehículo
+  // jamás se guarda, y cuando el admin aprueba docs el auto-upgrade a 'dual'
+  // no dispara (falta hasVehicle) → user queda verificado pero sin vehículo
+  // → no puede activar modo conductor.
+  if (
+    user.user_type !== 'driver' &&
+    user.user_type !== 'dual' &&
+    user.user_type !== 'passenger'
+  ) {
     return NextResponse.json(
-      { success: false, error: 'forbidden', message: 'Solo drivers' },
+      { success: false, error: 'forbidden', message: 'Tipo de cuenta no permitido' },
       { status: 403 },
     )
   }

@@ -142,18 +142,25 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       final api = RapiApiClient.instance;
 
       // 1) Registrar/actualizar el vehículo del driver.
-      try {
-        await api.upsertVehicle(
-          vehicleType: (widget.registrationData['workType'] ?? 'auto') as String,
-          plate: (widget.registrationData['vehiclePlate'] ?? '') as String,
-          make: widget.registrationData['vehicleBrand'] as String?,
-          model: widget.registrationData['vehicleModel'] as String?,
-          color: widget.registrationData['vehicleColor'] as String?,
-          year: int.tryParse('${widget.registrationData['vehicleYear'] ?? ''}'),
-        );
-      } catch (e) {
-        AppLogger.warning('upsertVehicle falló: $e');
+      // Ronda 224: mapear workType (auto/moto/courier) al enum del backend
+      // (car/moto/bicycle). Antes el backend recibía 'auto' → 400 invalid_input
+      // → el catch silenciaba el error → vehículo jamás se guardaba → al
+      // aprobar docs el auto-upgrade a dual no dispara por falta de vehículo.
+      // Además el catch que "silencia" ahora relanza para que el user vea el error.
+      final workType = (widget.registrationData['workType'] ?? 'auto') as String;
+      final backendVehicleType = _mapWorkTypeToVehicleType(workType);
+      final plate = (widget.registrationData['vehiclePlate'] ?? '') as String;
+      if (plate.trim().isEmpty) {
+        throw StateError('Falta la placa del vehículo. Vuelve al paso anterior y complétala.');
       }
+      await api.upsertVehicle(
+        vehicleType: backendVehicleType,
+        plate: plate,
+        make: widget.registrationData['vehicleBrand'] as String?,
+        model: widget.registrationData['vehicleModel'] as String?,
+        color: widget.registrationData['vehicleColor'] as String?,
+        year: int.tryParse('${widget.registrationData['vehicleYear'] ?? ''}'),
+      );
 
       // 2) Registrar cada documento subido en /api/drivers/me/documents.
       // Ronda 222: nombres deben coincidir con el enum backend ALLOWED_DOC_TYPES.
@@ -236,6 +243,21 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
   /// misc`. Como consecuencia CADA upload del registro de conductor devolvía
   /// 400 `invalid_scope` → `_uploadImage` throw → "Error al enviar solicitud".
   /// Ahora mapeamos el scope local del cliente al enum backend.
+  /// Mapea el workType del wizard (auto/moto/courier) al enum del backend
+  /// driver_vehicles.vehicle_type (ALLOWED_VEHICLE_TYPES).
+  static String _mapWorkTypeToVehicleType(String workType) {
+    switch (workType) {
+      case 'moto':
+        return 'moto';
+      case 'courier':
+        return 'moto'; // repartidores en Perú suelen usar moto
+      case 'auto':
+      case 'driver':
+      default:
+        return 'car';
+    }
+  }
+
   static const Map<String, String> _clientToBackendScope = {
     'selfie': 'profile_photo',
     'vehicle_photo': 'vehicle_photo',

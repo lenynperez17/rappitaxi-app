@@ -4547,27 +4547,71 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
-    // TODO(migration): el backend Node aún no expone un endpoint dedicado para
-    // consultar solicitudes de conductor pendientes. Se infiere a partir del
-    // perfil de conductor: si existe y está en estado pending/under_review,
-    // se considera solicitud pendiente. Si no hay perfil, no hay solicitud.
+    // Ronda 224: antes solo miraba myDriverProfile().status, pero mientras
+    // el user sea passenger (docs sin aprobar) el "status" del profile no
+    // representa una solicitud pendiente y devolvía null → el user era
+    // reenviado al wizard desde cero. Ahora inspecciona /drivers/me/documents:
+    // si hay CUALQUIER documento subido (pending/approved/rejected), la
+    // solicitud existe y llevamos al user a la pantalla "solicitud enviada".
     try {
-      AppLogger.info(userFriendlyError(userId, fallback: 'Verificando solicitud de conductor pendiente para userId'));
-      final profile = await RapiApiClient.instance.myDriverProfile();
-      final data = (profile['driver'] as Map?) ??
-          (profile['profile'] as Map?) ??
-          profile;
-      final status = (data['status'] ?? data['verificationStatus'])?.toString();
-      if (status == 'pending' || status == 'under_review') {
-        AppLogger.info('Solicitud pendiente encontrada (status=$status)');
-        return Map<String, dynamic>.from(data);
+      AppLogger.info('Verificando solicitud de conductor pendiente para $userId');
+      final api = RapiApiClient.instance;
+
+      // 1) Fast path: profile ya tiene status pending/under_review.
+      try {
+        final profile = await api.myDriverProfile();
+        final data = (profile['driver'] as Map?) ??
+            (profile['profile'] as Map?) ??
+            profile;
+        final status = (data['status'] ?? data['verificationStatus'])?.toString();
+        if (status == 'pending' || status == 'under_review') {
+          AppLogger.info('Solicitud pendiente encontrada via profile (status=$status)');
+          return Map<String, dynamic>.from(data);
+        }
+      } catch (e) {
+        AppLogger.info('myDriverProfile no disponible: $e');
       }
-      AppLogger.info('No se encontró solicitud pendiente (status=$status)');
+
+      // 2) Fallback: verificar si existen docs subidos (aplicante activo).
+      try {
+        final docsResp = await api.myDocuments();
+        final docs = docsResp['documents'] as List? ?? const [];
+        if (docs.isNotEmpty) {
+          final hasPending = docs.any((d) {
+            if (d is! Map) return false;
+            final st = d['status']?.toString();
+            return st == 'pending' || st == 'approved' || st == 'rejected';
+          });
+          if (hasPending) {
+            AppLogger.info('Solicitud detectada por documentos (${docs.length} docs)');
+            return {
+              'status': 'pending',
+              'workType': _inferWorkType(docs),
+              'documents': docs,
+            };
+          }
+        }
+      } catch (e) {
+        AppLogger.info('myDocuments no disponible: $e');
+      }
+
+      AppLogger.info('Sin solicitud previa. Iniciar wizard.');
       return null;
     } catch (e) {
-      AppLogger.info(userFriendlyError(e, fallback: 'No hay perfil de conductor / solicitud pendiente'));
+      AppLogger.info('Error verificando solicitud pendiente: $e');
       return null;
     }
+  }
+
+  String _inferWorkType(List<dynamic> docs) {
+    for (final d in docs) {
+      if (d is Map) {
+        final scope = d['scope']?.toString() ?? d['docType']?.toString() ?? '';
+        if (scope.contains('moto')) return 'moto';
+        if (scope.contains('courier')) return 'courier';
+      }
+    }
+    return 'auto';
   }
 
   void _shareApp() {

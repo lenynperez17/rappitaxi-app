@@ -24,7 +24,12 @@ set -euo pipefail
 exec >&1
 
 APP_ID=6761776704
-INTERNAL_GROUP=0f11d6ef-b9e5-476f-ad6f-166d1f1b8e53
+# Ronda 224: grupo "Team Rapi Auto" creado con hasAccessToAllBuilds=true.
+# Apple auto-asigna cada build nuevo al grupo apenas termina Processing —
+# este script se vuelve un fallback / verificación, no una asignación
+# obligatoria. El grupo viejo "Team Rapi Interno" (0f11d6ef...) queda como
+# backup pero ya no recibe builds automáticos.
+INTERNAL_GROUP=c91058a2-b433-4dbf-bf11-1627a16aa6cf
 KEY_ID=HM52J5J9XA
 ISSUER=77515464-9952-4f79-9de5-caa0561b9603
 KEY_FILE="$(cd "$(dirname "$0")/.." && pwd)/AuthKey_${KEY_ID}.p8"

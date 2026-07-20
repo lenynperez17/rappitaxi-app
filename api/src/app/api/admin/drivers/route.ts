@@ -38,8 +38,15 @@ export async function GET(req: NextRequest) {
   const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(200, Math.max(1, Math.floor(pageSizeRaw))) : 50
   const offset = (page - 1) * pageSize
 
+  // Incluir tanto drivers/dual YA promovidos, como passengers que enviaron
+  // solicitud (tienen docs o vehículo). Sin esto, un aplicante que subió
+  // documentos queda invisible al admin y nunca puede ser aprobado
+  // (catch-22: no aparece porque es passenger, no se promueve a dual porque
+  // sus docs jamás se aprueban).
   const where: string[] = [
-    `u.user_type IN ('driver','dual')`,
+    `(u.user_type IN ('driver','dual')
+       OR EXISTS (SELECT 1 FROM driver_documents dd WHERE dd.driver_id = u.id)
+       OR EXISTS (SELECT 1 FROM driver_vehicles dv WHERE dv.driver_id = u.id))`,
     `u.deleted_at IS NULL`,
   ]
   const params: unknown[] = []

@@ -567,6 +567,30 @@ class RapiApiClient {
     return _decodeOrThrow(r);
   }
 
+  Future<Map<String, dynamic>?> _authedPut(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    await _ensureFreshAccess();
+    final uri = Uri.parse('$baseUrl$path');
+    Future<http.Response> doPut() => _http.put(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_accessCache',
+          },
+          body: jsonEncode(body ?? const {}),
+        );
+    final r = await doPut();
+    if (r.statusCode == 401 && _refreshCache != null) {
+      if (await refreshAccessToken()) {
+        final r2 = await doPut();
+        return _decodeOrThrow(r2);
+      }
+    }
+    return _decodeOrThrow(r);
+  }
+
   Future<Map<String, dynamic>?> _authedPost(
     String path, {
     Map<String, dynamic>? body,
@@ -799,7 +823,7 @@ class RapiApiClient {
     String? color,
     int? year,
   }) async =>
-      (await _authedPost('/api/drivers/me/vehicle', body: {
+      (await _authedPut('/api/drivers/me/vehicle', body: {
         'vehicleType': vehicleType,
         'plate': plate,
         if (make != null) 'make': make,
