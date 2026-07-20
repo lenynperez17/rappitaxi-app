@@ -209,8 +209,8 @@ export async function POST(req: NextRequest) {
       `INSERT INTO users
          (id, full_name, email, phone, phone_number, user_type,
           is_admin, is_active, is_verified, profile_complete, auth_provider,
-          profile_photo_url)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, true, $7, $8, 'admin_manual', $9)
+          profile_photo_url, created_from)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, true, $7, $8, 'admin_manual', $9, 'admin_panel')
        RETURNING *`,
       [
         newId,

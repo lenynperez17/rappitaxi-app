@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
     isNewUser = true
     const newId = randomUUID()
     user = await maybeOne<UserRow>(
-      `INSERT INTO users (id, phone, phone_number, phone_verified, auth_provider, user_type, is_active)
-       VALUES ($1, $2, $2, true, 'phone', 'passenger', true)
+      `INSERT INTO users (id, phone, phone_number, phone_verified, auth_provider, user_type, is_active, created_from)
+       VALUES ($1, $2, $2, true, 'phone', 'passenger', true, 'mobile')
        RETURNING id, full_name, email, phone, user_type, profile_complete, is_active`,
       [newId, phoneNumber],
     )

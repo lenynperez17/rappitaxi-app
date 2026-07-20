@@ -100,7 +100,7 @@ export function DriverVerificationDetailPage() {
           <div className="flex-1">
             <h1 className="text-2xl font-bold text-gray-900">{user.fullName ?? '(sin nombre)'}</h1>
             <p className="text-sm text-gray-500 mt-1">{user.email ?? user.phone ?? user.id}</p>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               {user.isVerified ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
                   <CheckCircle2 className="w-3 h-3" /> Verificado
@@ -108,6 +108,7 @@ export function DriverVerificationDetailPage() {
               ) : (
                 <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">Pendiente de verificación</span>
               )}
+              <OriginBadge createdFrom={user.createdFrom} />
             </div>
           </div>
         </div>
@@ -135,6 +136,24 @@ export function DriverVerificationDetailPage() {
   )
 }
 
+// Badge que indica el origen del registro del user.
+function OriginBadge({ createdFrom }: { createdFrom?: string }) {
+  const meta: Record<string, { label: string; cls: string; icon: string }> = {
+    mobile:        { label: 'App móvil',     cls: 'bg-blue-100 text-blue-800',       icon: '📱' },
+    admin_panel:   { label: 'Panel web',     cls: 'bg-purple-100 text-purple-800',   icon: '🖥️' },
+    oauth_google:  { label: 'Google Sign-In', cls: 'bg-red-50 text-red-700',          icon: '🔑' },
+    oauth_apple:   { label: 'Apple Sign-In',  cls: 'bg-gray-100 text-gray-800',       icon: '' },
+    import:        { label: 'Importado',      cls: 'bg-amber-100 text-amber-800',     icon: '📥' },
+    unknown:       { label: 'Origen desconocido', cls: 'bg-gray-100 text-gray-500',  icon: '❔' },
+  }
+  const m = meta[createdFrom ?? 'unknown'] ?? meta.unknown
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs inline-flex items-center gap-1 ${m.cls}`} title={`Registro creado desde: ${m.label}`}>
+      <span>{m.icon}</span> {m.label}
+    </span>
+  )
+}
+
 // ============================================================================
 // Sección de documentos del driver — lista + aprobar/rechazar
 // ============================================================================
@@ -148,17 +167,39 @@ function DocumentsSection({ driverId, onFlash, onError }: {
   // (asíncrono via React state) deja abierta entre onClick y re-render.
   const reviewingRef = useRef<string | null>(null)
   const [preview, setPreview] = useState<{ url: string; docType: string; mime: string } | null>(null)
-  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
+  const [uploadingType, setUploadingType] = useState<string | null>(null)
+
+  const uploadForType = async (docType: string, file: File) => {
+    setUploadingType(docType)
+    try {
+      await adminApi.uploadDocumentForDriver(driverId, docType, file)
+      onFlash(`Documento "${docType}" cargado. Ahora aparece como Pendiente.`)
+      await load()
+    } catch (e) {
+      onError(e instanceof AdminApiError ? e.message : 'Error subiendo el archivo')
+    } finally { setUploadingType(null) }
+  }
+
+  const onFilePick = (docType: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = '' // permitir re-elegir el mismo archivo si se reintenta
+    if (f) void uploadForType(docType, f)
+  }
+
+  const DOC_TYPES = [
+    'dni_front', 'dni_back', 'license_front', 'license_back', 'soat',
+    'tarjeta_propiedad', 'ownership', 'selfie', 'vehicle_photo',
+  ] as const
+  const missingTypes = DOC_TYPES.filter((t) => !docs.some((d) => d.docType === t))
 
   const openPreview = async (doc: { id: string; docType: string; fileUrl: string }) => {
-    setPreviewLoadingId(doc.id)
     try {
       const blob = await adminApi.fetchMediaBlob(doc.fileUrl)
       const url = URL.createObjectURL(blob)
       setPreview({ url, docType: doc.docType, mime: blob.type || 'application/octet-stream' })
     } catch (e) {
       onError(e instanceof AdminApiError ? e.message : 'No se pudo cargar el documento')
-    } finally { setPreviewLoadingId(null) }
+    }
   }
 
   const closePreview = () => {
@@ -227,50 +268,75 @@ function DocumentsSection({ driverId, onFlash, onError }: {
       ) : docs.length === 0 ? (
         <p className="text-sm text-gray-500">Este conductor aún no ha subido documentos.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {docs.map((d) => (
-            <div key={d.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-gray-600">{d.docType}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[d.status] ?? ''}`}>
-                    {STATUS_LABEL[d.status] ?? d.status}
-                  </span>
-                </div>
-                {d.rejectionReason && (
-                  <p className="text-xs text-red-600 mt-1">Motivo: {d.rejectionReason}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void openPreview(d)}
-                  disabled={previewLoadingId === d.id}
-                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
-                >
-                  {previewLoadingId === d.id ? 'Cargando…' : 'Ver archivo'}
-                </button>
+            <div key={d.id} className="border border-gray-200 rounded-lg p-3 flex flex-col gap-3">
+              <div className="flex items-center gap-2 justify-between">
+                <span className="font-mono text-xs text-gray-600 truncate">{d.docType}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${STATUS_BADGE[d.status] ?? ''}`}>
+                  {STATUS_LABEL[d.status] ?? d.status}
+                </span>
               </div>
-              {d.status === 'pending' && (
-                <div className="flex gap-1 flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => void review(d.id, 'approved')}
-                    disabled={reviewingId === d.id}
-                    className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                  >
-                    {reviewingId === d.id ? '…' : 'Aprobar'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void review(d.id, 'rejected')}
-                    disabled={reviewingId === d.id}
-                    className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                  >
-                    Rechazar
-                  </button>
-                </div>
+              <DocThumbnail
+                doc={d}
+                onExpand={() => void openPreview(d)}
+              />
+              {d.rejectionReason && (
+                <p className="text-xs text-red-600">Motivo: {d.rejectionReason}</p>
               )}
+              <div className="flex gap-2">
+                {d.status === 'pending' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void review(d.id, 'approved')}
+                      disabled={reviewingId === d.id}
+                      className="flex-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 font-medium"
+                    >
+                      {reviewingId === d.id ? 'Procesando…' : 'Aprobar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void review(d.id, 'rejected')}
+                      disabled={reviewingId === d.id}
+                      className="flex-1 px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 font-medium"
+                    >
+                      Rechazar
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-500">Ya revisado</span>
+                )}
+                <label className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 cursor-pointer font-medium">
+                  {uploadingType === d.docType ? 'Subiendo…' : 'Reemplazar'}
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onFilePick(d.docType)} disabled={uploadingType === d.docType} />
+                </label>
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {missingTypes.length > 0 && (
+        <div className="mt-4 border-t border-gray-200 pt-4">
+          <p className="text-sm font-semibold text-gray-800 mb-2">Subir documentos faltantes</p>
+          <p className="text-xs text-gray-500 mb-3">
+            El driver aún no subió estos tipos. Puedes cargarlos desde acá — quedarán como <em>Pendiente</em> y podrás aprobarlos igual que los que sube el driver desde la app.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {missingTypes.map((t) => (
+              <label
+                key={t}
+                className="flex flex-col items-center justify-center gap-1 p-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 text-xs text-gray-700"
+              >
+                <span className="font-mono">{t}</span>
+                <span className="text-gray-500">
+                  {uploadingType === t ? 'Subiendo…' : '+ Elegir archivo'}
+                </span>
+                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onFilePick(t)} disabled={uploadingType === t} />
+              </label>
+            ))}
+          </div>
         </div>
       )}
 
@@ -322,5 +388,96 @@ function DocumentsSection({ driverId, onFlash, onError }: {
         </div>
       )}
     </div>
+  )
+}
+
+// Miniatura autocargada. Al hacer click abre el modal grande.
+function DocThumbnail({
+  doc,
+  onExpand,
+}: {
+  doc: { id: string; fileUrl: string; docType: string }
+  onExpand: () => void
+}) {
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'image'; url: string }
+    | { kind: 'pdf'; url: string }
+    | { kind: 'other'; mime: string }
+    | { kind: 'error'; msg: string }
+  >({ kind: 'loading' })
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    ;(async () => {
+      try {
+        const blob = await adminApi.fetchMediaBlob(doc.fileUrl)
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        const mime = blob.type || ''
+        if (mime.startsWith('image/')) setState({ kind: 'image', url: objectUrl })
+        else if (mime === 'application/pdf') setState({ kind: 'pdf', url: objectUrl })
+        else setState({ kind: 'other', mime })
+      } catch (e) {
+        if (!cancelled) setState({ kind: 'error', msg: e instanceof AdminApiError ? e.message : 'error' })
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [doc.id, doc.fileUrl])
+
+  const baseCls =
+    'w-full h-40 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden'
+
+  if (state.kind === 'loading') {
+    return (
+      <div className={baseCls}>
+        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+      </div>
+    )
+  }
+  if (state.kind === 'error') {
+    return <div className={`${baseCls} text-xs text-red-600 px-2 text-center`}>Error: {state.msg}</div>
+  }
+  if (state.kind === 'image') {
+    return (
+      <button
+        type="button"
+        onClick={onExpand}
+        className={`${baseCls} cursor-zoom-in hover:border-blue-400 transition-colors p-0 group`}
+        aria-label={`Ampliar ${doc.docType}`}
+      >
+        <img
+          src={state.url}
+          alt={doc.docType}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+        />
+      </button>
+    )
+  }
+  if (state.kind === 'pdf') {
+    return (
+      <button
+        type="button"
+        onClick={onExpand}
+        className={`${baseCls} cursor-zoom-in hover:border-blue-400 flex-col text-xs text-gray-600 gap-1`}
+      >
+        <span className="text-3xl">📄</span>
+        <span>PDF · click para ver</span>
+      </button>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className={`${baseCls} cursor-pointer hover:border-blue-400 flex-col text-xs text-gray-500 gap-1`}
+    >
+      <span className="text-3xl">📎</span>
+      <span>{state.mime || 'archivo'}</span>
+    </button>
   )
 }

@@ -38,6 +38,7 @@ export interface AdminUser {
   deletedAt: string | null
   createdAt: string
   updatedAt: string
+  createdFrom?: 'mobile' | 'admin_panel' | 'oauth_google' | 'oauth_apple' | 'import' | 'unknown'
 }
 
 export interface AdminUserListResponse {
@@ -54,6 +55,7 @@ export interface AdminDriver {
   userType: string; isActive: boolean; isVerified: boolean
   profilePhotoUrl: string | null; suspendedAt: string | null
   createdAt: string; totalTrips: number; avgRating: number | null
+  createdFrom?: 'mobile' | 'admin_panel' | 'oauth_google' | 'oauth_apple' | 'import' | 'unknown'
 }
 
 export interface AdminTrip {
@@ -290,6 +292,44 @@ class AdminApi {
     const qp = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '' && v !== null) qp.set(k, String(v))
     return this.rawFetch(`/api/admin/documents?${qp.toString()}`, { method: 'GET' })
+  }
+
+  /**
+   * Sube un archivo COMO admin en nombre de un driver (útil para drivers
+   * creados desde el panel que aún no instalaron la app). El archivo se
+   * guarda con user_id=driverId para que él pueda descargarlo.
+   */
+  async uploadDocumentForDriver(driverId: string, docType: string, file: File): Promise<{
+    document: { id: string; driverId: string; docType: string; status: string; fileUrl: string }
+    created: boolean
+  }> {
+    const form = new FormData()
+    form.append('docType', docType)
+    form.append('file', file)
+    const headers: Record<string, string> = {}
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`
+    const r = await fetch(`${BASE_URL}/api/admin/drivers/${driverId}/documents`, {
+      method: 'POST', headers, body: form,
+    })
+    if (r.status === 401 && this.refreshToken) {
+      const refreshed = await this.attemptRefresh()
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${this.accessToken}`
+        const r2 = await fetch(`${BASE_URL}/api/admin/drivers/${driverId}/documents`, {
+          method: 'POST', headers, body: form,
+        })
+        if (!r2.ok) {
+          const data = await r2.json().catch(() => ({}))
+          throw new AdminApiError(r2.status, data?.error ?? 'upload_failed', data?.message ?? `HTTP ${r2.status}`)
+        }
+        return r2.json()
+      }
+    }
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}))
+      throw new AdminApiError(r.status, data?.error ?? 'upload_failed', data?.message ?? `HTTP ${r.status}`)
+    }
+    return r.json()
   }
 
   async reviewDocument(

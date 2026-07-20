@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
     const newId = randomUUID()
     user = await maybeOne<UserRow>(
       `INSERT INTO users (id, apple_uid, email, email_verified, full_name,
-                         auth_provider, user_type, is_active)
-       VALUES ($1, $2, $3, $4, $5, 'apple', 'passenger', true)
+                         auth_provider, user_type, is_active, created_from)
+       VALUES ($1, $2, $3, $4, $5, 'apple', 'passenger', true, 'oauth_apple')
        RETURNING id, full_name, email, phone, user_type, profile_complete, is_active`,
       [newId, appleUid, email, emailVerified, fullName],
     )

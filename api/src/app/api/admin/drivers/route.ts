@@ -19,6 +19,7 @@ interface DriverRow {
   profile_photo_url: string | null
   suspended_at: Date | null
   created_at: Date
+  created_from: string | null
   total_trips: string
   avg_rating: string | null
   total?: string
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest) {
   const rows = await query<DriverRow>(
     `SELECT u.id, u.full_name, u.email, u.phone, u.user_type, u.is_active,
             u.is_verified, u.profile_photo_url, u.suspended_at, u.created_at,
+            u.created_from,
             (SELECT COUNT(*)::text FROM rides r WHERE r.driver_id = u.id AND r.status = 'completed') AS total_trips,
             (SELECT ROUND(AVG(rr.stars)::numeric, 2)::text
                FROM ride_ratings rr WHERE rr.rated_user_id = u.id AND rr.role = 'driver') AS avg_rating
@@ -95,6 +97,7 @@ export async function GET(req: NextRequest) {
       profilePhotoUrl: d.profile_photo_url,
       suspendedAt: d.suspended_at,
       createdAt: d.created_at,
+      createdFrom: d.created_from ?? 'unknown',
       totalTrips: Number(d.total_trips ?? 0),
       avgRating: d.avg_rating ? Number(d.avg_rating) : null,
     })),

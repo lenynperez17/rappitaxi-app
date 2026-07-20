@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Search, Phone, Mail, Plus, MoreVertical, Trash2, Edit, Ban, CheckCircle2,
   ShieldCheck, User as UserIcon, X, AlertCircle, Loader2, KeyRound,
@@ -48,6 +48,32 @@ export function UsersPage() {
   // Ronda 189: ref-set síncrono contra doble-delete por user.
   const deletingRef = useRef<Set<string>>(new Set())
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Deep-link: /users?edit=<userId> abre el modal de edición. Se usa desde
+  // DriversPage → "Editar" para reutilizar el mismo UI de edición sin
+  // duplicarlo. Si el user no está en la lista actual (filtro distinto),
+  // hacemos GET directo del user.
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (!editId || editUser) return
+    const target = users.find((u) => u.id === editId)
+    if (target) {
+      setEditUser(target)
+      searchParams.delete('edit')
+      setSearchParams(searchParams, { replace: true })
+      return
+    }
+    // Fallback: usuario no visible con los filtros actuales.
+    void (async () => {
+      try {
+        const u = await adminApi.getUser(editId)
+        setEditUser(u)
+        searchParams.delete('edit')
+        setSearchParams(searchParams, { replace: true })
+      } catch { /* silent — el user simplemente no existe */ }
+    })()
+  }, [users, searchParams, setSearchParams, editUser])
 
   const load = async () => {
     setLoading(true)
@@ -252,6 +278,7 @@ export function UsersPage() {
                   <th className="text-left px-4 py-3">Contacto</th>
                   <th className="text-left px-4 py-3">Tipo</th>
                   <th className="text-left px-4 py-3">Estado</th>
+                  <th className="text-left px-4 py-3">Origen</th>
                   <th className="text-left px-4 py-3">Creado</th>
                   <th className="text-right px-4 py-3">Acciones</th>
                 </tr>
@@ -311,6 +338,9 @@ export function UsersPage() {
                       ) : (
                         <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactivo</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <OriginBadgeUsers createdFrom={u.createdFrom} />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {relativeTime(toDate(u.createdAt))}
@@ -843,5 +873,23 @@ function EditUserModal({
         </form>
       </div>
     </div>
+  )
+}
+
+
+function OriginBadgeUsers({ createdFrom }: { createdFrom?: string }) {
+  const meta: Record<string, { label: string; icon: string; cls: string }> = {
+    mobile:        { label: 'App',    icon: '📱', cls: 'bg-blue-100 text-blue-800' },
+    admin_panel:   { label: 'Panel',  icon: '🖥️', cls: 'bg-purple-100 text-purple-800' },
+    oauth_google:  { label: 'Google', icon: '🔑', cls: 'bg-red-50 text-red-700' },
+    oauth_apple:   { label: 'Apple',  icon: '', cls: 'bg-gray-100 text-gray-800' },
+    import:        { label: 'Import', icon: '📥', cls: 'bg-amber-100 text-amber-800' },
+    unknown:       { label: '?',      icon: '❔', cls: 'bg-gray-100 text-gray-500' },
+  }
+  const m = meta[createdFrom ?? 'unknown'] ?? meta.unknown
+  return (
+    <span title={`Registro creado desde: ${m.label}`} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${m.cls}`}>
+      {m.icon} {m.label}
+    </span>
   )
 }

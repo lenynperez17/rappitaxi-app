@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, Phone, Mail, Star, Car, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Search, Phone, Mail, Star, Car, Loader2, CheckCircle2, AlertCircle, FileText, Pencil } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { relativeTime, toDate } from '../../utils/timeFormat'
@@ -117,7 +118,9 @@ export function DriversPage() {
                   <th className="text-center px-4 py-3">Viajes</th>
                   <th className="text-center px-4 py-3">Rating</th>
                   <th className="text-left px-4 py-3">Estado</th>
+                  <th className="text-left px-4 py-3">Origen</th>
                   <th className="text-left px-4 py-3">Registro</th>
+                  <th className="text-right px-4 py-3">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -179,8 +182,29 @@ export function DriversPage() {
                         <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactivo</span>
                       )}
                     </td>
+                    <td className="px-4 py-3">
+                      <OriginBadge createdFrom={d.createdFrom} />
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {relativeTime(toDate(d.createdAt))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        <Link
+                          to={`/verifications/${d.id}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                          title="Documentos y verificación"
+                        >
+                          <FileText className="w-3 h-3" /> Docs
+                        </Link>
+                        <Link
+                          to={`/users?edit=${d.id}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                          title="Editar cuenta"
+                        >
+                          <Pencil className="w-3 h-3" /> Editar
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -190,5 +214,22 @@ export function DriversPage() {
         )}
       </div>
     </div>
+  )
+}
+
+function OriginBadge({ createdFrom }: { createdFrom?: string }) {
+  const meta: Record<string, { label: string; icon: string; cls: string }> = {
+    mobile:        { label: 'App',    icon: '📱', cls: 'bg-blue-100 text-blue-800' },
+    admin_panel:   { label: 'Panel',  icon: '🖥️', cls: 'bg-purple-100 text-purple-800' },
+    oauth_google:  { label: 'Google', icon: '🔑', cls: 'bg-red-50 text-red-700' },
+    oauth_apple:   { label: 'Apple',  icon: '', cls: 'bg-gray-100 text-gray-800' },
+    import:        { label: 'Import', icon: '📥', cls: 'bg-amber-100 text-amber-800' },
+    unknown:       { label: '?',      icon: '❔', cls: 'bg-gray-100 text-gray-500' },
+  }
+  const m = meta[createdFrom ?? 'unknown'] ?? meta.unknown
+  return (
+    <span title={`Registro creado desde: ${m.label}`} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${m.cls}`}>
+      {m.icon} {m.label}
+    </span>
   )
 }

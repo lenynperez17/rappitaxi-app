@@ -94,14 +94,17 @@ export function VerificationsPage() {
                       {d.email && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> {d.email}</span>}
                     </div>
                   </div>
-                  <div className="text-right">
-                    {d.isVerified ? (
-                      <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3 h-3" /> Verificado
-                      </span>
-                    ) : (
-                      <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Pendiente</span>
-                    )}
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      {d.isVerified ? (
+                        <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" /> Verificado
+                        </span>
+                      ) : (
+                        <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Pendiente</span>
+                      )}
+                      <OriginBadgeCompact createdFrom={d.createdFrom} />
+                    </div>
                     <div className="text-xs text-gray-400 mt-1">{relativeTime(toDate(d.createdAt))}</div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
@@ -112,5 +115,23 @@ export function VerificationsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+// Chip compacto sin texto — solo emoji + tooltip. Para listados densos.
+function OriginBadgeCompact({ createdFrom }: { createdFrom?: string }) {
+  const meta: Record<string, { title: string; icon: string; cls: string }> = {
+    mobile:        { title: 'Registrado desde el app móvil',    icon: '📱', cls: 'bg-blue-100 text-blue-800' },
+    admin_panel:   { title: 'Creado desde el panel web',        icon: '🖥️', cls: 'bg-purple-100 text-purple-800' },
+    oauth_google:  { title: 'Registrado con Google Sign-In',    icon: '🔑', cls: 'bg-red-50 text-red-700' },
+    oauth_apple:   { title: 'Registrado con Apple Sign-In',     icon: '', cls: 'bg-gray-100 text-gray-800' },
+    import:        { title: 'Importado desde otro sistema',      icon: '📥', cls: 'bg-amber-100 text-amber-800' },
+    unknown:       { title: 'Origen desconocido',                icon: '❔', cls: 'bg-gray-100 text-gray-500' },
+  }
+  const m = meta[createdFrom ?? 'unknown'] ?? meta.unknown
+  return (
+    <span title={m.title} className={`text-xs px-1.5 py-0.5 rounded-full ${m.cls}`}>
+      {m.icon}
+    </span>
   )
 }

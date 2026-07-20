@@ -113,8 +113,8 @@ export async function POST(req: NextRequest) {
     const newId = randomUUID()
     user = await maybeOne<UserRow>(
       `INSERT INTO users (id, google_uid, email, email_verified, full_name, profile_photo_url,
-                         auth_provider, user_type, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, 'google', 'passenger', true)
+                         auth_provider, user_type, is_active, created_from)
+       VALUES ($1, $2, $3, $4, $5, $6, 'google', 'passenger', true, 'oauth_google')
        RETURNING id, full_name, email, phone, user_type, profile_complete, is_active, profile_photo_url`,
       [newId, googleUid, email, emailVerified, fullName, picture],
     )
