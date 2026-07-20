@@ -348,26 +348,30 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
               title: Text(
                 isEn ? 'Final confirmation' : 'Confirmación final',
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isEn
-                        ? 'Type "$keyword" to permanently delete your account. This action cannot be undone.'
-                        : 'Escribe "$keyword" para eliminar tu cuenta permanentemente. Esta acción no se puede deshacer.',
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: keyword,
-                      border: const OutlineInputBorder(),
+              // Ronda 223: SingleChildScrollView para que con el teclado
+              // abierto el botón "Eliminar" no quede fuera.
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isEn
+                          ? 'Type "$keyword" to permanently delete your account. This action cannot be undone.'
+                          : 'Escribe "$keyword" para eliminar tu cuenta permanentemente. Esta acción no se puede deshacer.',
                     ),
-                    onChanged: (_) => setLocalState(() {}),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: keyword,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setLocalState(() {}),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(

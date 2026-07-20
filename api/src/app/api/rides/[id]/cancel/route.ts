@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
 import { isUuid } from '@/lib/uuid'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -249,6 +250,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
        VALUES ($1, 'ride_cancelled', 'app', $2)`,
       [auth.userId, JSON.stringify({ rideId: id, reason, byAdmin: isAdmin })],
     )
+
+    // Ronda 223: FCM push a las contrapartes que se notificaron.
+    const wasPassenger = result.passengerId === auth.userId
+    const wasDriver = result.driverId === auth.userId
+    const pushRecipients: string[] = []
+    const otherParty = wasPassenger ? result.driverId
+      : wasDriver ? result.passengerId
+      : result.passengerId ?? result.driverId
+    if (otherParty) pushRecipients.push(otherParty)
+    if (isAdmin) {
+      const also = result.passengerId !== otherParty ? result.passengerId : result.driverId
+      if (also && also !== otherParty) pushRecipients.push(also)
+    }
+    if (pushRecipients.length > 0) {
+      void sendPush({
+        userIds: pushRecipients,
+        type: 'ride_cancelled',
+        title: 'Viaje cancelado',
+        body: result.reason ?? 'El viaje fue cancelado',
+        data: { rideId: id, cancelledBy: auth.userId, reason: result.reason ?? '' },
+        channel: 'rappi_rides',
+        priority: 'high',
+        persist: false,
+      })
+    }
 
     return NextResponse.json({
       success: true,

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, tx } from '@/lib/db'
 import { isUuid } from '@/lib/uuid'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -82,6 +83,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       )
     } catch (auditErr) {
       console.warn('[rides/start] audit_events insert failed (non-blocking):', auditErr)
+    }
+
+    // Ronda 223: FCM push al passenger.
+    if (result.passenger_id) {
+      void sendPush({
+        userIds: [result.passenger_id],
+        type: 'ride_started',
+        title: 'Viaje iniciado',
+        body: 'Estás en camino a tu destino',
+        data: { rideId: id, driverId: auth.userId },
+        channel: 'rappi_rides',
+        priority: 'high',
+        persist: false,
+      })
     }
 
     return NextResponse.json({

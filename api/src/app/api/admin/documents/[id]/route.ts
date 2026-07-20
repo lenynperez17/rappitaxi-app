@@ -11,6 +11,7 @@ import { isUuid } from '@/lib/uuid'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -193,6 +194,35 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         }),
       ],
     )
+
+    // Ronda 223: FCM push al driver — antes solo in-app. Crítico para el
+    // onboarding: si un admin rechaza con motivo, el driver debe verlo YA
+    // para poder resubir el doc rápido.
+    const pushTitle = newStatus === 'approved' ? 'Documento aprobado'
+      : newStatus === 'rejected' ? 'Documento rechazado'
+      : 'Documento expirado'
+    const pushBody = newStatus === 'rejected'
+      ? `Tu documento fue rechazado: ${body.rejectionReason ?? 'ver detalle'}`
+      : newStatus === 'approved'
+        ? (result.driverVerified
+            ? 'Documento aprobado. Ya eres un conductor verificado 🎉'
+            : 'Documento aprobado. Sigue subiendo los que faltan.')
+        : 'Debes subir el documento de nuevo.'
+    void sendPush({
+      userIds: [result.doc.driver_id],
+      type: 'document_review',
+      title: pushTitle,
+      body: pushBody,
+      data: {
+        documentId: id,
+        docType: result.doc.doc_type,
+        status: newStatus,
+        driverVerified: result.driverVerified,
+      },
+      channel: 'rappi_documents',
+      priority: 'high',
+      persist: false,
+    })
 
     return NextResponse.json({
       success: true,

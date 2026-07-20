@@ -2156,25 +2156,28 @@ class _ProfileScreenState extends State<ProfileScreen>
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('Confirmación final'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Escribe "$keyword" para eliminar tu cuenta permanentemente. Esta acción no se puede deshacer.',
-                  style: const TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: keyword,
-                    border: OutlineInputBorder(),
+            // Ronda 223: scroll para con teclado abierto acceder al botón.
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Escribe "$keyword" para eliminar tu cuenta permanentemente. Esta acción no se puede deshacer.',
+                    style: const TextStyle(fontSize: 13),
                   ),
-                  onChanged: (_) => setLocal(() {}),
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: keyword,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setLocal(() {}),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(

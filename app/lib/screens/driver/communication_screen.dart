@@ -1177,35 +1177,38 @@ class _CommunicationScreenState extends State<CommunicationScreen>
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text('Reportar Problema'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: selectedIssue,
-                decoration: InputDecoration(
-                  labelText: 'Tipo de problema',
-                  border: OutlineInputBorder(),
+          // Ronda 223: scroll para con teclado abierto los botones caben.
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedIssue,
+                  decoration: InputDecoration(
+                    labelText: 'Tipo de problema',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    'Comportamiento inapropiado',
+                    'Ubicación incorrecta',
+                    'No se presentó',
+                    'Cancelación injustificada',
+                    'Otro',
+                  ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  onChanged: (v) => setDialogState(() => selectedIssue = v!),
                 ),
-                items: [
-                  'Comportamiento inapropiado',
-                  'Ubicación incorrecta',
-                  'No se presentó',
-                  'Cancelación injustificada',
-                  'Otro',
-                ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) => setDialogState(() => selectedIssue = v!),
-              ),
-              SizedBox(height: 16),
-              TextField(
-                controller: reportController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: 'Descripción',
-                  hintText: 'Describe el problema...',
-                  border: OutlineInputBorder(),
+                SizedBox(height: 16),
+                TextField(
+                  controller: reportController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Descripción',
+                    hintText: 'Describe el problema...',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(

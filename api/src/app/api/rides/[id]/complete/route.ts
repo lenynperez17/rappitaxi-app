@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, tx } from '@/lib/db'
 import { isUuid } from '@/lib/uuid'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -391,6 +392,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
        VALUES ($1, 'ride_completed', 'app', $2)`,
       [auth.userId, JSON.stringify({ rideId: id, finalFare, walletCharged: !!result.walletDebit })],
     )
+
+    // Ronda 223: FCM push al passenger (antes solo in-app).
+    if (result.ride.passenger_id) {
+      void sendPush({
+        userIds: [result.ride.passenger_id],
+        type: 'ride_completed',
+        title: 'Viaje completado',
+        body: `Total: S/ ${finalFare.toFixed(2)}`,
+        data: { rideId: id, finalFare },
+        channel: 'rappi_rides',
+        sound: 'trip_completed',
+        priority: 'high',
+        persist: false,
+      })
+    }
 
     return NextResponse.json({
       success: true,

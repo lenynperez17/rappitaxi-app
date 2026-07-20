@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { query, maybeOne, tx, isUniqueViolation } from '@/lib/db'
+import { sendPush } from '@/lib/send-push'
 
 /**
  * Verifica x-signature de MercadoPago (HMAC-SHA256).
@@ -285,6 +286,31 @@ export async function POST(req: NextRequest) {
         )
       }
     })
+
+    // Ronda 223: FCM push al passenger cuando MP aprueba una recarga. Antes
+    // solo se actualizaba wallet_transactions → el user no se enteraba hasta
+    // hacer pull-to-refresh manual del balance. Ahora recibe push instantáneo.
+    if (newStatus === 'approved') {
+      void sendPush({
+        userIds: [mpRow.user_id],
+        type: 'recharge_approved',
+        title: 'Recarga acreditada',
+        body: `S/ ${payment.transaction_amount.toFixed(2)} ya están disponibles en tu wallet`,
+        data: { mpPaymentId: String(payment.id), amount: payment.transaction_amount },
+        channel: 'rappi_payments',
+        priority: 'high',
+      })
+    } else if (newStatus === 'refunded' || newStatus === 'cancelled' || newStatus === 'charged_back') {
+      void sendPush({
+        userIds: [mpRow.user_id],
+        type: 'recharge_refunded',
+        title: newStatus === 'charged_back' ? 'Contracargo procesado' : 'Pago revertido',
+        body: `S/ ${payment.transaction_amount.toFixed(2)} — motivo: ${newStatus}`,
+        data: { mpPaymentId: String(payment.id), amount: payment.transaction_amount, reason: newStatus },
+        channel: 'rappi_payments',
+        priority: 'high',
+      })
+    }
 
     return NextResponse.json({ ok: true, status: newStatus })
   } catch (err) {

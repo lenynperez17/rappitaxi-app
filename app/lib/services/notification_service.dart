@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:convert';
@@ -101,6 +102,19 @@ class NotificationService {
       enableVibration: true,
       vibrationPattern: _longVibrationPattern,
     ),
+    // Ronda 223: canal específico para aprobación/rechazo de docs del driver.
+    // Antes caía en 'rappi_general' junto con promos y anuncios → el driver
+    // no distinguía si era doc importante o un banner.
+    AndroidNotificationChannel(
+      'rappi_documents',
+      'Documentos',
+      description: 'Aprobación o rechazo de tus documentos como conductor',
+      importance: Importance.high,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('ride_accepted'),
+      enableVibration: true,
+      vibrationPattern: _longVibrationPattern,
+    ),
   ];
 
   /// Inicializar servicio de notificaciones
@@ -174,12 +188,55 @@ class NotificationService {
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📱 Mensaje recibido en primer plano: ${message.messageId}');
 
-    // Mostrar notificación local con canal apropiado segun el tipo
+    // Ronda 223: HapticFeedback fuerte para push críticos incluso cuando la
+    // app está en foreground. Sin esto, el user puede no percibir la notif
+    // que aparece arriba mientras interactúa con otra pantalla. Los eventos
+    // de ride y emergencia tienen impacto pesado; los demás, medium.
+    final type = message.data['type'] as String?;
+    try {
+      switch (type) {
+        case 'emergency_alert':
+        case 'sos':
+          // Emergencia: 3 pulsos fuertes
+          await HapticFeedback.heavyImpact();
+          await Future.delayed(const Duration(milliseconds: 120));
+          await HapticFeedback.heavyImpact();
+          await Future.delayed(const Duration(milliseconds: 120));
+          await HapticFeedback.heavyImpact();
+          break;
+        case 'new_ride_offer':
+        case 'ride_accepted':
+        case 'driver_arrived':
+        case 'ride_started':
+          await HapticFeedback.heavyImpact();
+          break;
+        case 'new_message':
+        case 'ride_completed':
+        case 'recharge_approved':
+        case 'document_review':
+          await HapticFeedback.mediumImpact();
+          break;
+        default:
+          await HapticFeedback.lightImpact();
+      }
+    } catch (e) {
+      debugPrint('HapticFeedback no disponible: $e');
+    }
+
+    // Mostrar notificación local con canal apropiado segun el tipo.
+    // Ronda 223: si el push llegó como data-only (sin `notification` payload),
+    // igual construimos title/body desde data para no quedar en silencio.
+    final title = message.notification?.title
+        ?? (message.data['title'] as String?)
+        ?? 'Nueva notificación';
+    final body = message.notification?.body
+        ?? (message.data['body'] as String?)
+        ?? '';
     await showNotification(
-      title: message.notification?.title ?? 'Nueva notificación',
-      body: message.notification?.body ?? '',
+      title: title,
+      body: body,
       payload: json.encode(message.data),
-      type: message.data['type'] as String?,
+      type: type,
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
   }
@@ -190,7 +247,11 @@ class NotificationService {
     _handleNotificationClick(message.data);
   }
 
-  /// Get the channel ID based on notification type
+  /// Get the channel ID based on notification type.
+  /// Ronda 223: alineado con los `type` que envía send-push.ts del backend
+  /// (new_ride_offer, ride_accepted, driver_arrived, ride_started,
+  /// ride_completed, ride_cancelled, new_message, emergency_alert,
+  /// recharge_approved, recharge_refunded, document_review).
   String _channelIdForType(String? type) {
     switch (type) {
       case 'ride':
@@ -199,20 +260,36 @@ class NotificationService {
       case 'tripAccepted':
       case 'tripStarted':
       case 'driverArrived':
+      case 'new_ride_offer':
+      case 'ride_accepted':
+      case 'driver_arrived':
+      case 'ride_started':
+      case 'ride_completed':
+      case 'ride_cancelled':
         return 'rappi_rides';
       case 'payment':
       case 'paymentSuccess':
       case 'paymentFailed':
       case 'tripCompleted':
+      case 'recharge_approved':
+      case 'recharge_refunded':
+      case 'withdrawal_approved':
+      case 'withdrawal_rejected':
         return 'rappi_payments';
       case 'emergency':
       case 'securityAlert':
       case 'sos':
+      case 'emergency_alert':
         return 'rappi_emergency';
       case 'chat':
       case 'chatMessage':
       case 'message':
+      case 'new_message':
         return 'rappi_chat';
+      case 'document_review':
+      case 'document_approved':
+      case 'document_rejected':
+        return 'rappi_documents';
       case 'promotion':
       case 'discount':
       case 'offer':

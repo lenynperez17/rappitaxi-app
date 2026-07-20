@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne, tx } from '@/lib/db'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -242,6 +243,22 @@ export async function POST(
 
       return { id: row.id, createdAt: row.created_at, senderName }
     })
+
+    // Ronda 223: FCM push al receptor del mensaje. Antes solo in-app, así
+    // que si tenía la app en background NO se enteraba de nuevos mensajes.
+    if (participation.counterpartyId) {
+      void sendPush({
+        userIds: [participation.counterpartyId],
+        type: 'new_message',
+        title: `Nuevo mensaje de ${result.senderName}`,
+        body: body ?? '[Adjunto]',
+        data: { rideId, messageId: result.id, senderId: auth.userId },
+        channel: 'rappi_chat',
+        sound: 'chat_message',
+        priority: 'high',
+        persist: false, // ya se insertó dentro del tx
+      })
+    }
 
     // Ronda 40 Bug#2: shape simetrica con GET (senderName + readAt=null)
     return NextResponse.json(

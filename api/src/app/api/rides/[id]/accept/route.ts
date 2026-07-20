@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
 import { isUuid } from '@/lib/uuid'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -146,6 +147,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
        VALUES ($1, 'ride_accepted', 'app', $2)`,
       [auth.userId, JSON.stringify({ rideId: id, passengerId: result.passenger_id })],
     )
+
+    // Ronda 223: push FCM al passenger. Antes solo se insertaba en la tabla
+    // `notifications` (in-app), así que el passenger con la app en background
+    // NO se enteraba de que un driver aceptó su viaje hasta abrir la app.
+    if (result.passenger_id) {
+      void sendPush({
+        userIds: [result.passenger_id],
+        type: 'ride_accepted',
+        title: 'Tu conductor está en camino',
+        body: driver.full_name
+          ? `${driver.full_name} aceptó tu viaje`
+          : 'Un conductor aceptó tu viaje',
+        data: { rideId: id, driverId: auth.userId },
+        channel: 'rappi_rides',
+        sound: 'ride_accepted',
+        priority: 'high',
+        persist: false, // ya insertamos dentro del tx arriba
+      })
+    }
 
     return NextResponse.json({
       success: true,

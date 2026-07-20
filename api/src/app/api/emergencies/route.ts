@@ -356,8 +356,10 @@ export async function POST(req: NextRequest) {
                 emergencyId: result.emergency.id,
                 json: emergencyDataStr,
               },
-              android: { priority: 'high', notification: { channelId: 'rappi_emergency' } },
-              apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default', contentAvailable: true } } },
+              // Ronda 223: sonido custom emergency_alert.wav en vez de
+              // 'default' — diferenciación crítica del SOS vs push normales.
+              android: { priority: 'high', notification: { channelId: 'rappi_emergency', sound: 'emergency_alert' } },
+              apns: { headers: { 'apns-priority': '10', 'apns-push-type': 'alert' }, payload: { aps: { sound: 'emergency_alert.wav', contentAvailable: true } } },
             }),
           ),
         )

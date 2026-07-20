@@ -588,37 +588,40 @@ class _DriverNegotiationsScreenState extends State<DriverNegotiationsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Hacer una oferta'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Precio sugerido: ${negotiation.suggestedPrice.toCurrency()}',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
-            ),
-            Text(
-              'Precio del pasajero: ${negotiation.offeredPrice.toCurrency()}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: priceController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Tu precio',
-                prefixText: '${AppConstants.currencySymbol} ',
-                border: const OutlineInputBorder(),
+        // Ronda 223: scroll para diálogo con TextField numérico + teclado.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Precio sugerido: ${negotiation.suggestedPrice.toCurrency()}',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ingresa el precio al que estás dispuesto a aceptar este viaje',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              Text(
+                'Precio del pasajero: ${negotiation.offeredPrice.toCurrency()}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Tu precio',
+                  prefixText: '${AppConstants.currencySymbol} ',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ingresa el precio al que estás dispuesto a aceptar este viaje',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

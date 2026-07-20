@@ -127,7 +127,10 @@ export async function notifyRideOffer(
               priority: 'high',
               notification: {
                 sound: 'ride_request',
-                channelId: 'ride_offers',
+                // Ronda 223: coincidir con canal creado por Flutter en
+                // notification_service.dart (era 'ride_offers' → canal
+                // inexistente → sonido default → drivers pierden solicitudes).
+                channelId: 'rappi_rides',
               },
             },
             apns: {

@@ -625,37 +625,41 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             const Text('Verificar Pasajero'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Ingresa el código de 4 dígitos que te proporcionará el pasajero:',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _codeController,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 10,
+        // Ronda 223: SingleChildScrollView para que con teclado abierto el
+        // botón "Verificar" no quede oculto.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Ingresa el código de 4 dígitos que te proporcionará el pasajero:',
+                textAlign: TextAlign.center,
               ),
-              decoration: InputDecoration(
-                hintText: '----',
-                counterText: '',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _codeController,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 10,
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.rappiOrange, width: 2),
+                decoration: InputDecoration(
+                  hintText: '----',
+                  counterText: '',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.rappiOrange, width: 2),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -941,29 +945,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+        // Ronda 223: SingleChildScrollView para diálogo con muchos elementos
+        // (icono + título + ganancia + card de resumen + botones). En pantallas
+        // pequeñas los botones quedaban fuera.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: AppColors.success,
+                  size: 60,
+                ),
               ),
-              child: const Icon(
-                Icons.check_circle,
-                color: AppColors.success,
-                size: 60,
+              const SizedBox(height: 20),
+              const Text(
+                '¡Viaje Completado!',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              '¡Viaje Completado!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
             const SizedBox(height: 8),
             Text(
               'Ganancia: S/ ${finalFare.toStringAsFixed(2)}',
@@ -1018,6 +1026,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               ),
             ),
           ],
+          ),
         ),
       ),
     );
