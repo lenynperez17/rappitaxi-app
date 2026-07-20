@@ -147,6 +147,24 @@ function DocumentsSection({ driverId, onFlash, onError }: {
   // Ronda 165: ref síncrono cierra ventana de race que setReviewingId(id)
   // (asíncrono via React state) deja abierta entre onClick y re-render.
   const reviewingRef = useRef<string | null>(null)
+  const [preview, setPreview] = useState<{ url: string; docType: string; mime: string } | null>(null)
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null)
+
+  const openPreview = async (doc: { id: string; docType: string; fileUrl: string }) => {
+    setPreviewLoadingId(doc.id)
+    try {
+      const blob = await adminApi.fetchMediaBlob(doc.fileUrl)
+      const url = URL.createObjectURL(blob)
+      setPreview({ url, docType: doc.docType, mime: blob.type || 'application/octet-stream' })
+    } catch (e) {
+      onError(e instanceof AdminApiError ? e.message : 'No se pudo cargar el documento')
+    } finally { setPreviewLoadingId(null) }
+  }
+
+  const closePreview = () => {
+    if (preview) URL.revokeObjectURL(preview.url)
+    setPreview(null)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -222,7 +240,14 @@ function DocumentsSection({ driverId, onFlash, onError }: {
                 {d.rejectionReason && (
                   <p className="text-xs text-red-600 mt-1">Motivo: {d.rejectionReason}</p>
                 )}
-                <a href={d.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Ver archivo</a>
+                <button
+                  type="button"
+                  onClick={() => void openPreview(d)}
+                  disabled={previewLoadingId === d.id}
+                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  {previewLoadingId === d.id ? 'Cargando…' : 'Ver archivo'}
+                </button>
               </div>
               {d.status === 'pending' && (
                 <div className="flex gap-1 flex-shrink-0">
@@ -246,6 +271,54 @@ function DocumentsSection({ driverId, onFlash, onError }: {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={closePreview}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h4 className="font-semibold text-gray-900 font-mono text-sm">{preview.docType}</h4>
+              <div className="flex items-center gap-2">
+                <a
+                  href={preview.url}
+                  download={`${preview.docType}.${preview.mime.includes('pdf') ? 'pdf' : 'jpg'}`}
+                  className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  Descargar
+                </a>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
+              {preview.mime.startsWith('image/') ? (
+                <img src={preview.url} alt={preview.docType} className="max-w-full max-h-full object-contain" />
+              ) : preview.mime === 'application/pdf' ? (
+                <iframe src={preview.url} title={preview.docType} className="w-full h-[70vh] border-0" />
+              ) : (
+                <div className="text-center text-sm text-gray-600">
+                  <p>Vista previa no disponible para este tipo de archivo ({preview.mime}).</p>
+                  <a href={preview.url} download className="text-blue-600 hover:underline mt-2 inline-block">
+                    Descargar archivo
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -299,6 +299,29 @@ class AdminApi {
     return this.rawFetch(`/api/admin/documents/${id}`, { method: 'PATCH', body: input })
   }
 
+  /**
+   * Devuelve el archivo protegido de /api/media/... como Blob autenticado.
+   * El endpoint requiere Authorization Bearer, así que un simple <a href>
+   * responde 401. Este helper hace el fetch con token y devuelve un Blob
+   * que se puede convertir a ObjectURL para previsualizar en un modal.
+   */
+  async fetchMediaBlob(fileUrl: string): Promise<Blob> {
+    // fileUrl puede ser absoluto (https://...) o relativo (/api/media/...).
+    const url = fileUrl.startsWith('http') ? fileUrl : `${BASE_URL}${fileUrl}`
+    const headers: Record<string, string> = {}
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`
+    const r = await fetch(url, { headers })
+    if (r.status === 401 && this.refreshToken) {
+      const refreshed = await this.attemptRefresh()
+      if (refreshed) headers['Authorization'] = `Bearer ${this.accessToken}`
+      const r2 = await fetch(url, { headers })
+      if (!r2.ok) throw new AdminApiError(r2.status, 'media_fetch_failed', `HTTP ${r2.status} al descargar el archivo`)
+      return r2.blob()
+    }
+    if (!r.ok) throw new AdminApiError(r.status, 'media_fetch_failed', `HTTP ${r.status} al descargar el archivo`)
+    return r.blob()
+  }
+
   // ─── Facturación (invoices) ────────────────────────────────────
   async listInvoices(params: {
     status?: string; type?: string; customerId?: string;
