@@ -832,6 +832,9 @@ class RapiApiClient {
         if (year != null) 'year': year,
       }))!;
 
+  Future<Map<String, dynamic>> myVehicle() async =>
+      (await _authedGet('/api/drivers/me/vehicle'))!;
+
   Future<Map<String, dynamic>> myDocuments() async =>
       (await _authedGet('/api/drivers/me/documents'))!;
 

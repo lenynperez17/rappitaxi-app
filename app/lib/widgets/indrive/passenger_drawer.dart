@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/rapi_api_client.dart';
 import '../../widgets/common/rappi_app_bar.dart';
 import '../../screens/shared/settings_screen.dart';
 import '../../screens/shared/about_screen.dart';
@@ -261,11 +262,66 @@ class _DriverModeButton extends StatelessWidget {
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
-    // TODO(node-migration): reemplazar con endpoint GET /driver-applications?userId=xxx&status=pending,under_review
-    // cuando exista. Hoy no hay endpoint en RapiApiClient para consultar solicitudes
-    // pendientes de conductor, así que devolvemos null (comportamiento seguro:
-    // navegar al flujo de registro normal si el usuario no tiene rol driver).
-    AppLogger.info('checkPendingDriverApplication stub — sin endpoint aún (userId=$userId)');
-    return null;
+    // Ronda 224 (build 138) BUG CRÍTICO: este método antes era un stub que
+    // SIEMPRE devolvía null → cada vez que un aplicante abría el drawer y
+    // tocaba "Convertirme en conductor" era mandado al wizard desde cero,
+    // aunque ya tuviera 9 documentos subidos y estuviera esperando revisión.
+    // La versión buena vive en modern_passenger_home; se duplica acá para
+    // que el drawer también reconozca la solicitud pendiente.
+    try {
+      AppLogger.info('Verificando solicitud de conductor pendiente (drawer) para $userId');
+      final api = RapiApiClient.instance;
+
+      // Fast path: profile con status pending/under_review.
+      try {
+        final profile = await api.myDriverProfile();
+        final data = (profile['driver'] as Map?) ??
+            (profile['profile'] as Map?) ??
+            profile;
+        final status = (data['status'] ?? data['verificationStatus'])?.toString();
+        if (status == 'pending' || status == 'under_review') {
+          return Map<String, dynamic>.from(data);
+        }
+      } catch (_) {
+        // /profile devuelve 403 para passenger — esperado, seguimos al fallback.
+      }
+
+      // Fallback: existen documentos subidos (aplicante activo aunque siga passenger).
+      try {
+        final docsResp = await api.myDocuments();
+        final docs = docsResp['documents'] as List? ?? const [];
+        if (docs.isNotEmpty) {
+          final hasPending = docs.any((d) {
+            if (d is! Map) return false;
+            final st = d['status']?.toString();
+            return st == 'pending' || st == 'approved' || st == 'rejected';
+          });
+          if (hasPending) {
+            return {
+              'status': 'pending',
+              'workType': _inferWorkType(docs),
+              'documents': docs,
+            };
+          }
+        }
+      } catch (_) {
+        // Sin docs — usuario nuevo, iniciar wizard normal.
+      }
+      return null;
+    } catch (e) {
+      AppLogger.info('checkPendingDriverApplication drawer error: $e');
+      return null;
+    }
+  }
+
+  String _inferWorkType(List<dynamic> docs) {
+    for (final d in docs) {
+      if (d is Map) {
+        final scope = d['scope']?.toString() ?? d['docType']?.toString() ?? '';
+        if (scope.contains('moto')) return 'moto';
+        if (scope.contains('courier')) return 'courier';
+      }
+    }
+    return 'auto';
   }
 }

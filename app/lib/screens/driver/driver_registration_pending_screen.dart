@@ -22,6 +22,11 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
     with TickerProviderStateMixin {
   Map<String, dynamic>? _applicationData;
   bool _isLoading = true;
+  // Ronda 224 (138): distinguir "docs completos" de "docs subidos sin vehículo".
+  // Sin este flag el user se queda mirando "solicitud enviada" para siempre
+  // aunque falte el vehículo (el admin puede aprobar docs pero el auto-promote
+  // a dual jamás dispara sin vehículo → catch-22).
+  bool _missingVehicle = false;
 
   late final AnimationController _rotationController;
   late final AnimationController _pulseController;
@@ -80,36 +85,37 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
 
   /// Cargar datos de la solicitud (desde argumento o desde el backend Node)
   Future<void> _loadApplicationData() async {
-    // Si ya vienen datos como argumento, usarlos
     if (widget.applicationData != null) {
-      setState(() {
-        _applicationData = widget.applicationData;
-        _isLoading = false;
-      });
-      _contentController.forward();
-      return;
+      _applicationData = widget.applicationData;
     }
 
-    // Si no, cargar desde el backend Node.
+    // Verificar si hay vehículo activo — sin él, aunque el admin apruebe todos
+    // los docs, el user_type no pasará a dual y el user queda atrapado.
     try {
-      AppLogger.info('Cargando solicitud pendiente desde backend Node');
-
-      // El perfil de driver ya contiene el workType/vehículo y su estado.
-      final profile = await RapiApiClient.instance.myDriverProfile();
-
-      if (!mounted) return;
-      setState(() {
-        _applicationData = profile;
-        _isLoading = false;
-      });
-      _contentController.forward();
+      final api = RapiApiClient.instance;
+      final vehicleResp = await api.myVehicle();
+      final vehicle = vehicleResp['vehicle'];
+      _missingVehicle = vehicle == null;
+      AppLogger.info('_missingVehicle=$_missingVehicle');
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando solicitud pendiente'));
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _contentController.forward();
+      AppLogger.info('No se pudo verificar vehículo: $e');
+      _missingVehicle = true;
+    }
+
+    if (_applicationData == null) {
+      try {
+        AppLogger.info('Cargando solicitud pendiente desde backend Node');
+        final profile = await RapiApiClient.instance.myDriverProfile();
+        _applicationData = profile;
+      } catch (e) {
+        AppLogger.info(userFriendlyError(e, fallback: 'myDriverProfile falló'));
+        _applicationData = {'status': 'pending'};
       }
     }
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _contentController.forward();
   }
 
   @override
@@ -289,7 +295,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                         context,
                         icon: Icons.directions_car,
                         label: 'Información del vehículo',
-                        status: 'completed',
+                        status: _missingVehicle ? 'missing' : 'completed',
                       ),
                       const SizedBox(height: 12),
                       _buildStatusItem(
@@ -310,6 +316,51 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
               _animatedSection(
                 Column(
                   children: [
+                    if (_missingVehicle) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.amber.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade700),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Falta registrar tu vehículo para completar la solicitud. Sin esto no podremos activar tu modo conductor.',
+                                style: TextStyle(fontSize: 13, color: Colors.amber.shade900),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,
+                              '/driver/register',
+                              (route) => false,
+                            );
+                          },
+                          icon: const Icon(Icons.directions_car),
+                          label: const Text('Completar registro del vehículo'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -321,7 +372,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                           );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.rappiRed,
+                          backgroundColor: _missingVehicle ? Colors.grey.shade400 : AppColors.rappiRed,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -379,6 +430,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
   }) {
     final isCompleted = status == 'completed';
     final isPending = status == 'pending';
+    final isMissing = status == 'missing';
 
     return Row(
       children: [
@@ -389,7 +441,9 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                 ? Colors.green.shade50
                 : isPending
                     ? Colors.amber.shade50
-                    : Colors.grey.shade100,
+                    : isMissing
+                        ? Colors.red.shade50
+                        : Colors.grey.shade100,
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -399,7 +453,9 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                 ? Colors.green.shade600
                 : isPending
                     ? Colors.amber.shade600
-                    : Colors.grey.shade400,
+                    : isMissing
+                        ? Colors.red.shade600
+                        : Colors.grey.shade400,
           ),
         ),
         const SizedBox(width: 12),
@@ -423,6 +479,8 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
               valueColor: AlwaysStoppedAnimation<Color>(Colors.amber.shade600),
             ),
           )
+        else if (isMissing)
+          Icon(Icons.error, size: 20, color: Colors.red.shade600)
         else
           Icon(Icons.radio_button_unchecked, size: 20, color: Colors.grey.shade400),
       ],
