@@ -156,25 +156,39 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       }
 
       // 2) Registrar cada documento subido en /api/drivers/me/documents.
+      // Ronda 222: nombres deben coincidir con el enum backend ALLOWED_DOC_TYPES.
+      // Antes enviábamos 'property_front'/'property_back' → backend 400
+      // invalid_doc_type → docs quedaban sin registrar → admin no los veía →
+      // "solicitud enviada" pero panel admin vacío.
       final docs = <String, String?>{
         'license_front': licenseFrontUrl,
         'license_back': licenseBackUrl,
         'dni_front': dniFrontUrl,
         'dni_back': dniBackUrl,
-        'property_front': propertyCardFrontUrl,
-        'property_back': propertyCardBackUrl,
+        'tarjeta_propiedad': propertyCardFrontUrl,
+        'ownership': propertyCardBackUrl,
         'soat': soatUrl,
         'selfie': selfieUrl,
         'vehicle_photo': vehiclePhotoUrl,
       };
+      // Ronda 222: si un uploadDocument falla, propagar el error para que
+      // el user vea el detalle en lugar de "solicitud enviada" con panel
+      // admin vacío. Antes swallowabamos silenciosamente.
+      final List<String> failedDocs = [];
       for (final entry in docs.entries) {
         final url = entry.value;
         if (url == null || url.isEmpty) continue;
         try {
           await api.uploadDocument(docType: entry.key, fileUrl: url);
         } catch (e) {
-          AppLogger.warning('uploadDocument ${entry.key} falló: $e');
+          AppLogger.error('uploadDocument ${entry.key} falló: $e');
+          failedDocs.add(entry.key);
         }
+      }
+      if (failedDocs.isNotEmpty) {
+        throw StateError(
+          'No se pudieron registrar ${failedDocs.length} documento(s): ${failedDocs.join(', ')}',
+        );
       }
 
       AppLogger.info('Solicitud de conductor enviada al backend Node');

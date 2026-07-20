@@ -109,9 +109,16 @@ export async function POST(req: NextRequest) {
       { status: 404 },
     )
   }
-  if (user.user_type !== 'driver' && user.user_type !== 'dual') {
+  // Ronda 222 BUG FIX crítico: el flujo de registro de conductor pasa por
+  // ESTA misma pantalla. El user llega como `passenger` (aún no aprobado) y
+  // necesita subir sus documentos ANTES de que admin los revise y ANTES de
+  // que `POST /api/drivers/me/upgrade` lo convierta en `dual`. Rechazar
+  // passengers aquí generaba un catch-22 imposible: no puedes subir docs
+  // sin ser driver, no puedes ser driver sin docs aprobados. Ahora aceptamos
+  // los 3 tipos y el upgrade sigue guardado por sus propias validaciones.
+  if (user.user_type !== 'driver' && user.user_type !== 'dual' && user.user_type !== 'passenger') {
     return NextResponse.json(
-      { success: false, error: 'forbidden', message: 'Solo drivers' },
+      { success: false, error: 'forbidden', message: 'Cuenta no válida para subir documentos' },
       { status: 403 },
     )
   }

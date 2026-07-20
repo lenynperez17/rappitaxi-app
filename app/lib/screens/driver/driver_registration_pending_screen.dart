@@ -143,12 +143,25 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
 
     return Scaffold(
       backgroundColor: AppColors.getSurface(context),
+      // Ronda 221 BUG FIX: sin SingleChildScrollView el contenido de esta
+      // pantalla (icono + título + subtítulo + badge + card de estado + botón
+      // + link soporte) excedía la altura de iPhone SE/8/nuevos con notch →
+      // el botón "Volver al inicio" quedaba fuera del viewport y NO se podía
+      // scrollear (Column no scrollea). El user quedaba atrapado.
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.top -
+                  MediaQuery.of(context).padding.bottom -
+                  64,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
               // Icono animado de espera (index 0)
               _animatedSection(
                 Container(
@@ -351,6 +364,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                 5,
               ),
             ],
+            ),
           ),
         ),
       ),
