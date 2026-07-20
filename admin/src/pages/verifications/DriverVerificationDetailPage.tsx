@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 
@@ -8,16 +8,11 @@ export function DriverVerificationDetailPage() {
   const { driverId } = useParams<{ driverId: string }>()
   const [user, setUser] = useState<AdminUser | null>(null)
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
   // Distinguimos entre "error del fetch inicial" (que sí bloquea la vista) y
   // "error de acción" (mostrar banner pero mantener el detalle visible).
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
-  // Ronda 165: useRef síncrono cierra la ventana de race entre onClick y el
-  // re-render de setBusy(true) — dos taps rápidos evitan doble PATCH →
-  // dobles push, doble audit log, dobles side-effects (bonos, credit seed).
-  const busyRef = useRef(false)
 
   useEffect(() => {
     if (!driverId) return
@@ -40,23 +35,6 @@ export function DriverVerificationDetailPage() {
     const t = setTimeout(() => setFlash(null), 4000)
     return () => clearTimeout(t)
   }, [flash])
-
-  const verify = async () => {
-    if (!driverId || busyRef.current) return
-    busyRef.current = true
-    setBusy(true)
-    try {
-      const updated = await adminApi.updateUser(driverId, { isVerified: true })
-      setUser(updated); setFlash('Conductor verificado exitosamente'); setActionError(null)
-    } catch (err) {
-      // NO usamos setError(): eso descartaría la vista completa. En su lugar,
-      // mostramos el error en un banner sin bloquear el resto del contenido.
-      setActionError(err instanceof AdminApiError ? err.message : 'Error verificando')
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
-  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">
@@ -113,23 +91,6 @@ export function DriverVerificationDetailPage() {
           </div>
         </div>
       </div>
-
-      {!user.isVerified && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h3 className="font-semibold text-gray-900">Marcar verificado manualmente</h3>
-          <button
-            onClick={() => void verify()}
-            disabled={busy}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60"
-          >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Marcar como verificado
-          </button>
-          <p className="text-xs text-gray-500">
-            Verificación manual sin revisión de documentos individuales.
-          </p>
-        </div>
-      )}
 
       <DocumentsSection driverId={driverId!} onFlash={setFlash} onError={setActionError} />
     </div>
@@ -243,6 +204,38 @@ function DocumentsSection({ driverId, onFlash, onError }: {
     }
   }
 
+  const [bulkApproving, setBulkApproving] = useState(false)
+  const pendingDocs = docs.filter((d) => d.status === 'pending')
+  const approveAllPending = async () => {
+    if (bulkApproving || pendingDocs.length === 0) return
+    const ok = window.confirm(
+      `¿Aprobar los ${pendingDocs.length} documento(s) pendientes de este conductor?\n\n` +
+      `Cuando todos los requeridos (DNI, licencia, SOAT) queden aprobados y haya un vehículo activo, ` +
+      `el conductor pasa a modo dual automáticamente y recibe una notificación en el móvil.`,
+    )
+    if (!ok) return
+    setBulkApproving(true)
+    try {
+      // Aprobación en paralelo — el backend maneja cada UPDATE en su tx.
+      const results = await Promise.allSettled(
+        pendingDocs.map((d) => adminApi.reviewDocument(d.id, { status: 'approved' })),
+      )
+      const approved = results.filter((r) => r.status === 'fulfilled').length
+      const failed = results.length - approved
+      const promoted = results.some(
+        (r) => r.status === 'fulfilled' && (r.value as { driverVerified?: boolean | null }).driverVerified === true,
+      )
+      onFlash(
+        failed === 0
+          ? `${approved} documento(s) aprobado(s)${promoted ? '. Conductor verificado automáticamente.' : ''}`
+          : `${approved} aprobados, ${failed} fallaron (revisa cada uno).`,
+      )
+      await load()
+    } catch (e) {
+      onError(e instanceof AdminApiError ? e.message : 'Error aprobando en bloque')
+    } finally { setBulkApproving(false) }
+  }
+
   const STATUS_BADGE: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
     approved: 'bg-green-100 text-green-700',
@@ -268,11 +261,34 @@ function DocumentsSection({ driverId, onFlash, onError }: {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-semibold text-gray-900">Documentos ({docs.length})</h3>
-        <button type="button" onClick={() => void load()} className="text-xs text-gray-600 hover:text-gray-900">
-          Recargar
-        </button>
+        <div className="flex items-center gap-2">
+          {pendingDocs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void approveAllPending()}
+              disabled={bulkApproving}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-60 font-medium"
+              title={`Aprueba en un solo click los ${pendingDocs.length} documentos pendientes`}
+            >
+              {bulkApproving ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Aprobando…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Aprobar todos ({pendingDocs.length})
+                </>
+              )}
+            </button>
+          )}
+          <button type="button" onClick={() => void load()} className="text-xs text-gray-600 hover:text-gray-900">
+            Recargar
+          </button>
+        </div>
       </div>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-gray-500">
