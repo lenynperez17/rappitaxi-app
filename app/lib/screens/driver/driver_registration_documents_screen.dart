@@ -212,13 +212,34 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
     }
   }
 
-  /// Sube una imagen al backend Node (/api/storage/upload) con el scope indicado
-  /// y retorna la URL pública/firmada devuelta por el servidor.
+  /// Sube una imagen al backend Node (/api/storage/upload) con el scope
+  /// indicado y retorna la URL pública/firmada devuelta por el servidor.
+  ///
+  /// Ronda 220 BUG FIX: el cliente enviaba `driver_$scope` (ej. `driver_soat`,
+  /// `driver_dni_front`) pero el backend solo acepta el enum StorageScope:
+  /// `profile_photo, driver_license, vehicle_photo, vehicle_registration,
+  /// criminal_record, identity_front, identity_back, soat, chat_attachment,
+  /// misc`. Como consecuencia CADA upload del registro de conductor devolvía
+  /// 400 `invalid_scope` → `_uploadImage` throw → "Error al enviar solicitud".
+  /// Ahora mapeamos el scope local del cliente al enum backend.
+  static const Map<String, String> _clientToBackendScope = {
+    'selfie': 'profile_photo',
+    'vehicle_photo': 'vehicle_photo',
+    'license_front': 'driver_license',
+    'license_back': 'driver_license',
+    'dni_front': 'identity_front',
+    'dni_back': 'identity_back',
+    'property_front': 'vehicle_registration',
+    'property_back': 'vehicle_registration',
+    'soat': 'soat',
+  };
+
   Future<String> _uploadImage(File file, String scope) async {
+    final backendScope = _clientToBackendScope[scope] ?? 'misc';
     try {
       final res = await RapiApiClient.instance.uploadFile(
         file: file,
-        scope: 'driver_$scope',
+        scope: backendScope,
       );
       final url = (res['url'] ?? res['downloadUrl'] ?? '') as String;
       if (url.isEmpty) {
@@ -226,7 +247,7 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       }
       return url;
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo imagen $scope'));
+      AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo imagen $scope (backend scope: $backendScope)'));
       rethrow;
     }
   }
