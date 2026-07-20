@@ -208,6 +208,54 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return { doc: updatedDoc, driverVerified, promotedToDual }
     })
 
+    // Ronda 227 BUG FIX (race condition): cuando el admin aprueba 9 docs en
+    // paralelo (Promise.allSettled), cada tx con READ COMMITTED solo ve su
+    // propio UPDATE + snapshot inicial → ninguna detectó allApproved dentro
+    // de tx → auto-promote a dual nunca disparaba, aunque los 5 requeridos
+    // quedaran approved al terminar. Fix: query atómica POST-tx que re-evalúa
+    // TODAS las condiciones sobre datos ya committed. La última request en
+    // ejecutar este UPDATE verá todos los otros commits y aplicará el cambio.
+    // Es idempotente: las corridas previas no-op (WHERE user_type='passenger'
+    // ya no matchea después del primer UPDATE exitoso).
+    let latePromoted = false
+    if (newStatus === 'approved') {
+      const promoteRes = await query<{ id: string }>(
+        `UPDATE users u
+           SET user_type = 'dual', is_verified = true, updated_at = now()
+         WHERE u.id = $1
+           AND u.user_type = 'passenger'
+           AND u.deleted_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM driver_vehicles dv
+              WHERE dv.driver_id = u.id AND dv.is_active = true
+           )
+           AND (
+             SELECT COUNT(*) FROM driver_documents dd
+              WHERE dd.driver_id = u.id
+                AND dd.status = 'approved'
+                AND (dd.expires_at IS NULL OR dd.expires_at > now())
+                AND dd.doc_type = ANY(ARRAY['dni_front','dni_back','license_front','license_back','soat']::text[])
+           ) = 5
+         RETURNING id`,
+        [result.doc.driver_id],
+      )
+      if (promoteRes.length > 0) {
+        latePromoted = true
+        // Push adicional para que el móvil sepa que ya es dual (aunque el
+        // driver_review anterior también refresca, este confirma el cambio).
+        void sendPush({
+          userIds: [result.doc.driver_id],
+          type: 'driver_verified',
+          title: '¡Ya eres conductor!',
+          body: 'Tus documentos fueron aprobados. Ya puedes activar el modo conductor.',
+          data: { userType: 'dual', reason: 'all_required_approved' },
+          channel: 'rappi_documents',
+          priority: 'high',
+          persist: false,
+        })
+      }
+    }
+
     // Auditoría fuera de la tx
     await query(
       `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
@@ -222,7 +270,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           newStatus,
           reviewedBy: auth.userId,
           driverVerified: result.driverVerified,
-          promotedToDual: result.promotedToDual,
+          promotedToDual: result.promotedToDual || latePromoted,
+          latePromoted,
         }),
       ],
     )
@@ -272,7 +321,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         updatedAt: result.doc.updated_at,
       },
       driverVerified: result.driverVerified,
-      promotedToDual: result.promotedToDual,
+      promotedToDual: result.promotedToDual || latePromoted,
     })
   } catch (err) {
     if ((err as { code?: string })?.code === 'not_found') {
