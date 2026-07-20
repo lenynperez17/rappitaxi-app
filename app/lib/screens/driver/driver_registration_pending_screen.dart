@@ -1,5 +1,7 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
@@ -27,6 +29,10 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
   // aunque falte el vehículo (el admin puede aprobar docs pero el auto-promote
   // a dual jamás dispara sin vehículo → catch-22).
   bool _missingVehicle = false;
+  // Ronda 226: refresh en tiempo real cuando el admin apruebe/rechace un doc.
+  // Escuchamos push FCM foreground + polling ligero cada 30s + pull-to-refresh.
+  StreamSubscription<RemoteMessage>? _fcmSub;
+  Timer? _pollTimer;
 
   late final AnimationController _rotationController;
   late final AnimationController _pulseController;
@@ -55,14 +61,84 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
     );
 
     _loadApplicationData();
+
+    // Ronda 226: escuchar push del backend cuando el admin revisa un doc
+    // (types: document_review, driver_verified, vehicle_updated, admin_upload_document).
+    // El backend ya envía sendPush() en /admin/documents/[id] PATCH; acá lo
+    // consumimos para refrescar sin que el user tenga que salir y volver.
+    _fcmSub = FirebaseMessaging.onMessage.listen((msg) {
+      final type = msg.data['type']?.toString() ?? '';
+      if (type == 'document_review' ||
+          type == 'driver_verified' ||
+          type == 'vehicle_updated' ||
+          type == 'document_uploaded') {
+        AppLogger.info('Push $type recibido → refrescando pending screen');
+        _refresh();
+      }
+    });
+
+    // Polling defensivo cada 30s (por si el push no llega — fcm token vencido,
+    // silent mode, etc.). Se para automáticamente cuando la pantalla se cierra.
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _refresh(silent: true);
+    });
   }
 
   @override
   void dispose() {
+    _fcmSub?.cancel();
+    _pollTimer?.cancel();
     _rotationController.dispose();
     _pulseController.dispose();
     _contentController.dispose();
     super.dispose();
+  }
+
+  /// Refresh — usado por push FCM, polling y pull-to-refresh.
+  /// silent=true evita el spinner central (para el polling en background).
+  Future<void> _refresh({bool silent = false}) async {
+    if (!mounted) return;
+    if (!silent) setState(() => _isLoading = true);
+    try {
+      final api = RapiApiClient.instance;
+      final vehicleResp = await api.myVehicle();
+      final vehicle = vehicleResp['vehicle'];
+      final missingBefore = _missingVehicle;
+      _missingVehicle = vehicle == null;
+
+      Map<String, dynamic>? newData;
+      try {
+        newData = await api.myDriverProfile();
+      } catch (_) {
+        newData = _applicationData;
+      }
+
+      // Si el admin ya aprobó todo y el user quedó como dual → salir a home driver.
+      final userType = newData?['user']?['userType']?.toString() ??
+          newData?['userType']?.toString();
+      if (userType == 'dual' || userType == 'driver') {
+        AppLogger.info('Auto-promoted a $userType — saliendo a driver home');
+        if (mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (_) => false);
+        }
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _applicationData = newData ?? _applicationData;
+        _isLoading = false;
+      });
+      // Si acaba de completarse el vehículo, mostrar snackbar de éxito.
+      if (missingBefore && !_missingVehicle && !silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('¡Vehículo registrado!'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      AppLogger.info('refresh error: $e');
+      if (mounted && !silent) setState(() => _isLoading = false);
+    }
   }
 
   /// Helper para animacion staggered de secciones
@@ -176,7 +252,10 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
       // el botón "Volver al inicio" quedaba fuera del viewport y NO se podía
       // scrollear (Column no scrollea). El user quedaba atrapado.
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: RefreshIndicator(
+          color: AppColors.rappiRed,
+          onRefresh: () => _refresh(),
+          child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(32),
           child: ConstrainedBox(
@@ -432,6 +511,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
             ],
             ),
           ),
+        ),
         ),
       ),
     );

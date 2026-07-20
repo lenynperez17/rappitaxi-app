@@ -252,6 +252,19 @@ function DocumentsSection({ driverId, onFlash, onError }: {
   const STATUS_LABEL: Record<string, string> = {
     pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', expired: 'Expirado',
   }
+  const DOC_LABEL: Record<string, string> = {
+    dni_front: 'DNI (frente)',
+    dni_back: 'DNI (reverso)',
+    license_front: 'Licencia de conducir (frente)',
+    license_back: 'Licencia de conducir (reverso)',
+    soat: 'SOAT vigente',
+    tarjeta_propiedad: 'Tarjeta de propiedad (frente)',
+    ownership: 'Tarjeta de propiedad (reverso)',
+    selfie: 'Selfie del conductor',
+    vehicle_photo: 'Foto del vehículo',
+    other: 'Otro documento',
+  }
+  const docLabel = (t: string) => DOC_LABEL[t] ?? t.replace(/_/g, ' ')
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
@@ -272,7 +285,7 @@ function DocumentsSection({ driverId, onFlash, onError }: {
           {docs.map((d) => (
             <div key={d.id} className="border border-gray-200 rounded-lg p-3 flex flex-col gap-3">
               <div className="flex items-center gap-2 justify-between">
-                <span className="font-mono text-xs text-gray-600 truncate">{d.docType}</span>
+                <span className="text-sm text-gray-800 truncate font-medium">{docLabel(d.docType)}</span>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${STATUS_BADGE[d.status] ?? ''}`}>
                   {STATUS_LABEL[d.status] ?? d.status}
                 </span>
@@ -327,9 +340,9 @@ function DocumentsSection({ driverId, onFlash, onError }: {
             {missingTypes.map((t) => (
               <label
                 key={t}
-                className="flex flex-col items-center justify-center gap-1 p-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 text-xs text-gray-700"
+                className="flex flex-col items-center justify-center gap-1 p-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 text-xs text-gray-700 text-center"
               >
-                <span className="font-mono">{t}</span>
+                <span className="font-medium text-gray-800">{docLabel(t)}</span>
                 <span className="text-gray-500">
                   {uploadingType === t ? 'Subiendo…' : '+ Elegir archivo'}
                 </span>
@@ -352,7 +365,7 @@ function DocumentsSection({ driverId, onFlash, onError }: {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h4 className="font-semibold text-gray-900 font-mono text-sm">{preview.docType}</h4>
+              <h4 className="font-semibold text-gray-900 text-sm">{docLabel(preview.docType)}</h4>
               <div className="flex items-center gap-2">
                 <a
                   href={preview.url}
