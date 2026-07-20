@@ -83,6 +83,27 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
     );
   }
 
+  /// Abre un diálogo inline para registrar el vehículo del driver.
+  /// Ronda 225: antes hacíamos `pushNamedAndRemoveUntil('/driver/register')`
+  /// que borraba toda la pila de navegación y arrancaba el wizard desde el
+  /// paso 1 (cómo quieres trabajar). Peor: la flecha atrás quedaba sin
+  /// ruta previa y mostraba pantalla negra. Ahora es un dialog en la misma
+  /// pantalla: sin cambios de ruta, sin pantalla negra, sin reingresar datos.
+  Future<void> _openVehicleDialog() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const _VehicleFormDialog(),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        _missingVehicle = false;
+        _isLoading = true;
+      });
+      await _loadApplicationData();
+    }
+  }
+
   /// Cargar datos de la solicitud (desde argumento o desde el backend Node)
   Future<void> _loadApplicationData() async {
     if (widget.applicationData != null) {
@@ -341,15 +362,9 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pushNamedAndRemoveUntil(
-                              context,
-                              '/driver/register',
-                              (route) => false,
-                            );
-                          },
+                          onPressed: () => _openVehicleDialog(),
                           icon: const Icon(Icons.directions_car),
-                          label: const Text('Completar registro del vehículo'),
+                          label: const Text('Registrar vehículo'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.amber.shade700,
                             foregroundColor: Colors.white,
@@ -484,6 +499,229 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
         else
           Icon(Icons.radio_button_unchecked, size: 20, color: Colors.grey.shade400),
       ],
+    );
+  }
+}
+
+/// Dialog inline para registrar el vehículo del driver. Se abre desde
+/// [DriverRegistrationPendingScreen] cuando falta el vehículo (usuarios
+/// que enviaron solicitud con el build 136 que rompía upsertVehicle).
+class _VehicleFormDialog extends StatefulWidget {
+  const _VehicleFormDialog();
+
+  @override
+  State<_VehicleFormDialog> createState() => _VehicleFormDialogState();
+}
+
+class _VehicleFormDialogState extends State<_VehicleFormDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _plateController = TextEditingController();
+  final _brandController = TextEditingController();
+  final _modelController = TextEditingController();
+  final _colorController = TextEditingController();
+  final _yearController = TextEditingController();
+  String _vehicleType = 'car';
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _plateController.dispose();
+    _brandController.dispose();
+    _modelController.dispose();
+    _colorController.dispose();
+    _yearController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
+    try {
+      await RapiApiClient.instance.upsertVehicle(
+        vehicleType: _vehicleType,
+        plate: _plateController.text.trim().toUpperCase(),
+        make: _brandController.text.trim().isEmpty ? null : _brandController.text.trim(),
+        model: _modelController.text.trim().isEmpty ? null : _modelController.text.trim(),
+        color: _colorController.text.trim().isEmpty ? null : _colorController.text.trim(),
+        year: int.tryParse(_yearController.text.trim()),
+      );
+      AppLogger.info('upsertVehicle OK desde dialog');
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      AppLogger.error(userFriendlyError(e, fallback: 'Error registrando vehículo'));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e, fallback: 'Error registrando vehículo')),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.directions_car, color: AppColors.rappiRed),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text('Registrar vehículo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Completa los datos de tu vehículo para activar tu cuenta de conductor.',
+                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context)),
+                ),
+                const SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                  value: _vehicleType,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de vehículo *',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'car', child: Text('Auto')),
+                    DropdownMenuItem(value: 'moto', child: Text('Moto')),
+                    DropdownMenuItem(value: 'moto_taxi', child: Text('Mototaxi')),
+                    DropdownMenuItem(value: 'van', child: Text('Van')),
+                  ],
+                  onChanged: _submitting ? null : (v) {
+                    if (v != null) setState(() => _vehicleType = v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _plateController,
+                  enabled: !_submitting,
+                  decoration: const InputDecoration(
+                    labelText: 'Placa *',
+                    hintText: 'ABC-123',
+                    border: OutlineInputBorder(),
+                  ),
+                  textCapitalization: TextCapitalization.characters,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'La placa es obligatoria';
+                    if (v.trim().length < 5) return 'Placa muy corta';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _brandController,
+                        enabled: !_submitting,
+                        decoration: const InputDecoration(
+                          labelText: 'Marca',
+                          hintText: 'Toyota',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _modelController,
+                        enabled: !_submitting,
+                        decoration: const InputDecoration(
+                          labelText: 'Modelo',
+                          hintText: 'Yaris',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _colorController,
+                        enabled: !_submitting,
+                        decoration: const InputDecoration(
+                          labelText: 'Color',
+                          hintText: 'Blanco',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _yearController,
+                        enabled: !_submitting,
+                        decoration: const InputDecoration(
+                          labelText: 'Año',
+                          hintText: '2020',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return null;
+                          final n = int.tryParse(v.trim());
+                          if (n == null) return 'Año inválido';
+                          if (n < 1950 || n > DateTime.now().year + 1) return 'Fuera de rango';
+                          return null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _submitting ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.rappiRed,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _submitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Guardar vehículo',
+                            style: TextStyle(fontSize: 15, color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

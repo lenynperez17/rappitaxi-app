@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Pantalla 3: Datos del vehículo
 class DriverRegistrationVehicleScreen extends StatefulWidget {
@@ -153,7 +154,7 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => safePopOrHome(context),
         ),
         title: Text(
           'Paso 2 de 4',

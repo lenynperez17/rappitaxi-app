@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Pantalla 2: Datos personales + Selfie
 class DriverRegistrationPersonalScreen extends StatefulWidget {
@@ -98,7 +99,7 @@ class _DriverRegistrationPersonalScreenState extends State<DriverRegistrationPer
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => safePopOrHome(context),
         ),
         title: Text(
           'Paso 1 de 4',

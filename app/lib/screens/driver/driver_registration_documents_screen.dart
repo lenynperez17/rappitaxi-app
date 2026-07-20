@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Pantalla 4: Subir documentos
 class DriverRegistrationDocumentsScreen extends StatefulWidget {
@@ -300,7 +301,7 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => safePopOrHome(context),
         ),
         title: Text(
           'Paso 3 de 4',

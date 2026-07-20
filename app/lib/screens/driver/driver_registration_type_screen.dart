@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Pantalla 1: Selección de tipo de trabajo (Auto, Moto, Repartidor)
 class DriverRegistrationTypeScreen extends StatefulWidget {
@@ -22,7 +23,7 @@ class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScr
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => safePopOrHome(context),
         ),
       ),
       body: SafeArea(
