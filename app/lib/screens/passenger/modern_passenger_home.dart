@@ -4467,34 +4467,80 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   }
 
   Future<void> _handleDriverModeTap(AuthProvider authProvider, bool hasDriverRole) async {
-    Navigator.pop(context);
+    // Ronda 225 (141) BUG: al abrir "Cambiar a modo conductor" desde el
+    // drawer, hacíamos Navigator.pop(context) para cerrarlo y luego usábamos
+    // el mismo context para mostrar el dialog "Verificando..." → context
+    // desmontado → spinner infinito. Fix: rootNav capturado antes del pop
+    // + timeout defensivo de 15s.
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context); // cierra drawer
 
     if (hasDriverRole) {
       final success = await authProvider.switchMode('driver');
-      if (!mounted) return;
-
       if (success) {
-        Navigator.pushNamedAndRemoveUntil(context, '/driver/home', (route) => false);
+        rootNav.pushNamedAndRemoveUntil('/driver/home', (route) => false);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(authProvider.errorMessage ?? 'Error al cambiar modo'), backgroundColor: AppColors.error),
         );
       }
+      return;
+    }
+
+    final userId = authProvider.currentUser?.id;
+    if (userId == null) {
+      rootNav.pushNamed('/driver/register');
+      return;
+    }
+
+    // Loading dialog usando rootNav.context (no el context del drawer cerrado).
+    showDialog<void>(
+      context: rootNav.context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(ctx),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CircularProgressIndicator(color: AppColors.rappiOrange),
+                SizedBox(height: 16),
+                Text('Verificando...', style: TextStyle(fontSize: 14)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Map<String, dynamic>? pendingApplication;
+    try {
+      pendingApplication = await _checkPendingDriverApplication(userId).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          AppLogger.warning('_checkPendingDriverApplication TIMEOUT');
+          return null;
+        },
+      );
+    } catch (e) {
+      AppLogger.error('_checkPendingDriverApplication error: $e');
+      pendingApplication = null;
+    }
+
+    // Cerrar SIEMPRE el loading dialog vía rootNav (no context desmontado).
+    if (rootNav.canPop()) rootNav.pop();
+
+    if (pendingApplication != null) {
+      rootNav.pushNamed('/driver/register/pending', arguments: pendingApplication);
     } else {
-      final userId = authProvider.currentUser?.id;
-      if (userId != null) {
-        _showLoadingDialog('Verificando...');
-        final pendingApplication = await _checkPendingDriverApplication(userId);
-        if (mounted) Navigator.pop(context);
-        if (!mounted) return;
-        if (pendingApplication != null) {
-          Navigator.pushNamed(context, '/driver/register/pending', arguments: pendingApplication);
-        } else {
-          Navigator.pushNamed(context, '/driver/register');
-        }
-      } else {
-        Navigator.pushNamed(context, '/driver/register');
-      }
+      rootNav.pushNamed('/driver/register');
     }
   }
 

@@ -205,38 +205,37 @@ class _DriverModeButton extends StatelessWidget {
   }
 
   Future<void> _handleDriverModeTap(BuildContext context, AuthProvider authProvider, bool hasDriverRole) async {
-    Navigator.pop(context);
+    // Ronda 225 (141) BUG: antes hacíamos Navigator.pop(context) para cerrar
+    // el drawer y luego usábamos ese MISMO context para mostrar el dialog
+    // "Verificando..." → context desmontado → el dialog quedaba huérfano y
+    // el Navigator.pop posterior no lo cerraba → spinner infinito.
+    // Fix: capturamos rootNavigator y messenger ANTES de cerrar el drawer,
+    // y añadimos timeout defensivo por si la request al backend cuelga.
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context); // cierra el drawer
+
     if (hasDriverRole) {
       final success = await authProvider.switchMode('driver');
-      if (!context.mounted) return;
       if (success) {
-        Navigator.pushNamedAndRemoveUntil(context, '/driver/home', (route) => false);
+        rootNav.pushNamedAndRemoveUntil('/driver/home', (route) => false);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(authProvider.errorMessage ?? 'Error al cambiar modo'), backgroundColor: AppColors.error),
         );
       }
-    } else {
-      final userId = authProvider.currentUser?.id;
-      if (userId != null) {
-        _showLoadingDialog(context, 'Verificando...');
-        final pendingApplication = await _checkPendingDriverApplication(userId);
-        if (context.mounted) Navigator.pop(context);
-        if (!context.mounted) return;
-        if (pendingApplication != null) {
-          Navigator.pushNamed(context, '/driver/register/pending', arguments: pendingApplication);
-        } else {
-          Navigator.pushNamed(context, '/driver/register');
-        }
-      } else {
-        Navigator.pushNamed(context, '/driver/register');
-      }
+      return;
     }
-  }
 
-  void _showLoadingDialog(BuildContext context, String message) {
-    showDialog(
-      context: context,
+    final userId = authProvider.currentUser?.id;
+    if (userId == null) {
+      rootNav.pushNamed('/driver/register');
+      return;
+    }
+
+    // Mostrar dialog usando rootNav.context (sigue montado aunque el drawer cerró).
+    showDialog<void>(
+      context: rootNav.context,
       barrierDismissible: false,
       builder: (ctx) => PopScope(
         canPop: false,
@@ -249,16 +248,39 @@ class _DriverModeButton extends StatelessWidget {
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: AppColors.rappiOrange),
-                const SizedBox(height: 16),
-                Text(message, style: TextStyle(color: AppColors.getTextPrimary(ctx), fontSize: 14)),
+              children: const [
+                CircularProgressIndicator(color: AppColors.rappiOrange),
+                SizedBox(height: 16),
+                Text('Verificando...', style: TextStyle(fontSize: 14)),
               ],
             ),
           ),
         ),
       ),
     );
+
+    Map<String, dynamic>? pendingApplication;
+    try {
+      pendingApplication = await _checkPendingDriverApplication(userId).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          AppLogger.warning('_checkPendingDriverApplication TIMEOUT tras 15s');
+          return null;
+        },
+      );
+    } catch (e) {
+      AppLogger.error('_checkPendingDriverApplication error: $e');
+      pendingApplication = null;
+    }
+
+    // Cerrar SIEMPRE el loading dialog vía rootNav (no context desmontado).
+    if (rootNav.canPop()) rootNav.pop();
+
+    if (pendingApplication != null) {
+      rootNav.pushNamed('/driver/register/pending', arguments: pendingApplication);
+    } else {
+      rootNav.pushNamed('/driver/register');
+    }
   }
 
   Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
