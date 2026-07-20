@@ -430,7 +430,7 @@ function DocThumbnail({
   }, [doc.id, doc.fileUrl])
 
   const baseCls =
-    'w-full h-40 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden'
+    'w-full h-56 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden'
 
   if (state.kind === 'loading') {
     return (
@@ -453,7 +453,7 @@ function DocThumbnail({
         <img
           src={state.url}
           alt={doc.docType}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+          className="w-full h-full object-contain group-hover:scale-105 transition-transform bg-gray-50"
         />
       </button>
     )
