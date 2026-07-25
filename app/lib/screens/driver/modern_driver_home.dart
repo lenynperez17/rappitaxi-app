@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, library_private_types_in_public_api, unused_import, unreachable_switch_case
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -2163,6 +2164,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       ]),
                     ),
 
+                  // Ronda 236d: banner de documentos rechazados. Aparece
+                  // aunque el user sea isVerified=true, porque un doc
+                  // opcional (selfie/vehicle_photo) rechazado no baja
+                  // is_verified pero sí requiere atención del driver.
+                  _RejectedDocsBanner(),
+
                   // Document verification banner
                   Consumer<DocumentProvider>(
                     builder: (context, docProvider, _) {
@@ -3291,6 +3298,106 @@ class _ManualOrderBanner extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Ronda 236d: banner rojo cuando el driver tiene documentos rechazados
+/// (aunque siga isVerified=true por tener los requeridos ok). Consulta
+/// /api/drivers/me/documents al montarse y cada 30s. Tap → /driver/documents.
+class _RejectedDocsBanner extends StatefulWidget {
+  @override
+  State<_RejectedDocsBanner> createState() => _RejectedDocsBannerState();
+}
+
+class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
+  List<Map<String, dynamic>> _rejected = const [];
+  Timer? _timer;
+  StreamSubscription<RemoteMessage>? _fcmSub;
+
+  static const _labels = {
+    'dni_front': 'DNI (frente)', 'dni_back': 'DNI (reverso)',
+    'license_front': 'Licencia (frente)', 'license_back': 'Licencia (reverso)',
+    'soat': 'SOAT vigente',
+    'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
+    'ownership': 'Tarjeta de propiedad (reverso)',
+    'selfie': 'Selfie del conductor', 'vehicle_photo': 'Foto del vehículo',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _load());
+    _fcmSub = FirebaseMessaging.onMessage.listen((msg) {
+      if (msg.data['type'] == 'document_review') _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _fcmSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final resp = await RapiApiClient.instance.myDocuments();
+      final list = (resp['documents'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final rejected = list.where((d) => d['status']?.toString() == 'rejected').toList();
+      if (!mounted) return;
+      setState(() => _rejected = rejected);
+    } catch (_) { /* silent */ }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_rejected.isEmpty) return const SizedBox.shrink();
+    final firstDoc = _rejected.first;
+    final label = _labels[firstDoc['docType']?.toString()] ?? firstDoc['docType']?.toString() ?? '';
+    final reason = firstDoc['rejectionReason']?.toString() ?? '';
+    final more = _rejected.length > 1 ? ' (+${_rejected.length - 1} más)' : '';
+
+    return InkWell(
+      onTap: () => Navigator.pushNamed(context, '/driver/documents'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: Colors.red.withValues(alpha: 0.12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Documento rechazado: $label$more',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.red),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                  if (reason.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Motivo: $reason',
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade900),
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Toca para reemplazarlo',
+                    style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.red),
+          ],
+        ),
       ),
     );
   }
