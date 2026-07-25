@@ -45,12 +45,15 @@ class ModeSwitchButton extends StatelessWidget {
         final currentMode = _getEffectiveMode(user);
         final buttonColor = backgroundColor ?? _getModeColor(currentMode);
 
+        // Ronda 235: cuando el user solo tiene 2 roles (passenger + driver
+        // real), tocar el botón cambia directo al otro modo sin popup. El
+        // popup solo aparece si hay 3+ roles (ej. admin).
         return Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: authProvider.isLoading
                 ? null
-                : () => _showSwitchDialog(context, authProvider, user),
+                : () => _handleTap(context, authProvider, user),
             borderRadius: BorderRadius.circular(compact ? 30 : 12),
             child: Container(
               padding: EdgeInsets.symmetric(
@@ -175,7 +178,57 @@ class ModeSwitchButton extends StatelessWidget {
     }
   }
 
-  /// Mostrar diálogo para seleccionar nuevo modo
+  /// Ronda 235: decidir si abrir popup o cambiar directo.
+  void _handleTap(BuildContext context, AuthProvider authProvider, dynamic user) {
+    final userType = (user.userType as String?) ?? 'passenger';
+    final isDriverApproved = (user.isVerified as bool? ?? false) &&
+        (userType == 'driver' || userType == 'dual');
+    final availableRoles = (user.availableRoles as List<dynamic>?)?.cast<String>() ?? const <String>[];
+    final currentMode = _getEffectiveMode(user);
+
+    // Filtrar roles a los que realmente puede cambiar.
+    final effectiveRoles = availableRoles
+        .where((r) => r != currentMode)
+        .where((r) => r != 'driver' || isDriverApproved)
+        .toList();
+
+    // Si solo hay UN destino, cambiar directo sin popup.
+    if (effectiveRoles.length == 1) {
+      final target = effectiveRoles.first;
+      _switchDirectly(context, authProvider, target);
+      return;
+    }
+    // 0 o 2+ → mostrar diálogo (para admin u otros casos raros).
+    _showSwitchDialog(context, authProvider, user);
+  }
+
+  Future<void> _switchDirectly(BuildContext context, AuthProvider authProvider, String mode) async {
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+    // Limpiar listeners del rol previo (mismo cleanup que hace _switchToMode
+    // desde el dialog).
+    final currentMode = authProvider.currentUser?.currentMode;
+    try {
+      final priceNegProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+      if (currentMode == 'passenger') {
+        priceNegProvider.stopPassengerListeners();
+      } else if (currentMode == 'driver') {
+        priceNegProvider.stopDriverListeners();
+      }
+    } catch (_) { /* provider puede no estar disponible */ }
+
+    final ok = await authProvider.switchMode(mode);
+    if (!ok) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage ?? 'Error al cambiar de modo'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final target = mode == 'driver' ? '/driver/home' : '/passenger/home';
+    rootNav.pushNamedAndRemoveUntil(target, (_) => false);
+  }
+
+  /// Mostrar diálogo para seleccionar nuevo modo (solo 3+ roles).
   void _showSwitchDialog(
       BuildContext context, AuthProvider authProvider, dynamic user) {
     final currentMode = (user.activeMode as String?) ?? 'passenger';

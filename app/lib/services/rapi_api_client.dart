@@ -838,6 +838,23 @@ class RapiApiClient {
   Future<Map<String, dynamic>> myDocuments() async =>
       (await _authedGet('/api/drivers/me/documents'))!;
 
+  /// Ronda 235: descarga un archivo protegido de /api/media/... con el token
+  /// del user. Devuelve (bytes, mime). Sin esto, un <a href> abre 401 (el
+  /// endpoint requiere Authorization Bearer).
+  Future<({List<int> bytes, String mime})> fetchMediaBytes(String urlOrPath) async {
+    await _ensureFreshAccess();
+    final uri = Uri.parse(urlOrPath.startsWith('http') ? urlOrPath : '$baseUrl$urlOrPath');
+    Future<http.Response> doGet() => _http.get(uri, headers: {'Authorization': 'Bearer $_accessCache'});
+    var r = await doGet();
+    if (r.statusCode == 401 && _refreshCache != null) {
+      if (await refreshAccessToken()) r = await doGet();
+    }
+    if (r.statusCode < 200 || r.statusCode >= 300) {
+      throw RapiApiException(r.statusCode, 'media_fetch_failed', 'HTTP ${r.statusCode}');
+    }
+    return (bytes: r.bodyBytes, mime: r.headers['content-type'] ?? 'application/octet-stream');
+  }
+
   Future<Map<String, dynamic>> uploadDocument({
     required String docType,
     required String fileUrl,

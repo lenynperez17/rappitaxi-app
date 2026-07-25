@@ -1,6 +1,8 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
-import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/rapi_api_client.dart';
 import '../../core/theme/modern_theme.dart';
@@ -140,7 +142,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   }
   
   // Cargar perfil real desde el backend Node (RapiApiClient)
-  void _loadProfile() async {
+  Future<void> _loadProfile() async {
     try {
       // Obtener usuario actual del backend Node
       final meResp = await _api.me();
@@ -229,8 +231,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         AppLogger.warning(userFriendlyError(e, fallback: 'No se pudieron cargar documentos'));
       }
 
-      // Logros: endpoint no disponible aún — lista vacía
-      final List<Achievement> achievementsList = <Achievement>[];
+      // Ronda 235: catálogo de logros con progreso real. Bloqueados hasta
+      // alcanzar la meta. Antes lista vacía → sección "Logros" siempre en
+      // blanco aunque el driver hubiera completado hitos.
+      final List<Achievement> achievementsList = _buildAchievementsCatalog(
+        totalTrips: totalTripsCount,
+        rating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
+        totalEarnings: totalEarnings,
+        memberSince: DateTime.tryParse((userData['createdAt'] ?? '').toString()) ?? DateTime.now(),
+      );
 
       if (mounted) {
         setState(() {
@@ -252,14 +261,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             phone: emergencyContactData?['phone'] ?? '',
             relationship: emergencyContactData?['relationship'] ?? '',
           ),
+          // Ronda 235: defaults sensatos cuando el backend aún no envía
+          // preferencias. Antes todo era false/vacío → sección "Preferencias"
+          // se veía como si el driver no hubiera configurado nada.
           preferences: DriverPreferences(
-            acceptPets: preferencesData?['acceptPets'] ?? false,
+            acceptPets: preferencesData?['acceptPets'] ?? true,
             acceptSmoking: preferencesData?['acceptSmoking'] ?? false,
-            musicPreference: preferencesData?['musicPreference'] ?? '',
-            languages: (preferencesData?['languages'] as List<dynamic>?)?.cast<String>() ?? [],
-            // ✅ FIX: Asegurar que maxTripDistance esté en el rango válido (min: 5, max: 100)
+            musicPreference: preferencesData?['musicPreference'] ?? 'A gusto del pasajero',
+            languages: (preferencesData?['languages'] as List<dynamic>?)?.cast<String>() ?? const ['Español'],
             maxTripDistance: ((preferencesData?['maxTripDistance'] ?? 50.0) as num).toDouble().clamp(5.0, 100.0),
-            preferredZones: (preferencesData?['preferredZones'] as List<dynamic>?)?.cast<String>() ?? [],
+            preferredZones: (preferencesData?['preferredZones'] as List<dynamic>?)?.cast<String>() ?? const ['Lima Metropolitana'],
           ),
           achievements: achievementsList,
           vehicleInfo: VehicleInfo(
@@ -270,21 +281,24 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             plate: (vehicleInfoData?['plate'] ?? '') as String,
             capacity: (vehicleInfoData?['capacity'] as num?)?.toInt() ?? (vehicleInfoData?['seats'] as num?)?.toInt() ?? 4,
           ),
+          // Ronda 235: horario por defecto 08:00-20:00 lun-sab, 09:00-18:00
+          // domingo. Antes 00:00-00:00 se leía como "no trabaja ningún día"
+          // y no había manera de saber que era default vacío.
           workSchedule: WorkSchedule(
-            mondayStart: workScheduleData?['mondayStart'] ?? '00:00',
-            mondayEnd: workScheduleData?['mondayEnd'] ?? '00:00',
-            tuesdayStart: workScheduleData?['tuesdayStart'] ?? '00:00',
-            tuesdayEnd: workScheduleData?['tuesdayEnd'] ?? '00:00',
-            wednesdayStart: workScheduleData?['wednesdayStart'] ?? '00:00',
-            wednesdayEnd: workScheduleData?['wednesdayEnd'] ?? '00:00',
-            thursdayStart: workScheduleData?['thursdayStart'] ?? '00:00',
-            thursdayEnd: workScheduleData?['thursdayEnd'] ?? '00:00',
-            fridayStart: workScheduleData?['fridayStart'] ?? '00:00',
-            fridayEnd: workScheduleData?['fridayEnd'] ?? '00:00',
-            saturdayStart: workScheduleData?['saturdayStart'] ?? '00:00',
-            saturdayEnd: workScheduleData?['saturdayEnd'] ?? '00:00',
-            sundayStart: workScheduleData?['sundayStart'] ?? '00:00',
-            sundayEnd: workScheduleData?['sundayEnd'] ?? '00:00',
+            mondayStart: workScheduleData?['mondayStart'] ?? '08:00',
+            mondayEnd: workScheduleData?['mondayEnd'] ?? '20:00',
+            tuesdayStart: workScheduleData?['tuesdayStart'] ?? '08:00',
+            tuesdayEnd: workScheduleData?['tuesdayEnd'] ?? '20:00',
+            wednesdayStart: workScheduleData?['wednesdayStart'] ?? '08:00',
+            wednesdayEnd: workScheduleData?['wednesdayEnd'] ?? '20:00',
+            thursdayStart: workScheduleData?['thursdayStart'] ?? '08:00',
+            thursdayEnd: workScheduleData?['thursdayEnd'] ?? '20:00',
+            fridayStart: workScheduleData?['fridayStart'] ?? '08:00',
+            fridayEnd: workScheduleData?['fridayEnd'] ?? '20:00',
+            saturdayStart: workScheduleData?['saturdayStart'] ?? '08:00',
+            saturdayEnd: workScheduleData?['saturdayEnd'] ?? '20:00',
+            sundayStart: workScheduleData?['sundayStart'] ?? '09:00',
+            sundayEnd: workScheduleData?['sundayEnd'] ?? '18:00',
           ),
         );
         _isLoading = false;
@@ -655,13 +669,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                   child: Column(
                     children: [
                       Text(
-                        _profile!.name,
+                        _profile!.name.toUpperCase(),
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: context.primaryText,
                         ),
                         textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 8),
 
@@ -1140,24 +1156,33 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
   // ✅ NUEVO: Sección de documentos del conductor
   Widget _buildDocumentsSection() {
+    // Ronda 235: los IDs deben coincidir con los doc_type reales del backend
+    // (dni_front, dni_back, license_front, license_back, soat,
+    // tarjeta_propiedad, ownership, selfie, vehicle_photo). Antes usaba
+    // legacy Firebase (dniPhoto/licensePhoto/etc) → los labels no salían y
+    // solo se veía el key técnico con guiones bajos.
     final documentLabels = {
-      'dniPhoto': 'Documento de Identidad',
-      'licensePhoto': 'Licencia de Conducir',
-      'vehiclePhoto': 'Foto del Vehículo',
-      'criminalRecordPhoto': 'Antecedentes Penales',
-      'soatPhoto': 'SOAT',
-      'technicalReviewPhoto': 'Revisión Técnica',
-      'ownershipPhoto': 'Tarjeta de Propiedad',
+      'dni_front':          'DNI (frente)',
+      'dni_back':           'DNI (reverso)',
+      'license_front':      'Licencia de conducir (frente)',
+      'license_back':       'Licencia de conducir (reverso)',
+      'soat':               'SOAT vigente',
+      'tarjeta_propiedad':  'Tarjeta de propiedad (frente)',
+      'ownership':          'Tarjeta de propiedad (reverso)',
+      'selfie':             'Selfie del conductor',
+      'vehicle_photo':      'Foto del vehículo',
     };
 
     final documentIcons = {
-      'dniPhoto': Icons.badge,
-      'licensePhoto': Icons.credit_card,
-      'vehiclePhoto': Icons.directions_car,
-      'criminalRecordPhoto': Icons.shield_outlined,
-      'soatPhoto': Icons.verified_user_outlined,
-      'technicalReviewPhoto': Icons.build_circle_outlined,
-      'ownershipPhoto': Icons.article_outlined,
+      'dni_front':          Icons.badge,
+      'dni_back':           Icons.badge_outlined,
+      'license_front':      Icons.credit_card,
+      'license_back':       Icons.credit_card_outlined,
+      'soat':               Icons.verified_user_outlined,
+      'tarjeta_propiedad':  Icons.article_outlined,
+      'ownership':          Icons.article,
+      'selfie':             Icons.person_outlined,
+      'vehicle_photo':      Icons.directions_car,
     };
 
     return _buildSection(
@@ -1364,18 +1389,46 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     );
   }
 
+  /// Ronda 235: en vez de mostrar la URL del documento, abre un modal con
+  /// la imagen real (fetch autenticado + bytes) + botón "Reemplazar" que
+  /// llama al image_picker y re-sube al backend con el mismo doc_type.
   void _viewDocument(String documentType, String url) {
+    final labels = {
+      'dni_front': 'DNI (frente)', 'dni_back': 'DNI (reverso)',
+      'license_front': 'Licencia (frente)', 'license_back': 'Licencia (reverso)',
+      'soat': 'SOAT vigente', 'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
+      'ownership': 'Tarjeta de propiedad (reverso)',
+      'selfie': 'Selfie del conductor', 'vehicle_photo': 'Foto del vehículo',
+    };
+    // Ronda 235: mapping cliente→backend scope para el upload de reemplazo.
+    const clientToScope = {
+      'dni_front': 'identity_front', 'dni_back': 'identity_back',
+      'license_front': 'driver_license', 'license_back': 'driver_license',
+      'soat': 'soat', 'tarjeta_propiedad': 'vehicle_registration',
+      'ownership': 'vehicle_registration',
+      'selfie': 'profile_photo', 'vehicle_photo': 'vehicle_photo',
+    };
+    final label = labels[documentType] ?? documentType;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Ver Documento'),
-        content: Text('URL del documento:\n\n$url'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cerrar'),
-          ),
-        ],
+      builder: (dialogCtx) => _DocumentPreviewDialog(
+        docType: documentType,
+        label: label,
+        url: url,
+        scope: clientToScope[documentType] ?? 'misc',
+        onReplaced: () async {
+          Navigator.pop(dialogCtx);
+          await _loadProfile();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Documento reemplazado. Pendiente de revisión.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        },
       ),
     );
   }
@@ -2028,40 +2081,45 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   }
   
   Widget _buildAchievementCard(Achievement achievement) {
+    // Ronda 235: card diferenciada — desbloqueado (dorado) vs bloqueado (gris
+    // con candado). Muestra barra de progreso cuando el logro tiene meta.
+    final unlocked = achievement.isUnlocked;
+    final color = unlocked ? Colors.amber : Colors.grey;
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.05),
+        color: color.withValues(alpha: unlocked ? 0.08 : 0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withValues(alpha: unlocked ? 0.4 : 0.2)),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: EdgeInsets.all(8),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.1),
+              color: color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.emoji_events,
-              color: Colors.amber,
+              unlocked ? Icons.emoji_events : Icons.lock_outline,
+              color: color,
               size: 24,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             achievement.name,
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 12,
+              color: unlocked ? null : context.secondaryText,
             ),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
             achievement.description,
             style: TextStyle(
@@ -2072,9 +2130,63 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
           ),
+          if (!unlocked && achievement.progressTarget > 0) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: achievement.progress,
+                minHeight: 4,
+                backgroundColor: Colors.grey.withValues(alpha: 0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${achievement.progressCurrent} / ${achievement.progressTarget}',
+              style: TextStyle(fontSize: 9, color: context.secondaryText),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Ronda 235: catálogo con 8 logros y su estado real basado en las stats
+  /// del conductor. Antes lista vacía → sección "Logros" siempre en blanco.
+  List<Achievement> _buildAchievementsCatalog({
+    required int totalTrips,
+    required double rating,
+    required double totalEarnings,
+    required DateTime memberSince,
+  }) {
+    final daysMember = DateTime.now().difference(memberSince).inDays;
+    Achievement unlockOr(String id, String name, String desc, {required bool met, required int current, required int target}) {
+      return Achievement(
+        id: id, name: name, description: desc, iconUrl: '',
+        unlockedDate: met ? DateTime.now() : null,
+        progressCurrent: current > target ? target : current,
+        progressTarget: target,
+      );
+    }
+    return [
+      unlockOr('first_trip', 'Primer viaje', 'Completa tu primer viaje',
+          met: totalTrips >= 1, current: totalTrips, target: 1),
+      unlockOr('trips_10', '10 viajes', 'Completa 10 viajes',
+          met: totalTrips >= 10, current: totalTrips, target: 10),
+      unlockOr('trips_50', '50 viajes', 'Alcanza 50 viajes',
+          met: totalTrips >= 50, current: totalTrips, target: 50),
+      unlockOr('trips_100', '100 viajes', 'Alcanza 100 viajes',
+          met: totalTrips >= 100, current: totalTrips, target: 100),
+      unlockOr('trips_500', 'Conductor experto', '500 viajes completados',
+          met: totalTrips >= 500, current: totalTrips, target: 500),
+      unlockOr('rating_gold', 'Estrella dorada', 'Mantén rating ≥ 4.8',
+          met: rating >= 4.8, current: (rating * 10).round(), target: 48),
+      unlockOr('earnings_1k', 'Mil soles', 'Gana S/ 1000 en total',
+          met: totalEarnings >= 1000, current: totalEarnings.round(), target: 1000),
+      unlockOr('veteran', 'Veterano', 'Cumple 90 días en la app',
+          met: daysMember >= 90, current: daysMember, target: 90),
+    ];
   }
   
   Widget _buildPreferencesSection() {
@@ -2744,11 +2856,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                // Ronda 235: mostrar la info del conductor en MAYÚSCULAS
+                // (consistente con documentos oficiales tipo DNI).
                 Text(
-                  value,
+                  value.toUpperCase(),
                   style: TextStyle(
                     fontSize: 14,
                     color: context.primaryText,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -3528,15 +3643,27 @@ class Achievement {
   final String name;
   final String description;
   final String iconUrl;
-  final DateTime unlockedDate;
-  
+  // Ronda 235: si unlockedDate == null, el logro está BLOQUEADO. Sin este
+  // flag no había forma de mostrar todos los logros (incluidos los que
+  // faltan) — la lista quedaba vacía si el driver no había ganado ninguno.
+  final DateTime? unlockedDate;
+  final int progressCurrent;
+  final int progressTarget;
+
   Achievement({
     required this.id,
     required this.name,
     required this.description,
     required this.iconUrl,
-    required this.unlockedDate,
+    this.unlockedDate,
+    this.progressCurrent = 0,
+    this.progressTarget = 0,
   });
+
+  bool get isUnlocked => unlockedDate != null;
+  double get progress => progressTarget == 0
+      ? (isUnlocked ? 1.0 : 0.0)
+      : (progressCurrent / progressTarget).clamp(0.0, 1.0);
 }
 
 class VehicleInfo {
@@ -3589,4 +3716,171 @@ class WorkSchedule {
     required this.sundayStart,
     required this.sundayEnd,
   });
+}
+/// Ronda 235: dialog que carga la imagen real del documento (fetch autenticado)
+/// y permite reemplazarla eligiendo un nuevo archivo del image_picker.
+class _DocumentPreviewDialog extends StatefulWidget {
+  final String docType;
+  final String label;
+  final String url;
+  final String scope;
+  final Future<void> Function() onReplaced;
+  const _DocumentPreviewDialog({
+    required this.docType,
+    required this.label,
+    required this.url,
+    required this.scope,
+    required this.onReplaced,
+  });
+  @override
+  State<_DocumentPreviewDialog> createState() => _DocumentPreviewDialogState();
+}
+
+class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
+  Uint8List? _bytes;
+  String? _error;
+  bool _replacing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await RapiApiClient.instance.fetchMediaBytes(widget.url);
+      if (!mounted) return;
+      setState(() => _bytes = Uint8List.fromList(res.bytes));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = userFriendlyError(e, fallback: 'Error cargando'));
+    }
+  }
+
+  Future<void> _replace() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Elegir de galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 80);
+    if (picked == null || !mounted) return;
+    setState(() => _replacing = true);
+    try {
+      final upload = await RapiApiClient.instance.uploadFile(
+        file: File(picked.path),
+        scope: widget.scope,
+      );
+      final newUrl = (upload['url'] ?? upload['downloadUrl'])?.toString();
+      if (newUrl == null || newUrl.isEmpty) {
+        throw StateError('El backend no devolvió URL');
+      }
+      await RapiApiClient.instance.uploadDocument(docType: widget.docType, fileUrl: newUrl);
+      if (!mounted) return;
+      await widget.onReplaced();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _replacing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e, fallback: 'Error reemplazando')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.label,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: _replacing ? null : () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                color: Colors.black12,
+                child: _bytes != null
+                    ? InteractiveViewer(child: Image.memory(_bytes!, fit: BoxFit.contain))
+                    : _error != null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(_error!, textAlign: TextAlign.center),
+                            ),
+                          )
+                        : const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _replacing ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Cerrar'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _replacing ? null : _replace,
+                      icon: _replacing
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.upload),
+                      label: Text(_replacing ? 'Subiendo…' : 'Reemplazar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ModernTheme.primaryBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
