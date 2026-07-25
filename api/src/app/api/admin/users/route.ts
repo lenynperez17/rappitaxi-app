@@ -38,6 +38,7 @@ interface UserRow {
   deleted_at: Date | null
   created_at: Date
   updated_at: Date
+  created_from: string | null
 }
 
 function serializeUser(u: UserRow) {
@@ -61,6 +62,7 @@ function serializeUser(u: UserRow) {
     deletedAt: u.deleted_at,
     createdAt: u.created_at,
     updatedAt: u.updated_at,
+    createdFrom: u.created_from ?? 'unknown',
   }
 }
 

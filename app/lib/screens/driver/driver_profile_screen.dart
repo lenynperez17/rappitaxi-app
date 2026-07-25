@@ -2061,14 +2061,18 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       Icons.emoji_events,
       Colors.amber,
       [
+        // Ronda 236: aspect ratio 0.85 (más alto que ancho) porque el card
+        // ahora incluye barra de progreso + counter "X / Y" en logros
+        // bloqueados. Con 1.2 el contador se superponía sobre el card
+        // vecino de abajo (visible en el screenshot del user).
         GridView.builder(
           shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.2,
+            childAspectRatio: 0.85,
           ),
           itemCount: _profile!.achievements.length,
           itemBuilder: (context, index) {
