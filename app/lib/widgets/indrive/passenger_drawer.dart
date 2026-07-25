@@ -156,7 +156,10 @@ class _DriverModeButton extends StatelessWidget {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         final user = authProvider.currentUser;
-        final hasDriverRole = user?.availableRoles?.contains('driver') ?? false;
+        // Ronda 228: fallback por userType — ver comentario en modern_passenger_home.
+        final hasDriverRole = user?.userType == 'dual' ||
+            user?.userType == 'driver' ||
+            (user?.availableRoles?.contains('driver') ?? false);
 
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

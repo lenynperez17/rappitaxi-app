@@ -208,7 +208,15 @@ class AuthProvider with ChangeNotifier {
       totalTrips: (u['totalTrips'] as num?)?.toInt() ?? 0,
       balance: (u['balance'] as num?)?.toDouble() ?? 0.0,
       currentMode: u['currentMode'] as String?,
-      availableRoles: (u['availableRoles'] as List?)?.cast<String>(),
+      // Ronda 228 fix: /api/auth/me NO devuelve availableRoles, solo userType.
+      // Sin fallback, availableRoles queda null → drawer chequea
+      // user.availableRoles?.contains('driver')=false → el user dual NO puede
+      // cambiar a modo conductor, queda atrapado en pantallas de passenger.
+      // Espejo del cálculo que UserModel.fromJson ya hacía.
+      availableRoles: (u['availableRoles'] as List?)?.cast<String>() ??
+          ((u['userType'] ?? u['user_type']) == 'dual'
+              ? const ['passenger', 'driver']
+              : [(u['userType'] ?? u['user_type'] ?? 'passenger') as String]),
       driverProfile: u['driverProfile'] as Map<String, dynamic>?,
       driverStatus: u['driverStatus'] as String?,
       birthDate: u['birthDate'] as String?,
