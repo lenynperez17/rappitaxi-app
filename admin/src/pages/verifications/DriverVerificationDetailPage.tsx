@@ -334,10 +334,21 @@ function DocumentsSection({ driverId, onFlash, onError }: {
                     </button>
                   </>
                 ) : (
-                  <span className="text-xs text-gray-500">Ya revisado</span>
+                  <button
+                    type="button"
+                    onClick={() => void review(d.id, 'rejected')}
+                    disabled={reviewingId === d.id}
+                    className="flex-1 px-3 py-1.5 text-xs bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50 font-medium"
+                    title="Marca este documento como rechazado y notifica al conductor para que suba uno nuevo"
+                  >
+                    {reviewingId === d.id ? 'Procesando…' : 'Solicitar reemplazo'}
+                  </button>
                 )}
-                <label className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 cursor-pointer font-medium">
-                  {uploadingType === d.docType ? 'Subiendo…' : 'Reemplazar'}
+                <label
+                  className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 cursor-pointer font-medium"
+                  title="Subir tú mismo el documento en nombre del conductor (útil para drivers sin app)"
+                >
+                  {uploadingType === d.docType ? 'Subiendo…' : 'Subir por él'}
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={onFilePick(d.docType)} disabled={uploadingType === d.docType} />
                 </label>
               </div>
