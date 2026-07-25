@@ -2,7 +2,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
@@ -114,13 +116,32 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
       }
 
       // Si el admin ya aprobó todo y el user quedó como dual → salir a home driver.
-      final userType = newData?['user']?['userType']?.toString() ??
+      // Ronda 228 fix: el backend devuelve {success, profile: {userType}}, no {user}.
+      // Antes solo miraba 'user' → auto-navigate JAMÁS disparaba aunque user_type=dual.
+      final userType = newData?['profile']?['userType']?.toString() ??
+          newData?['user']?['userType']?.toString() ??
           newData?['userType']?.toString();
+      AppLogger.info('pending refresh: userType=$userType');
       if (userType == 'dual' || userType == 'driver') {
-        AppLogger.info('Auto-promoted a $userType — saliendo a driver home');
-        if (mounted) {
-          Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (_) => false);
+        AppLogger.info('Auto-promoted a $userType — refrescando authProvider y saliendo a driver home');
+        if (!mounted) return;
+        // Ronda 228: refrescar AuthProvider ANTES de navegar. Sin esto el
+        // driver home lee currentUser=passenger del cache y puede rechazar
+        // el flow (o el drawer sigue mostrando "Cambiar a conductor" en vez
+        // de las opciones de driver).
+        try {
+          await context.read<AuthProvider>().refreshUserData();
+        } catch (e) {
+          AppLogger.info('refreshUserData falló (no bloquea navegación): $e');
         }
+        if (!mounted) return;
+        // Si el user prefiere seguir como pasajero al inicio, hacemos switch
+        // explícito a 'driver' para llevarlo directo al modo conductor.
+        try {
+          await context.read<AuthProvider>().switchMode('driver');
+        } catch (_) {}
+        if (!mounted) return;
+        Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (_) => false);
         return;
       }
 
