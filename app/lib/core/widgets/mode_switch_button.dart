@@ -17,10 +17,18 @@ class ModeSwitchButton extends StatelessWidget {
   /// Color del botón (opcional, usa color dinámico según modo)
   final Color? backgroundColor;
 
+  /// Ronda 236: modo actual del contexto donde se pinta el botón (driver
+  /// home o passenger home). Se usa como source of truth cuando
+  /// `user.currentMode` es null y `userType='dual'` — sin este hint el
+  /// filtro no sabe cuál es el rol actual y termina viendo 2 destinos
+  /// (passenger+driver) → dispara popup en vez de cambio directo.
+  final String? fromMode;
+
   const ModeSwitchButton({
     super.key,
     this.compact = false,
     this.backgroundColor,
+    this.fromMode,
   });
 
   @override
@@ -179,16 +187,28 @@ class ModeSwitchButton extends StatelessWidget {
   }
 
   /// Ronda 235: decidir si abrir popup o cambiar directo.
+  /// Ronda 236: usar `fromMode` prop cuando currentMode del user es null y
+  /// userType='dual' — sin esto el filtro no encontraba el modo actual y
+  /// dejaba ambos destinos en effectiveRoles → popup innecesario.
   void _handleTap(BuildContext context, AuthProvider authProvider, dynamic user) {
     final userType = (user.userType as String?) ?? 'passenger';
     final isDriverApproved = (user.isVerified as bool? ?? false) &&
         (userType == 'driver' || userType == 'dual');
     final availableRoles = (user.availableRoles as List<dynamic>?)?.cast<String>() ?? const <String>[];
-    final currentMode = _getEffectiveMode(user);
+
+    // Preferencia: fromMode del widget > currentMode del user > effective
+    // computado (que puede ser 'dual', irresoluble para filtrar).
+    String currentMode = fromMode ??
+        (user.currentMode as String?) ??
+        _getEffectiveMode(user);
+    // Si terminó siendo 'dual' aún (raro), asumimos passenger — el driver
+    // home siempre pasa fromMode='driver' explícito.
+    if (currentMode == 'dual') currentMode = 'passenger';
 
     // Filtrar roles a los que realmente puede cambiar.
     final effectiveRoles = availableRoles
         .where((r) => r != currentMode)
+        .where((r) => r != 'dual') // 'dual' es meta-rol, no destino de switch
         .where((r) => r != 'driver' || isDriverApproved)
         .toList();
 

@@ -138,7 +138,7 @@ class PassengerDrawer extends StatelessWidget {
                 user.availableRoles!.length > 1)
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: ModeSwitchButton(compact: false),
+                child: ModeSwitchButton(compact: false, fromMode: 'passenger'),
               ),
 
             // Opciones del menú

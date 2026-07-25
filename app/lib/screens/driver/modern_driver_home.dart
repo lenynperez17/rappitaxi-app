@@ -2118,7 +2118,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                             ),
                           ),
                         const SizedBox(width: 8),
-                        const ModeSwitchButton(compact: true),
+                        const ModeSwitchButton(compact: true, fromMode: 'driver'),
                       ],
                     ),
                   ),
@@ -2449,7 +2449,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text('Verificación Pendiente'),
-        actions: [ModeSwitchButton(compact: true)],
+        actions: [ModeSwitchButton(compact: true, fromMode: 'driver')],
       ),
       body: Center(
         child: Padding(
