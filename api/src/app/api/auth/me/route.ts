@@ -20,6 +20,7 @@ interface UserRow {
   phone: string | null
   phone_verified: boolean
   user_type: string
+  is_verified: boolean
   profile_complete: boolean
   profile_photo_url: string | null
   auth_provider: string | null
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const user = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
-            user_type, profile_complete, profile_photo_url, auth_provider,
+            user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
       phone: user.phone,
       phoneVerified: user.phone_verified,
       userType: user.user_type,
+      isVerified: user.is_verified,
       profileComplete: user.profile_complete,
       profilePhotoUrl: user.profile_photo_url,
       authProvider: user.auth_provider,
@@ -192,7 +194,7 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
-            user_type, profile_complete, profile_photo_url, auth_provider,
+            user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
@@ -217,6 +219,7 @@ export async function PATCH(req: NextRequest) {
       phone: updated.phone,
       phoneVerified: updated.phone_verified,
       userType: updated.user_type,
+      isVerified: updated.is_verified,
       profileComplete: updated.profile_complete,
       profilePhotoUrl: updated.profile_photo_url,
       authProvider: updated.auth_provider,
