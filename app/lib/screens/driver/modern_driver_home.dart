@@ -223,8 +223,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       _driverId = currentUser.id;
       AppLogger.info('Driver initialized: ${currentUser.fullName} (${currentUser.id})');
 
-      // Listener for admin verification approval
-      if (currentUser.driverStatus != 'approved') {
+      // Listener for admin verification approval — solo si el driver aún
+      // no está aprobado (isVerified=false o userType!=dual/driver).
+      final alreadyApproved = currentUser.isVerified &&
+          (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+      if (!alreadyApproved && currentUser.driverStatus != 'approved') {
         _startVerificationListener(currentUser.id);
       }
 
@@ -1798,7 +1801,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUser = authProvider.currentUser;
 
-    if (!_isOnline && currentUser != null && currentUser.driverStatus != 'approved') {
+    final isApproved = currentUser != null &&
+        currentUser.isVerified &&
+        (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+    if (!_isOnline && currentUser != null && !isApproved && currentUser.driverStatus != 'approved') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(currentUser.driverStatus == 'pending_approval'
@@ -1976,8 +1982,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final currentUser = authProvider.currentUser;
     final hasActiveTrip = rideProvider.hasActiveTrip;
 
-    // Block unverified driver
-    if (currentUser != null && currentUser.driverStatus != 'approved') {
+    // Ronda 228 fix: bloquear driver no verificado.
+    // Antes: solo `driverStatus != 'approved'` — pero /api/auth/me NO
+    // devuelve driverStatus, entonces null!='approved' es SIEMPRE true
+    // y el driver aprobado veía "Verificación Pendiente" para siempre.
+    // Ahora: un driver está aprobado si (userType=driver|dual AND isVerified)
+    // O si driverStatus=='approved' (legacy).
+    final isDriverApproved = currentUser != null &&
+        currentUser.isVerified &&
+        (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+    if (currentUser != null && !isDriverApproved && currentUser.driverStatus != 'approved') {
       return _buildPendingVerificationScreen();
     }
 
