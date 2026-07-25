@@ -274,8 +274,13 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
           final mode = user.activeMode; // Usa currentMode si existe, sino userType
 
           if (mode == 'driver') {
-            // Verificar si el conductor tiene documentos aprobados
-            if (user.documentVerified) {
+            // Ronda 233 fix: backend NO envía documentVerified — siempre era
+            // false y el driver aprobado nunca aterrizaba en /driver/home
+            // desde el splash. Ahora usamos isVerified+userType (mismo criterio
+            // que el gate del driver home en Ronda 231).
+            final isDriverApproved = user.isVerified &&
+                (user.userType == 'driver' || user.userType == 'dual');
+            if (isDriverApproved) {
               route = '/driver/home';
               AppLogger.navigation('ModernSplashScreen', route, {
                 'reason': 'Conductor aprobado',

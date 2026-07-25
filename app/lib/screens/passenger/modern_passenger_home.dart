@@ -1679,7 +1679,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               ),
             ),
 
-          if (!(_isWaitingForDriver && false))
+          // Ronda 233 fix: cuando aparece _buildRouteAddressCard en modo
+          // negociación, este SafeArea con menu + pickup se superpone y el
+          // botón del menú queda tapado sin ser clicable. Ocultamos este
+          // bloque cuando la route card está activa.
+          if (!(_isWaitingForDriver && false) && !(_showPriceNegotiation && !_isWaitingForDriver && !_showDriverOffers))
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -3588,16 +3592,22 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Ronda 233: nombre largo del conductor empujaba la estrella
+                  // + rating fuera del card. Flexible + ellipsis.
                   Row(
                     children: [
-                      Text(
-                        offer.driverName,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                      Flexible(
+                        child: Text(
+                          offer.driverName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Icon(Icons.star_rounded, size: 16, color: AppColors.warning),
                       Text(
                         offer.driverRating.toStringAsFixed(1),

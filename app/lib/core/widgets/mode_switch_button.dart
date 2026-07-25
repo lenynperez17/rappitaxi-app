@@ -121,8 +121,13 @@ class ModeSwitchButton extends StatelessWidget {
   /// retorna 'passenger' para consistencia con la navegación
   String _getEffectiveMode(dynamic user) {
     final activeMode = (user.activeMode as String?) ?? 'passenger';
-    // Si es driver pero no tiene documentos verificados, mostrar como pasajero
-    if (activeMode == 'driver' && user.documentVerified != true) {
+    // Ronda 233 fix: backend no envía documentVerified — antes esto forzaba
+    // "Pasajero" siempre aunque el user fuera dual+verified. Ahora chequea
+    // isVerified+userType (mismo criterio de Ronda 231).
+    final userType = (user.userType as String?) ?? 'passenger';
+    final isDriverApproved = (user.isVerified as bool? ?? false) &&
+        (userType == 'driver' || userType == 'dual');
+    if (activeMode == 'driver' && !isDriverApproved) {
       return 'passenger';
     }
     return activeMode;

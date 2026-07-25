@@ -26,57 +26,21 @@ class DocumentProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get vehicleDocuments => _vehicleDocuments;
   Map<String, dynamic>? get verificationStatus => _verificationStatus;
 
-  // Tipos de documentos requeridos
+  // Ronda 232: IDs alineados con el enum backend
+  // (driver_documents.doc_type CHECK: dni_front, dni_back, license_front,
+  // license_back, soat, tarjeta_propiedad, ownership, selfie, vehicle_photo).
+  // Antes eran IDs Firebase legacy (license, dni, criminal_record,
+  // vehicle_card, technical_review) que no matcheaban con nada del backend.
   final List<Map<String, dynamic>> requiredDocuments = [
-    {
-      'id': 'license',
-      'name': 'Licencia de Conducir',
-      'description': 'Foto clara de tu licencia de conducir vigente',
-      'icon': Icons.badge,
-      'required': true,
-    },
-    {
-      'id': 'dni',
-      'name': 'DNI',
-      'description': 'Foto de ambos lados de tu DNI',
-      'icon': Icons.credit_card,
-      'required': true,
-    },
-    {
-      'id': 'criminal_record',
-      'name': 'Antecedentes Penales',
-      'description': 'Certificado de antecedentes penales reciente',
-      'icon': Icons.gavel,
-      'required': true,
-    },
-    {
-      'id': 'vehicle_card',
-      'name': 'Tarjeta de Propiedad',
-      'description': 'Tarjeta de propiedad del vehículo',
-      'icon': Icons.directions_car,
-      'required': true,
-    },
-    {
-      'id': 'soat',
-      'name': 'SOAT',
-      'description': 'Seguro obligatorio vigente',
-      'icon': Icons.security,
-      'required': true,
-    },
-    {
-      'id': 'technical_review',
-      'name': 'Revisión Técnica',
-      'description': 'Certificado de revisión técnica vigente',
-      'icon': Icons.build,
-      'required': true,
-    },
-    {
-      'id': 'vehicle_photo',
-      'name': 'Foto del Vehículo',
-      'description': 'Foto clara del vehículo (frontal y lateral)',
-      'icon': Icons.photo_camera,
-      'required': true,
-    },
+    {'id': 'dni_front',         'name': 'DNI (frente)',                 'description': 'Cara frontal del DNI',                'icon': Icons.credit_card,      'required': true},
+    {'id': 'dni_back',          'name': 'DNI (reverso)',                'description': 'Cara posterior del DNI',              'icon': Icons.credit_card,      'required': true},
+    {'id': 'license_front',     'name': 'Licencia (frente)',            'description': 'Licencia de conducir vigente — frente','icon': Icons.badge,            'required': true},
+    {'id': 'license_back',      'name': 'Licencia (reverso)',           'description': 'Licencia de conducir vigente — reverso','icon': Icons.badge,           'required': true},
+    {'id': 'soat',              'name': 'SOAT vigente',                 'description': 'Seguro Obligatorio de Accidentes',    'icon': Icons.security,         'required': true},
+    {'id': 'tarjeta_propiedad', 'name': 'Tarjeta de propiedad (frente)','description': 'Registro vehicular — frente',         'icon': Icons.directions_car,   'required': false},
+    {'id': 'ownership',         'name': 'Tarjeta de propiedad (reverso)','description': 'Registro vehicular — reverso',       'icon': Icons.directions_car,   'required': false},
+    {'id': 'selfie',            'name': 'Selfie del conductor',         'description': 'Foto de rostro para verificación',    'icon': Icons.person,           'required': false},
+    {'id': 'vehicle_photo',     'name': 'Foto del vehículo',            'description': 'Foto del vehículo que usarás',        'icon': Icons.photo_camera,     'required': false},
   ];
 
   // Cargar documentos del conductor desde el backend
@@ -104,11 +68,20 @@ class DocumentProvider extends ChangeNotifier {
     try {
       debugPrint('📄 DocumentProvider: Cargando estado de verificación para: $driverId');
 
-      final profile = await _api.myDriverProfile();
-      debugPrint('📄 DocumentProvider: isVerified=${profile['isVerified']}, driverStatus=${profile['driverStatus']}');
+      final resp = await _api.myDriverProfile();
+      // Ronda 232 fix: el backend responde {success, profile: {isVerified,
+      // userType, ...}}. Antes leíamos resp['isVerified'] (path incorrecto)
+      // → siempre false → nunca se aprobaba el estado en el DocumentProvider.
+      final profile = (resp['profile'] as Map?)?.cast<String, dynamic>() ?? resp;
+      debugPrint('📄 DocumentProvider: isVerified=${profile['isVerified']}, userType=${profile['userType']}');
 
+      // Un driver está aprobado si isVerified=true Y userType es dual/driver
+      // (backend NO devuelve driverStatus — es campo legacy Firebase).
       final isVerified = profile['isVerified'] == true;
-      final driverStatus = (profile['driverStatus'] ?? 'pending_approval').toString();
+      final userType = (profile['userType'] ?? profile['user_type'] ?? '').toString();
+      final driverStatus = (isVerified && (userType == 'dual' || userType == 'driver'))
+          ? 'approved'
+          : 'pending_approval';
 
       // Determinar verificationStatus basado en driverStatus
       String verificationStatus;

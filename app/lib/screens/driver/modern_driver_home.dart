@@ -2049,13 +2049,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                           onTap: () => _scaffoldKey.currentState?.openDrawer(),
                           child: Icon(Icons.menu, size: 28, color: AppColors.getTextPrimary(context)),
                         ),
-                        const SizedBox(width: 16),
-                        // Status badge
-                        Expanded(
+                        const SizedBox(width: 12),
+                        // Status badge — Ronda 232: pill del estado con
+                        // Flexible+FittedBox para que no se superponga con
+                        // el pill de créditos ni con el switch de modo en
+                        // pantallas angostas (iPhone SE / textos "Fuera de
+                        // línea" largos).
+                        Flexible(
+                          fit: FlexFit.loose,
                           child: GestureDetector(
                             onTap: () => _toggleOnline(),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(30),
                                 border: Border.all(
@@ -2065,28 +2070,26 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                   width: 1.5,
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: _isOnline
-                                          ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
-                                          : AppColors.getTextSecondary(context),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      _isOnline ? (hasActiveTrip ? 'Ocupado' : 'Libre') : 'Fuera de línea',
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
-                                    ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _isOnline
+                                      ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
+                                      : AppColors.getTextSecondary(context),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _isOnline ? (hasActiveTrip ? 'Ocupado' : 'Libre') : 'Fuera de línea',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 8),
                         // Credits indicator
                         if (!_isCheckingCredits)
                           GestureDetector(
@@ -2100,13 +2103,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.account_balance_wallet, size: 16,
+                                Icon(Icons.account_balance_wallet, size: 14,
                                     color: _hasEnoughCredits ? AppColors.rappiOrange : ModernTheme.warning),
                                 const SizedBox(width: 4),
                                 Text(
                                   'S/ ${_serviceCredits.toStringAsFixed(2)}',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: _hasEnoughCredits ? AppColors.rappiOrange : ModernTheme.warning,
                                   ),
@@ -2163,6 +2166,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   // Document verification banner
                   Consumer<DocumentProvider>(
                     builder: (context, docProvider, _) {
+                      // Ronda 232: si el user ya está verificado a nivel de
+                      // AuthProvider (isVerified=true) ya no tiene sentido
+                      // mostrar "Documentos pendientes". El DocumentProvider
+                      // legacy tenía su propia noción de verificación que
+                      // podía quedar desincronizada.
+                      final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+                      if (authUser != null && authUser.isVerified &&
+                          (authUser.userType == 'dual' || authUser.userType == 'driver')) {
+                        return const SizedBox.shrink();
+                      }
                       final status = docProvider.verificationStatus;
                       if (status == null || status.isEmpty) return const SizedBox.shrink();
                       final isVerified = status['isVerified'] == true;

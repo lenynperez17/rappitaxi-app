@@ -575,7 +575,9 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
                 '${_earningsData!.onlineHours.toStringAsFixed(1)}h',
                 Icons.online_prediction,
                 ModernTheme.success,
-                'Efic: ${(_earningsData!.totalHours / _earningsData!.onlineHours * 100).toStringAsFixed(0)}%',
+                // Ronda 233 fix: prevenir división por cero cuando el driver
+                // nuevo tiene 0 horas online → antes generaba "Infinity%"/"NaN%".
+                'Efic: ${_earningsData!.onlineHours > 0 ? (_earningsData!.totalHours / _earningsData!.onlineHours * 100).toStringAsFixed(0) : '0'}%',
               ),
             ],
           ),

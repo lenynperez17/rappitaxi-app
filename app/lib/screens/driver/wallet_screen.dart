@@ -261,14 +261,21 @@ class _WalletScreenState extends State<WalletScreen>
                               children: [
                                 const Icon(Icons.account_balance_wallet, color: Colors.white, size: 28),
                                 const SizedBox(height: 4),
-                                Text(
-                                  CurrencyFormatter.formatCurrency(displayBalance),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                                // Ronda 233: FittedBox previene overflow con
+                                // balances de muchos dígitos (S/ 12,345.67) que
+                                // no cabían en el círculo de 140x140.
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    CurrencyFormatter.formatCurrency(displayBalance),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
                                   ),
-                                  textAlign: TextAlign.center,
                                 ),
                                 Text(
                                   'Disponible',

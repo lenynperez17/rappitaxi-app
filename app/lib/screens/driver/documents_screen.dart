@@ -74,15 +74,22 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     try {
       setState(() => _isLoading = true);
 
-      // Tipos de documentos requeridos con sus categorías
+      // Ronda 232 fix: los IDs deben coincidir con los docTypes reales del
+      // backend Node (driver_documents.doc_type CHECK constraint), no con
+      // los IDs legacy Firebase (license/id_card/insurance) que jamás
+      // matcheaban → 0/7 aprobados aunque hubiera 9 approved en DB.
+      // Enum backend: dni_front, dni_back, license_front, license_back,
+      // soat, tarjeta_propiedad, ownership, selfie, vehicle_photo, other.
       final requiredDocTypes = {
-        'license': {'name': 'Licencia de Conducir', 'description': 'Licencia de conducir profesional vigente', 'category': DocumentCategory.license, 'required': true},
-        'id_card': {'name': 'Documento de Identidad', 'description': 'DNI o Pasaporte vigente', 'category': DocumentCategory.identity, 'required': true},
-        'vehicle_registration': {'name': 'Tarjeta de Propiedad', 'description': 'Registro vehicular vigente', 'category': DocumentCategory.vehicle, 'required': true},
-        'insurance': {'name': 'SOAT', 'description': 'Seguro Obligatorio de Accidentes de Tránsito', 'category': DocumentCategory.insurance, 'required': true},
-        'technical_review': {'name': 'Revisión Técnica', 'description': 'Certificado de revisión técnica vehicular', 'category': DocumentCategory.vehicle, 'required': true},
-        'background_check': {'name': 'Antecedentes Policiales', 'description': 'Certificado de antecedentes policiales', 'category': DocumentCategory.background, 'required': true},
-        'bank_account': {'name': 'Certificación Bancaria', 'description': 'Certificado de cuenta bancaria para depósitos', 'category': DocumentCategory.financial, 'required': false},
+        'dni_front':          {'name': 'DNI (frente)',                 'description': 'Documento Nacional de Identidad — cara frontal',   'category': DocumentCategory.identity, 'required': true},
+        'dni_back':           {'name': 'DNI (reverso)',                'description': 'Documento Nacional de Identidad — cara posterior', 'category': DocumentCategory.identity, 'required': true},
+        'license_front':      {'name': 'Licencia (frente)',            'description': 'Licencia de conducir vigente — cara frontal',      'category': DocumentCategory.license,  'required': true},
+        'license_back':       {'name': 'Licencia (reverso)',           'description': 'Licencia de conducir vigente — cara posterior',    'category': DocumentCategory.license,  'required': true},
+        'soat':               {'name': 'SOAT vigente',                 'description': 'Seguro Obligatorio de Accidentes de Tránsito',     'category': DocumentCategory.insurance,'required': true},
+        'tarjeta_propiedad':  {'name': 'Tarjeta de propiedad (frente)','description': 'Registro vehicular — cara frontal',                'category': DocumentCategory.vehicle,  'required': false},
+        'ownership':          {'name': 'Tarjeta de propiedad (reverso)','description': 'Registro vehicular — cara posterior',             'category': DocumentCategory.vehicle,  'required': false},
+        'selfie':              {'name': 'Selfie del conductor',         'description': 'Foto de rostro para verificación',                 'category': DocumentCategory.identity, 'required': false},
+        'vehicle_photo':      {'name': 'Foto del vehículo',            'description': 'Foto del vehículo que usarás',                     'category': DocumentCategory.vehicle,  'required': false},
       };
 
       // Cargar documentos subidos desde el backend Node

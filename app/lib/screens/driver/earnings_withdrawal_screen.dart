@@ -792,7 +792,9 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     'Pendientes',
                     'S/ ${_pendingWithdrawals.toStringAsFixed(2)}',
                     Icons.schedule,
-                    colorScheme.surfaceContainerHighest,
+                    // Ronda 233 fix: antes pasaba surfaceContainerHighest (color
+                    // de superficie) como color de texto → texto invisible.
+                    Colors.orange,
                     colorScheme,
                   ),
                 ),
@@ -829,7 +831,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(fontSize: 12, color: colorScheme.surfaceContainerHighest),
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
           Text(
@@ -951,7 +953,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           const SizedBox(height: 8),
           Text(
             title,
-            style: TextStyle(fontSize: 14, color: colorScheme.surfaceContainerHighest),
+            style: TextStyle(fontSize: 14, color: colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
           Text(
@@ -1008,7 +1010,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 children: [
                   Text(
                     'Saldo Disponible',
-                    style: TextStyle(fontSize: 16, color: colorScheme.surfaceContainerHighest),
+                    style: TextStyle(fontSize: 16, color: colorScheme.onSurfaceVariant),
                   ),
                   Text(
                     'S/ ${_availableForWithdrawal.toStringAsFixed(2)}',
@@ -1022,7 +1024,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     'Mínimo: S/ $_minWithdrawal • Máximo diario: S/ $_maxDailyWithdrawal',
                     style: TextStyle(
                       fontSize: 12,
-                      color: colorScheme.surfaceContainerHighest,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -1363,7 +1365,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                   : 'Procesamiento: Instantáneo',
               style: TextStyle(
                 fontSize: 12,
-                color: colorScheme.surfaceContainerHighest,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -1410,11 +1412,11 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.history, size: 64, color: colorScheme.surfaceContainerHighest),
+                      Icon(Icons.history, size: 64, color: colorScheme.onSurfaceVariant),
                       const SizedBox(height: 16),
                       Text(
                         'No tienes retiros previos',
-                        style: TextStyle(fontSize: 16, color: colorScheme.surfaceContainerHighest),
+                        style: TextStyle(fontSize: 16, color: colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -1441,7 +1443,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     statusIcon = Icons.cancel;
                     break;
                   default:
-                    statusColor = colorScheme.surfaceContainerHighest;
+                    statusColor = colorScheme.onSurfaceVariant;
                     statusIcon = Icons.help;
                 }
 
