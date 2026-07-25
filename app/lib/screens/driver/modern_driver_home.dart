@@ -192,6 +192,28 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     _pulseController.repeat(reverse: true);
     _loadCustomIcons();
+
+    // Ronda 230: forzar refresh del user data al entrar al driver home.
+    // Sin esto, si el user tenía cache viejo con userType=passenger, el gate
+    // de _buildPendingVerificationScreen lo atrapaba aunque la DB ya diga dual.
+    // El refresh trae el estado real y notifyListeners fuerza el rebuild.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final before = authProvider.currentUser;
+      AppLogger.info(
+        '[Ronda 230 driver_home] userType=${before?.userType} '
+        'isVerified=${before?.isVerified} refrescando...',
+      );
+      final ok = await authProvider.refreshUserData();
+      if (!mounted) return;
+      final after = authProvider.currentUser;
+      AppLogger.info(
+        '[Ronda 230 driver_home] refresh ok=$ok userType=${after?.userType} '
+        'isVerified=${after?.isVerified}',
+      );
+    });
+
     _initializeDriver().then((_) {
       if (mounted) {
         _loadRealRequests();
@@ -2461,6 +2483,23 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 icon: Icon(Icons.refresh),
                 label: Text('Verificar estado'),
                 style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
+              ),
+              const SizedBox(height: 16),
+              // Ronda 230: mostrar estado real del user para debug. Si estás
+              // viendo esta pantalla como driver aprobado, algo no cuadra.
+              Consumer<AuthProvider>(
+                builder: (ctx, ap, _) {
+                  final u = ap.currentUser;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'v146+ · userType=${u?.userType} · verified=${u?.isVerified} · '
+                      'docStatus=${u?.driverStatus ?? "-"}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                },
               ),
             ],
           ),
