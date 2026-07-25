@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/rapi_api_client.dart';
 import '../utils/error_messages.dart';
+import '../utils/document_storage_scope.dart';
 
 class DocumentProvider extends ChangeNotifier {
   final RapiApiClient _api = RapiApiClient.instance;
@@ -126,7 +127,7 @@ class DocumentProvider extends ChangeNotifier {
       _uploadProgress = 0.3;
       notifyListeners();
 
-      final uploaded = await _api.uploadFile(file: file, scope: 'documents');
+      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(documentType));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');

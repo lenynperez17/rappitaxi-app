@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
+import '../../utils/document_storage_scope.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../widgets/common/rappi_app_bar.dart';
@@ -126,7 +127,7 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
       ];
 
       for (final entry in docs) {
-        final uploadResp = await api.uploadFile(file: entry.value, scope: 'documents');
+        final uploadResp = await api.uploadFile(file: entry.value, scope: storageScopeForDocType(entry.key));
         final fileUrl = (uploadResp['url'] ?? uploadResp['fileUrl']) as String?;
         if (fileUrl != null && fileUrl.isNotEmpty) {
           await api.uploadDocument(docType: entry.key, fileUrl: fileUrl);

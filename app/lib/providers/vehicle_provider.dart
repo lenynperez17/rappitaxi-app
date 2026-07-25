@@ -3,6 +3,7 @@ import 'dart:io';
 import '../utils/logger.dart';
 import '../services/rapi_api_client.dart';
 import '../utils/error_messages.dart';
+import '../utils/document_storage_scope.dart';
 
 /// Provider para gestión completa de vehículos, documentos, mantenimiento y recordatorios
 class VehicleProvider extends ChangeNotifier {
@@ -278,7 +279,7 @@ class VehicleProvider extends ChangeNotifier {
 
       // Si hay archivo, subirlo al storage genérico
       if (documentFile != null) {
-        final uploaded = await _api.uploadFile(file: documentFile, scope: 'documents');
+        final uploaded = await _api.uploadFile(file: documentFile, scope: storageScopeForDocType(type));
         documentUrl = uploaded['url']?.toString();
       }
 

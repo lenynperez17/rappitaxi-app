@@ -1195,8 +1195,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           final icon = documentIcons[entry.key] ?? Icons.insert_drive_file;
           final hasDocument = entry.value.isNotEmpty;
 
-          return Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+          // Ronda 237: cada fila navega a la pantalla completa "Mis Documentos"
+          // para que el driver pueda subir/reemplazar. Antes solo el lápiz
+          // superior era tappeable — se veía como un listado de solo lectura.
+          return InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const DocumentsScreen()),
+            ),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             child: Row(
               children: [
                 Icon(icon, size: 18, color: context.secondaryText),
@@ -1248,7 +1257,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       padding: EdgeInsets.zero,
                     ),
                   ),
+                Icon(Icons.chevron_right, size: 18, color: context.secondaryText),
               ],
+            ),
             ),
           );
         }),

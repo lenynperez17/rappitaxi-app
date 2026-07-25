@@ -13,6 +13,7 @@ import '../../services/rapi_api_client.dart';
 
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/document_storage_scope.dart';
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
 
@@ -1179,7 +1180,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Subir archivo al backend Node y registrar el documento
       final file = File(image.path);
-      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');
@@ -1245,7 +1246,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Subir archivo al backend Node y registrar el documento
       final file = File(image.path);
-      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');
@@ -1328,7 +1329,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Subir archivo al backend Node y registrar el documento
       final file = File(pickedFile.path!);
-      final uploaded = await _api.uploadFile(file: file, scope: 'document');
+      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');
