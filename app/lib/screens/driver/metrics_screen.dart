@@ -398,6 +398,8 @@ class _MetricsScreenState extends State<MetricsScreen>
             Text(
               'Viajes: ${_currentMetrics['totalTrips']} · S/ ${_currentMetrics['totalEarnings']} · ${_currentMetrics['avgRating']}★',
               style: const TextStyle(color: Colors.white70, fontSize: 11),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

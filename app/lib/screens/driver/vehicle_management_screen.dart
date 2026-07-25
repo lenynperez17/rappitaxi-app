@@ -380,6 +380,8 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             '${_vehicleData['year']} • ${_vehicleData['plate']}',
@@ -387,6 +389,8 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
                               color: context.onPrimaryText.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),

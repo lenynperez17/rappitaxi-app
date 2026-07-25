@@ -435,37 +435,40 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
             Text('🚨 SOS ACTIVADO'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('✅ Emergencia activada exitosamente'),
-            SizedBox(height: 8),
-            Text('📞 Llamada de emergencia iniciada'),
-            SizedBox(height: 8),
-            Text('📱 ${response.contactsNotified} contactos notificados'),
-            SizedBox(height: 8),
-            Text('🎤 Grabación de audio iniciada'),
-            SizedBox(height: 8),
-            Text('📍 Ubicación enviada a autoridades'),
-            SizedBox(height: 16),
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red),
-              ),
-              child: Text(
-                'ID de Emergencia: ${response.emergencyId ?? 'N/A'}',
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+        // Ronda 234: scroll para no reventar en pantallas cortas.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✅ Emergencia activada exitosamente'),
+              SizedBox(height: 8),
+              Text('📞 Llamada de emergencia iniciada'),
+              SizedBox(height: 8),
+              Text('📱 ${response.contactsNotified} contactos notificados'),
+              SizedBox(height: 8),
+              Text('🎤 Grabación de audio iniciada'),
+              SizedBox(height: 8),
+              Text('📍 Ubicación enviada a autoridades'),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red),
+                ),
+                child: Text(
+                  'ID de Emergencia: ${response.emergencyId ?? 'N/A'}',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           ElevatedButton(

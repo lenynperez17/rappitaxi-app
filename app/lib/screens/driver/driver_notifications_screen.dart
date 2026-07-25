@@ -85,8 +85,13 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
                             final n = items[index];
                             final message = n.body.isNotEmpty ? n.body : n.title;
                             final createdAt = n.timestamp;
+                            // Ronda 234 fix: formato 12h correcto (antes:
+                            // "0:30 a.m." era en realidad 12:30 a.m.,
+                            // "13:30 p.m." era 1:30 p.m.).
+                            final h24 = createdAt.hour;
+                            final h12 = h24 == 0 ? 12 : (h24 > 12 ? h24 - 12 : h24);
                             final dateStr =
-                                '${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')} ${createdAt.hour >= 12 ? 'p.m.' : 'a.m.'}';
+                                '$h12:${createdAt.minute.toString().padLeft(2, '0')} ${h24 >= 12 ? 'p.m.' : 'a.m.'}';
 
                             return Container(
                               padding: const EdgeInsets.all(16),

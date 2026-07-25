@@ -1819,12 +1819,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           ),
         ),
         const SizedBox(width: 12),
-        Text(
-          fareText,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AppColors.getTextPrimary(context),
+        Expanded(
+          child: Text(
+            fareText,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.getTextPrimary(context),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

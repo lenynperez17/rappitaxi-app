@@ -173,7 +173,9 @@ class _DriverEarningsDetailScreenState extends State<DriverEarningsDetailScreen>
                     ),
                     const SizedBox(height: 8),
 
-                    // Earnings with arrows
+                    // Earnings with arrows — Ronda 234: FittedBox + Flexible
+                    // para que ganancias grandes (5-6 dígitos) no revienten
+                    // iPhone SE (375px).
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -182,12 +184,18 @@ class _DriverEarningsDetailScreenState extends State<DriverEarningsDetailScreen>
                           child: Icon(Icons.chevron_left, size: 32, color: AppColors.getTextSecondary(context)),
                         ),
                         const SizedBox(width: 16),
-                        _isLoading
-                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(
-                                _earnings.toStringAsFixed(2),
-                                style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context)),
-                              ),
+                        Flexible(
+                          child: _isLoading
+                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                              : FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _earnings.toStringAsFixed(2),
+                                    style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context)),
+                                    maxLines: 1,
+                                  ),
+                                ),
+                        ),
                         const SizedBox(width: 16),
                         GestureDetector(
                           onTap: () => _navigateDate(1),
@@ -212,13 +220,23 @@ class _DriverEarningsDetailScreenState extends State<DriverEarningsDetailScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                ds.dailyIncomePlan,
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                              Flexible(
+                                child: Text(
+                                  ds.dailyIncomePlan,
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              Text(
-                                '${ds.objective}: S/ ${widget.targetEarnings.toInt()}',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  '${ds.objective}: S/ ${widget.targetEarnings.toInt()}',
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                ),
                               ),
                             ],
                           ),

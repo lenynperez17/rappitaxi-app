@@ -779,11 +779,18 @@ class _FreightRequestCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Price + menu
+            // Price + menu — Ronda 234: precios de flete grandes empujaban
+            // el menú fuera del padding.
             Row(
               children: [
-                Text('PEN ${price.toStringAsFixed(0)}', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context))),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                    'PEN ${price.toStringAsFixed(0)}',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 GestureDetector(
                   onTap: onMenu,
                   child: Icon(Icons.more_horiz, size: 24, color: AppColors.getTextSecondary(context)),
@@ -809,7 +816,14 @@ class _FreightRequestCard extends StatelessWidget {
               children: [
                 Icon(Icons.local_shipping, size: 20, color: AppColors.getTextPrimary(context)),
                 const SizedBox(width: 8),
-                Text(vehicleType, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
+                Expanded(
+                  child: Text(
+                    vehicleType,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),

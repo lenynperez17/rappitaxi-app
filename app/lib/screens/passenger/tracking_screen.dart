@@ -854,6 +854,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -897,6 +899,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),

@@ -165,18 +165,32 @@ class _DriverPerformanceScreenState extends State<DriverPerformanceScreen> {
                                 ],
                               ),
                               const SizedBox(width: 16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(_level == 'Básico' ? ds.basic : ds.platinum, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
-                                      const SizedBox(width: 8),
-                                      Icon(Icons.diamond, color: const Color(0xFFE91E63), size: 24),
-                                    ],
-                                  ),
-                                  Text(ds.yourLevelThisWeek, style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
-                                ],
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            _level == 'Básico' ? ds.basic : ds.platinum,
+                                            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(Icons.diamond, color: const Color(0xFFE91E63), size: 24),
+                                      ],
+                                    ),
+                                    Text(
+                                      ds.yourLevelThisWeek,
+                                      style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),

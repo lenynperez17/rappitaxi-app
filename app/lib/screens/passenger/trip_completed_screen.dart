@@ -411,12 +411,18 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  'S/ ${(_trip?.finalFare ?? _trip?.estimatedFare ?? 0).toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.bold,
-                                    color: ModernTheme.rappiOrange,
+                                // Ronda 234: FittedBox para totales grandes
+                                // (S/ 999,999.99) que desbordan el card.
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'S/ ${(_trip?.finalFare ?? _trip?.estimatedFare ?? 0).toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 40,
+                                      fontWeight: FontWeight.bold,
+                                      color: ModernTheme.rappiOrange,
+                                    ),
+                                    maxLines: 1,
                                   ),
                                 ),
 

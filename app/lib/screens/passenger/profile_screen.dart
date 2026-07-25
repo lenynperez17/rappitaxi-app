@@ -640,7 +640,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     ],
                                   ),
                                   SizedBox(height: 16),
-                                  // Nombre y nivel
+                                  // Nombre y nivel — Ronda 234: nombres largos
+                                  // desbordaban el header con gradiente.
                                   Text(
                                     _nameController.text,
                                     style: TextStyle(
@@ -648,6 +649,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
                                     ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   SizedBox(height: 8),
                                   Container(

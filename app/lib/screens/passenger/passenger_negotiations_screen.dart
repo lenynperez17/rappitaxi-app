@@ -685,6 +685,8 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   Row(
                     children: [

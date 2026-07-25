@@ -437,7 +437,9 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     }
 
     return ListView.builder(
-      padding: EdgeInsets.all(16),
+      // Ronda 234: extra bottom padding para que la última transacción
+      // no quede tapada por el FloatingActionButton.extended.
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       itemCount: _transactionHistory.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {

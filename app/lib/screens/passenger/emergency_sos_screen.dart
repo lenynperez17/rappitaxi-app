@@ -259,48 +259,52 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
             Text('🚨 CONFIRMAR SOS'),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '¿Estás seguro que quieres activar la emergencia SOS?',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Esto hará lo siguiente:',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('• 📞 Llamada automática al 911'),
-                Text('• 📱 SMS a tus contactos de emergencia'),
-                Text('• 🎙️ Iniciar grabación de audio'),
-                Text('• 📍 Compartir ubicación en tiempo real'),
-                Text('• 🔔 Alertar a Rappi Team Central'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
+        // Ronda 234: SingleChildScrollView para que el diálogo no reviente
+        // en landscape / iPhone SE / teclado externo.
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '¿Estás seguro que quieres activar la emergencia SOS?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
               ),
-              child: const Text(
-                '⚠️ Solo usar en emergencias reales. Uso indebido puede tener consecuencias legales.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.red,
-                  fontWeight: FontWeight.w500,
+              const SizedBox(height: 16),
+              const Text(
+                'Esto hará lo siguiente:',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• 📞 Llamada automática al 911'),
+                  Text('• 📱 SMS a tus contactos de emergencia'),
+                  Text('• 🎙️ Iniciar grabación de audio'),
+                  Text('• 📍 Compartir ubicación en tiempo real'),
+                  Text('• 🔔 Alertar a Rappi Team Central'),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: const Text(
+                  '⚠️ Solo usar en emergencias reales. Uso indebido puede tener consecuencias legales.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
