@@ -1,5 +1,11 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
+
+// Ronda 254: todo el flujo de login estaba con colores FIJOS (Colors.white,
+// grey.shadeN, black87), asi que un usuario con tema oscuro veia un login
+// blanco puro dentro de una app oscura, con texto negro en los botones
+// sociales. Ahora usa los getters adaptativos de AppColors.
+import '../../core/constants/app_colors.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/modern_theme.dart';
@@ -174,7 +180,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         await _goBackFromPhoneStep();
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.getBackground(context),
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -228,7 +234,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         Text(
           'Iniciaste con $_providerName. Necesitamos tu número para completar tu cuenta.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+          style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
         ),
       ],
     );
@@ -282,7 +288,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         Text(
           'Ingresa el código enviado a +51 ${_cleanLocalDigits(_phoneController.text)}',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+          style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
         ),
         const SizedBox(height: 16),
         TextField(

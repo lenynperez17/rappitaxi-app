@@ -480,7 +480,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: AppColors.getInputFill(context),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -1324,7 +1324,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
     if (_withdrawalAmount <= 0) return const SizedBox.shrink();
 
     return Card(
-      color: Colors.blue.shade50,
+      color: AppColors.getInputFill(context),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

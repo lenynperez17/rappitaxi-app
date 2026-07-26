@@ -126,7 +126,7 @@ class _DriverPerformanceScreenState extends State<DriverPerformanceScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 16),
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFE0EC),
+                        color: AppColors.getInputFill(context),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(

@@ -11,6 +11,12 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+// Ronda 254: todo el flujo de login estaba con colores FIJOS (Colors.white,
+// grey.shadeN, black87), asi que un usuario con tema oscuro veia un login
+// blanco puro dentro de una app oscura, con texto negro en los botones
+// sociales. Ahora usa los getters adaptativos de AppColors.
+import '../../core/constants/app_colors.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:passkeys/authenticator.dart';
@@ -208,7 +214,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.getBackground(context),
       body: SafeArea(
         child: LayoutBuilder(builder: (ctx, cons) {
           return SingleChildScrollView(
@@ -231,7 +237,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
                   Text(
                     'Ingresa a tu cuenta de Rapi Team',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 15, color: AppColors.getTextSecondary(context)),
                   ),
                   const SizedBox(height: 32),
 
@@ -268,7 +274,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
                   if (Platform.isIOS) const SizedBox(height: 12),
                   _socialButton(
                     icon: null,
-                    iconWidget: const Icon(Icons.key, size: 22, color: Colors.black87),
+                    iconWidget: Icon(Icons.key, size: 22, color: AppColors.getTextPrimary(context)),
                     label: 'Llave de acceso',
                     onTap: _loading ? null : _handlePasskey,
                   ),
@@ -316,14 +322,14 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
         prefixIconConstraints: const BoxConstraints(minWidth: 60, minHeight: 24),
         hintText: '999 888 777',
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: AppColors.getInputFill(context),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: AppColors.getBorder(context)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: AppColors.getBorder(context)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -339,7 +345,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: ModernTheme.rappiOrange,
-          disabledBackgroundColor: Colors.grey.shade300,
+          disabledBackgroundColor: AppColors.getBorder(context),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 0,
@@ -362,7 +368,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
         const Expanded(child: Divider()),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+          child: Text(label, style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 13)),
         ),
         const Expanded(child: Divider()),
       ],
@@ -380,9 +386,9 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
       child: OutlinedButton(
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: Colors.grey.shade300),
+          side: BorderSide(color: AppColors.getBorder(context)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          foregroundColor: Colors.black87,
+          foregroundColor: AppColors.getTextPrimary(context),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -407,7 +413,7 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
     return Text.rich(
       TextSpan(
         text: 'Al continuar aceptas los ',
-        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context)),
         children: const [
           TextSpan(
             text: 'Términos y Condiciones',

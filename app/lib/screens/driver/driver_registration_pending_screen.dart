@@ -354,7 +354,7 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: AppColors.getInputFill(context),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(

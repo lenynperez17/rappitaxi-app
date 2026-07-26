@@ -111,8 +111,8 @@ class _DriverBenefitsScreenState extends State<DriverBenefitsScreen> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 32),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFFE8F0),
+                      decoration: BoxDecoration(
+                        color: AppColors.getInputFill(context),
                       ),
                       child: Column(
                         children: [
@@ -128,7 +128,7 @@ class _DriverBenefitsScreenState extends State<DriverBenefitsScreen> {
 
                     // "Want to get Platinum?" section
                     Container(
-                      color: const Color(0xFFFFE8F0),
+                      color: AppColors.getInputFill(context),
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

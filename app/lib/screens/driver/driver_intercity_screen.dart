@@ -675,7 +675,7 @@ class _UnlimitedInfoPage extends StatelessWidget {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 40),
-                      color: const Color(0xFFFFF8E1),
+                      color: AppColors.getInputFill(context),
                       child: Column(
                         children: [
                           // Illustration

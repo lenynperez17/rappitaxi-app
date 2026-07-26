@@ -3,6 +3,12 @@
 library;
 
 import 'package:flutter/material.dart';
+
+// Ronda 254: todo el flujo de login estaba con colores FIJOS (Colors.white,
+// grey.shadeN, black87), asi que un usuario con tema oscuro veia un login
+// blanco puro dentro de una app oscura, con texto negro en los botones
+// sociales. Ahora usa los getters adaptativos de AppColors.
+import '../../core/constants/app_colors.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/modern_theme.dart';
@@ -89,7 +95,7 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Verifica tu teléfono'),
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.getBackground(context),
         foregroundColor: Colors.black,
         elevation: 0,
       ),
@@ -101,7 +107,7 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
             children: [
               const SizedBox(height: 24),
               Text('Ingresa el código enviado a',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+                style: TextStyle(fontSize: 16, color: AppColors.getTextSecondary(context)),
                 textAlign: TextAlign.center),
               const SizedBox(height: 4),
               Text(widget.phoneNumber,
@@ -118,10 +124,10 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
                 decoration: InputDecoration(
                   hintText: '••••',
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: AppColors.getInputFill(context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
+                    borderSide: BorderSide(color: AppColors.getBorder(context)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -140,7 +146,7 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ModernTheme.rappiOrange,
-                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledBackgroundColor: AppColors.getBorder(context),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
