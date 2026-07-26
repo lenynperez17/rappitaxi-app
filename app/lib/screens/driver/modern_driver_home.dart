@@ -867,17 +867,52 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   // GPS tracking
   Future<void> _startLocationTracking() async {
     try {
+      // Ronda 245: si el permiso está denegado, antes solo se logueaba y se
+      // hacía return — el conductor quedaba "Libre", sin errores y SIN
+      // SOLICITUDES PARA SIEMPRE, sin entender por qué. Encima el poll
+      // consultaba /rides/available?lat=0&lng=0 (coordenadas válidas para el
+      // backend, en el Golfo de Guinea) → 0 resultados garantizados.
+      // Ahora se lo decimos con un mensaje accionable.
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           AppLogger.warning('Location permissions denied');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Sin permiso de ubicación no podemos mostrarte solicitudes cercanas. '
+                  'Actívalo para empezar a recibir viajes.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 6),
+              ),
+            );
+          }
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
         AppLogger.error('Location permissions permanently denied');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'El permiso de ubicación está bloqueado. Actívalo en Ajustes '
+                'para poder recibir solicitudes.',
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(
+                label: 'Ajustes',
+                textColor: Colors.white,
+                onPressed: () => Geolocator.openAppSettings(),
+              ),
+            ),
+          );
+        }
         return;
       }
 
@@ -957,6 +992,26 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         if (_driverId != null && _isOnline) {
           await _updateLocationInFirebase(newLocation);
         }
+      });
+
+      // Ronda 245 BUG BLOQUEANTE: el heartbeat SOLO se enviaba desde el
+      // stream de posición, que con distanceFilter:5 no dispara si el
+      // conductor está QUIETO — el caso normal de un conductor esperando.
+      // La posición inicial tampoco mandaba heartbeat, y PUT /drivers/status
+      // no escribe lat/lng. Como findNearbyOnlineDrivers exige
+      // `last_heartbeat > now() - 5 min AND latitude IS NOT NULL`, el
+      // conductor estacionado se volvía INVISIBLE a los 5 minutos y dejaba
+      // de recibir el push de nuevas solicitudes. Solo "revivía" si el
+      // teléfono se movía más de 5 metros.
+      // `_locationUpdateTimer` ya estaba declarado y se cancelaba, pero
+      // NUNCA se arrancaba. Ahora late cada 30s mientras esté online.
+      await _updateLocationInFirebase(_currentLocation!); // heartbeat inmediato
+      _locationUpdateTimer?.cancel();
+      _locationUpdateTimer = Timer.periodic(const Duration(seconds: 30), (t) async {
+        if (_isDisposed || !mounted || !_isOnline) return;
+        final loc = _currentLocation;
+        if (loc == null) return;
+        await _updateLocationInFirebase(loc);
       });
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error starting GPS tracking'));
@@ -1144,24 +1199,36 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _updateMapMarkers();
       });
 
-      _requestsTimer?.cancel();
-      _requestsTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-        if (_isDisposed || !mounted) {
-          timer.cancel();
-          return;
-        }
-        if (_isOnline) {
-          _loadRequestsFromFirebase();
-        }
-      });
+      _ensureRequestsPolling();
     } catch (e) {
+      // Ronda 245: antes este catch BORRABA la lista (`_availableRequests = []`)
+      // ante cualquier timeout/429/500 — el conductor veía "no hay solicitudes"
+      // sin poder distinguirlo de "no hay demanda". Y como el Timer se creaba
+      // DENTRO del try, si fallaba la PRIMERA carga el polling no se creaba
+      // nunca: se quedaba sin reintentos toda la sesión salvo que conmutara
+      // el toggle offline→online a mano.
+      // Ahora: conservamos la última lista buena y garantizamos el polling.
       AppLogger.error(userFriendlyError(e, fallback: 'Error loading requests'));
       if (!mounted) return;
-      setState(() {
-        _availableRequests = [];
-        _updateMapMarkers();
-      });
+      _ensureRequestsPolling();
     }
+  }
+
+  /// Crea (si no existe) el timer de refresco de solicitudes. Se llama tanto
+  /// en el camino feliz como en el de error, para que un fallo puntual de red
+  /// no deje al conductor sin polling el resto de la sesión.
+  void _ensureRequestsPolling() {
+    if (_requestsTimer?.isActive == true) return;
+    _requestsTimer?.cancel();
+    _requestsTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_isDisposed || !mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_isOnline) {
+        _loadRequestsFromFirebase();
+      }
+    });
   }
 
   void _updateMapMarkers() {
@@ -1296,7 +1363,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     _pendingOfferTripId = negotiationId;
 
     _sse.start();
-    _myOfferSubscription = _sse.negotiations.listen((event) async {
+    // Ronda 245 BUG BLOQUEANTE: este listener escuchaba `_sse.negotiations`,
+    // un stream que el backend NUNCA alimenta — events/stream sólo emite
+    // ready / notification / ride_update / new_message / driver_location /
+    // session_revoked. Es decir: el conductor JAMÁS se enteraba de que su
+    // oferta había sido aceptada. El overlay "Ofertando" corría hasta agotar
+    // el contador y mostraba el mensaje FALSO "Tiempo agotado, la solicitud
+    // expiró", aunque el pasajero ya lo hubiera elegido.
+    // `rideUpdates` sí emite status='accepted' + driverId al conductor.
+    _myOfferSubscription = _sse.rideUpdates.listen((event) async {
       if (!mounted || _isDisposed) return;
 
       // Los eventos SSE de negotiations pueden traer diferentes shapes según el
@@ -1431,14 +1506,23 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       );
     }
 
-    // Safety net: check for active rides shortly after dismissal.
-    // If the passenger accepted right before the overlay timed out,
-    // this catches the ride and navigates the driver to it.
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted && !_isDisposed) {
-        _checkForActiveRidesOnce();
-      }
-    });
+    // Ronda 245: red de seguridad reforzada. Antes era UN solo chequeo a los
+    // 2s: si el pasajero aceptaba después de esa ventana, el conductor no se
+    // enteraba NUNCA y quedaba con un viaje asignado que jamás veía (y encima
+    // bloqueado para ponerse offline con 409 has_active_ride).
+    // Ahora reintentamos varias veces con backoff corto.
+    for (final delay in const [
+      Duration(seconds: 2),
+      Duration(seconds: 6),
+      Duration(seconds: 12),
+      Duration(seconds: 25),
+    ]) {
+      Future.delayed(delay, () {
+        if (mounted && !_isDisposed) {
+          _checkForActiveRidesOnce();
+        }
+      });
+    }
   }
 
   /// [LEGACY] Direct acceptance — reemplazado por el flujo InDrive de ofertas
@@ -1554,20 +1638,28 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     });
   }
 
-  /// Remove driver's offer from the negotiation on timeout.
-  /// TODO(node-migration): reemplazar con endpoint DELETE /api/rides/{id}/offers/mine
-  /// cuando el backend lo exponga. Por ahora hacemos noop — el backend expira
-  /// las ofertas automáticamente por TTL.
+  /// Retira la oferta del conductor cuando expira su contador local.
+  ///
+  /// Ronda 245: esto era un NO-OP que decía "el backend expira las ofertas
+  /// automáticamente por TTL". Ese TTL NUNCA existió — no hay cron ni job que
+  /// expire `ride_offers`. Así que al agotarse el contador la oferta seguía
+  /// viva en la base: el pasajero podía aceptarla horas después, el conductor
+  /// recibía un viaje que creía descartado, no se enteraba (ver fix del SSE),
+  /// y encima no podía ponerse offline (409 has_active_ride).
+  /// Ahora se retira de verdad con DELETE /api/rides/:id/offers/mine.
   Future<void> _removeMyOfferFromNegotiation(String negotiationId) async {
     if (_driverId == null) return;
-    AppLogger.info('TODO(node-migration): remove offer from $negotiationId — backend TTL manages expiry');
+    try {
+      await _api.cancelMyOffer(negotiationId);
+      AppLogger.info('[Ronda 245] Oferta retirada del ride $negotiationId');
+    } catch (e) {
+      AppLogger.error('No se pudo retirar la oferta de $negotiationId', e);
+    }
   }
 
   Future<void> _removeMyOfferFromFirestore(String tripId) async {
     if (_driverId == null) return;
-    // Idem: el backend expira ofertas por TTL. Se conserva el shim por si otros
-    // callers lo usan.
-    AppLogger.info('TODO(node-migration): remove offer from ride $tripId — backend TTL manages expiry');
+    await _removeMyOfferFromNegotiation(tripId);
   }
 
   // Need credits dialog (Rapi Team)
@@ -1834,14 +1926,33 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
+  /// Ronda 245: antes esto SOLO mostraba un SnackBar — cero llamadas al
+  /// backend. La oferta del conductor seguía `pending` en la DB, así que el
+  /// pasajero podía aceptarla horas después: al conductor le asignaban un
+  /// viaje que nunca pidió, no se enteraba, y encima quedaba bloqueado para
+  /// ponerse offline con 409 `has_active_ride` sin entender por qué.
+  /// Ahora retiramos la oferta de verdad.
   Future<void> _rejectCounterOffer(String tripId, double counterPrice) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
+      await _api.cancelMyOffer(tripId);
+      AppLogger.info('[Ronda 245] Oferta retirada del ride $tripId');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Contraoferta de S/ ${counterPrice.toStringAsFixed(2)} rechazada'), backgroundColor: ModernTheme.warning),
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Contraoferta de S/ ${counterPrice.toStringAsFixed(2)} rechazada'),
+          backgroundColor: ModernTheme.warning,
+        ),
       );
     } catch (e) {
-      print(userFriendlyError(e, fallback: 'Error rejecting counter-offer'));
+      AppLogger.error('No se pudo retirar la oferta', e);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e, fallback: 'No se pudo retirar tu oferta')),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
@@ -1943,6 +2054,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           _startLocationTracking();
           _startRidesListener();
           _startUIRefreshTimer();
+          // Ronda 245: faltaba cargar solicitudes al sincronizar como online
+          // desde el backend — el conductor quedaba online pero sin polling
+          // ni lista durante toda la sesión.
+          _loadRequestsFromFirebase();
+          _checkDriverCredits();
         }
       });
     } catch (e) {

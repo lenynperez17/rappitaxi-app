@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { tx } from '@/lib/db'
+import { sendPush } from '@/lib/send-push'
 
 export const runtime = 'nodejs'
 
@@ -202,6 +203,29 @@ export async function POST(
         amount: finalFare,
         rejectedCount: rejectedRes.rowCount ?? 0,
       }
+    })
+
+    // Ronda 245 BUG GRAVE: este endpoint solo hacía INSERT INTO notifications
+    // — nunca enviaba push. Combinado con que el conductor escuchaba un stream
+    // SSE inexistente, el resultado era que NADIE le avisaba de que su oferta
+    // había sido aceptada: el pasajero quedaba con un conductor asignado que
+    // jamás aparecía. Ahora sí le llega push, además del SSE ya corregido.
+    void sendPush({
+      userIds: [result.driverId],
+      type: 'offer_accepted',
+      title: '¡Tu oferta fue aceptada!',
+      body: result.amount !== null
+        ? `El pasajero aceptó tu oferta de S/ ${result.amount.toFixed(2)}. Dirígete al punto de recogida.`
+        : 'El pasajero aceptó tu oferta. Dirígete al punto de recogida.',
+      data: {
+        rideId: result.rideId,
+        offerId,
+        amount: result.amount,
+      },
+      channel: 'rappi_rides',
+      sound: 'ride_accepted',
+      priority: 'high',
+      persist: false,
     })
 
     return NextResponse.json({

@@ -674,6 +674,12 @@ class WalletProvider extends ChangeNotifier {
       final serviceFee = (config['serviceFee'] as num).toDouble();
       final minCredits = (config['minServiceCredits'] as num).toDouble();
 
+      // Ronda 245: misma guarda que ya tenía checkCreditStatus() y que acá
+      // faltaba. Si el modelo es solo-comisión (fee 0 y mínimo 0), no hay
+      // nada que validar: no se puede bloquear a un conductor por "saldo
+      // insuficiente" cuando el requisito es cero.
+      if (serviceFee <= 0 && minCredits <= 0) return true;
+
       // Si wallet aún no cargó, refrescar directamente del backend.
       double credits = serviceCredits;
       if (credits <= 0) {
@@ -703,10 +709,16 @@ class WalletProvider extends ChangeNotifier {
   /// Obtener configuración de créditos.
   /// El backend Node aún no expone /api/settings/credits — devolvemos defaults.
   Future<Map<String, dynamic>> getCreditConfig() async {
-    // Sin endpoint público todavía. Retornamos configuración por defecto
-    // (mismos valores que la config previa en Firestore settings/admin).
+    // Ronda 245 BUG BLOQUEANTE: acá estaba hardcodeado `serviceFee: 1.0`
+    // mientras CreditConstants.defaultServiceFee vale 0.0 ("sin tarifa fija
+    // por servicio — solo 12% de comisión al completar"). Con 1.0, un
+    // conductor recién aprobado con saldo S/ 0.00 NUNCA podía ofertar: veía
+    // el diálogo autocontradictorio "Créditos insuficientes / Mínimo
+    // requerido S/ 0.00 / Costo por servicio S/ 1.00" y la oferta ni se
+    // intentaba. Peor: como la comisión se debita al completar viajes en
+    // efectivo, su saldo se volvía negativo y quedaba bloqueado para siempre.
     return {
-      'serviceFee': 1.0,
+      'serviceFee': CreditConstants.defaultServiceFee,
       'minServiceCredits': CreditConstants.minServiceCredits,
       'creditPackages': const [],
     };

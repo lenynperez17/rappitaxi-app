@@ -175,10 +175,26 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
           'status': o.status.name,
         }).toList();
         final hasOffers = offers.isNotEmpty;
+
+        // Ronda 245 BUG BLOQUEANTE: `rideProvider.currentTrip` es SIEMPRE null
+        // para el pasajero — nadie llama a RideProvider.requestRide(); el viaje
+        // se crea vía PriceNegotiationProvider.createNegotiation(). Por eso
+        // `hasDirectAcceptance` nunca era true.
+        // Cuando el conductor pulsa "Aceptar" directo (sin ofertar), el ride
+        // pasa a 'accepted' SIN crear fila en ride_offers, así que tampoco hay
+        // ofertas que mostrar → el pasajero se quedaba con el spinner
+        // "Buscando conductor" y el contador corriendo PARA SIEMPRE, aunque ya
+        // tuviera conductor asignado y en camino.
+        // Ahora leemos el estado desde la negociación, que sí está poblada.
+        final negotiation = negotiationProvider.currentNegotiation;
+        final acceptedByNegotiation =
+            negotiation?.status == NegotiationStatus.accepted &&
+                (negotiation?.selectedDriverId?.isNotEmpty ?? false);
+
         final currentTrip = rideProvider.currentTrip;
-        final hasDirectAcceptance = currentTrip?.status == 'accepted' &&
-            currentTrip?.driverId != null &&
-            !hasOffers;
+        final hasDirectAcceptance = !hasOffers &&
+            ((currentTrip?.status == 'accepted' && currentTrip?.driverId != null) ||
+                acceptedByNegotiation);
 
         if (hasOffers) {
           _countdownTimer?.cancel();
@@ -190,12 +206,16 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
         }
 
         if (hasDirectAcceptance) {
+          // Ronda 245: si el ride no está en RideProvider (el caso normal),
+          // adaptamos la negociación para alimentar la tarjeta — así el
+          // pasajero VE que ya tiene conductor en vez del spinner eterno.
+          final cardTrip = currentTrip ?? _AcceptedTripAdapter(negotiation!);
           return _buildSheetContainer(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: AcceptedDriverCard(
-                trip: currentTrip!,
-                onGoToTracking: () => widget.onGoToTracking(currentTrip),
+                trip: cardTrip,
+                onGoToTracking: () => widget.onGoToTracking(cardTrip),
               ),
             ),
           );
@@ -874,5 +894,52 @@ class _PriceButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Ronda 245: adaptador mínimo para alimentar [AcceptedDriverCard] cuando el
+/// viaje aceptado solo existe en [PriceNegotiationProvider] y no en
+/// [RideProvider] — que es el caso real, porque el pasajero crea el viaje con
+/// `createNegotiation()` y `RideProvider.requestRide()` no se llama nunca.
+/// La tarjeta solo necesita `vehicleInfo` y el precio, así que exponemos eso.
+class _AcceptedTripAdapter {
+  final PriceNegotiation negotiation;
+  const _AcceptedTripAdapter(this.negotiation);
+
+  String get id => negotiation.id;
+  String? get driverId => negotiation.selectedDriverId;
+  String get status => 'accepted';
+
+  double? get acceptedFare {
+    final accepted = negotiation.driverOffers
+        .where((o) => o.status == OfferStatus.accepted)
+        .toList();
+    if (accepted.isNotEmpty) return accepted.first.acceptedPrice;
+    return negotiation.offeredPrice;
+  }
+
+  double? get finalFare => acceptedFare;
+  double? get offeredFare => negotiation.offeredPrice;
+
+  Map<String, dynamic>? get vehicleInfo {
+    final driverId = negotiation.selectedDriverId;
+    if (driverId == null || driverId.isEmpty) return null;
+    // Buscamos los datos del conductor elegido entre las ofertas conocidas.
+    for (final o in negotiation.driverOffers) {
+      if (o.driverId == driverId) {
+        return {
+          'driverName': o.driverName,
+          'driverPhoto': o.driverPhoto,
+          'driverPhone': o.driverPhone,
+          'driverRating': o.driverRating,
+          'plate': o.vehiclePlate,
+          'model': o.vehicleModel,
+          'brand': o.vehicleModel,
+          'color': o.vehicleColor,
+        };
+      }
+    }
+    // Aceptación directa: el conductor nunca ofertó, así que no hay detalle.
+    return {'driverName': 'Conductor asignado'};
   }
 }

@@ -20,6 +20,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/firebase_service.dart';
 // Utils
 import '../../utils/logger.dart';
+import '../../utils/safe_navigation.dart';
 // Providers
 import '../../providers/ride_provider.dart';
 // Screens
@@ -58,6 +59,9 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   late Animation<Offset> _slideAnimation;
 
   TripModel? _currentRide;
+  // Ronda 245: marca que la carga del viaje agotó los reintentos, para
+  // mostrar una salida en vez de un spinner eterno.
+  bool _tripLoadFailed = false;
   Position? _currentPosition;
   Position? _driverPosition;
   LatLng? _driverLatLng;
@@ -209,6 +213,15 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         _setupMapMarkers();
         _calculateRoute();
         _listenToRideUpdates();
+      } else {
+        // Ronda 245 BUG BLOQUEANTE: `getRideById` se traga las excepciones y
+        // devuelve null. Con _currentRide null NUNCA se suscribía al SSE y el
+        // build() renderizaba "Cargando información del viaje..." sin AppBar,
+        // sin reintento, sin timeout y sin botón de volver: un 401/404/timeout
+        // puntual dejaba al pasajero ATRAPADO en la pantalla para siempre.
+        // El catch de abajo era inalcanzable justamente por ese null silencioso.
+        AppLogger.warning('No se pudo cargar el viaje ${widget.rideId} — activando reintento');
+        _scheduleTripLoadRetry();
       }
     } catch (e, stackTrace) {
       AppLogger.error('Error al cargar datos del viaje', e, stackTrace);
@@ -219,8 +232,30 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
             backgroundColor: Colors.red,
           ),
         );
+        _scheduleTripLoadRetry();
       }
     }
+  }
+
+  /// Ronda 245: reintenta la carga del viaje con backoff. Tras varios fallos
+  /// muestra una salida explícita en vez de dejar el spinner eterno.
+  int _tripLoadAttempts = 0;
+  Timer? _tripLoadRetryTimer;
+
+  void _scheduleTripLoadRetry() {
+    if (!mounted || _currentRide != null) return;
+    _tripLoadAttempts++;
+    if (_tripLoadAttempts > 4) {
+      setState(() => _tripLoadFailed = true);
+      return;
+    }
+    _tripLoadRetryTimer?.cancel();
+    _tripLoadRetryTimer = Timer(
+      Duration(seconds: 2 * _tripLoadAttempts),
+      () {
+        if (mounted && _currentRide == null) _loadRideData();
+      },
+    );
   }
 
   void _listenToRideUpdates() {
@@ -1158,16 +1193,74 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     final isEs = Localizations.localeOf(context).languageCode == 'es';
 
     if (_currentRide == null) {
+      // Ronda 245: antes esto era SOLO un spinner sin AppBar ni salida. Si la
+      // carga fallaba, el pasajero quedaba encerrado sin forma de volver.
       return Scaffold(
         backgroundColor: AppColors.getBackground(context),
-        body: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Cargando información del viaje...'),
-            ],
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
+            onPressed: () => safePopOrHome(context),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: _tripLoadFailed
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.wifi_off_rounded, size: 64, color: Colors.grey[400]),
+                      const SizedBox(height: 20),
+                      Text(
+                        'No pudimos cargar tu viaje',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Revisa tu conexión e inténtalo de nuevo.',
+                        style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _tripLoadFailed = false;
+                            _tripLoadAttempts = 0;
+                          });
+                          _loadRideData();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Reintentar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.rappiRed,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => safePopOrHome(context),
+                        child: const Text('Volver al inicio'),
+                      ),
+                    ],
+                  )
+                : const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Cargando información del viaje...'),
+                    ],
+                  ),
           ),
         ),
       );

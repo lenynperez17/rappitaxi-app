@@ -38,6 +38,11 @@ class PriceNegotiationProvider extends ChangeNotifier {
   // Suscripciones a los streams SSE.
   StreamSubscription<Map<String, dynamic>>? _passengerNegotiationSub;
   StreamSubscription<Map<String, dynamic>>? _passengerRideUpdatesSub;
+  // Ronda 245: el backend no emite `event: negotiation`; las ofertas llegan
+  // como `notification` type='new_offer'. Además un polling de respaldo por
+  // si el SSE se cae.
+  StreamSubscription<Map<String, dynamic>>? _passengerNotificationsSub;
+  Timer? _passengerPollTimer;
   StreamSubscription<Map<String, dynamic>>? _driverRideUpdatesSub;
   StreamSubscription<Map<String, dynamic>>? _driverNegotiationSub;
 
@@ -55,8 +60,9 @@ class PriceNegotiationProvider extends ChangeNotifier {
     try {
       final me = await _api.me();
       if (me == null) return null;
-      _cachedUserData = me;
-      _cachedUserId = (me['id'] ?? me['userId'] ?? me['uid'])?.toString();
+      final user = _unwrapUser(me);
+      _cachedUserData = user;
+      _cachedUserId = (user['id'] ?? user['userId'] ?? user['uid'])?.toString();
       return _cachedUserId;
     } catch (e) {
       debugPrint('❌ Error obteniendo usuario actual: $e');
@@ -64,14 +70,29 @@ class PriceNegotiationProvider extends ChangeNotifier {
     }
   }
 
+  /// Ronda 245 BUG RAÍZ: `GET /api/auth/me` responde
+  /// `{ success: true, user: { id, fullName, ... } }` — el objeto va ANIDADO
+  /// bajo `user`. El provider leía `me['id']` del ROOT, que siempre era null,
+  /// así que `_getCurrentUserId()` devolvía null y TODAS las cargas cortaban
+  /// temprano: `_refreshMyNegotiations()` y `loadDriverRequests()` retornaban
+  /// sin datos → las listas de negociaciones del pasajero y del conductor
+  /// quedaban vacías para siempre. Los parches previos de pasar `knownUserId`
+  /// a mano eran el síntoma; esto es la causa.
+  Map<String, dynamic> _unwrapUser(Map<String, dynamic> resp) {
+    final nested = resp['user'] ?? resp['data'] ?? resp['profile'];
+    if (nested is Map) return nested.cast<String, dynamic>();
+    return resp;
+  }
+
   Future<Map<String, dynamic>> _getCurrentUserData() async {
     if (_cachedUserData != null) return _cachedUserData!;
     try {
       final me = await _api.me();
       if (me != null) {
-        _cachedUserData = me;
-        _cachedUserId = (me['id'] ?? me['userId'] ?? me['uid'])?.toString();
-        return me;
+        final user = _unwrapUser(me);
+        _cachedUserData = user;
+        _cachedUserId = (user['id'] ?? user['userId'] ?? user['uid'])?.toString();
+        return user;
       }
     } catch (e) {
       // Log para observabilidad — antes silencio total ocultaba fallos de red.
@@ -115,6 +136,33 @@ class PriceNegotiationProvider extends ChangeNotifier {
       },
       onError: (e) => debugPrint('❌ SSE rideUpdates (pasajero) error: $e'),
     );
+
+    // Ronda 245: red de seguridad. El backend NO emite `event: negotiation`
+    // (ese stream nunca recibe nada), y `ride_update` no cubría el estado
+    // 'requested' — justo cuando se esperan ofertas. En cambio, al ofertar el
+    // backend SÍ inserta una notification type='new_offer' que viaja por SSE
+    // como `notification`. Nos suscribimos a ella para refrescar la lista.
+    _passengerNotificationsSub = _sse.notifications.listen(
+      (event) async {
+        final type = (event['type'] ?? event['data']?['type'] ?? '').toString();
+        if (type == 'new_offer' ||
+            type == 'offer_accepted' ||
+            type == 'offer_rejected' ||
+            type == 'ride_accepted' ||
+            type == 'negotiation') {
+          debugPrint('📡 SSE notification ($type) → refrescando negociaciones');
+          await _refreshMyNegotiations();
+        }
+      },
+      onError: (e) => debugPrint('❌ SSE notifications (pasajero) error: $e'),
+    );
+
+    // Polling de respaldo: si el SSE se cae o el token expira, el pasajero
+    // igual ve las ofertas. Se cancela en stopListeningToNegotiations().
+    _passengerPollTimer?.cancel();
+    _passengerPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      _refreshMyNegotiations();
+    });
   }
 
   /// Detiene solo el listener del pasajero.
@@ -124,6 +172,10 @@ class PriceNegotiationProvider extends ChangeNotifier {
     _passengerNegotiationSub = null;
     _passengerRideUpdatesSub?.cancel();
     _passengerRideUpdatesSub = null;
+    _passengerNotificationsSub?.cancel();
+    _passengerNotificationsSub = null;
+    _passengerPollTimer?.cancel();
+    _passengerPollTimer = null;
   }
 
   /// Cleanup centralizado — detener TODOS los listeners al cambiar de rol.
@@ -133,6 +185,10 @@ class PriceNegotiationProvider extends ChangeNotifier {
     _passengerNegotiationSub = null;
     _passengerRideUpdatesSub?.cancel();
     _passengerRideUpdatesSub = null;
+    _passengerNotificationsSub?.cancel();
+    _passengerNotificationsSub = null;
+    _passengerPollTimer?.cancel();
+    _passengerPollTimer = null;
     _driverRideUpdatesSub?.cancel();
     _driverRideUpdatesSub = null;
     _driverNegotiationSub?.cancel();
@@ -369,7 +425,16 @@ class PriceNegotiationProvider extends ChangeNotifier {
     final expired = <String>[];
 
     _activeNegotiations.removeWhere((n) {
-      final isExpired = n.expiresAt.isBefore(now) &&
+      // Ronda 245 SALVAGUARDA: esta función CANCELA el ride en el servidor,
+      // así que un cálculo de expiración erróneo destruye solicitudes vivas
+      // (fue exactamente lo que pasó con expiresAt derivado de null).
+      // Exigimos un margen de gracia: solo consideramos expirado si venció
+      // hace más de 30s Y el ride ya tiene al menos 1 min de vida. Así un
+      // timestamp mal parseado no puede matar una solicitud recién creada.
+      final vencidoHaceRato = now.difference(n.expiresAt).inSeconds > 30;
+      final tieneVidaSuficiente = now.difference(n.createdAt).inSeconds > 60;
+      final isExpired = vencidoHaceRato &&
+          tieneVidaSuficiente &&
           (n.status == NegotiationStatus.waiting ||
               n.status == NegotiationStatus.negotiating);
       if (isExpired) expired.add(n.id);
@@ -634,16 +699,35 @@ class PriceNegotiationProvider extends ChangeNotifier {
     }
   }
 
+  /// Ronda 245 BUG BLOQUEANTE: `GET /api/drivers/status` devuelve
+  /// `{ success, driver_id, is_online, latitude, longitude, ... }` — las
+  /// coordenadas van PLANAS en el root, no dentro de un objeto `location`.
+  /// Al buscarlas solo en `location`/`position`, `_lastDriverLocation`
+  /// quedaba null y `loadDriverRequests()` caía al fallback
+  /// `listRides(role:'driver')`, que devuelve SOLO los viajes que el
+  /// conductor YA aceptó — nunca los disponibles. Resultado: el conductor
+  /// nunca veía solicitudes nuevas y jamás se llamaba a /api/rides/available.
   Future<void> _refreshDriverLocation() async {
     try {
       final status = await _api.driverStatus();
-      final loc = _extractMap(status, keys: ['location', 'position']);
-      if (loc != null) {
-        final lat = _toDouble(loc['lat']) ?? _toDouble(loc['latitude']);
-        final lng = _toDouble(loc['lng']) ?? _toDouble(loc['longitude']);
-        if (lat != null && lng != null) {
-          _lastDriverLocation = LatLng(lat, lng);
+      // 1) Formato real del backend: coordenadas en el root.
+      var lat = _toDouble(status['latitude']) ?? _toDouble(status['lat']);
+      var lng = _toDouble(status['longitude']) ?? _toDouble(status['lng']);
+
+      // 2) Compatibilidad: algunos endpoints anidan bajo location/position.
+      if (lat == null || lng == null) {
+        final loc = _extractMap(status, keys: ['location', 'position', 'presence', 'driver']);
+        if (loc != null) {
+          lat ??= _toDouble(loc['lat']) ?? _toDouble(loc['latitude']);
+          lng ??= _toDouble(loc['lng']) ?? _toDouble(loc['longitude']);
         }
+      }
+
+      if (lat != null && lng != null) {
+        _lastDriverLocation = LatLng(lat, lng);
+        debugPrint('📍 Ubicación conductor: $lat, $lng');
+      } else {
+        debugPrint('⚠️ driverStatus sin coordenadas utilizables');
       }
     } catch (e) {
       debugPrint('⚠️ No se pudo obtener ubicación del conductor: $e');
@@ -656,8 +740,11 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
   /// Verifica si el conductor tiene saldo suficiente para operar.
   Future<bool> checkDriverBalance(String driverId) async {
+    // Ronda 245: si el mínimo requerido es 0 (modelo solo-comisión), no hay
+    // nada que verificar. Evita bloquear al conductor por una llamada de red.
+    if (minDriverBalance <= 0) return true;
     try {
-      final balance = await _api.walletBalance();
+      final balance = await _api.walletBalance().timeout(const Duration(seconds: 10));
       final credits = _toDouble(balance['serviceCredits']) ??
           _toDouble(balance['balance']) ??
           _toDouble(balance['available']) ??
@@ -666,8 +753,13 @@ class PriceNegotiationProvider extends ChangeNotifier {
           '💰 Créditos conductor $driverId: S/ $credits (mínimo: S/ $minDriverBalance)');
       return credits >= minDriverBalance;
     } catch (e) {
-      debugPrint('❌ Error verificando saldo: $e');
-      return false;
+      // Ronda 245: antes devolvía false ante CUALQUIER error, y el caller lo
+      // traducía a "Saldo insuficiente. Recarga tu billetera" — con botón de
+      // recarga incluido — cuando en realidad era un timeout de red. Ahora
+      // fallamos ABIERTO: dejamos pasar y que el backend valide de verdad en
+      // el POST de la oferta (que sí conoce el saldo real).
+      debugPrint('⚠️ No se pudo verificar saldo (se permite y valida el backend): $e');
+      return true;
     }
   }
 
@@ -1043,10 +1135,23 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
     // Timestamps: si no viene expiresAt, asumir 5 min desde createdAt.
     final createdAt = _parseDateTime(ride['createdAt'] ?? ride['requestedAt']);
-    var expiresAt = _parseDateTime(ride['expiresAt']);
-    if (expiresAt.difference(createdAt).inSeconds <= 0) {
-      expiresAt = createdAt.add(const Duration(minutes: 5));
-    }
+    // Ronda 245 BUG DESTRUCTIVO: el backend NUNCA envía `expiresAt` (no existe
+    // la columna ni en ningún serializer). `_parseDateTime(null)` devuelve
+    // `DateTime.now()` — el instante del parseo, NO el pasado — así que la
+    // guarda `expiresAt.difference(createdAt) <= 0` daba POSITIVO y el
+    // fallback de +5min nunca se aplicaba. Consecuencias en cadena:
+    //   · `expiresAt.isAfter(now)` era false milisegundos después → las listas
+    //     del pasajero y del conductor se mostraban SIEMPRE vacías.
+    //   · Peor: el timer de passenger_negotiations_screen detectaba la
+    //     "expiración" y llamaba expireOldNegotiations() → cancelRide() →
+    //     CANCELABA EN EL SERVIDOR la solicitud viva del pasajero a los ≤10s
+    //     con el mensaje "Tu solicitud ha expirado".
+    // Ahora: solo confiamos en expiresAt si el backend lo mandó de verdad;
+    // si no, derivamos createdAt + 5 min (misma lógica que PriceNegotiation.fromMap).
+    final rawExpiresAt = ride['expiresAt'] ?? ride['expires_at'];
+    final expiresAt = rawExpiresAt != null
+        ? _parseDateTime(rawExpiresAt)
+        : createdAt.add(const Duration(minutes: 5));
 
     // Mapear ride.status → NegotiationStatus (soporta múltiples vocabularios).
     final rideStatus = (ride['status'] ?? 'waiting').toString();

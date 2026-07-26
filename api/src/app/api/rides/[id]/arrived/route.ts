@@ -39,9 +39,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         throw { code: 'invalid_status', message: `Estado actual: ${ride.status}` }
       }
 
+      // Ronda 245 BUG BLOQUEANTE: este UPDATE solo cambiaba `status` sin
+      // tocar ningún timestamp — a diferencia de /start (started_at) y
+      // /complete (completed_at). El cursor del SSE es
+      //   GREATEST(created_at, accepted_at, started_at, completed_at) > lastSeen
+      // así que la transición a 'arrived' NO movía el cursor y el evento
+      // ride_update NUNCA se emitía. En el móvil del conductor la pantalla
+      // se quedaba congelada mostrando "Ya llegué" para siempre: no podía
+      // iniciar el viaje, no podía completarlo, no cobraba. Y si volvía a
+      // pulsar, el backend respondía 409 y el mensaje decía "El viaje ya no
+      // está disponible" — creía que se había cancelado.
       const updateRes = await client.query<RideCore>(
         `UPDATE rides
-            SET status = 'arrived'
+            SET status = 'arrived', arrived_at = now()
           WHERE id = $1
           RETURNING id, passenger_id, driver_id, status`,
         [id],

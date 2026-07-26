@@ -66,6 +66,7 @@ interface RideUpdateRow {
   updated_at: Date
   created_at: Date
   accepted_at: Date | null
+  arrived_at: Date | null
   started_at: Date | null
   completed_at: Date | null
 }
@@ -99,6 +100,14 @@ const PING_INTERVAL_MS = 20_000
 // Estados de ride considerados "activos" para el pasajero → interesan para
 // notificar cambios de estado y ubicación del driver.
 const ACTIVE_RIDE_STATUSES = [
+  // Ronda 245: 'requested' y 'searching' faltaban. Justo esos son los estados
+  // en los que el pasajero está ESPERANDO OFERTAS — al excluirlos, mientras
+  // el ride estaba en 'requested' no se emitía ningún ride_update, así que
+  // el pasajero nunca se enteraba de que un conductor le había ofertado
+  // ("le mandé la oferta y no le llega"). Sin polling en esa pantalla, la
+  // única vía era cerrar y reabrir.
+  'requested',
+  'searching',
   'accepted',
   'on_way',
   'arrived',
@@ -308,10 +317,11 @@ export async function GET(req: NextRequest) {
                     destination_address, destination_lat, destination_lng,
                     estimated_fare, final_fare, payment_method, vehicle_type,
                     cancelled_by, cancelled_reason,
-                    created_at, accepted_at, started_at, completed_at,
+                    created_at, accepted_at, started_at, completed_at, arrived_at,
                     GREATEST(
                       created_at,
                       COALESCE(accepted_at,  created_at),
+                      COALESCE(arrived_at,   created_at),
                       COALESCE(started_at,   created_at),
                       COALESCE(completed_at, created_at)
                     ) AS updated_at
@@ -321,6 +331,7 @@ export async function GET(req: NextRequest) {
                 AND GREATEST(
                       created_at,
                       COALESCE(accepted_at,  created_at),
+                      COALESCE(arrived_at,   created_at),
                       COALESCE(started_at,   created_at),
                       COALESCE(completed_at, created_at)
                     ) > $3

@@ -1160,13 +1160,21 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
               final successMessage = AppLocalizations.of(context)!.methodDeleted;
               Navigator.pop(context);
 
-              // TODO(node-migration): reemplazar con endpoint
-              // DELETE /api/payment-methods/:id cuando exista.
-              if (method.type == PaymentMethodType.card && _userId != null) {
-                AppLogger.info(
-                    'Payment method local removido (endpoint DELETE pendiente): ${method.id}');
+              // Ronda 245 BUG FIX: el TODO decía que DELETE /api/payment-methods/:id
+              // "no existía", pero SÍ existe (payment-methods/[id]/route.ts:17) y el
+              // api client ya tenía deletePaymentMethod(). La tarjeta solo se quitaba
+              // de la lista en memoria y reaparecía al recargar la pantalla.
+              // Ahora se borra de verdad; si el servidor falla, la UI no miente.
+              try {
+                await _api.deletePaymentMethod(method.id);
+              } catch (e) {
+                AppLogger.error('deletePaymentMethod falló', e);
+                if (!mounted) return;
+                _showError(userFriendlyError(e, fallback: 'No se pudo eliminar el método de pago'));
+                return;
               }
 
+              if (!mounted) return;
               setState(() {
                 _paymentMethods.removeWhere((m) => m.id == method.id);
                 if (_defaultMethodId == method.id && _paymentMethods.isNotEmpty) {
@@ -1174,7 +1182,6 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                 }
               });
 
-              if (!mounted) return;
               _showSuccess(successMessage);
             },
             style: ElevatedButton.styleFrom(

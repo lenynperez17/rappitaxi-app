@@ -247,22 +247,49 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   }
 
   Future<void> _removeFavorite(FavoritePlace place) async {
-    // TODO(node-migration): reemplazar con endpoint DELETE /api/favorites/:id
-    // cuando exista. Por ahora sólo eliminamos localmente y avisamos.
-    setState(() {
-      _favorites.remove(place);
-    });
+    // Ronda 245 BUG FIX: antes solo se quitaba de la lista en memoria con un
+    // TODO diciendo que DELETE /api/favorites/:id "no existía" — pero SÍ
+    // existe (favorites/[id]/route.ts:129). El favorito reaparecía al
+    // recargar la pantalla. Ahora borramos de verdad en el servidor y solo
+    // actualizamos la UI si el borrado tuvo éxito.
+    final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context)!;
+    final previousIndex = _favorites.indexOf(place);
+
+    setState(() => _favorites.remove(place));
+
+    try {
+      await _api.deleteFavorite(place.id);
+    } catch (e) {
+      AppLogger.error('deleteFavorite falló', e);
+      // Revertir: el servidor sigue teniéndolo, la UI no debe mentir.
+      if (mounted) {
+        setState(() {
+          if (previousIndex >= 0 && previousIndex <= _favorites.length) {
+            _favorites.insert(previousIndex, place);
+          } else {
+            _favorites.add(place);
+          }
+        });
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(userFriendlyError(e, fallback: 'No se pudo eliminar el lugar')),
+            backgroundColor: ModernTheme.error,
+          ),
+        );
+      }
+      return;
+    }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
-          content: Text(
-              AppLocalizations.of(context)!.placeRemovedMessage(place.name)),
+          content: Text(l10n.placeRemovedMessage(place.name)),
           backgroundColor: ModernTheme.success,
           action: SnackBarAction(
-            label: AppLocalizations.of(context)!.undo,
+            label: l10n.undo,
             onPressed: () async {
-              // Revertimos añadiéndolo de nuevo con el endpoint disponible.
+              // Revertimos re-creándolo (el id cambia, pero el lugar vuelve).
               await _api.addFavorite(
                 label: place.name,
                 address: place.address,
@@ -281,13 +308,15 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   /// Editar un favorito.
   Future<void> _editFavorite(FavoritePlace place, String name, String address,
       IconData icon, Color color, LatLng location) async {
-    // TODO(node-migration): reemplazar con endpoint PATCH /api/favorites/:id
-    // cuando exista. Fallback: eliminar del listado local + crear uno nuevo
-    // con la data actualizada.
+    // Ronda 245 BUG FIX: antes hacía addFavorite() — o sea CREABA UNO NUEVO
+    // en vez de editar, dejando el viejo intacto: cada edición DUPLICABA el
+    // favorito. El TODO decía que PATCH /api/favorites/:id "no existía", pero
+    // sí existe (favorites/[id]/route.ts:42). Ahora editamos de verdad.
     try {
       setState(() => _isLoading = true);
 
-      await _api.addFavorite(
+      await _api.updateFavorite(
+        place.id,
         label: name,
         address: address,
         latitude: location.latitude,

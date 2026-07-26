@@ -526,15 +526,46 @@ class FirebaseService {
   }
 
   /// Construye un TripModel a partir del JSON del backend Node.
+  /// Ronda 245: arma el mapa `vehicleInfo` que espera la UI a partir de los
+  /// campos que el backend sí envía en la raíz del ride. Devuelve null si no
+  /// hay nada útil, para no crear un objeto vacío que dispare secciones de UI.
+  Map<String, dynamic>? _vehicleInfoFromRoot(Map<String, dynamic> data) {
+    final vehicle = (data['vehicle'] as Map?)?.cast<String, dynamic>();
+    final info = <String, dynamic>{
+      if (data['driverName'] != null) 'driverName': data['driverName'],
+      if (data['driverPhone'] != null) 'driverPhone': data['driverPhone'],
+      if (data['driverPhotoUrl'] != null) 'driverPhoto': data['driverPhotoUrl'],
+      if (data['driverRating'] != null) 'driverRating': data['driverRating'],
+      if (data['vehicleType'] != null) 'type': data['vehicleType'],
+      if (vehicle?['plate'] != null) 'plate': vehicle!['plate'],
+      if (vehicle?['make'] != null) 'brand': vehicle!['make'],
+      if (vehicle?['model'] != null) 'model': vehicle!['model'],
+      if (vehicle?['color'] != null) 'color': vehicle!['color'],
+    };
+    return info.isEmpty ? null : info;
+  }
+
   TripModel? _tripFromJson(String rideId, Map<String, dynamic> data) {
     try {
-      final pickupLoc =
-          (data['pickupLocation'] as Map?)?.cast<String, dynamic>() ?? {};
-      final destLoc =
-          (data['destinationLocation'] as Map?)?.cast<String, dynamic>() ?? {};
+      // Ronda 245 BUG BLOQUEANTE: el backend serializa
+      //   pickup:      { address, lat, lng }
+      //   destination: { address, lat, lng }
+      // pero acá se leían las claves `pickupLocation`/`destinationLocation`
+      // y `pickupAddress`/`destinationAddress`, que NO existen en la
+      // respuesta. Resultado: TODO viaje en la pantalla de seguimiento
+      // aterrizaba en LatLng(0,0) — la Isla Nula, en medio del Atlántico —
+      // con la cámara allí, la ruta trazada hacia el océano, ETA delirante y
+      // las direcciones en blanco. Y como cada evento SSE vuelve a pasar por
+      // esta misma función, cualquier dato bueno se pisaba al siguiente tick.
+      final pickupLoc = (data['pickup'] as Map?)?.cast<String, dynamic>() ??
+          (data['pickupLocation'] as Map?)?.cast<String, dynamic>() ??
+          {};
+      final destLoc = (data['destination'] as Map?)?.cast<String, dynamic>() ??
+          (data['destinationLocation'] as Map?)?.cast<String, dynamic>() ??
+          {};
 
       return TripModel(
-        id: (data['id'] ?? rideId).toString(),
+        id: (data['id'] ?? data['rideId'] ?? rideId).toString(),
         userId: (data['userId'] ?? data['passengerId'] ?? '').toString(),
         driverId: data['driverId']?.toString(),
         pickupLocation: LatLng(
@@ -545,8 +576,10 @@ class FirebaseService {
           _asDouble(destLoc['lat'] ?? destLoc['latitude']) ?? 0.0,
           _asDouble(destLoc['lng'] ?? destLoc['longitude']) ?? 0.0,
         ),
-        pickupAddress: (data['pickupAddress'] ?? '').toString(),
-        destinationAddress: (data['destinationAddress'] ?? '').toString(),
+        pickupAddress:
+            (pickupLoc['address'] ?? data['pickupAddress'] ?? '').toString(),
+        destinationAddress:
+            (destLoc['address'] ?? data['destinationAddress'] ?? '').toString(),
         status: (data['status'] ?? 'searching').toString(),
         requestedAt: _parseIsoDate(data['requestedAt']) ?? DateTime.now(),
         acceptedAt: _parseIsoDate(data['acceptedAt']),
@@ -554,14 +587,29 @@ class FirebaseService {
         completedAt: _parseIsoDate(data['completedAt']),
         cancelledAt: _parseIsoDate(data['cancelledAt']),
         cancelledBy: data['cancelledBy']?.toString(),
-        estimatedDistance: _asDouble(data['estimatedDistance']) ?? 0.0,
+        // Ronda 245: el backend envía `distanceMeters`; `estimatedDistance`
+        // no existe → la distancia salía siempre 0.0. TripModel espera km.
+        estimatedDistance: _asDouble(data['estimatedDistance']) ??
+            (_asDouble(data['distanceMeters']) != null
+                ? _asDouble(data['distanceMeters'])! / 1000.0
+                : null) ??
+            _asDouble(data['distanceKm']) ??
+            0.0,
         estimatedFare: _asDouble(data['estimatedFare']) ?? 0.0,
         finalFare: _asDouble(data['finalFare']),
         passengerRating: _asDouble(data['passengerRating']),
         passengerComment: data['passengerComment']?.toString(),
         driverRating: _asDouble(data['driverRating']),
         driverComment: data['driverComment']?.toString(),
-        vehicleInfo: (data['vehicleInfo'] as Map?)?.cast<String, dynamic>(),
+        // Ronda 245: el backend NO envía un objeto `vehicleInfo`; manda
+        // `driverName`, `driverPhone`, `driverPhotoUrl` y `vehicleType` en la
+        // RAÍZ del ride. Al leer solo `vehicleInfo`, quedaba null y en la
+        // pantalla de seguimiento no se veía placa ni vehículo, el rating
+        // mostraba un 5.00 inventado, y el botón de llamar al conductor decía
+        // "Teléfono no disponible" AUNQUE el teléfono sí venía en la respuesta.
+        // Lo componemos a partir de lo que realmente llega.
+        vehicleInfo: (data['vehicleInfo'] as Map?)?.cast<String, dynamic>() ??
+            _vehicleInfoFromRoot(data),
         route: data['route'] is List
             ? (data['route'] as List)
                 .whereType<Map>()

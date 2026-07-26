@@ -26,6 +26,7 @@ interface UserRow {
   auth_provider: string | null
   birth_date: Date | null
   identity_document: string | null
+  current_mode: string | null
   is_active: boolean
   created_at: Date
 }
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   const user = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
-            birth_date, identity_document,
+            birth_date, identity_document, current_mode,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],
@@ -62,6 +63,10 @@ export async function GET(req: NextRequest) {
       phoneVerified: user.phone_verified,
       userType: user.user_type,
       isVerified: user.is_verified,
+      // Ronda 245: el cliente lee currentMode para decidir a qué home
+      // navegar (activeMode = currentMode ?? userType). Sin este campo,
+      // un usuario dual siempre caía en /passenger/home.
+      currentMode: user.current_mode,
       profileComplete: user.profile_complete,
       profilePhotoUrl: user.profile_photo_url,
       authProvider: user.auth_provider,
@@ -170,8 +175,16 @@ export async function PATCH(req: NextRequest) {
   if (body.displayName !== undefined) push('display_name', body.displayName)
   if (body.birthDate !== undefined) push('birth_date', body.birthDate)
   if (body.identityDocument !== undefined) push('identity_document', body.identityDocument)
+  // Ronda 245 BUG BLOQUEANTE: `currentMode` se validaba arriba pero JAMÁS se
+  // agregaba al SET, y ni siquiera existía la columna. Efecto: switchMode()
+  // devolvía éxito y navegaba a /driver/home, pero el modo no se persistía;
+  // en el siguiente arranque en frío `currentMode` volvía null y
+  // `activeMode = currentMode ?? userType` daba 'dual', que no matchea
+  // 'driver' en el splash → TODO usuario dual aterrizaba en /passenger/home
+  // sin importar el modo que había elegido.
+  if (body.currentMode !== undefined) push('current_mode', body.currentMode)
 
-  if (sets.length === 0 && body.currentMode === undefined) {
+  if (sets.length === 0) {
     return NextResponse.json({ success: false, error: 'no_fields' }, { status: 400 })
   }
 
@@ -195,7 +208,7 @@ export async function PATCH(req: NextRequest) {
   const updated = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
-            birth_date, identity_document,
+            birth_date, identity_document, current_mode,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],

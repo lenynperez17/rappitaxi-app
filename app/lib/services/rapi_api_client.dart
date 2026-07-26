@@ -765,6 +765,13 @@ class RapiApiClient {
   Future<Map<String, dynamic>> acceptOffer(String offerId) async =>
       (await _authedPost('/api/offers/$offerId/accept'))!;
 
+  /// Ronda 245: el conductor retira su propia oferta pendiente de un viaje.
+  /// Antes no existía: las ofertas quedaban `pending` para siempre y el
+  /// pasajero podía aceptarlas horas después, asignando al conductor un
+  /// viaje que ya había descartado (y bloqueándolo para ponerse offline).
+  Future<void> cancelMyOffer(String rideId) async =>
+      await _authedDelete('/api/rides/$rideId/offers/mine');
+
   // ---------------------------------------------------------------------------
   // PRESENCE + DRIVERS
   // ---------------------------------------------------------------------------
@@ -946,6 +953,29 @@ class RapiApiClient {
         if (longitude != null) 'longitude': longitude,
         if (icon != null) 'icon': icon,
       }))!;
+
+  /// Ronda 245: estos endpoints SIEMPRE existieron en el backend
+  /// (favorites/[id] exporta PATCH y DELETE) pero el api client no los
+  /// exponía, así que la pantalla de favoritos borraba/editaba SOLO en
+  /// memoria y el cambio se perdía al recargar.
+  Future<Map<String, dynamic>> updateFavorite(
+    String id, {
+    String? label,
+    String? address,
+    double? latitude,
+    double? longitude,
+    String? icon,
+  }) async =>
+      (await _authedPatch('/api/favorites/$id', body: {
+        if (label != null) 'label': label,
+        if (address != null) 'address': address,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        if (icon != null) 'icon': icon,
+      }))!;
+
+  Future<void> deleteFavorite(String id) async =>
+      await _authedDelete('/api/favorites/$id');
 
   Future<Map<String, dynamic>> listPaymentMethods() async =>
       (await _authedGet('/api/payment-methods'))!;
