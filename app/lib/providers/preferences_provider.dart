@@ -1,5 +1,9 @@
+import 'dart:io';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/rapi_api_client.dart';
 import '../utils/logger.dart';
 import '../utils/error_messages.dart';
 
@@ -335,10 +339,34 @@ class PreferencesProvider extends ChangeNotifier {
   
   // === SETTERS DE NOTIFICACIONES ===
   
+  /// Ronda 252: este setter solo escribía en SharedPreferences, así que el
+  /// usuario apagaba "Notificaciones push" y SEGUÍA recibiéndolas — el
+  /// servidor nunca se enteraba. Ahora al apagar se borra el token FCM del
+  /// backend (DELETE, que ya existía sin que nadie lo llamara) y al encender
+  /// se vuelve a registrar.
   Future<void> setPushNotifications(bool value) async {
     _pushNotifications = value;
     await _prefs?.setBool('push_notifications', value);
     notifyListeners();
+
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null || token.isEmpty) return;
+      if (value) {
+        await RapiApiClient.instance.registerFcmToken(
+          token,
+          platform: Platform.isIOS ? 'ios' : 'android',
+        );
+      } else {
+        await RapiApiClient.instance.unregisterFcmToken(token);
+      }
+    } catch (e) {
+      // No revertimos la preferencia: el usuario ya ve el interruptor en su
+      // nueva posición y el token se resincroniza en el próximo arranque.
+      AppLogger.warning(
+          'No se pudo sincronizar el token push con el servidor: '
+          '${userFriendlyError(e, fallback: "error de red")}');
+    }
   }
   
   Future<void> setEmailNotifications(bool value) async {

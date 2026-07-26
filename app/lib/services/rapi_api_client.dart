@@ -523,7 +523,12 @@ class RapiApiClient {
     return _decodeOrThrow(r);
   }
 
-  Future<Map<String, dynamic>?> _authedDelete(String path) async {
+  /// Ronda 252: se le añadió `body` opcional — DELETE
+  /// /api/notifications/register-token espera `{ token }` en el cuerpo.
+  Future<Map<String, dynamic>?> _authedDelete(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
     await _ensureFreshAccess();
     final uri = Uri.parse('$baseUrl$path');
     Future<http.Response> doDelete() => _http.delete(
@@ -532,6 +537,7 @@ class RapiApiClient {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $_accessCache',
           },
+          body: body != null ? jsonEncode(body) : null,
         );
     final r = await doDelete();
     if (r.statusCode == 401 && _refreshCache != null) {
@@ -1077,6 +1083,15 @@ class RapiApiClient {
       (await _authedPost('/api/notifications/register-token', body: {
         'token': token,
         if (platform != null) 'platform': platform,
+      }))!;
+
+  /// Ronda 252: el backend ya tenía DELETE /api/notifications/register-token
+  /// pero NINGÚN cliente lo llamaba. El interruptor "Notificaciones push" de
+  /// ajustes solo escribía en SharedPreferences, así que el usuario lo apagaba
+  /// y seguía recibiendo pushes: el servidor nunca se enteraba.
+  Future<Map<String, dynamic>> unregisterFcmToken(String token) async =>
+      (await _authedDelete('/api/notifications/register-token', body: {
+        'token': token,
       }))!;
 
   // ---------------------------------------------------------------------------
