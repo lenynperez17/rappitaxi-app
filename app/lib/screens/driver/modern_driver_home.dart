@@ -2801,7 +2801,7 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('~${widget.request.distance.toStringAsFixed(1)}km', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
+                            Text('A ${widget.request.distance.toStringAsFixed(1)} km de ti', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
                             Row(children: [
                               Text(widget.formatPrice(widget.request.offeredPrice),
                                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
@@ -3064,7 +3064,7 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                 child: LinearProgressIndicator(
                   value: request.timeRemaining.inSeconds > 0 ? (request.timeRemaining.inSeconds / 150).clamp(0.0, 1.0) : 0.0,
                   backgroundColor: AppColors.getInputFill(context),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFC8E636)),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange),
                   minHeight: 6,
                 ),
               ),
@@ -3080,8 +3080,8 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                 child: ElevatedButton(
                   onPressed: widget.onAccept,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC8E636),
-                    foregroundColor: Colors.black,
+                    backgroundColor: AppColors.rappiOrange,
+                    foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     padding: const EdgeInsets.symmetric(vertical: 16),
