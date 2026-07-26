@@ -17,6 +17,8 @@ class UserModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final double rating;
+  /// Cantidad de calificaciones recibidas. 0 => mostrar "Nuevo", no "0.0 ★".
+  final int totalRatings;
   final int totalTrips;
   final double balance;
   final LatLng? location;
@@ -51,7 +53,12 @@ class UserModel {
     this.identityDocument,
     required this.createdAt,
     required this.updatedAt,
-    this.rating = 5.0,
+    // Ronda 250: el default era 5.0 y el backend nunca enviaba el campo
+    // (users.rating ni existía), así que TODOS los usuarios aparecían con
+    // 5.0 estrellas. 0.0 significa "sin calificaciones aún" y hace visible
+    // la ausencia de datos en vez de inventar la mejor nota posible.
+    this.rating = 0.0,
+    this.totalRatings = 0,
     this.totalTrips = 0,
     this.balance = 0.0,
     this.location,
@@ -101,7 +108,8 @@ class UserModel {
       updatedAt: json['updatedAt'] is DateTime
           ? json['updatedAt']
           : DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
-      rating: (json['rating'] ?? 5.0).toDouble(),
+      rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+      totalRatings: (json['totalRatings'] as num?)?.toInt() ?? 0,
       totalTrips: json['totalTrips'] ?? 0,
       balance: (json['balance'] ?? 0.0).toDouble(),
       location: json['location'] != null
@@ -142,6 +150,7 @@ class UserModel {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'rating': rating,
+      'totalRatings': totalRatings,
       'totalTrips': totalTrips,
       'balance': balance,
       'location': location != null

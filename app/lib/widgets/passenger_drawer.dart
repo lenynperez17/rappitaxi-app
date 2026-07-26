@@ -117,7 +117,12 @@ class PassengerDrawer extends StatelessWidget {
                         ),
                         SizedBox(width: 4),
                         Text(
-                          (user?.rating ?? 0.0).toStringAsFixed(1),
+                          // Ronda 250: con 0 calificaciones recibidas se
+                          // mostraba "0.0 ★", que se lee como la peor nota
+                          // posible en vez de "aún sin calificar".
+                          (user?.totalRatings ?? 0) == 0
+                              ? 'Nuevo'
+                              : (user?.rating ?? 0.0).toStringAsFixed(1),
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onPrimary,
                             fontWeight: FontWeight.bold,

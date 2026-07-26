@@ -27,6 +27,8 @@ interface UserRow {
   birth_date: Date | null
   identity_document: string | null
   current_mode: string | null
+  rating: string | null
+  total_ratings: number
   is_active: boolean
   created_at: Date
 }
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document, current_mode,
+            rating::text, total_ratings,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],
@@ -72,6 +75,12 @@ export async function GET(req: NextRequest) {
       authProvider: user.auth_provider,
       birthDate: user.birth_date,
       identityDocument: user.identity_document,
+      // Ronda 250: /me nunca devolvía el rating, y el cliente hace
+      // `rating: json['rating'] ?? 5.0` — así que TODOS los usuarios
+      // aparecían con 5.0 estrellas. Ahora va el promedio real; null
+      // significa "sin calificaciones aún", no "cinco estrellas".
+      rating: user.rating !== null ? Number(user.rating) : null,
+      totalRatings: user.total_ratings ?? 0,
       createdAt: user.created_at,
     },
   })

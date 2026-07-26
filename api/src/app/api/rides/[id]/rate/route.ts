@@ -115,6 +115,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const count = Number(avgRes.rows[0]?.count ?? 1)
       const roundedAvg = Math.round(avg * 10) / 10
 
+      // Ronda 250: el promedio se calculaba (roundedAvg) pero NUNCA se
+      // persistía en ningún sitio — la columna users.rating no existía. El
+      // cliente hace `rating: json['rating'] ?? 5.0`, así que TODOS los
+      // usuarios mostraban 5.0 estrellas permanentemente: un rating falso en
+      // el drawer, el perfil y la tarjeta de oferta que el pasajero usa para
+      // decidir con qué conductor viajar.
+      await client.query(
+        `UPDATE users SET rating = $1, total_ratings = $2 WHERE id = $3`,
+        [roundedAvg, count, ratedUserId],
+      )
+
       // Guardar snapshot rápido en la propia fila rides
       if (raterRole === 'passenger') {
         await client.query(
