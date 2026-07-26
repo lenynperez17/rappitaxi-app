@@ -3083,7 +3083,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
         // Persistir vehículo en backend Node
         await _api.upsertVehicle(
-          vehicleType: 'sedan',
+          // Ronda 251: enviaba 'sedan', que NO está en el enum del backend
+          // (taxi, moto, moto_taxi, car, van, truck, bicycle) → HTTP 400. Así
+          // que guardar el vehículo desde el perfil fallaba SIEMPRE.
+          vehicleType: 'car',
           plate: plate,
           make: make,
           model: model,

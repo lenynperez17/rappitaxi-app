@@ -119,7 +119,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           final data = uploadedDocs[docId]!;
 
           DateTime? expiryDate;
-          final expiryRaw = data['expiryDate']?.toString();
+          // Ronda 251: el backend envía `expiresAt` (documents/route.ts:61),
+          // no `expiryDate` — así que la fecha de vencimiento de TODOS los
+          // documentos salía vacía y ninguno se marcaba como "por vencer".
+          final expiryRaw = (data['expiresAt'] ??
+                  data['expiryDate'] ??
+                  data['expires_at'])
+              ?.toString();
           if (expiryRaw != null && expiryRaw.isNotEmpty) {
             expiryDate = DateTime.tryParse(expiryRaw);
           }

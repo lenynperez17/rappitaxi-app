@@ -103,6 +103,12 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
             'transmission': vehicleInfo['transmission'] ?? 'Manual',
             'mileage': vehicleInfo['mileage'] ?? 0,
             'status': vehicleInfo['status'] ?? 'active',
+            // Ronda 251: hay que conservarlo para poder reenviarlo al guardar;
+            // sin esto _saveChanges mandaba siempre 'car' y podía cambiar el
+            // tipo real del vehículo del conductor.
+            'vehicleType': vehicleInfo['vehicleType'] ??
+                vehicleInfo['vehicle_type'] ??
+                'car',
             'photos': (vehicleInfo['photos'] as List?)?.map((e) => e.toString()).toList() ?? [],
           };
         });
@@ -120,7 +126,10 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
         final category = (data['category'] ?? '').toString();
         if (category != 'vehicle' && category != '') continue;
 
-        final expiryStr = (data['expiryDate'] ?? data['expiry_date']) as String?;
+        // Ronda 251: el backend envía `expiresAt`, no `expiryDate`.
+        final expiryStr = (data['expiresAt'] ??
+            data['expiryDate'] ??
+            data['expiry_date']) as String?;
         final expiryDate = expiryStr != null ? DateTime.tryParse(expiryStr) : null;
         final issueStr = (data['uploadedAt'] ?? data['uploaded_at']) as String?;
         final issueDate = issueStr != null
@@ -628,18 +637,21 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
       ),
       child: Column(
         children: [
-          _buildDetailRow('Marca', _vehicleData['brand'], Icons.branding_watermark),
-          _buildDetailRow('Modelo', _vehicleData['model'], Icons.model_training),
-          _buildDetailRow('Año', _vehicleData['year'].toString(), Icons.calendar_today),
-          _buildDetailRow('Placa', _vehicleData['plate'], Icons.badge),
-          _buildDetailRow('Color', _vehicleData['color'], Icons.palette),
-          _buildDetailRow('VIN', _vehicleData['vin'], Icons.fingerprint),
+          // Ronda 251: cada fila recibe la CLAVE del mapa para poder escribir
+          // lo que el conductor teclea. Antes el TextFormField no tenía ni
+          // controller ni onChanged: el texto moría en el widget.
+          _buildDetailRow('Marca', 'brand', _vehicleData['brand'], Icons.branding_watermark),
+          _buildDetailRow('Modelo', 'model', _vehicleData['model'], Icons.model_training),
+          _buildDetailRow('Año', 'year', _vehicleData['year'].toString(), Icons.calendar_today),
+          _buildDetailRow('Placa', 'plate', _vehicleData['plate'], Icons.badge),
+          _buildDetailRow('Color', 'color', _vehicleData['color'], Icons.palette),
+          _buildDetailRow('VIN', 'vin', _vehicleData['vin'], Icons.fingerprint),
         ],
       ),
     );
   }
   
-  Widget _buildDetailRow(String label, String value, IconData icon) {
+  Widget _buildDetailRow(String label, String fieldKey, String value, IconData icon) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -658,6 +670,16 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
             flex: 2,
             child: TextFormField(
               initialValue: value,
+              keyboardType:
+                  fieldKey == 'year' ? TextInputType.number : TextInputType.text,
+              textCapitalization: fieldKey == 'plate'
+                  ? TextCapitalization.characters
+                  : TextCapitalization.words,
+              onChanged: (v) {
+                // Sin esto el texto tecleado nunca llegaba a _vehicleData.
+                _vehicleData[fieldKey] =
+                    fieldKey == 'year' ? (int.tryParse(v.trim()) ?? 0) : v.trim();
+              },
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1105,13 +1127,70 @@ class _VehicleManagementScreenState extends State<VehicleManagementScreen>
     );
   }
   
-  void _saveChanges() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Cambios guardados exitosamente'),
-        backgroundColor: ModernTheme.success,
-      ),
-    );
+  /// Ronda 251: este método SOLO mostraba "Cambios guardados exitosamente" —
+  /// no llamaba a ningún endpoint. El conductor corregía su placa o su modelo,
+  /// leía la confirmación, y al volver a entrar seguía el dato viejo. Ahora
+  /// persiste en PUT /api/drivers/me/vehicle y recarga desde el servidor para
+  /// que lo que se muestra sea lo que quedó guardado.
+  Future<void> _saveChanges() async {
+    final plate = (_vehicleData['plate'] ?? '').toString().trim();
+    if (plate.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('La placa es obligatoria'),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final year = _vehicleData['year'] is int
+          ? _vehicleData['year'] as int
+          : int.tryParse(_vehicleData['year'].toString());
+
+      await RapiApiClient.instance.upsertVehicle(
+        // El backend valida vehicleType contra un enum; conservamos el que ya
+        // tiene el vehículo para no enviar un valor inventado.
+        vehicleType: (_vehicleData['vehicleType'] ?? 'car').toString(),
+        plate: plate.toUpperCase(),
+        make: (_vehicleData['brand'] ?? '').toString().trim().isEmpty
+            ? null
+            : _vehicleData['brand'].toString().trim(),
+        model: (_vehicleData['model'] ?? '').toString().trim().isEmpty
+            ? null
+            : _vehicleData['model'].toString().trim(),
+        color: (_vehicleData['color'] ?? '').toString().trim().isEmpty
+            ? null
+            : _vehicleData['color'].toString().trim(),
+        year: (year != null && year > 1900) ? year : null,
+      );
+
+      if (!mounted) return;
+      setState(() => _isEditing = false);
+      // Recargar del servidor: si el backend normalizó algo (placa en
+      // mayúsculas, año fuera de rango), el conductor ve el valor real.
+      await _loadVehicleDataFromApi();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Datos del vehículo actualizados'),
+          backgroundColor: ModernTheme.success,
+        ),
+      );
+    } catch (e) {
+      AppLogger.error('❌ Error guardando vehículo: $e');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e,
+              fallback: 'No se pudieron guardar los datos del vehículo')),
+          backgroundColor: ModernTheme.error,
+        ),
+      );
+    }
   }
   
   void _showDocumentDetails(VehicleDocument doc) {

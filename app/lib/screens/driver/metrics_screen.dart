@@ -254,9 +254,16 @@ class _MetricsScreenState extends State<MetricsScreen>
 
       // Procesar cada viaje
       for (final data in filteredRides) {
-        final fare = (data['fare'] as num?)?.toDouble() ?? 0.0;
-        final distance = (data['distance'] as num?)?.toDouble() ?? 0.0;
-        final rating = (data['rating'] as num?)?.toDouble();
+        // Ronda 251: leía 'fare', 'distance' y 'rating' — NINGUNO de los tres
+        // existe en el JSON del backend, que envía finalFare/estimatedFare,
+        // distanceMeters (en METROS, no km) y driverRating. Resultado: todas
+        // las métricas del conductor salían en cero y el gráfico plano.
+        final fare = (data['finalFare'] as num?)?.toDouble() ??
+            (data['estimatedFare'] as num?)?.toDouble() ??
+            0.0;
+        final distance =
+            ((data['distanceMeters'] as num?)?.toDouble() ?? 0.0) / 1000.0;
+        final rating = (data['driverRating'] as num?)?.toDouble();
         final completedAt = parseIsoDate(data['completedAt']);
 
         totalEarnings += fare;
@@ -1549,9 +1556,13 @@ class LineChartPainter extends CustomPainter {
     final path = Path();
     final fillPath = Path();
 
-    // ✅ Protección contra división por cero
+    // Ronda 251: la "protección contra división por cero" con math.max(1.0,…)
+    // no servía de nada porque reduce() se evalúa ANTES y lanza StateError
+    // ("No element") sobre una lista vacía — el conductor sin viajes en el
+    // periodo hacía crashear el gráfico en lugar de verlo vacío.
+    if (data.isEmpty) return;
     double maxValue = math.max(1.0, data.map((d) => d['trips'] as int).reduce(math.max).toDouble());
-    
+
     for (int i = 0; i < data.length; i++) {
       final x = (size.width / (data.length - 1)) * i;
       final y = size.height - (size.height * (data[i]['trips'] / maxValue) * progress);
@@ -1594,7 +1605,11 @@ class BarChartPainter extends CustomPainter {
       ..color = ModernTheme.rappiOrange
       ..style = PaintingStyle.fill;
 
-    // ✅ Protección contra división por cero
+    // Ronda 251: la "protección contra división por cero" con math.max(1.0,…)
+    // no servía de nada porque reduce() se evalúa ANTES y lanza StateError
+    // ("No element") sobre una lista vacía — el conductor sin viajes en el
+    // periodo hacía crashear el gráfico en lugar de verlo vacío.
+    if (data.isEmpty) return;
     double maxValue = math.max(1.0, data.map((d) => (d['earnings'] as num).toDouble()).reduce(math.max));
     final barWidth = size.width / (data.length * 2);
     
@@ -1629,7 +1644,11 @@ class HourlyChartPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.fill;
 
-    // ✅ Protección contra división por cero
+    // Ronda 251: la "protección contra división por cero" con math.max(1.0,…)
+    // no servía de nada porque reduce() se evalúa ANTES y lanza StateError
+    // ("No element") sobre una lista vacía — el conductor sin viajes en el
+    // periodo hacía crashear el gráfico en lugar de verlo vacío.
+    if (data.isEmpty) return;
     double maxTrips = math.max(1.0, data.map((d) => d['trips'] as int).reduce(math.max).toDouble());
     final barWidth = size.width / data.length;
     
