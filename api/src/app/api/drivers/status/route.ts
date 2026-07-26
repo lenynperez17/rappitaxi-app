@@ -101,10 +101,18 @@ export async function PUT(req: NextRequest) {
         // el ride primero). Si el ride ya terminó (completed/cancelled),
         // clearear active_ride_id oportunamente.
         const active = await client.query<{ active_ride_id: string | null; ride_status: string | null }>(
+          // Ronda 257: `FOR UPDATE` a secas sobre un LEFT JOIN hace que
+          // Postgres aborte con "FOR UPDATE no puede ser aplicado al lado
+          // nulable de un outer join" (no puede bloquear filas que quizá no
+          // existan). La transacción entera reventaba con 500 y el conductor
+          // veía "No pudimos ponerte fuera de línea. Revisa tu conexión." —
+          // culpando a la red cuando el fallo era esta consulta. Desconectarse
+          // era IMPOSIBLE. Con `OF dp` se bloquea solo driver_presence, que es
+          // la fila que de verdad se va a modificar.
           `SELECT dp.active_ride_id, r.status AS ride_status
              FROM driver_presence dp
              LEFT JOIN rides r ON r.id = dp.active_ride_id
-            WHERE dp.driver_id = $1 FOR UPDATE`,
+            WHERE dp.driver_id = $1 FOR UPDATE OF dp`,
           [driverId],
         )
         const rid = active.rows[0]?.active_ride_id

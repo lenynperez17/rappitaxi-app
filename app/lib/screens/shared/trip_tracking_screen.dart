@@ -19,6 +19,7 @@ import '../../providers/auth_provider.dart';
 // Services
 import '../../services/firebase_service.dart';
 // Utils
+import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/safe_navigation.dart';
 // Providers
@@ -959,6 +960,22 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     var phone = _currentRide?.driverPhone ??
         _currentRide?.vehicleInfo?['driverPhone'] as String? ??
         '';
+
+    // Ronda 257: el teléfono SOLO viaja en el detalle GET /api/rides/:id — ni
+    // el listado /api/rides ni el stream SSE lo incluyen. Y esta pantalla, si
+    // recibe el ride ya construido (widget.ride), nunca consulta el detalle:
+    // por eso el pasajero seguía viendo "Teléfono del conductor no disponible"
+    // con el conductor ya asignado. Si falta, lo pedimos en ese momento.
+    if (phone.isEmpty && widget.rideId.isNotEmpty) {
+      try {
+        final detail = await RapiApiClient.instance.getRide(widget.rideId);
+        final map = (detail['ride'] ?? detail) as Map<String, dynamic>;
+        phone = (map['driverPhone'] ?? '').toString();
+      } catch (e) {
+        AppLogger.warning('No se pudo obtener el teléfono del conductor: '
+            '${userFriendlyError(e, fallback: "error de red")}');
+      }
+    }
 
     if (phone.isEmpty) {
       if (mounted) {

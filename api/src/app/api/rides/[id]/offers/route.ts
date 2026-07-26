@@ -127,6 +127,28 @@ export async function POST(
     return NextResponse.json({ success: false, error: 'invalid_ride_id' }, { status: 400 })
   }
 
+  // Ronda 257: la validación de saldo se había puesto SOLO en
+  // /rides/:id/accept, pero el conductor casi nunca pasa por ahí — en el flujo
+  // tipo inDriver OFERTA su tarifa y el pasajero elige. Esa vía no miraba el
+  // saldo, así que un conductor endeudado seguía consiguiendo viajes y
+  // hundiéndose más. Se cierra aquí también.
+  const offerBalanceRow = await maybeOne<{ balance: string }>(
+    'SELECT rapi_team_user_balance($1)::text AS balance',
+    [auth.userId],
+  )
+  const offerBalance = Number(offerBalanceRow?.balance ?? 0)
+  if (!Number.isFinite(offerBalance) || offerBalance < 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'insufficient_credits',
+        balance: offerBalance,
+        message: 'Tu saldo es negativo. Recarga tus créditos para ofertar viajes.',
+      },
+      { status: 402 },
+    )
+  }
+
   let payload: { amount?: unknown; etaSeconds?: unknown; message?: unknown } = {}
   try {
     const raw = await req.json()

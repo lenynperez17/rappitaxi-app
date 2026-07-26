@@ -3418,10 +3418,43 @@ class _RequestMiniMap extends StatefulWidget {
 class _RequestMiniMapState extends State<_RequestMiniMap> {
   List<LatLng> _routePoints = [];
 
+  GoogleMapController? _miniMapController;
+
   @override
   void initState() {
     super.initState();
     _loadRoute();
+  }
+
+  /// Encuadra origen y destino con margen, sin importar lo lejos que estén.
+  void _fitRouteBounds() {
+    final c = _miniMapController;
+    if (c == null) return;
+    final sw = LatLng(
+      widget.pickup.latitude < widget.destination.latitude
+          ? widget.pickup.latitude
+          : widget.destination.latitude,
+      widget.pickup.longitude < widget.destination.longitude
+          ? widget.pickup.longitude
+          : widget.destination.longitude,
+    );
+    final ne = LatLng(
+      widget.pickup.latitude > widget.destination.latitude
+          ? widget.pickup.latitude
+          : widget.destination.latitude,
+      widget.pickup.longitude > widget.destination.longitude
+          ? widget.pickup.longitude
+          : widget.destination.longitude,
+    );
+    // El mapa necesita estar renderizado antes de aceptar el encuadre.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      c.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(southwest: sw, northeast: ne),
+          48,
+        ),
+      );
+    });
   }
 
   // Ronda 213 BUG FIX: antes llamaba Directions API directo con key móvil
@@ -3436,6 +3469,7 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
       setState(() {
         _routePoints = route.points;
       });
+      _fitRouteBounds();
     }
   }
 
@@ -3445,6 +3479,12 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
     final points = _routePoints;
 
     return GoogleMap(
+      // Ronda 257: el zoom era FIJO en 13.5 centrado en el punto medio entre
+      // A y B. Con un viaje de 25-30 km (Puente Piedra -> Miraflores) ese
+      // zoom solo encuadra el vacío intermedio: ni el origen, ni el destino,
+      // ni la ruta entraban en el recuadro — de ahí el "mapita que no muestra
+      // nada". Ahora se encuadra con LatLngBounds para que A y B siempre se
+      // vean, sea cual sea la distancia.
       initialCameraPosition: CameraPosition(
         target: LatLng(
           (widget.pickup.latitude + widget.destination.latitude) / 2,
@@ -3452,6 +3492,10 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
         ),
         zoom: 13.5,
       ),
+      onMapCreated: (controller) {
+        _miniMapController = controller;
+        _fitRouteBounds();
+      },
       markers: {
         Marker(
           markerId: const MarkerId('pickup'),
@@ -3464,14 +3508,22 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         ),
       },
-      polylines: points.isNotEmpty ? {
+      // Si Directions no devuelve la ruta (sin cobertura o error del proveedor)
+      // se traza al menos la recta A->B punteada, para que el conductor vea
+      // hacia dónde va el viaje en lugar de un mapa sin nada.
+      polylines: {
         Polyline(
           polylineId: const PolylineId('route'),
-          points: points,
-          color: const Color(0xFF4CAF50),
+          points: points.isNotEmpty
+              ? points
+              : [widget.pickup, widget.destination],
+          color: AppColors.rappiRed,
           width: 4,
+          patterns: points.isNotEmpty
+              ? const []
+              : <PatternItem>[PatternItem.dash(20), PatternItem.gap(10)],
         ),
-      } : {},
+      },
       zoomControlsEnabled: false,
       scrollGesturesEnabled: false,
       rotateGesturesEnabled: false,
