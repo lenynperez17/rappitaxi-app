@@ -83,8 +83,21 @@ async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Pre
     const latN = Number(lat), lngN = Number(lng)
     const inPeru = latN >= -19 && latN <= 0 && lngN >= -82 && lngN <= -68
     if (inPeru) {
-      params.set('viewbox', `${lngN - 0.3},${latN + 0.3},${lngN + 0.3},${latN - 0.3}`)
-      params.set('bounded', '1')
+      // Ronda 256: ESTE ERA EL BUG DE "el destino marca por otro lado".
+      //
+      // El viewbox iba con `bounded=1`, que hace que Nominatim DESCARTE todo
+      // lo que caiga fuera de la caja de ±0.3° alrededor del ORIGEN del viaje
+      // (unos 33 km). Un pasajero en Puente Piedra que buscaba "Parque
+      // Kennedy" (Miraflores, a ~28 km al sur) recibía el sitio correcto
+      // fuera de la caja o en su borde, así que Nominatim lo descartaba y
+      // devolvía OTRO lugar peor pero dentro de la caja. La app guardaba ese
+      // texto con esas coordenadas equivocadas: el destino real estaba en
+      // -12.1211,-77.0296 y se guardaba -12.0342,-77.0625 — 10 km de error.
+      //
+      // Ampliamos la caja a ±1.0° (cubre toda Lima Metropolitana y alrededores)
+      // y quitamos `bounded`: así el viewbox solo PRIORIZA los resultados
+      // cercanos en el orden, sin excluir los de más lejos.
+      params.set('viewbox', `${lngN - 1.0},${latN + 1.0},${lngN + 1.0},${latN - 1.0}`)
     }
   }
   const r = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {

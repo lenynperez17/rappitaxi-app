@@ -54,6 +54,33 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     )
   }
 
+  // Ronda 256: NO se validaba el saldo en ningún punto. El conductor aceptaba
+  // y completaba viajes sin tener con qué pagar la comisión, y al cobrarla el
+  // saldo se iba a NEGATIVO — en producción había un conductor en S/ -5.92:
+  // recargó S/ 10 y se le cobraron S/ 15.92 en comisiones de dos viajes.
+  // Una deuda que la app no tiene forma de cobrar.
+  //
+  // Se exige saldo no negativo para aceptar. El balance ya excluye las filas
+  // 'commission' (registro contable de la plataforma), así que refleja lo que
+  // el conductor realmente tiene.
+  const balanceRow = await maybeOne<{ balance: string }>(
+    'SELECT rapi_team_user_balance($1)::text AS balance',
+    [auth.userId],
+  )
+  const driverBalance = Number(balanceRow?.balance ?? 0)
+  if (!Number.isFinite(driverBalance) || driverBalance < 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'insufficient_credits',
+        balance: driverBalance,
+        message:
+          'Tu saldo es negativo. Recarga tus créditos para volver a aceptar viajes.',
+      },
+      { status: 402 },
+    )
+  }
+
   try {
     const result = await tx(async (client) => {
       const rideRes = await client.query<RideCore>(

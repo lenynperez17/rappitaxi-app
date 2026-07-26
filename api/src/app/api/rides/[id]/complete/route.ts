@@ -346,6 +346,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           [updated.driver_id],
         )
         const driverBalance = Number(driverBalRes.rows[0]?.balance ?? 0)
+        // Ronda 256: este cobro PUEDE dejar el saldo negativo, y se permite a
+        // propósito: el viaje ya se prestó y la comisión se debe. Lo que no
+        // debe pasar es que siga aceptando viajes endeudado — eso se corta en
+        // POST /api/rides/:id/accept, que ahora rechaza con 402 si el saldo es
+        // negativo. En producción un conductor llegó a S/ -5.92 (recargó S/ 10
+        // y acumuló S/ 15.92 de comisiones) porque nada lo frenaba.
         const driverBalAfter = Math.round((driverBalance - commissionAmount) * 100) / 100
         // Débito real al driver: type='debit' entra al balance (a diferencia
         // de 'commission' que la migración 019 excluye para audit-trail).

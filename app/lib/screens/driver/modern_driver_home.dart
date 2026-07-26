@@ -1587,19 +1587,31 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     } on RapiApiException catch (e) {
       AppLogger.error('API error accepting request: ${e.statusCode} - ${e.code}');
       if (!mounted) return;
-      final errorMessage = e.statusCode == 409
-          ? 'Otro conductor ya acepto esta solicitud'
-          : e.statusCode == 403
-              ? 'Error de permisos. Contacta soporte.'
-              : 'Error: ${e.message ?? e.code}';
-      messenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error));
+      // Ronda 256: el backend ahora responde 402 insufficient_credits cuando el
+      // conductor tiene saldo negativo. Sin este caso, el conductor veía
+      // "Error: insufficient_credits" en crudo y no sabía que debía recargar.
+      final errorMessage = e.statusCode == 402
+          ? (e.message ??
+              'Tu saldo es negativo. Recarga tus créditos para aceptar viajes.')
+          : e.statusCode == 409
+              ? 'Otro conductor ya aceptó esta solicitud'
+              : e.statusCode == 403
+                  ? 'Error de permisos. Contacta soporte.'
+                  : userFriendlyError(e,
+                      fallback: 'No se pudo aceptar la solicitud');
+      messenger.showSnackBar(SnackBar(
+        content: Text(errorMessage),
+        backgroundColor:
+            e.statusCode == 402 ? ModernTheme.warning : AppColors.error,
+        duration: const Duration(seconds: 5),
+      ));
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error accepting request'));
       if (!mounted) return;
       String errorMessage = e.toString().contains('ya acepto')
-          ? 'Otro conductor ya acepto esta solicitud'
+          ? 'Otro conductor ya aceptó esta solicitud'
           : e.toString().contains('no esta disponible')
-              ? 'La solicitud ya no esta disponible'
+              ? 'La solicitud ya no está disponible'
               : 'Error: ${e.toString().replaceAll('Exception: ', '')}';
       messenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error));
     }
