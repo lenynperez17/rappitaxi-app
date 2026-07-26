@@ -25,6 +25,18 @@ class TripModel {
   final String? driverComment;
   final Map<String, dynamic>? vehicleInfo;
   final Map<String, dynamic>? passengerInfo;
+
+  // Ronda 250: el backend (rides/[id] y rides) envía estos seis datos SUELTOS
+  // en la raíz del JSON, pero TripModel solo tenía los mapas anidados
+  // vehicleInfo/passengerInfo — que el backend NUNCA manda. Resultado: la UI
+  // leía nombre, teléfono y foto de un mapa siempre nulo, y de ahí salían
+  // "Teléfono no disponible", "Pasajero" sin nombre y los avatares con "?".
+  final String? driverName;
+  final String? driverPhone;
+  final String? driverPhotoUrl;
+  final String? passengerName;
+  final String? passengerPhone;
+  final String? passengerPhotoUrl;
   final List<LatLng>? route;
 
   // ✅ SISTEMA DE PAGOS (Modelo InDriver)
@@ -89,6 +101,12 @@ class TripModel {
     this.driverComment,
     this.vehicleInfo,
     this.passengerInfo,
+    this.driverName,
+    this.driverPhone,
+    this.driverPhotoUrl,
+    this.passengerName,
+    this.passengerPhone,
+    this.passengerPhotoUrl,
     this.route,
     // Campos de pagos (modelo InDriver)
     this.paymentMethod = 'cash', // Por defecto efectivo (mayoría paga fuera de app)
@@ -176,6 +194,12 @@ class TripModel {
       driverComment: json['driverComment'],
       vehicleInfo: json['vehicleInfo'],
       passengerInfo: json['passengerInfo'],
+      driverName: json['driverName'] as String?,
+      driverPhone: json['driverPhone'] as String?,
+      driverPhotoUrl: json['driverPhotoUrl'] as String?,
+      passengerName: json['passengerName'] as String?,
+      passengerPhone: json['passengerPhone'] as String?,
+      passengerPhotoUrl: json['passengerPhotoUrl'] as String?,
       route: json['route'] != null
           ? (json['route'] as List)
               .map((point) => LatLng(
@@ -271,6 +295,12 @@ class TripModel {
       'passengerRating': passengerRating,
       'passengerComment': passengerComment,
       'driverRating': driverRating,
+      'driverName': driverName,
+      'driverPhone': driverPhone,
+      'driverPhotoUrl': driverPhotoUrl,
+      'passengerName': passengerName,
+      'passengerPhone': passengerPhone,
+      'passengerPhotoUrl': passengerPhotoUrl,
       'driverComment': driverComment,
       'vehicleInfo': vehicleInfo,
       'passengerInfo': passengerInfo,

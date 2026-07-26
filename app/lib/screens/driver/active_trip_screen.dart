@@ -1070,8 +1070,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   void _showRatingDialog() {
     RatingDialog.show(
       context: context,
-      driverName: _currentTrip?.vehicleInfo?['passengerName'] ?? 'Pasajero',
-      driverPhoto: _currentTrip?.vehicleInfo?['passengerPhoto'] ?? '',
+      // Ronda 250: leía el nombre del PASAJERO dentro de vehicleInfo (el mapa
+      // del VEHÍCULO), que además el backend nunca envía. Ahora usa el campo
+      // plano real, con el mapa como respaldo por compatibilidad.
+      driverName: _currentTrip?.passengerName ??
+          _currentTrip?.vehicleInfo?['passengerName'] ??
+          'Pasajero',
+      driverPhoto: _currentTrip?.passengerPhotoUrl ??
+          _currentTrip?.vehicleInfo?['passengerPhoto'] ??
+          '',
       tripId: widget.tripId,
       isDriverRating: true,
       onSubmit: (rating, comment, tags) async {
@@ -1100,7 +1107,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   Future<void> _callPassenger() async {
     // Backend adjunta el teléfono del pasajero al ride en `passengerInfo`.
     // No hay endpoint /users/:id, así que sólo usamos ese payload.
-    final phoneFromInfo = _currentTrip?.passengerInfo?['passengerPhone'] as String? ??
+    final phoneFromInfo = _currentTrip?.passengerPhone ??
+        _currentTrip?.passengerInfo?['passengerPhone'] as String? ??
         _currentTrip?.passengerInfo?['phone'] as String? ??
         '';
     var phone = phoneFromInfo;
@@ -1136,7 +1144,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          otherUserName: _currentTrip!.vehicleInfo?['passengerName'] ?? 'Pasajero',
+          otherUserName: _currentTrip!.passengerName ??
+              _currentTrip!.vehicleInfo?['passengerName'] ??
+              'Pasajero',
           otherUserRole: 'passenger',
           otherUserId: _currentTrip!.userId,
           rideId: _currentTrip!.id,
@@ -1567,9 +1577,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   // ==================== PASSENGER INFO ROW ====================
 
   Widget _buildPassengerInfoRow() {
-    final passengerName = _currentTrip?.vehicleInfo?['passengerName'] as String? ?? 'Pasajero';
-    final passengerPhoto = _currentTrip?.vehicleInfo?['passengerPhoto'] as String?;
-    final passengerRating = (_currentTrip?.vehicleInfo?['passengerRating'] as num?)?.toDouble() ?? 5.0;
+    // Ronda 250: los tres salían de vehicleInfo (mapa inexistente), de ahí el
+    // "Pasajero" sin nombre y el avatar con icono genérico de tus capturas.
+    final passengerName = _currentTrip?.passengerName ??
+        _currentTrip?.vehicleInfo?['passengerName'] as String? ??
+        'Pasajero';
+    final passengerPhoto = _currentTrip?.passengerPhotoUrl ??
+        _currentTrip?.vehicleInfo?['passengerPhoto'] as String?;
+    final passengerRating =
+        (_currentTrip?.vehicleInfo?['passengerRating'] as num?)?.toDouble() ?? 0.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
