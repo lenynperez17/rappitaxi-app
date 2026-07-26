@@ -11,6 +11,7 @@ import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para col
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/date_utils_rapi.dart';
 import '../../providers/locale_provider.dart'; // ✅ NUEVO: Para cambio de idioma
 import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Textos localizados
 import '../../core/utils/responsive_bottom_sheet.dart';
@@ -106,7 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         _emailController.text = user.email;
         _phoneController.text = user.phone;
         // ✅ NUEVO: Cargar birthDate si existe
-        _birthDateController.text = user.birthDate ?? '';
+        _birthDateController.text = formatBirthDateForDisplay(user.birthDate);
 
         // Cargar estadísticas del usuario (simuladas por ahora)
         final userStats = {
@@ -185,9 +186,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final ok = await authProvider.updateProfile(
         fullName: _nameController.text.trim(),
-        birthDate: _birthDateController.text.trim().isEmpty
-            ? null
-            : _birthDateController.text.trim(),
+        // Ronda 247: normalizamos a YYYY-MM-DD antes de enviar.
+        birthDate: normalizeBirthDate(_birthDateController.text),
       );
 
       if (!mounted) return;

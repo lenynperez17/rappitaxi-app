@@ -12,6 +12,7 @@ import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para col
 import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
+import '../../utils/date_utils_rapi.dart';
 import '../../utils/error_messages.dart';
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
@@ -168,7 +169,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         _lastNameController.text = lastName;
         _emailController.text = currentUser.email;
         _phoneController.text = currentUser.phone;
-        _birthDate = currentUser.birthDate ?? '';
+        _birthDate = formatBirthDateForDisplay(currentUser.birthDate);
         _documentNumber = currentUser.identityDocument ?? '';
         _profileImagePath = currentUser.profilePhotoUrl;
       });
@@ -1126,12 +1127,18 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         _lastNameController.text.trim(),
       ].where((p) => p.isNotEmpty).join(' ').trim();
 
-      await authProvider.updateProfile(
+      // Ronda 247: antes se descartaba el bool y el mensaje verde de éxito era
+      // INCONDICIONAL — el usuario veía "Perfil actualizado exitosamente"
+      // aunque el backend hubiera rechazado todo con un 400. Ahora se
+      // comprueba de verdad.
+      final ok = await authProvider.updateProfile(
         fullName: combinedName.isEmpty ? null : combinedName,
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
         profilePhotoUrl: profileImageUrl,
-        birthDate: _birthDate.isEmpty ? null : _birthDate,
+        // Ronda 247: el backend exige YYYY-MM-DD; mandar 15/3/1990 daba 400
+        // y tumbaba el guardado ENTERO (incluido el nombre).
+        birthDate: normalizeBirthDate(_birthDate),
         identityDocument: _documentNumber.isEmpty ? null : _documentNumber,
         extraFields: {
           'gender': _gender,
@@ -1145,6 +1152,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         },
       );
       
+      if (mounted && !ok) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              authProvider.errorMessage ??
+                  'No se pudieron guardar los cambios. Inténtalo de nuevo.',
+            ),
+            backgroundColor: ModernTheme.error,
+          ),
+        );
+        return;
+      }
+
       if (mounted) {
         setState(() {
           _isLoading = false;

@@ -95,6 +95,20 @@ function serializeRide(r: RideRow) {
     // oferta y no llega"). Los exponemos también en el root para que el
     // cliente actual funcione sin necesidad de actualizar la app.
     negotiable: (r.metadata as Record<string, unknown> | null)?.negotiable === true,
+    // Ronda 247: ganancia neta y comisión reales del viaje. Las pantallas del
+    // conductor las inventaban con un 12% fijo mientras el backend cobra 20%.
+    driverEarning:
+      (r.metadata as Record<string, unknown> | null)?.driverEarning !== undefined
+        ? Number((r.metadata as Record<string, unknown>).driverEarning)
+        : null,
+    commissionAmount:
+      (r.metadata as Record<string, unknown> | null)?.commissionAmount !== undefined
+        ? Number((r.metadata as Record<string, unknown>).commissionAmount)
+        : null,
+    commissionRate:
+      (r.metadata as Record<string, unknown> | null)?.commissionRate !== undefined
+        ? Number((r.metadata as Record<string, unknown>).commissionRate)
+        : null,
     proposedFare:
       (r.metadata as Record<string, unknown> | null)?.proposedFare !== undefined
         ? Number((r.metadata as Record<string, unknown>).proposedFare)

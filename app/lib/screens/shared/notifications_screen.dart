@@ -211,7 +211,12 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     final id = (data['id'] ?? '').toString();
     final title = data['title'] ?? 'Notificación';
     final body = data['body'] ?? '';
-    final isRead = (data['isRead'] ?? data['read'] ?? false) == true;
+    // Ronda 247: el backend expresa el estado de lectura como `readAt`
+    // (timestamp), no como un bool. Al leer solo isRead/read, TODAS las
+    // notificaciones se veían permanentemente sin leer (tarjeta naranja) por
+    // más que se marcaran — el POST /read sí persistía, pero el cliente era
+    // incapaz de reflejarlo.
+    final isRead = (data['isRead'] ?? data['read']) == true || data['readAt'] != null;
     final type = (data['type'] ?? 'info').toString();
     final createdAtRaw = data['createdAt'];
     final DateTime? createdAt = createdAtRaw is String
@@ -219,7 +224,14 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         : (createdAtRaw is num
             ? DateTime.fromMillisecondsSinceEpoch(createdAtRaw.toInt())
             : null);
-    final payload = data['payload']?.toString();
+    // Ronda 247: el deep-link venía en `data` (objeto JSONB del backend), no
+    // en `payload` (string del esquema Firestore antiguo). Al leer solo
+    // `payload`, tocar una notificación no navegaba a ningún sitio.
+    final payloadMap = data['data'] is Map
+        ? (data['data'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final payload = data['payload']?.toString() ??
+        (payloadMap['rideId'] != null ? 'ride:${payloadMap['rideId']}' : null);
 
     return Dismissible(
       key: Key(id),

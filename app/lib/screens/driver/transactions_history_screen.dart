@@ -25,6 +25,11 @@ class TransactionsHistoryScreen extends StatefulWidget {
 
 class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen> 
     with TickerProviderStateMixin {
+  /// Ronda 247: tasa de respaldo alineada con el backend
+  /// (`app_settings.rides.commission_rate`, fallback 0.20). Antes acá había un
+  /// 0.12 que no correspondía a nada y mostraba ganancias infladas.
+  static const double _fallbackCommissionRate = 0.20;
+
   // Animation controllers
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -125,9 +130,19 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
             ? DateTime.tryParse(completedAtStr) ?? DateTime.now()
             : DateTime.now();
         final fare = (data['fare'] ?? data['finalFare'] ?? data['estimatedFare'] ?? 0.0) as num;
-        final commissionRaw = data['platformCommission'] ?? data['commission'];
-        final commission = (commissionRaw as num?)?.toDouble() ?? (fare * 0.12); // 12% comisión por defecto
-        final netEarnings = fare.toDouble() - commission;
+        // Ronda 247: el backend ahora expone `commissionAmount` y
+        // `driverEarning` reales (Ronda 247 en /api/rides). Antes se leían
+        // `platformCommission`/`commission`, que NO existen, y se caía a un
+        // 12% hardcodeado cuando la tasa real es 20% → al conductor se le
+        // prometían ganancias infladas ~10% en cada viaje.
+        final commissionRaw = data['commissionAmount'] ??
+            data['platformCommission'] ??
+            data['commission'];
+        final earningRaw = data['driverEarning'];
+        final double commission = (commissionRaw as num?)?.toDouble() ??
+            (fare.toDouble() * _fallbackCommissionRate);
+        final double netEarnings = (earningRaw as num?)?.toDouble() ??
+            (fare.toDouble() - commission);
 
         totalEarnings += netEarnings;
         totalTrips++;

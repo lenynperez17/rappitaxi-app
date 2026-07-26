@@ -465,15 +465,93 @@ class PaymentService {
               'Número de teléfono inválido. Debe tener 9 dígitos y empezar con 9');
         }
       }
-      if (amount < 50.0) {
-        throw Exception('El monto mínimo de retiro es S/. 50.00');
+      // Ronda 247: el backend acepta desde S/20 (wallet/withdrawals).
+      // Antes acá se exigían S/50 sin motivo, y otra pantalla pedía S/20:
+      // criterios contradictorios entre sí y con el servidor.
+      if (amount < 20.0) {
+        throw Exception('El monto mínimo de retiro es S/. 20.00');
       }
 
-      // TODO: endpoint POST /api/wallet/withdraw en el backend Node.
+      // Ronda 247 BUG BLOQUEANTE: este método era un stub que SIEMPRE devolvía
+      // success:false — ningún conductor podía retirar su dinero jamás, aunque
+      // POST /api/wallet/withdrawals existe y está completo (lock, idempotencia,
+      // comisión, doble entrada contable). Encima el pipeline correcto ya estaba
+      // escrito en WalletProvider y nadie lo llamaba.
+      // El endpoint exige un `bankAccountId` de una cuenta registrada, y el alta
+      // de cuentas (POST /api/drivers/me/bank-accounts) tampoco se invocaba desde
+      // ninguna pantalla: los datos del formulario se quedaban en memoria. Así
+      // que acá resolvemos el flujo completo: buscamos una cuenta que coincida,
+      // la creamos si no existe, y con ella pedimos el retiro.
+      final api = RapiApiClient.instance;
+
+      // 1) ¿Ya existe una cuenta con este número?
+      String? bankAccountId;
+      try {
+        final listResp = await api.listBankAccounts();
+        final accounts = (listResp['bankAccounts'] ?? listResp['accounts'] ?? [])
+            as List<dynamic>;
+        final target = (accountNumber ?? phoneNumber ?? '').trim();
+        for (final raw in accounts) {
+          if (raw is! Map) continue;
+          final acc = raw.cast<String, dynamic>();
+          final num = (acc['accountNumber'] ?? '').toString();
+          if (target.isNotEmpty && num == target) {
+            bankAccountId = (acc['id'] ?? '').toString();
+            break;
+          }
+        }
+        // Si no coincide ninguna pero hay alguna por defecto, la usamos.
+        if (bankAccountId == null || bankAccountId.isEmpty) {
+          for (final raw in accounts) {
+            if (raw is! Map) continue;
+            final acc = raw.cast<String, dynamic>();
+            if (acc['isDefault'] == true) {
+              bankAccountId = (acc['id'] ?? '').toString();
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('PaymentService: no se pudo listar cuentas bancarias - $e');
+      }
+
+      // 2) No hay cuenta utilizable → la registramos con los datos del formulario.
+      if (bankAccountId == null || bankAccountId.isEmpty) {
+        // Yape/Plin se registran como cuenta con el número de teléfono: el
+        // backend solo maneja `driver_bank_accounts`.
+        final isWallet = method == 'yape' || method == 'plin';
+        final number = (isWallet ? phoneNumber : accountNumber)?.trim() ?? '';
+        if (number.isEmpty) {
+          throw Exception('Falta el número de cuenta o teléfono para el retiro');
+        }
+        final createResp = await api.addBankAccount(
+          bankName: isWallet
+              ? (method == 'yape' ? 'Yape' : 'Plin')
+              : (bankName?.trim().isNotEmpty == true ? bankName!.trim() : 'Banco'),
+          accountType: 'savings',
+          accountNumber: number,
+          holderName: accountHolderName,
+          holderDocument: accountHolderDocumentNumber,
+          isDefault: true,
+        );
+        final created = (createResp['bankAccount'] ?? createResp['account'] ?? createResp);
+        if (created is Map) {
+          bankAccountId = (created['id'] ?? '').toString();
+        }
+        if (bankAccountId == null || bankAccountId.isEmpty) {
+          throw Exception('No se pudo registrar la cuenta de destino');
+        }
+      }
+
+      // 3) Solicitar el retiro de verdad.
+      final resp = await api.requestWithdrawal(
+        bankAccountId: bankAccountId,
+        amount: amount,
+      );
+      final wd = (resp['withdrawal'] ?? resp) as Map<String, dynamic>;
       return WithdrawalResult(
-        success: false,
-        error:
-            'requestWithdrawal aún no disponible en el backend Node — pendiente de implementación',
+        success: true,
+        withdrawalId: (wd['id'] ?? '').toString(),
       );
     } catch (e) {
       debugPrint('PaymentService: error en requestWithdrawal - $e');

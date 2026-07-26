@@ -222,6 +222,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const commissionAmount = Math.round(adjustedFare * commissionRate * 100) / 100
       const driverEarning = Math.round((adjustedFare - commissionAmount) * 100) / 100
 
+      // Ronda 247: persistir la comisión REAL en el ride. Antes solo quedaba en
+      // wallet_transactions.metadata, así que las pantallas del conductor
+      // (historial, métricas, ganancias) no tenían de dónde leerla y la
+      // inventaban con un 12% hardcodeado — cuando la tasa real es 20%. Al
+      // conductor se le prometían ganancias infladas ~10% en cada viaje.
+      await client.query(
+        `UPDATE rides
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                  'commissionRate',   $1::numeric,
+                  'commissionAmount', $2::numeric,
+                  'driverEarning',    $3::numeric
+                )
+          WHERE id = $4`,
+        [commissionRate, commissionAmount, driverEarning, id],
+      )
+
       // Cobro de wallet + contraparte de crédito al driver + comisión al platform.
       // Antes solo hacía el debit del passenger — desbalanceaba el libro contable:
       // el dinero del passenger "desaparecía" (SUM negativa) sin acreditar al driver.

@@ -143,7 +143,11 @@ class NotificationProvider extends ChangeNotifier {
       timestamp: ts,
       type: _getNotificationTypeFromString(
           (data['type'] ?? 'system').toString()),
-      isRead: (data['isRead'] ?? data['is_read'] ?? false) as bool,
+      // Ronda 247: el backend manda `readAt`, no un bool. Sin esto el contador
+      // de la campana marcaba TODAS como no leídas para siempre.
+      isRead: (data['isRead'] ?? data['is_read']) == true ||
+          data['readAt'] != null ||
+          data['read_at'] != null,
       data: inner,
       channel: NotificationChannel.general,
     );
