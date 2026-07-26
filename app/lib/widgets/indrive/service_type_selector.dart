@@ -121,7 +121,7 @@ class _ServiceChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.priceBlack : AppColors.getTextPrimary(context),
+                color: isSelected ? AppColors.getTextPrimary(context) : AppColors.getTextPrimary(context),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

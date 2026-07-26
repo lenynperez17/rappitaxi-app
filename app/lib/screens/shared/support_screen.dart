@@ -172,7 +172,7 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
 
   Widget _buildContactTab() {
     return SingleChildScrollView(padding: EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildContactOption('Llamar a Soporte', 'Habla directamente', Icons.phone, AppColors.priceBlack, _supportPhone.isNotEmpty ? _supportPhone : 'Configurar numero', _callSupport),
+      _buildContactOption('Llamar a Soporte', 'Habla directamente', Icons.phone, AppColors.getTextPrimary(context), _supportPhone.isNotEmpty ? _supportPhone : 'Configurar numero', _callSupport),
       _buildContactOption('Chat en Vivo', 'Chatea con un agente', Icons.chat, AppColors.rappiOrange, 'Disponible 24/7', _openLiveChat),
       _buildContactOption('Email de Soporte', 'Envia un correo al equipo', Icons.email, Colors.orange, _supportEmail, _sendEmail),
       _buildContactOption('WhatsApp', 'Contacta por WhatsApp', Icons.message, Colors.green, _supportWhatsApp.isNotEmpty ? _supportWhatsApp : 'Configurar WhatsApp', _openWhatsApp),
@@ -299,11 +299,11 @@ class TicketDetailsScreen extends StatelessWidget {
 
   Widget _buildResponseCard(BuildContext context, TicketResponse response) {
     return Padding(padding: EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 40, height: 40, decoration: BoxDecoration(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.1) : AppColors.priceBlack.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(response.isFromSupport ? Icons.support_agent : Icons.person, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.priceBlack, size: 20)),
+      Container(width: 40, height: 40, decoration: BoxDecoration(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.1) : AppColors.getTextPrimary(context).withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(response.isFromSupport ? Icons.support_agent : Icons.person, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.getTextPrimary(context), size: 20)),
       SizedBox(width: 12),
       Expanded(child: Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.05) : AppColors.getSurface(context), borderRadius: BorderRadius.circular(8), border: Border.all(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.2) : AppColors.getBorder(context))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Text(response.isFromSupport ? 'Soporte Rappi Team' : 'Tu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.priceBlack)), Spacer(), Text(_formatDateTimeStatic(context, response.createdAt), style: TextStyle(fontSize: 10, color: AppColors.getTextSecondary(context)))]),
+          Row(children: [Text(response.isFromSupport ? 'Soporte Rappi Team' : 'Tu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.getTextPrimary(context))), Spacer(), Text(_formatDateTimeStatic(context, response.createdAt), style: TextStyle(fontSize: 10, color: AppColors.getTextSecondary(context)))]),
           SizedBox(height: 4), Text(response.message, style: TextStyle(height: 1.4, color: AppColors.getTextPrimary(context))),
         ]))),
     ]));

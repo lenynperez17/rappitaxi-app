@@ -1,7 +1,9 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../widgets/common/rappi_app_bar.dart';
+import 'support_screen.dart';
 
 class HelpCenterScreen extends StatefulWidget {
   final String? userType;
@@ -93,11 +95,42 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> with SingleTickerPr
 
   Widget _buildContactOptions() {
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _buildContactCard('Chat en Vivo', 'Respuesta inmediata', Icons.chat, AppColors.rappiOrange, () {}),
-      _buildContactCard('Email', 'facturacion.rapiteam@gmail.com', Icons.email, Colors.blue, () {}),
-      _buildContactCard('Telefono', '+51 1 234-5678', Icons.phone, Colors.orange, () {}),
-      _buildContactCard('WhatsApp', 'Mensaje directo', Icons.message, Colors.green, () {}),
+      // Ronda 249: las 4 tarjetas tenían `onTap: () {}` — el usuario tocaba y
+      // NO PASABA NADA. Además el teléfono '+51 1 234-5678' era inventado y
+      // WhatsApp no tiene número configurado, así que se eliminaron en vez de
+      // dejar contactos falsos. Queda el email real y el centro de soporte.
+      _buildContactCard('Enviar un mensaje', 'Abre el centro de soporte',
+          Icons.support_agent, AppColors.rappiOrange, _openSupport),
+      _buildContactCard('Correo', _kSupportEmail, Icons.email,
+          AppColors.rappiOrange, _sendSupportEmail),
     ]);
+  }
+
+  /// Email de soporte oficial (mismo que usa SupportScreen).
+  static const String _kSupportEmail = 'facturacion.rapiteam@gmail.com';
+
+  void _openSupport() {
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const SupportScreen()));
+  }
+
+  Future<void> _sendSupportEmail() async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: _kSupportEmail,
+      query: 'subject=${Uri.encodeComponent('Soporte Rapi Team')}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('No se pudo abrir tu app de correo. '
+              'Escríbenos a $_kSupportEmail'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Widget _buildContactCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {

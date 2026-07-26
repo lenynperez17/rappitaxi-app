@@ -176,7 +176,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
       Text('Participantes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))), SizedBox(height: 16),
       _buildParticipantRow(title: 'Conductor', name: _trip!.vehicleInfo?['driverName'] ?? 'Conductor', phone: _trip!.vehicleInfo?['driverPhone'] ?? '', subtitle: '${_trip!.vehicleInfo?['model'] ?? ''} - ${_trip!.vehicleInfo?['plate'] ?? ''}', color: AppColors.rappiOrange, icon: Icons.directions_car, canContact: isPassenger),
       Divider(height: 24),
-      _buildParticipantRow(title: 'Pasajero', name: 'Pasajero', phone: '+', subtitle: 'Cliente', color: AppColors.priceBlack, icon: Icons.person, canContact: !isPassenger),
+      _buildParticipantRow(title: 'Pasajero', name: 'Pasajero', phone: '+', subtitle: 'Cliente', color: AppColors.getTextPrimary(context), icon: Icons.person, canContact: !isPassenger),
     ])));
   }
 
@@ -210,7 +210,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
     IconData paymentIcon = Icons.money; String paymentLabel = 'Efectivo';
     return Card(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: Padding(padding: EdgeInsets.all(16), child: Row(children: [
       Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.rappiOrange.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(paymentIcon, color: AppColors.rappiOrange, size: 20)), SizedBox(width: 16),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Metodo de Pago', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)), Text(paymentLabel, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context)))])),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Método de Pago', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)), Text(paymentLabel, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context)))])),
       Text('S/${(_trip!.finalFare ?? _trip!.estimatedFare).toStringAsFixed(2)}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.rappiOrange)),
     ])));
   }
@@ -219,7 +219,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
     if (_trip!.passengerRating == null) return SizedBox.shrink();
     return Card(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: Padding(padding: EdgeInsets.all(16), child: Row(children: [
       Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(Icons.star, color: Colors.amber, size: 20)), SizedBox(width: 16),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Calificacion', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)), Row(children: List.generate(5, (index) => Icon(Icons.star, size: 16, color: index < _trip!.passengerRating! ? Colors.amber : AppColors.getBorder(context))))])),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Calificación', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)), Row(children: List.generate(5, (index) => Icon(Icons.star, size: 16, color: index < _trip!.passengerRating! ? Colors.amber : AppColors.getBorder(context))))])),
       Text('${_trip!.passengerRating}/5', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.amber)),
     ])));
   }
@@ -255,8 +255,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
             try { navigator.pushReplacementNamed('/passenger/home', arguments: {'repeatTrip': true, 'pickupLocation': _trip!.pickupLocation, 'pickupAddress': _trip!.pickupAddress, 'destinationLocation': _trip!.destinationLocation, 'destinationAddress': _trip!.destinationAddress}); }
             catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al repetir viaje')), backgroundColor: AppColors.error)); }
           },
-          icon: Icon(Icons.repeat, color: AppColors.priceBlack), label: Text('Repetir Viaje', style: TextStyle(color: AppColors.priceBlack)),
-          style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: AppColors.priceBlack), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          icon: Icon(Icons.repeat, color: AppColors.getTextPrimary(context)), label: Text('Repetir Viaje', style: TextStyle(color: AppColors.getTextPrimary(context))),
+          style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: AppColors.getTextPrimary(context)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
         )),
       ],
     ]);
@@ -283,7 +283,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
             await Share.share(shareText, subject: 'Detalles del Viaje - Rappi Team');
           } catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al compartir')), backgroundColor: AppColors.error)); }
         }),
-        if (_trip!.status == 'completed') ListTile(leading: Icon(Icons.receipt, color: AppColors.priceBlack), title: Text('Descargar Recibo'), onTap: () async {
+        if (_trip!.status == 'completed') ListTile(leading: Icon(Icons.receipt, color: AppColors.getTextPrimary(context)), title: Text('Descargar Recibo'), onTap: () async {
           Navigator.pop(context);
           final messenger = ScaffoldMessenger.of(context);
           try {

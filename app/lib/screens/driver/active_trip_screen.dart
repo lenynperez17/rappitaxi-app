@@ -1717,15 +1717,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         // Column: call + chat buttons
         Column(
           children: [
+            // Ronda 249: eran círculos verde-lima con icono negro (ctaGreen,
+            // paleta del pasajero). Ahora rojo de marca con icono blanco.
             _buildActionCircleButton(
               icon: Icons.phone,
-              color: AppColors.ctaGreen,
+              color: AppColors.primary,
               onPressed: _callPassenger,
             ),
             const SizedBox(height: 10),
             _buildActionCircleButton(
               icon: Icons.chat_bubble_outline,
-              color: AppColors.ctaGreen,
+              color: AppColors.primary,
               onPressed: _openPassengerChat,
             ),
           ],
@@ -1789,7 +1791,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             ),
           ],
         ),
-        child: Icon(icon, size: 24, color: Colors.black87),
+        child: Icon(icon, size: 24, color: Colors.white),
       ),
     );
   }
@@ -1846,7 +1848,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         child: ElevatedButton(
           onPressed: _completeTrip,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.success,
+            // Ronda 249: usaba AppColors.success (verde) como color de ACCIÓN
+            // primaria. `success` es un color semántico de estado, no de CTA.
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 18),
             shape: RoundedRectangleBorder(
@@ -1868,8 +1872,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         child: ElevatedButton(
           onPressed: _startTrip,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.ctaGreen,
-            foregroundColor: Colors.black87,
+            // Ronda 249: ctaGreen (#BEF264 verde lima) es la paleta inDrive
+            // del PASAJERO; se había filtrado a la UI del conductor.
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 20),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -1910,7 +1916,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         child: ElevatedButton(
           onPressed: _markArrived,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1A73E8),
+            // Ronda 249: "Ya llegué" era AZUL GOOGLE hardcodeado — el CTA más
+            // pulsado del conductor, y el que más rompía la marca.
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 20),
             shape: RoundedRectangleBorder(

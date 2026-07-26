@@ -31,8 +31,8 @@ class PassengerDrawer extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    AppColors.rappiTurquoise,
-                    AppColors.rappiTurquoiseLight,
+                    AppColors.rappiRed,
+                    AppColors.rappiRedDark,
                   ],
                 ),
               ),
@@ -87,7 +87,12 @@ class PassengerDrawer extends StatelessWidget {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    user?.email ?? 'email@example.com',
+                    // Ronda 249: el fallback era el placeholder literal
+                    // 'email@example.com', visible a cualquier usuario que
+                    // se registró por teléfono y no tiene correo.
+                    (user?.email.isNotEmpty ?? false)
+                        ? user!.email
+                        : (user?.phone ?? ''),
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
                       fontSize: 14,
@@ -162,18 +167,14 @@ class PassengerDrawer extends StatelessWidget {
                       Navigator.pushNamed(context, '/passenger/trip-history');
                     },
                   ),
-                  _buildMenuItem(
-                    icon: Icons.account_balance_wallet,
-                    title: 'Mi Billetera',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.pushNamed(context, '/passenger/payment-methods');
-                    },
-                  ),
+                  // Ronda 249: se eliminó "Mi Billetera", que abría EXACTAMENTE
+                  // la misma pantalla que "Métodos de pago" (no existe ruta de
+                  // billetera para pasajero) — dos entradas al mismo sitio con
+                  // nombres distintos. También se quitó el badge '2', un
+                  // contador inventado que no reflejaba nada real.
                   _buildMenuItem(
                     icon: Icons.payment,
                     title: 'Métodos de pago',
-                    badge: '2',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.pushNamed(context, '/passenger/payment-methods');
@@ -322,7 +323,7 @@ class PassengerDrawer extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [AppColors.rappiTurquoise, AppColors.rappiTurquoiseLight],
+                  colors: [AppColors.rappiRed, AppColors.rappiRedDark],
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),

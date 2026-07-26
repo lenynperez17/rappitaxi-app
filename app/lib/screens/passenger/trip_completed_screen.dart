@@ -293,8 +293,10 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
+                  // Ronda 249: la pantalla de fin de viaje degradaba a VERDE
+                  // MILITAR (#006400 DarkGreen), color inexistente en la marca.
                   ModernTheme.rappiOrange,
-                  Color(0xFF006400),
+                  Color(0xFFB91C1C), // rojo oscuro de marca (rappiRedDark)
                 ],
               ),
             ),

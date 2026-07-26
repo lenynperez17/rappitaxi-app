@@ -526,7 +526,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Se encontro un viaje iniciado hace $minutesAgo minutos que no fue completado.', style: TextStyle(fontSize: 15)),
+            Text('Se encontró un viaje iniciado hace $minutesAgo minutos que no fue completado.', style: TextStyle(fontSize: 15)),
             SizedBox(height: 16),
             Container(
               padding: EdgeInsets.all(12),
@@ -552,7 +552,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               ),
             ),
             SizedBox(height: 16),
-            Text('Que deseas hacer?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+            Text('¿Qué deseas hacer?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
           ],
         ),
         actions: [
@@ -1579,7 +1579,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           AppLogger.error(userFriendlyError(rollbackError, fallback: 'CRITICAL: Rollback failed'));
         }
         messenger.showSnackBar(
-          const SnackBar(content: Text('Error al procesar creditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
+          const SnackBar(content: Text('Error al procesar créditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
         );
       }
     } on RapiApiException catch (e) {
@@ -1702,7 +1702,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             const SizedBox(height: 16),
             Text('Para aceptar servicios necesitas:', style: TextStyle(color: context.secondaryText)),
             const SizedBox(height: 8),
-            _buildCreditRequirement('Minimo requerido', 'S/ ${_minServiceCredits.toStringAsFixed(2)}'),
+            _buildCreditRequirement('Mínimo requerido', 'S/ ${_minServiceCredits.toStringAsFixed(2)}'),
             _buildCreditRequirement('Costo por servicio', 'S/ ${_serviceFee.toStringAsFixed(2)}'),
             const SizedBox(height: 16),
             Container(
@@ -1714,7 +1714,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               child: const Row(children: [
                 Icon(Icons.lightbulb_outline, color: ModernTheme.rappiOrange, size: 20),
                 SizedBox(width: 8),
-                Expanded(child: Text('Recarga creditos para seguir aceptando viajes y ganando dinero', style: TextStyle(fontSize: 12))),
+                Expanded(child: Text('Recarga créditos para seguir aceptando viajes y ganando dinero', style: TextStyle(fontSize: 12))),
               ]),
             ),
           ],
@@ -1726,7 +1726,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.add_card, size: 18),
-            label: const Text('Recargar creditos'),
+            label: const Text('Recargar créditos'),
             style: ElevatedButton.styleFrom(
               backgroundColor: ModernTheme.rappiOrange,
               foregroundColor: Colors.white,
@@ -1808,7 +1808,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final price = double.tryParse(priceText);
     if (price == null || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Precio invalido'), backgroundColor: AppColors.error),
+        SnackBar(content: Text('Precio inválido'), backgroundColor: AppColors.error),
       );
       return;
     }
@@ -2257,34 +2257,59 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                         // el pill de créditos ni con el switch de modo en
                         // pantallas angostas (iPhone SE / textos "Fuera de
                         // línea" largos).
+                        // Ronda 249: antes era una píldora rellena sin ninguna
+                        // apariencia de control — en OFF se pintaba con
+                        // getTextSecondary (el color de TEXTO secundario), así
+                        // que se leía como "chip deshabilitado" y no como
+                        // "toca para conectarte". Ahora es un switch real: el
+                        // botón se mueve de izquierda a derecha, el área táctil
+                        // llega a 44px y la etiqueta dice el estado exacto
+                        // ('Libre' no comunicaba "estoy recibiendo viajes').
                         Flexible(
                           fit: FlexFit.loose,
-                          child: GestureDetector(
-                            onTap: () => unawaited(_toggleOnline()),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(30),
-                                border: Border.all(
-                                  color: _isOnline
-                                      ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
-                                      : AppColors.getBorder(context),
-                                  width: 1.5,
-                                ),
-                              ),
+                          child: Semantics(
+                            toggled: _isOnline,
+                            label: 'Disponibilidad para recibir viajes',
+                            child: GestureDetector(
+                              onTap: () => unawaited(_toggleOnline()),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: _isOnline
-                                      ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
-                                      : AppColors.getTextSecondary(context),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    _isOnline ? (hasActiveTrip ? 'Ocupado' : 'Libre') : 'Fuera de línea',
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                                constraints: const BoxConstraints(minHeight: 44),
+                                alignment: Alignment.center,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: _isOnline
+                                        ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
+                                        : AppColors.getBorder(context),
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Perilla del switch a la izquierda cuando
+                                      // está apagado, a la derecha cuando está
+                                      // encendido.
+                                      if (!_isOnline) _buildOnlineKnob(context),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            _isOnline
+                                                ? (hasActiveTrip ? 'En viaje' : 'En línea')
+                                                : 'Fuera de línea',
+                                            style: TextStyle(
+                                              color: _isOnline
+                                                  ? Colors.white
+                                                  : AppColors.getTextSecondary(context),
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (_isOnline) _buildOnlineKnob(context),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -2463,7 +2488,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                 ElevatedButton(
                                   onPressed: () => unawaited(_toggleOnline()),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.success,
+                                    // Ronda 249: el único CTA de la pantalla
+                                    // "Estás fuera de línea" era verde.
+                                    backgroundColor: AppColors.rappiRed,
                                     padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                                   ),
@@ -2681,9 +2708,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   child: Column(children: [
                     Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 20), SizedBox(width: 8), Text('Documentos enviados')]),
                     SizedBox(height: 8),
-                    Row(children: [Icon(Icons.pending, color: Colors.orange, size: 20), SizedBox(width: 8), Text('Revision en proceso')]),
+                    Row(children: [Icon(Icons.pending, color: Colors.orange, size: 20), SizedBox(width: 8), Text('Revisión en proceso')]),
                     SizedBox(height: 8),
-                    Row(children: [Icon(Icons.radio_button_unchecked, color: Colors.grey, size: 20), SizedBox(width: 8), Text('Aprobacion pendiente')]),
+                    Row(children: [Icon(Icons.radio_button_unchecked, color: Colors.grey, size: 20), SizedBox(width: 8), Text('Aprobación pendiente')]),
                   ]),
                 ),
               ),
@@ -2705,29 +2732,35 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 label: Text('Verificar estado'),
                 style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
               ),
-              const SizedBox(height: 16),
-              // Ronda 230: mostrar estado real del user para debug. Si estás
-              // viendo esta pantalla como driver aprobado, algo no cuadra.
-              Consumer<AuthProvider>(
-                builder: (ctx, ap, _) {
-                  final u = ap.currentUser;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'v146+ · userType=${u?.userType} · verified=${u?.isVerified} · '
-                      'docStatus=${u?.driverStatus ?? "-"}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                },
-              ),
+              // Ronda 249: se eliminó la línea de diagnóstico
+              // "v146+ · userType=… · verified=… · docStatus=…" que la ronda
+              // 230 añadió para encontrar el bug de is_verified. Ya cumplió su
+              // función y era jerga técnica visible al conductor en producción.
             ],
           ),
         ),
       ),
     );
   }
+
+  /// Perilla circular del switch de disponibilidad. Es lo que le da al control
+  /// la apariencia de palanca: se dibuja a la izquierda del texto cuando el
+  /// conductor está fuera de línea y a la derecha cuando está conectado.
+  Widget _buildOnlineKnob(BuildContext context) => Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _isOnline ? Colors.white : AppColors.getSurface(context),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.overlayLight,
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+      );
 
   Widget _buildStatistic(String label, String value, IconData icon) {
     return Column(children: [

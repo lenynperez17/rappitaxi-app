@@ -924,46 +924,10 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Comisión plataforma (12%):',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      Text(
-                        'S/ ${_platformCommission.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Ganancia conductor:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      Text(
-                        'S/ ${_driverEarnings.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Ronda 249: aquí se le mostraba al PASAJERO la "Comisión
+                  // plataforma (12%)" y la "Ganancia conductor" — datos
+                  // internos del negocio que no le corresponden y que además
+                  // contradecían la comisión real que cobra el backend.
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1055,7 +1019,9 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
       child: ElevatedButton(
         onPressed: _selectedMethod != null && !_isLoading ? _processPayment : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue.shade600,
+          // Ronda 249: el botón "Pagar S/ X" — el CTA de dinero de la app —
+          // era AZUL Material.
+          backgroundColor: AppColors.rappiOrange,
           foregroundColor: Theme.of(context).colorScheme.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(

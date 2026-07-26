@@ -402,9 +402,9 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text('Eliminar notificacion'),
+            title: Text('Eliminar notificación'),
             content:
-                Text('Estas seguro de que deseas eliminar esta notificacion?'),
+                Text('Estás seguro de que deseas eliminar esta notificacion?'),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -437,7 +437,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       builder: (context) => AlertDialog(
         title: Text('Eliminar todas'),
         content: Text(
-            'Se eliminaran todas tus notificaciones. Esta accion no se puede deshacer.'),
+            'Se eliminaran todas tus notificaciones. Esta acción no se puede deshacer.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),

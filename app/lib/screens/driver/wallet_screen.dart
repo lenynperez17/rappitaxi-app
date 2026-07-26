@@ -27,6 +27,10 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen>
     with TickerProviderStateMixin {
+  /// Monto mínimo de retiro. Debe coincidir con MIN_WITHDRAWAL del backend
+  /// (api/src/app/api/wallet/withdrawals/route.ts).
+  static const double _kMinWithdrawal = 20.0;
+
   late AnimationController _balanceController;
   late AnimationController _cardsController;
   late AnimationController _transactionsController;
@@ -1193,7 +1197,7 @@ class _WalletScreenState extends State<WalletScreen>
                       Text(
                         '• Solo transferencia bancaria disponible\n'
                         '• Los retiros se procesan en 1-2 días hábiles\n'
-                        '• Monto mínimo de retiro: ${CurrencyFormatter.formatCurrency(20.0)}\n'
+                        '• Monto mínimo de retiro: ${CurrencyFormatter.formatCurrency(_kMinWithdrawal)}\n'
                         '• Sin comisiones por retiro\n'
                         '• Procesado vía MercadoPago Money Out',
                         style: TextStyle(
@@ -1665,7 +1669,7 @@ class _WalletScreenState extends State<WalletScreen>
             ),
             SizedBox(height: 20),
             _buildDetailRow('ID', transaction.id),
-            _buildDetailRow('Tipo', transaction.type.toString().split('.').last),
+            _buildDetailRow('Tipo', transaction.type.label),
             _buildDetailRow('Descripción', transaction.description),
             if (transaction.passenger != null)
               _buildDetailRow('Pasajero', transaction.passenger!),
@@ -1716,10 +1720,14 @@ class _WalletScreenState extends State<WalletScreen>
   Future<void> _processWithdrawal() async {
     final amount = double.tryParse(_withdrawalAmountController.text) ?? 0;
 
-    if (amount < 50) {
+    // Ronda 249: esta pantalla tenía TRES mínimos de retiro contradictorios
+    // (S/ 10 en el texto de ayuda, S/ 20 en las condiciones y S/ 50 aquí). El
+    // conductor leía "mínimo S/ 20", escribía S/ 20 y recibía un error que
+    // decía S/ 50. El backend (wallet/withdrawals MIN_WITHDRAWAL) exige S/ 20.
+    if (amount < _kMinWithdrawal) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('El monto mínimo de retiro es ${CurrencyFormatter.formatCurrency(50.0)}'),
+          content: Text('El monto mínimo de retiro es ${CurrencyFormatter.formatCurrency(_kMinWithdrawal)}'),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -2193,7 +2201,7 @@ class _WalletScreenState extends State<WalletScreen>
       buffer.writeln('No hay transacciones registradas.');
     } else {
       for (var transaction in _transactions) {
-        final typeStr = transaction.type.toString().split('.').last;
+        final typeStr = transaction.type.label;
         final sign = transaction.amount > 0 ? '+' : '-';
         buffer.writeln('ID: ${transaction.id}');
         buffer.writeln('Fecha: ${_formatDate(transaction.date)} ${transaction.date.hour.toString().padLeft(2, '0')}:${transaction.date.minute.toString().padLeft(2, '0')}');
@@ -2236,7 +2244,7 @@ class _WalletScreenState extends State<WalletScreen>
         csvData.add(['No hay transacciones registradas']);
       } else {
         for (var transaction in _transactions) {
-          final typeStr = transaction.type.toString().split('.').last;
+          final typeStr = transaction.type.label;
           final sign = transaction.amount > 0 ? '+' : '-';
           csvData.add([
             transaction.id,
@@ -2896,6 +2904,18 @@ class _WalletScreenState extends State<WalletScreen>
 
 // Modelo de transacción
 enum TransactionType { tripEarning, withdrawal, bonus, penalty }
+
+/// Ronda 249: el conductor veía el nombre CRUDO del enum en inglés
+/// ('tripEarning', 'withdrawal', 'penalty') en el detalle de cada movimiento
+/// y en los reportes PDF/CSV que descarga. Ahora se traduce.
+extension TransactionTypeLabel on TransactionType {
+  String get label => switch (this) {
+        TransactionType.tripEarning => 'Ganancia por viaje',
+        TransactionType.withdrawal => 'Retiro',
+        TransactionType.bonus => 'Bono',
+        TransactionType.penalty => 'Penalidad',
+      };
+}
 
 class Transaction {
   final String id;

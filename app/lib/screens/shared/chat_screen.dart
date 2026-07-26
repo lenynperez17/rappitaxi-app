@@ -250,7 +250,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   String _buildStatusText() {
-    if (_isOtherUserOnline) return 'En linea';
+    if (_isOtherUserOnline) return 'En línea';
     if (_otherUserLastSeen != null) {
       final difference = DateTime.now().difference(_otherUserLastSeen!);
       if (difference.inMinutes < 1) return 'Visto hace un momento';
@@ -400,9 +400,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   String _getQuickMessageText(QuickMessageType type) {
     switch (type) {
       case QuickMessageType.onMyWay: return 'Estoy en camino';
-      case QuickMessageType.arrived: return 'Ya llegue';
+      case QuickMessageType.arrived: return 'Ya llegué';
       case QuickMessageType.waiting: return 'Estoy esperando';
-      case QuickMessageType.trafficDelay: return 'Hay trafico';
+      case QuickMessageType.trafficDelay: return 'Hay tráfico';
       case QuickMessageType.cantFind: return 'No te encuentro';
     }
   }
@@ -427,7 +427,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void _showClearChatDialog() {
     showDialog(context: context, builder: (context) {
       return AlertDialog(
-        title: Text('Limpiar chat'), content: Text('Se eliminaran todos los mensajes de esta conversacion. Esta accion no se puede deshacer.'),
+        title: Text('Limpiar chat'), content: Text('Se eliminaran todos los mensajes de esta conversación. Esta acción no se puede deshacer.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancelar')),
           ElevatedButton(
@@ -447,7 +447,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       'Comportamiento inapropiado': 'inappropriate_behavior',
       'Lenguaje ofensivo': 'offensive_language',
       'Acoso': 'harassment',
-      'Conduccion peligrosa': 'dangerous_driving',
+      'Conducción peligrosa': 'dangerous_driving',
       'Cobro incorrecto': 'incorrect_fare',
       'Otro motivo': 'other',
     };

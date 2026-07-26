@@ -168,7 +168,7 @@ class _EmergencyDetailsScreenState extends State<EmergencyDetailsScreen> {
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Contactos de Emergencia', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const Divider(height: 24),
-        _buildContactButton(icon: Icons.local_police, label: 'Policia - 105', phone: '105', color: Colors.blue),
+        _buildContactButton(icon: Icons.local_police, label: 'Policía - 105', phone: '105', color: Colors.blue),
         const SizedBox(height: 8),
         _buildContactButton(icon: Icons.local_hospital, label: 'SAMU - 106', phone: '106', color: AppColors.error),
         const SizedBox(height: 8),
@@ -256,7 +256,7 @@ class _EmergencyDetailsScreenState extends State<EmergencyDetailsScreen> {
 
   Future<void> _resolveEmergency(String emergencyId) async {
     final confirmed = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: Text('Resolver Emergencia'), content: Text('Estas seguro de que deseas marcar esta emergencia como resuelta?'),
+      title: Text('Resolver Emergencia'), content: Text('Estás seguro de que deseas marcar esta emergencia como resuelta?'),
       actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text('Cancelar')), ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text('Si, resolver'))],
     ));
     if (confirmed == true && mounted) {

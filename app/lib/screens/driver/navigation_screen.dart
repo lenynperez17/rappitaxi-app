@@ -2139,8 +2139,11 @@ class _NavigationScreenState extends State<NavigationScreen>
         child: ElevatedButton(
           onPressed: _startTrip,
           style: ElevatedButton.styleFrom(
+            // Ronda 249: _inDriveLime en realidad contiene el ROJO #E31E24
+            // (nombre engañoso), así que era texto negro sobre rojo saturado
+            // con contraste ~3:1 — ilegible.
             backgroundColor: _inDriveLime,
-            foregroundColor: Colors.black87,
+            foregroundColor: Colors.white,
             padding: EdgeInsets.symmetric(vertical: 20),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -2160,7 +2163,10 @@ class _NavigationScreenState extends State<NavigationScreen>
         child: ElevatedButton(
           onPressed: _onDriverArrivedAtPickup,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF1A73E8),
+            // Ronda 249: segundo "Ya llegué" azul Google — el mismo literal
+            // copiado desde active_trip_screen. Arreglar solo uno dejaba el
+            // otro azul.
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             padding: EdgeInsets.symmetric(vertical: 20),
             shape: RoundedRectangleBorder(

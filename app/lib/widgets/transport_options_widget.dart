@@ -73,31 +73,9 @@ class _TransportOptionsWidgetState extends State<TransportOptionsWidget>
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Color(0xFF10B981).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.local_offer,
-                              size: 16,
-                              color: Color(0xFF10B981),
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              '20% OFF',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF10B981),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      // Ronda 249: aquí había un chip "20% OFF" HARDCODEADO —
+                      // una promoción falsa que se mostraba siempre, sin
+                      // ningún descuento real detrás.
                     ],
                   ),
                 ),

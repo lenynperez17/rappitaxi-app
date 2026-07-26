@@ -1075,8 +1075,8 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancelar viaje'),
         content: Text(isInProgress
-            ? '¿Estas seguro de que deseas cancelar el viaje?\n\nEl viaje ya esta en curso. ¿Estas seguro de que deseas cancelarlo?'
-            : '¿Estas seguro de que deseas cancelar el viaje?'),
+            ? '¿Estás seguro de que deseas cancelar el viaje?\n\nEl viaje ya está en curso. ¿Estás seguro de que deseas cancelarlo?'
+            : '¿Estás seguro de que deseas cancelar el viaje?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1085,7 +1085,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Si, cancelar'),
+            child: const Text('Sí, cancelar'),
           ),
         ],
       ),
@@ -1906,15 +1906,15 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     final reasons = isEs
         ? [
             'Ya no necesito el viaje',
-            'El conductor no llego al punto de recogida',
-            'El auto esta en malas condiciones',
-            'El conductor pidio cancelar la solicitud',
+            'El conductor no llegó al punto de recogida',
+            'El auto está en malas condiciones',
+            'El conductor pidió cancelar la solicitud',
             'El conductor pide una tarifa adicional',
             'Es un conductor diferente',
             'Es un auto diferente',
             'No me siento seguro/a',
-            'Cuestion con la aplicacion',
-            'Otra razon',
+            'Cuestión con la aplicación',
+            'Otra razón',
           ]
         : [
             'I no longer need the ride',
@@ -2106,14 +2106,14 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                   const SizedBox(height: 8),
                   _buildVerificationItem(Icons.badge, isEs ? 'Licencia de conducir validada' : 'Validated driver\'s license'),
                   const SizedBox(height: 8),
-                  _buildVerificationItem(Icons.camera_alt, isEs ? 'Control fotografico completado' : 'Photo check completed'),
+                  _buildVerificationItem(Icons.camera_alt, isEs ? 'Control fotográfico completado' : 'Photo check completed'),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
             // How you're protected
-            Text(isEs ? 'Como estas protegido' : 'How you\'re protected', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
+            Text(isEs ? '¿Cómo estás protegido?' : 'How you\'re protected', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
             const SizedBox(height: 12),
             Row(
               children: [

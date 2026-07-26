@@ -415,7 +415,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                                 style: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.w900,
-                                  color: AppColors.priceBlack,
+                                  color: AppColors.getTextPrimary(context),
                                   letterSpacing: -0.5,
                                 ),
                               ),
@@ -677,7 +677,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.rappiOrange,
-                foregroundColor: AppColors.priceBlack,
+                foregroundColor: AppColors.getTextPrimary(context),
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -781,7 +781,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.rappiOrange,
-                  foregroundColor: AppColors.priceBlack,
+                  foregroundColor: AppColors.getTextPrimary(context),
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   padding: const EdgeInsets.symmetric(vertical: 16),

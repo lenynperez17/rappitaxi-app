@@ -468,10 +468,10 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                       ),
                       Text(
                         'S/ ${negotiation.offeredPrice.toStringAsFixed(2)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.priceBlack,
+                          color: AppColors.getTextPrimary(context),
                         ),
                       ),
                     ],
@@ -721,10 +721,10 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
               children: [
                 Text(
                   'S/ ${offer.acceptedPrice.toStringAsFixed(2)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.priceBlack,
+                    color: AppColors.getTextPrimary(context),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -734,7 +734,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
                       : () => _acceptOffer(negotiationId, offer.driverId),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.ctaGreen,
-                    foregroundColor: AppColors.priceBlack,
+                    foregroundColor: AppColors.getTextPrimary(context),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 8,
@@ -908,7 +908,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.ctaGreen,
-              foregroundColor: AppColors.priceBlack,
+              foregroundColor: AppColors.getTextPrimary(context),
             ),
             child: const Text('Aceptar'),
           ),

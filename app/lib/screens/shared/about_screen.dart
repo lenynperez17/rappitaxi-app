@@ -176,7 +176,7 @@ class _AboutScreenState extends State<AboutScreen>
     return _buildSection(
       'Información de la App',
       Icons.info,
-      AppColors.priceBlack,
+      AppColors.getTextPrimary(context),
       [
         _buildInfoTile('Descripcion', 'Rappi Team es una plataforma de transporte que conecta pasajeros con conductores, ofreciendo precios negociables, viajes programados y seguimiento en tiempo real.', Icons.description),
         _buildInfoTile('Desarrollado por', 'Rappi Team S.A.C.', Icons.business),
@@ -323,8 +323,8 @@ class _AboutScreenState extends State<AboutScreen>
     return ListTile(
       leading: Container(
         padding: EdgeInsets.all(8),
-        decoration: BoxDecoration(color: AppColors.priceBlack.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-        child: Icon(icon, color: AppColors.priceBlack, size: 20),
+        decoration: BoxDecoration(color: AppColors.getTextPrimary(context).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, color: AppColors.getTextPrimary(context), size: 20),
       ),
       title: Text(title, style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle, style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),

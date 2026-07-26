@@ -23,13 +23,12 @@ class _LocationSearchWidgetState extends State<LocationSearchWidget> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   
-  // Historial de búsquedas recientes
-  final List<String> _recentSearches = [
-    'Aeropuerto Jorge Chávez',
-    'Centro Comercial Jockey Plaza',
-    'Plaza de Armas de Lima',
-    'Parque Kennedy, Miraflores',
-  ];
+  // Historial de búsquedas recientes.
+  // Ronda 249: venía precargado con 4 destinos INVENTADOS (Aeropuerto Jorge
+  // Chávez, Jockey Plaza, Plaza de Armas, Parque Kennedy) mostrados bajo el
+  // título "BÚSQUEDAS RECIENTES" — el usuario veía como suyos lugares que
+  // nunca buscó. Arranca vacío; la sección se oculta si no hay historial.
+  final List<String> _recentSearches = [];
   
   // Resultados de búsqueda con Google Places API
   List<PlacesSuggestion> _searchResults = [];

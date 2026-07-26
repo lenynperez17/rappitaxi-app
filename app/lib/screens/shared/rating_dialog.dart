@@ -29,17 +29,17 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
   late List<AnimationController> _starControllers;
 
   Map<int, List<String>> get _ratingTags => widget.isDriverRating ? {
-    5: ['Pasajero amable', 'Puntual', 'Respetuoso', 'Buena ubicacion', 'Excelente trato'],
+    5: ['Pasajero amable', 'Puntual', 'Respetuoso', 'Buena ubicación', 'Excelente trato'],
     4: ['Buen pasajero', 'Educado', 'Pago correcto', 'Sin problemas'],
-    3: ['Regular', 'Podria mejorar', 'Aceptable'],
+    3: ['Regular', 'Podría mejorar', 'Aceptable'],
     2: ['Impuntual', 'Ubicacion incorrecta', 'Grosero', 'Problematico'],
-    1: ['Pesimo pasajero', 'Agresivo', 'No se presento', 'Experiencia terrible'],
+    1: ['Pesimo pasajero', 'Agresivo', 'No se presentó', 'Experiencia terrible'],
   } : {
-    5: ['Excelente servicio', 'Conductor amable', 'Vehiculo limpio', 'Ruta eficiente', 'Muy puntual'],
+    5: ['Excelente servicio', 'Conductor amable', 'Vehículo limpio', 'Ruta eficiente', 'Muy puntual'],
     4: ['Buen servicio', 'Conductor profesional', 'Viaje comodo', 'Precio justo'],
-    3: ['Servicio regular', 'Podria mejorar', 'Aceptable'],
-    2: ['Mal servicio', 'Conductor imprudente', 'Vehiculo sucio', 'Ruta incorrecta'],
-    1: ['Pesimo servicio', 'Conductor grosero', 'Vehiculo en mal estado', 'Experiencia terrible'],
+    3: ['Servicio regular', 'Podría mejorar', 'Aceptable'],
+    2: ['Mal servicio', 'Conductor imprudente', 'Vehículo sucio', 'Ruta incorrecta'],
+    1: ['Pésimo servicio', 'Conductor grosero', 'Vehiculo en mal estado', 'Experiencia terrible'],
   };
 
   final List<String> _selectedTags = [];
@@ -125,7 +125,7 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
                   Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Text(widget.driverName, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)))),
                   const SizedBox(height: 4),
                   Padding(padding: const EdgeInsets.symmetric(horizontal: 24), child: Column(children: [
-                    Text(widget.isDriverRating ? 'Como fue tu pasajero?' : 'Como fue tu conductor?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.getTextPrimary(context))),
+                    Text(widget.isDriverRating ? '¿Cómo fue tu pasajero?' : '¿Cómo fue tu conductor?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.getTextPrimary(context))),
                     const SizedBox(height: 4),
                     Text(widget.isDriverRating ? 'Califica a tu pasajero' : 'Califica a tu conductor', style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),
                     const SizedBox(height: 20),
@@ -146,7 +146,10 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
                       ),
                       const SizedBox(height: 20),
                       AnimatedBuilder(animation: _submitController, builder: (context, child) {
-                        return Transform.scale(scale: 1 - (0.1 * _submitController.value), child: AnimatedPulseButton(text: _isSubmitting ? 'Enviando...' : 'Enviar Calificación', icon: _isSubmitting ? null : Icons.send, onPressed: _isSubmitting ? () {} : _submitRating));
+                        return Transform.scale(scale: 1 - (0.1 * _submitController.value), child: AnimatedPulseButton(text: _isSubmitting ? 'Enviando...' : 'Enviar Calificación', icon: _isSubmitting ? null : Icons.send, isLoading: _isSubmitting, onPressed: _isSubmitting ? null : _submitRating));
+                        // Ronda 249: pasaba `() {}` en vez de `null`, así que
+                        // el botón se veía habilitado mientras enviaba y
+                        // aceptaba toques repetidos (calificaciones duplicadas).
                       }),
                     ],
                     if (_rating == 0) ...[
@@ -184,7 +187,7 @@ class _RatingDialogState extends State<RatingDialog> with TickerProviderStateMix
   Widget _buildTagsSection() {
     final tags = _ratingTags[_rating] ?? [];
     return AnimatedSwitcher(duration: const Duration(milliseconds: 300), child: Column(key: ValueKey(_rating), crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_rating >= 4 ? 'Que te gusto?' : 'Que podria mejorar?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+      Text(_rating >= 4 ? '¿Qué te gustó?' : 'Que podria mejorar?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
       const SizedBox(height: 10),
       Wrap(spacing: 6, runSpacing: 6, children: tags.map((tag) {
         final isSelected = _selectedTags.contains(tag);

@@ -162,7 +162,7 @@ class _OfferPriceScreenState extends State<OfferPriceScreen> {
                           style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.w900,
-                            color: AppColors.priceBlack,
+                            color: AppColors.getTextPrimary(context),
                             letterSpacing: -1,
                           ),
                           decoration: InputDecoration(
@@ -170,7 +170,7 @@ class _OfferPriceScreenState extends State<OfferPriceScreen> {
                             prefixStyle: TextStyle(
                               fontSize: 48,
                               fontWeight: FontWeight.w900,
-                              color: AppColors.priceBlack,
+                              color: AppColors.getTextPrimary(context),
                               letterSpacing: -1,
                             ),
                             border: InputBorder.none,

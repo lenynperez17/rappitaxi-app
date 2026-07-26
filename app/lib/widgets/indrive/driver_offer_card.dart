@@ -67,7 +67,7 @@ class DriverOfferCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
-                  color: AppColors.priceBlack,
+                  color: AppColors.getTextPrimary(context),
                   height: 1,
                 ),
               ),
@@ -257,7 +257,7 @@ class DriverOfferCard extends StatelessWidget {
                           child: Text(
                             'Aceptar',
                             style: TextStyle(
-                              color: AppColors.priceBlack,
+                              color: AppColors.getTextPrimary(context),
                               fontWeight: FontWeight.w700,
                               fontSize: 15,
                             ),
@@ -399,10 +399,10 @@ class AcceptedDriverCard extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.navigation, color: AppColors.priceBlack),
+                      Icon(Icons.navigation, color: AppColors.getTextPrimary(context)),
                       const SizedBox(width: 8),
                       Text('Ir a Tracking',
-                        style: TextStyle(color: AppColors.priceBlack, fontWeight: FontWeight.w700, fontSize: 16)),
+                        style: TextStyle(color: AppColors.getTextPrimary(context), fontWeight: FontWeight.w700, fontSize: 16)),
                     ],
                   ),
                 ),

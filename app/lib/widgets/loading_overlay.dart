@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/constants/app_colors.dart';
 
 class LoadingOverlay extends StatelessWidget {
   final bool isLoading;
@@ -19,7 +20,11 @@ class LoadingOverlay extends StatelessWidget {
         child,
         if (isLoading)
           Container(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+            // Ronda 249: el velo era `onSurface@0.5`, que en modo oscuro es
+            // BLANCO — velo blanco luminoso, y el mensaje (onPrimary, también
+            // blanco) quedaba invisible encima. Un overlay debe ser oscuro
+            // siempre, independiente del tema.
+            color: AppColors.overlay,
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -33,8 +38,9 @@ class LoadingOverlay extends StatelessWidget {
                     SizedBox(height: 16),
                     Text(
                       message!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
+                      style: const TextStyle(
+                        // Blanco fijo: el velo siempre es oscuro.
+                        color: Colors.white,
                         fontSize: 16,
                       ),
                     ),

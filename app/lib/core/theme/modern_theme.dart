@@ -40,7 +40,11 @@ class ModernTheme {
   static const LinearGradient primaryGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [rappiOrange, Color(0xFF00A000)],
+    // Ronda 249: el gradiente "primario" degradaba de rojo corporativo a
+    // VERDE BANDERA (#00A000, que es el color semántico de éxito). Se
+    // renderizaba en 8 pantallas — incluido el header de 240px del perfil y
+    // la cabecera del drawer — dejando un semáforo detrás del avatar.
+    colors: [rappiOrange, Color(0xFFB91C1C)],
   );
   
   static const LinearGradient darkGradient = LinearGradient(
@@ -58,7 +62,9 @@ class ModernTheme {
   static const LinearGradient successGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [rappiOrange, Color(0xFFFF8533)],
+    // successGradient estaba mal nombrado: iba de rojo a naranja, sin nada
+    // de verde. Ahora sí usa el verde de éxito de la paleta.
+    colors: [Color(0xFF00A000), Color(0xFF007A00)],
   );
   
   // Sombras modernas adaptativas al tema

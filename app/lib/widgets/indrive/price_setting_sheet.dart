@@ -797,7 +797,7 @@ class _PriceAdjuster extends StatelessWidget {
               style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.w900,
-                color: AppColors.priceBlack,
+                color: AppColors.getTextPrimary(context),
                 letterSpacing: -1,
               ),
             ),
