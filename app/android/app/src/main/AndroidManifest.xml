@@ -56,9 +56,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
             
-        <!-- Google Maps API Key -->
+        <!-- Google Maps API Key. Ronda 240: era "CHANGEME" — el SDK devolvía
+             mapa blanco con logo Google en algunos devices porque la key
+             era literalmente inválida. Ver .env para rotar. -->
         <meta-data android:name="com.google.android.geo.API_KEY"
-                   android:value="CHANGEME"/>
+                   android:value="AIzaSyBSNK-cUnPCHof9ObXq0whK0ffSyCfJTqY"/>
 
         <!-- FCM default notification channel (Android 8+) -->
         <meta-data
