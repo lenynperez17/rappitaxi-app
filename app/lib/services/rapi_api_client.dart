@@ -788,8 +788,12 @@ class RapiApiClient {
         if (activeRideId != null) 'activeRideId': activeRideId,
       }))!;
 
+  /// Ronda 232 BUG FIX: el backend expone PUT /api/drivers/status, no POST.
+  /// Con POST devolvía 405 y `driver_presence.is_online` nunca pasaba a true,
+  /// así que el driver aparecía "Libre" en la UI pero offline en la DB y
+  /// TODA oferta a un viaje era rechazada con 403 driver_offline.
   Future<Map<String, dynamic>> setDriverOnline(bool isOnline) async =>
-      (await _authedPost('/api/drivers/status', body: {'isOnline': isOnline}))!;
+      (await _authedPut('/api/drivers/status', body: {'isOnline': isOnline}))!;
 
   Future<Map<String, dynamic>> driverStatus() async =>
       (await _authedGet('/api/drivers/status'))!;

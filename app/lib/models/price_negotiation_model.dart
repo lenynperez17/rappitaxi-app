@@ -389,10 +389,28 @@ class LocationPoint {
   });
 
   // Factory para crear desde Map
+  //
+  // Ronda 243 BUG FIX: el backend Node devuelve las coordenadas como
+  // `lat`/`lng` (ver /api/rides/available y /api/rides/[id]), pero acá solo
+  // se leía `latitude`/`longitude` → ambas caían al default 0.0. Efecto
+  // visible: el mini-mapa de la solicitud apuntaba a (0,0) — el Golfo de
+  // Guinea — y se veía todo azul (océano), y las distancias mostraban
+  // "~0.0km" / "A 0.0 km de ti". Ahora aceptamos ambas convenciones.
   factory LocationPoint.fromMap(Map<String, dynamic> map) {
+    double parseCoord(List<String> keys) {
+      for (final k in keys) {
+        final v = map[k];
+        if (v == null) continue;
+        if (v is num) return v.toDouble();
+        final parsed = double.tryParse(v.toString());
+        if (parsed != null) return parsed;
+      }
+      return 0.0;
+    }
+
     return LocationPoint(
-      latitude: (map['latitude'] ?? 0.0).toDouble(),
-      longitude: (map['longitude'] ?? 0.0).toDouble(),
+      latitude: parseCoord(const ['latitude', 'lat']),
+      longitude: parseCoord(const ['longitude', 'lng', 'lon', 'long']),
       address: map['address'] ?? 'Dirección no disponible',
       reference: map['reference'],
     );

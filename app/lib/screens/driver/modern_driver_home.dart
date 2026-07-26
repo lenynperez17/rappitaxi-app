@@ -100,6 +100,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   // State
   int _currentTabIndex = 0; // 0 = Requests, 1 = Performance
   bool _isOnline = false;
+  // Ronda 232: evita doble tap mientras el PUT /api/drivers/status está en vuelo.
+  bool _isTogglingOnline = false;
   bool _showRequestDetails = false;
   List<PriceNegotiation> _availableRequests = [];
   PriceNegotiation? _selectedRequest;
@@ -213,6 +215,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         '[Ronda 230 driver_home] refresh ok=$ok userType=${after?.userType} '
         'isVerified=${after?.isVerified}',
       );
+      // Ronda 232: alinear el toggle "Libre/Fuera de línea" con driver_presence.
+      await _syncOnlineStateFromBackend();
     });
 
     _initializeDriver().then((_) {
@@ -1841,15 +1845,25 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
-  void _toggleOnline() {
+  /// Ronda 232 BUG CRÍTICO: este método SOLO cambiaba el estado local
+  /// `_isOnline` — nunca informaba al backend. Resultado: la UI mostraba
+  /// "Libre" mientras `driver_presence.is_online` seguía en false, y CADA
+  /// intento de ofertar a un viaje moría con 403 `driver_offline`
+  /// ("Error al enviar oferta"). Ahora sincronizamos con
+  /// PUT /api/drivers/status antes de cambiar el estado visual, y si el
+  /// backend falla revertimos el toggle en vez de mentirle al conductor.
+  Future<void> _toggleOnline() async {
+    if (_isTogglingOnline) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUser = authProvider.currentUser;
+    final messenger = ScaffoldMessenger.of(context);
 
     final isApproved = currentUser != null &&
         currentUser.isVerified &&
         (currentUser.userType == 'dual' || currentUser.userType == 'driver');
     if (!_isOnline && currentUser != null && !isApproved && currentUser.driverStatus != 'approved') {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(currentUser.driverStatus == 'pending_approval'
               ? 'Tu cuenta está pendiente de aprobación.'
@@ -1863,8 +1877,36 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       return;
     }
 
+    final goingOnline = !_isOnline;
+    setState(() => _isTogglingOnline = true);
+
+    // Sincronizar con el backend ANTES de reflejarlo en la UI.
+    try {
+      await _api.setDriverOnline(goingOnline).timeout(const Duration(seconds: 12));
+      AppLogger.info('[Ronda 232] setDriverOnline($goingOnline) OK');
+    } catch (e) {
+      AppLogger.error('[Ronda 232] setDriverOnline($goingOnline) falló', e);
+      if (!mounted) return;
+      setState(() => _isTogglingOnline = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(
+            e,
+            fallback: goingOnline
+                ? 'No pudimos ponerte en línea. Revisa tu conexión.'
+                : 'No pudimos ponerte fuera de línea. Revisa tu conexión.',
+          )),
+          backgroundColor: ModernTheme.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return; // NO cambiamos _isOnline: la UI queda consistente con el backend.
+    }
+
+    if (!mounted) return;
     setState(() {
-      _isOnline = !_isOnline;
+      _isTogglingOnline = false;
+      _isOnline = goingOnline;
       if (_isOnline) {
         _startLocationTracking();
         _startRidesListener();
@@ -1884,6 +1926,28 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _markers.clear();
       }
     });
+  }
+
+  /// Sincroniza `_isOnline` con el estado real de `driver_presence` al montar
+  /// la pantalla. Sin esto, tras reabrir la app la UI arrancaba en "Fuera de
+  /// línea" aunque el backend siguiera con is_online=true (o viceversa).
+  Future<void> _syncOnlineStateFromBackend() async {
+    try {
+      final resp = await _api.driverStatus().timeout(const Duration(seconds: 10));
+      final backendOnline = (resp['isOnline'] ?? resp['is_online'] ?? false) == true;
+      AppLogger.info('[Ronda 232] driverStatus backend isOnline=$backendOnline (local=$_isOnline)');
+      if (!mounted || backendOnline == _isOnline) return;
+      setState(() {
+        _isOnline = backendOnline;
+        if (_isOnline) {
+          _startLocationTracking();
+          _startRidesListener();
+          _startUIRefreshTimer();
+        }
+      });
+    } catch (e) {
+      AppLogger.info('[Ronda 232] no se pudo sincronizar driverStatus: $e');
+    }
   }
 
   Widget _buildDriverDrawer(dynamic currentUser) {
@@ -2080,7 +2144,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                         Flexible(
                           fit: FlexFit.loose,
                           child: GestureDetector(
-                            onTap: () => _toggleOnline(),
+                            onTap: () => unawaited(_toggleOnline()),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                               decoration: BoxDecoration(
@@ -2281,7 +2345,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                                 Text('Activa tu estado para recibir solicitudes', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
                                 const SizedBox(height: 24),
                                 ElevatedButton(
-                                  onPressed: () => _toggleOnline(),
+                                  onPressed: () => unawaited(_toggleOnline()),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.success,
                                     padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
@@ -2960,22 +3024,24 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
 
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.75,
-      minChildSize: 0.5,
-      maxChildSize: 0.85,
-      builder: (ctx, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.getSurface(context),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: ListView(
-          controller: scrollController,
-          padding: EdgeInsets.zero,
-          children: [
+    // Ronda 243 BUG FIX: antes había un DraggableScrollableSheet ANIDADO
+    // dentro de showResponsiveBottomSheet (que ya crea el sheet modal con
+    // drag handle y maxHeightFraction 0.85). El Draggable interno tomaba
+    // solo el 75% de ese espacio alineado abajo → quedaba ~25% de BLANCO
+    // vacío entre el drag handle y el título "Solicitud de viaje".
+    // Ahora el contenido va directo: el wrapper externo maneja la altura.
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.getSurface(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        children: [
             // Title
             Padding(
-              padding: const EdgeInsets.only(top: 16, bottom: 8),
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
               child: Center(child: Text('Solicitud de viaje',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context)))),
             ),
@@ -3155,8 +3221,7 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                 ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
