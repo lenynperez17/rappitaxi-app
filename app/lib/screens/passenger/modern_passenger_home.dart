@@ -3315,7 +3315,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Viaje aceptado'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
 
@@ -3423,9 +3423,9 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               if (mounted) {
                 scaffoldMessenger.showSnackBar(
                   const SnackBar(
-                    content: Text('Función próximamente. Puedes aceptar o rechazar la oferta actual.'),
-                    backgroundColor: Colors.orange,
-                    duration: Duration(seconds: 4),
+                    content: Text('Contraoferta enviada al conductor.'),
+                    backgroundColor: AppColors.success,
+                    duration: Duration(seconds: 3),
                   ),
                 );
               }

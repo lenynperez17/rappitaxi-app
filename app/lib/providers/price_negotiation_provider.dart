@@ -658,11 +658,19 @@ class PriceNegotiationProvider extends ChangeNotifier {
   // -------------------- Oferta del conductor --------------------
   /// Para conductores: Hacer una oferta con datos reales.
   /// Retorna `null` si éxito, o un mensaje de error si falla.
+  /// Ronda 241: `knownUserId` opcional para evitar el mismo bug que
+  /// createNegotiation tenía (Ronda 218). Si el caller (driver home)
+  /// ya tiene el user cargado en AuthProvider, lo pasa acá y evitamos
+  /// depender de `_api.me()` que puede fallar temporalmente por JWT
+  /// hipo, refresh en curso, red lenta, o session revocada tras
+  /// login en otro device.
   Future<String?> makeDriverOffer(
-      String negotiationId, double acceptedPrice) async {
+      String negotiationId, double acceptedPrice,
+      {String? knownUserId}) async {
     try {
-      final userId = await _getCurrentUserId();
-      if (userId == null) return 'Usuario no autenticado';
+      String? userId = knownUserId ?? await _getCurrentUserId();
+      if (userId == null || userId.isEmpty) return 'Usuario no autenticado';
+      _cachedUserId = userId;
 
       // Verificar saldo mínimo antes de hacer oferta.
       final hasBalance = await checkDriverBalance(userId);

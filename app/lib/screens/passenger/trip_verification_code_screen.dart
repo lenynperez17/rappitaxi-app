@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/constants/app_colors.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../widgets/common/rappi_app_bar.dart';
 import '../../providers/ride_provider.dart';
@@ -481,7 +482,7 @@ class _TripVerificationCodeScreenState extends State<TripVerificationCodeScreen>
                 (route) => false,
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange),
             child: Text('Entendido', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
           ),
         ],

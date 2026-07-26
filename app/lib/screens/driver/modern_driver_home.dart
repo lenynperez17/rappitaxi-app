@@ -565,7 +565,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               _doNavigateToActiveTrip(tripId, tripData);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.rappiOrange,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             child: Text('Continuar viaje', style: TextStyle(color: Colors.white)),
@@ -597,7 +597,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             SizedBox(width: 12),
             Expanded(child: Text('Viaje cancelado correctamente')),
           ]),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
@@ -1239,8 +1239,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
 
       // Use PriceNegotiationProvider to submit the offer
+      // Ronda 241: pasar knownUserId desde AuthProvider para evitar el
+      // fallback a _api.me() que fallaba con "Usuario no autenticado"
+      // cuando la sesión estaba temporalmente inaccesible.
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
-      final errorMsg = await negotiationProvider.makeDriverOffer(request.id, price);
+      final errorMsg = await negotiationProvider.makeDriverOffer(
+        request.id, price,
+        knownUserId: authProvider.currentUser?.id,
+      );
 
       if (!mounted) return;
 

@@ -3412,7 +3412,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                 Text('Subiendo foto de perfil...'),
               ],
             ),
-            duration: Duration(minutes: 2),
+            duration: Duration(seconds: 30),
             backgroundColor: ModernTheme.info,
           ),
         );
@@ -3508,7 +3508,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                 Text('Subiendo foto de perfil...'),
               ],
             ),
-            duration: Duration(minutes: 2),
+            duration: Duration(seconds: 30),
             backgroundColor: ModernTheme.info,
           ),
         );

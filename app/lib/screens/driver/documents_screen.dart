@@ -1202,7 +1202,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 Text('Subiendo documento...'),
               ],
             ),
-            duration: Duration(minutes: 2),
+            duration: Duration(seconds: 30),
             backgroundColor: ModernTheme.info,
           ),
         );
@@ -1268,7 +1268,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 Text('Subiendo documento...'),
               ],
             ),
-            duration: Duration(minutes: 2),
+            duration: Duration(seconds: 30),
             backgroundColor: ModernTheme.info,
           ),
         );
@@ -1351,7 +1351,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 Text('Subiendo documento...'),
               ],
             ),
-            duration: Duration(minutes: 2),
+            duration: Duration(seconds: 30),
             backgroundColor: ModernTheme.info,
           ),
         );
@@ -1425,7 +1425,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             ],
           ),
           backgroundColor: ModernTheme.info,
-          duration: Duration(minutes: 5),
+          duration: Duration(seconds: 30),
         ),
       );
 

@@ -442,7 +442,7 @@ class _SafetyFeaturesCarouselState extends State<_SafetyFeaturesCarousel> {
                         // Title
                         Text(
                           page.title,
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.black),
+                          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.getTextPrimary(context)),
                           textAlign: TextAlign.left,
                         ),
                         const SizedBox(height: 16),

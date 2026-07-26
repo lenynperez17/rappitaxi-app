@@ -705,21 +705,21 @@ class _UnlimitedInfoPage extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 32),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 40),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 40),
                             child: Text(
                               'Solicitudes ilimitadas por 24 horas',
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.black, height: 1.1),
+                              style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.1),
                             ),
                           ),
                           const SizedBox(height: 16),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 40),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 40),
                             child: Text(
                               'Paga una vez y disfruta de solicitudes ilimitadas, sin cobros extra',
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 17, color: Colors.black87, height: 1.4),
+                              style: TextStyle(fontSize: 17, color: AppColors.getTextSecondary(context), height: 1.4),
                             ),
                           ),
                           const SizedBox(height: 24),

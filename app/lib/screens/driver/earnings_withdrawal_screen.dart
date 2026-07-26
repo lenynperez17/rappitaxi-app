@@ -10,6 +10,7 @@ import '../../widgets/loading_overlay.dart';
 
 import '../../utils/logger.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
 /// PANTALLA DE RETIRO DE GANANCIAS - CONDUCTORES RAPPI TEAM
 /// ========================================================
@@ -804,7 +805,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
                     icon: const Icon(Icons.download),
                     label: const Text('Retirar'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.rappiOrange,
                       foregroundColor: colorScheme.onPrimary,
                     ),
                   ),
@@ -1388,7 +1389,7 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
           'Procesar Retiro${_netAmount > 0 ? ' (S/ ${_netAmount.toStringAsFixed(2)})' : ''}',
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.rappiOrange,
           foregroundColor: colorScheme.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),

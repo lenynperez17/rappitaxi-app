@@ -656,7 +656,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                 _startCountdown();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC8E636),
+                backgroundColor: AppColors.rappiOrange,
                 foregroundColor: AppColors.priceBlack,
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -760,7 +760,7 @@ class _SearchingDriversSheetState extends State<SearchingDriversSheet> {
                   _changePrice(increasedPrice);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC8E636),
+                  backgroundColor: AppColors.rappiOrange,
                   foregroundColor: AppColors.priceBlack,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

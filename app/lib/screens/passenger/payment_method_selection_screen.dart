@@ -8,6 +8,7 @@ import '../../services/payment_service.dart';
 import '../../services/firebase_service.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
 
 /// PANTALLA DE SELECCIÓN DE MÉTODO DE PAGO - RAPPI TEAM
@@ -505,7 +506,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
               _confirmCashPayment();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: AppColors.rappiOrange,
               foregroundColor: Theme.of(context).colorScheme.onPrimary,
             ),
             child: const Text('CONFIRMAR'),

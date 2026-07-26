@@ -1355,7 +1355,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                             );
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFC8E636),
+                            backgroundColor: AppColors.rappiOrange,
                             foregroundColor: Colors.black,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1452,7 +1452,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFC8E636).withValues(alpha:0.2),
+                                  color: AppColors.rappiOrange.withValues(alpha:0.2),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.phone_in_talk, size: 28, color: Color(0xFF4CAF50)),
@@ -1473,7 +1473,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                                   Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFC8E636).withValues(alpha:0.2),
+                                      color: AppColors.rappiOrange.withValues(alpha:0.2),
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(Icons.verified_user, size: 28, color: Color(0xFF4CAF50)),
@@ -1775,7 +1775,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC8E636),
+                  backgroundColor: AppColors.rappiOrange,
                   foregroundColor: Colors.black,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1886,7 +1886,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC8E636),
+                    backgroundColor: AppColors.rappiOrange,
                     foregroundColor: Colors.black,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 16),

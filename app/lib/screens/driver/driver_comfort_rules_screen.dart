@@ -139,10 +139,10 @@ class _DriverComfortRulesScreenState extends State<DriverComfortRulesScreen> {
                         // Title
                         Text(
                           page.title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.w900,
-                            color: Colors.black,
+                            color: AppColors.getTextPrimary(context),
                             height: 1.1,
                           ),
                         ),
@@ -150,9 +150,9 @@ class _DriverComfortRulesScreenState extends State<DriverComfortRulesScreen> {
                         // Description
                         Text(
                           page.description,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 17,
-                            color: Colors.black87,
+                            color: AppColors.getTextSecondary(context),
                             height: 1.5,
                           ),
                         ),
@@ -160,10 +160,10 @@ class _DriverComfortRulesScreenState extends State<DriverComfortRulesScreen> {
                           const SizedBox(height: 16),
                           Text(
                             page.subtitle!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
-                              color: Colors.black,
+                              color: AppColors.getTextPrimary(context),
                             ),
                           ),
                         ],

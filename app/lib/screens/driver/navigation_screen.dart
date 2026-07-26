@@ -18,8 +18,10 @@ import '../../utils/error_messages.dart';
 // API Key de Google Maps para Directions API
 const String _googleMapsApiKey = 'AIzaSyB0lGTYq7wjOUEzPYIbxsTPp_COdhEk5Hc';
 
-// Color verde-lima estilo inDrive para botones/badges de accion principal
-const Color _inDriveLime = Color(0xFFC8E636);
+// Ronda 241: brand color Rapi Team (rojo) — antes verde-lima
+// que no coincidía con la identidad de la marca. Mantengo el
+// nombre de variable para no tocar todos los call sites.
+const Color _inDriveLime = AppColors.rappiOrange;
 
 class NavigationScreen extends StatefulWidget {
   final Map<String, dynamic>? tripData;

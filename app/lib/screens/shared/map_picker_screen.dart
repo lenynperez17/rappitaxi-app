@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../utils/logger.dart';
+import '../../core/constants/app_colors.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final LatLng? initialLocation;
@@ -145,7 +146,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             height: 54,
             child: ElevatedButton(
               onPressed: _confirmSelection,
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC8E636), foregroundColor: Colors.black, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: const Text('Listo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             ),
           ),
