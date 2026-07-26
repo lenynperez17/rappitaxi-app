@@ -228,8 +228,16 @@ class PriceNegotiationProvider extends ChangeNotifier {
         if (raw is! Map) continue;
         final ride = raw.cast<String, dynamic>();
         final status = (ride['status'] ?? '').toString();
-        final negotiable =
-            ride['negotiable'] == true || ride['isNegotiable'] == true;
+        // Ronda 244: el backend guarda `negotiable` dentro de metadata (JSONB).
+        // Antes solo se leía del root → siempre false → el ride se descartaba
+        // y el pasajero NUNCA veía las ofertas que le mandaban los conductores.
+        // El backend ahora también lo expone en el root, pero leemos ambos
+        // para tolerar clientes/servidores desincronizados.
+        final rideMeta = ride['metadata'];
+        final negotiable = ride['negotiable'] == true ||
+            ride['isNegotiable'] == true ||
+            (rideMeta is Map &&
+                (rideMeta['negotiable'] == true || rideMeta['isNegotiable'] == true));
 
         // Sólo negociables abiertas.
         if (!negotiable && status != 'accepted') continue;
@@ -571,8 +579,16 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
         // Solo mostrar negociables en estados abiertos.
         final status = (ride['status'] ?? '').toString();
-        final negotiable =
-            ride['negotiable'] == true || ride['isNegotiable'] == true;
+        // Ronda 244: el backend guarda `negotiable` dentro de metadata (JSONB).
+        // Antes solo se leía del root → siempre false → el ride se descartaba
+        // y el pasajero NUNCA veía las ofertas que le mandaban los conductores.
+        // El backend ahora también lo expone en el root, pero leemos ambos
+        // para tolerar clientes/servidores desincronizados.
+        final rideMeta = ride['metadata'];
+        final negotiable = ride['negotiable'] == true ||
+            ride['isNegotiable'] == true ||
+            (rideMeta is Map &&
+                (rideMeta['negotiable'] == true || rideMeta['isNegotiable'] == true));
         if (loc == null) {
           // Sin ubicación filtramos localmente por estado (listAvailableRides
           // ya lo hace en el server).

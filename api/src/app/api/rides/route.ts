@@ -86,6 +86,19 @@ function serializeRide(r: RideRow) {
     startedAt: r.started_at,
     completedAt: r.completed_at,
     metadata: r.metadata,
+    // Ronda 244 BUG FIX: `negotiable` y `proposedFare` viven dentro de
+    // metadata (JSONB), pero el cliente los lee del ROOT:
+    //   final negotiable = ride['negotiable'] == true || ride['isNegotiable'] == true;
+    //   if (!negotiable && status != 'accepted') continue;   // ← descartaba el ride
+    // Como ride['negotiable'] era null, TODO ride negociable se filtraba del
+    // listado del pasajero y sus ofertas nunca se mostraban ("le mandé la
+    // oferta y no llega"). Los exponemos también en el root para que el
+    // cliente actual funcione sin necesidad de actualizar la app.
+    negotiable: (r.metadata as Record<string, unknown> | null)?.negotiable === true,
+    proposedFare:
+      (r.metadata as Record<string, unknown> | null)?.proposedFare !== undefined
+        ? Number((r.metadata as Record<string, unknown>).proposedFare)
+        : null,
   }
 }
 

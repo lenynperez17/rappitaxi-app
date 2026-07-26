@@ -97,6 +97,13 @@ function serializeRideDetail(r: RideDetailRow) {
     startedAt: r.started_at,
     completedAt: r.completed_at,
     metadata: r.metadata,
+    // Ronda 244: espejo del fix en /api/rides — exponer negotiable y
+    // proposedFare también en el root (el cliente los lee de ahí).
+    negotiable: (r.metadata as Record<string, unknown> | null)?.negotiable === true,
+    proposedFare:
+      (r.metadata as Record<string, unknown> | null)?.proposedFare !== undefined
+        ? Number((r.metadata as Record<string, unknown>).proposedFare)
+        : null,
     passengerName: isActive ? r.passenger_name : maskName(r.passenger_name),
     passengerPhone: isActive ? r.passenger_phone : null,
     passengerPhotoUrl: isActive ? r.passenger_photo_url : null,
