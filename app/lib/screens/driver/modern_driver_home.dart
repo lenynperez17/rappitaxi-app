@@ -1114,7 +1114,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             estimatedTime: (data['estimatedTime'] as num?)?.toInt() ?? 0,
             passengerName: data['passengerName'] as String? ?? 'Pasajero',
             passengerPhoto: data['passengerPhoto'] as String? ?? '',
-            passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 5.0,
+            // Ronda 255: el default 5.0 mostraba a TODO pasajero con la nota
+            // máxima aunque nunca lo hubieran calificado. 0.0 = sin calificar.
+            passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 0.0,
             driverOffers: [],
             paymentMethod: _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
             notes: data['notes'] as String? ?? data['adminNotes'] as String?,
@@ -1999,16 +2001,27 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       AppLogger.error('[Ronda 232] setDriverOnline($goingOnline) falló', e);
       if (!mounted) return;
       setState(() => _isTogglingOnline = false);
+
+      // Ronda 255: el backend rechaza el offline con 409 `has_active_ride`
+      // cuando el conductor tiene un viaje en curso — una razón legítima y
+      // concreta. El cliente la traducía a "Revisa tu conexión", culpando a
+      // la red y sin decir qué hacer. Ahora se explica el motivo real.
+      final hasActiveRide =
+          e is RapiApiException && (e.statusCode == 409 || e.code == 'has_active_ride');
       messenger.showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(
-            e,
-            fallback: goingOnline
-                ? 'No pudimos ponerte en línea. Revisa tu conexión.'
-                : 'No pudimos ponerte fuera de línea. Revisa tu conexión.',
-          )),
-          backgroundColor: ModernTheme.error,
-          duration: const Duration(seconds: 4),
+          content: Text(hasActiveRide
+              ? 'Tienes un viaje en curso. Termínalo o cancélalo antes de '
+                  'desconectarte.'
+              : userFriendlyError(
+                  e,
+                  fallback: goingOnline
+                      ? 'No pudimos ponerte en línea. Revisa tu conexión.'
+                      : 'No pudimos ponerte fuera de línea. Revisa tu conexión.',
+                )),
+          backgroundColor:
+              hasActiveRide ? ModernTheme.warning : ModernTheme.error,
+          duration: const Duration(seconds: 5),
         ),
       );
       return; // NO cambiamos _isOnline: la UI queda consistente con el backend.
@@ -2602,7 +2615,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('~${(req.distance / 1000).toStringAsFixed(1)}km', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
+                      // Ronda 255: `distance` YA está en kilómetros (se
+                      // construye como distanceMeters/1000 al parsear la
+                      // solicitud). Dividirlo otra vez entre 1000 daba
+                      // siempre "~0.0km", como se ve en las capturas.
+                      Text('~${req.distance.toStringAsFixed(1)}km', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
                       Text('S/ ${_offeringPrice?.toStringAsFixed(2) ?? '0.00'}',
                           style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
                       const SizedBox(height: 10),

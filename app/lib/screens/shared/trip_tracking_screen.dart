@@ -951,11 +951,14 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
   }
 
   Future<void> _callDriver() async {
-    var phone = _currentRide?.vehicleInfo?['driverPhone'] as String? ?? '';
-
-    // TODO(node-migration): agregar fallback llamando a /api/users/:id o
-    // exponer el telefono del conductor en el payload del ride cuando exista.
-    // Por ahora solo confiamos en el telefono embebido en vehicleInfo.
+    // Ronda 255: leía el teléfono SOLO de vehicleInfo, un mapa anidado que el
+    // backend NUNCA envía — de ahí el "Teléfono del conductor no disponible"
+    // de las capturas, incluso con el conductor ya asignado. El backend lo
+    // manda suelto en la raíz como driverPhone (ronda 250b lo añadió al
+    // modelo); el mapa queda como respaldo.
+    var phone = _currentRide?.driverPhone ??
+        _currentRide?.vehicleInfo?['driverPhone'] as String? ??
+        '';
 
     if (phone.isEmpty) {
       if (mounted) {
@@ -1147,7 +1150,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         final eta = _estimatedArrivalKey;
         if (eta == null || eta == 'verySoon') {
           return isEs
-              ? 'El conductor va en camino. Llegara muy pronto'
+              ? 'El conductor va en camino. Llegará muy pronto'
               : 'Driver is on the way. Arriving very soon';
         }
         return isEs
@@ -1157,7 +1160,7 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
         final eta = _estimatedArrivalKey;
         if (eta == null || eta == 'verySoon') {
           return isEs
-              ? 'Conductor asignado. Llegara muy pronto'
+              ? 'Conductor asignado. Llegará muy pronto'
               : 'Driver assigned. Arriving very soon';
         }
         return isEs

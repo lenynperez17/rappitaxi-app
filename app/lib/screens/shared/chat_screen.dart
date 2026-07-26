@@ -274,7 +274,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Container(padding: const EdgeInsets.all(32), decoration: BoxDecoration(color: AppColors.rappiOrange.withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.rappiOrange)),
       const SizedBox(height: 24),
-      Text('Inicia la conversacion', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+      Text('Inicia la conversación', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
       const SizedBox(height: 8),
       Text(widget.otherUserRole == 'driver' ? 'Mantente en contacto con tu conductor' : 'Mantente en contacto con tu pasajero', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
     ]));
@@ -381,18 +381,64 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(color: AppColors.getSurface(context), boxShadow: [BoxShadow(color: AppColors.getTextPrimary(context).withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))]),
-      child: SafeArea(child: Row(children: [
-        IconButton(onPressed: () { setState(() { _showQuickMessages = !_showQuickMessages; }); }, icon: Icon(_showQuickMessages ? Icons.keyboard : Icons.add, color: AppColors.rappiOrange)),
+      // Ronda 255: había CUATRO IconButton de 48px cada uno (192px en total)
+      // compitiendo con el campo de texto. En un teléfono de 360dp al campo le
+      // quedaban ~85px y el hint se partía en tres líneas: "Escribe / un mens /
+      // aje...". Los iconos ahora son compactos (40px) y el campo tiene alto
+      // mínimo y tope de 5 líneas para que no empuje la fila al escribir.
+      child: SafeArea(child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        IconButton(
+          onPressed: () { setState(() { _showQuickMessages = !_showQuickMessages; }); },
+          icon: Icon(_showQuickMessages ? Icons.keyboard : Icons.add, color: AppColors.rappiOrange),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        ),
         Expanded(child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          constraints: const BoxConstraints(minHeight: 44),
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(color: AppColors.getInputFill(context), borderRadius: BorderRadius.circular(25)),
-          child: TextField(controller: _messageController, focusNode: _messageFocusNode, decoration: InputDecoration(hintText: 'Escribe un mensaje...', border: InputBorder.none, hintStyle: TextStyle(color: AppColors.getTextSecondary(context))), maxLines: null, textCapitalization: TextCapitalization.sentences, onSubmitted: (_) => _sendMessage()),
+          child: TextField(
+            controller: _messageController,
+            focusNode: _messageFocusNode,
+            decoration: InputDecoration(
+              hintText: 'Escribe un mensaje...',
+              border: InputBorder.none,
+              isDense: true,
+              hintStyle: TextStyle(color: AppColors.getTextSecondary(context)),
+              hintMaxLines: 1,
+            ),
+            minLines: 1,
+            maxLines: 5,
+            textCapitalization: TextCapitalization.sentences,
+            onSubmitted: (_) => _sendMessage(),
+          ),
         )),
-        Row(children: [
-          IconButton(onPressed: _pickAndSendMedia, icon: const Icon(Icons.attach_file, color: AppColors.rappiOrange)),
-          IconButton(onPressed: _shareLocation, icon: const Icon(Icons.location_on, color: AppColors.rappiOrange)),
-          Container(decoration: const BoxDecoration(color: AppColors.rappiOrange, shape: BoxShape.circle), child: IconButton(onPressed: _sendMessage, icon: const Icon(Icons.send, color: Colors.white, size: 20))),
-        ]),
+        IconButton(
+          onPressed: _pickAndSendMedia,
+          icon: const Icon(Icons.attach_file, color: AppColors.rappiOrange, size: 22),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        ),
+        IconButton(
+          onPressed: _shareLocation,
+          icon: const Icon(Icons.location_on, color: AppColors.rappiOrange, size: 22),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        ),
+        Container(
+          decoration: const BoxDecoration(color: AppColors.rappiOrange, shape: BoxShape.circle),
+          child: IconButton(
+            onPressed: _sendMessage,
+            icon: const Icon(Icons.send, color: Colors.white, size: 20),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          ),
+        ),
       ])),
     );
   }

@@ -517,8 +517,26 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     }
   }
 
+  /// Ronda 255: esta función se rendía en silencio.
+  ///  - Si el permiso aún no estaba concedido, hacía `return` sin dejar rastro
+  ///    y el usuario se quedaba con "Obteniendo ubicación..." para siempre.
+  ///  - Al fallar ponía el campo en '' — y `_buildPickupAddressBar` muestra
+  ///    "Obteniendo ubicación..." precisamente cuando el campo está VACÍO. Así
+  ///    que el estado de ERROR y el de CARGANDO se veían idénticos: el texto
+  ///    se quedaba clavado sin que nada estuviera cargando.
+  /// Ahora reintenta cuando el permiso llega tarde y avisa si de verdad falló.
   Future<void> _autoFillCurrentLocation() async {
-    if (!mounted || !_locationPermissionGranted) return;
+    if (!mounted) return;
+    if (!_locationPermissionGranted) {
+      // El permiso puede concederse unos instantes después del arranque.
+      await _requestLocationPermission();
+      if (!mounted || !_locationPermissionGranted) {
+        if (mounted) {
+          setState(() => _pickupController.text = 'Activa tu ubicación');
+        }
+        return;
+      }
+    }
 
     try {
       setState(() {
@@ -546,12 +564,15 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         await _addReferencePointDots(currentLocation);
         await _addSimulatedDriverMarkers(currentLocation);
       } else if (mounted) {
-        setState(() => _pickupController.text = '');
+        // Dejar '' aquí hacía que la barra volviera a decir "Obteniendo
+        // ubicación..." eternamente. Un texto accionable deja claro que no
+        // está cargando y que se puede tocar para reintentar.
+        setState(() => _pickupController.text = 'Toca para elegir tu ubicación');
       }
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error auto-llenando ubicación'));
       if (mounted) {
-        setState(() => _pickupController.text = '');
+        setState(() => _pickupController.text = 'Toca para elegir tu ubicación');
       }
     }
   }
@@ -878,10 +899,15 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     return dist > _regenerateThresholdDeg;
   }
 
+  /// Ronda 255: ANTES esta función inventaba 5 conductores con Random() en un
+  /// círculo alrededor del pasajero, los movía y los hacía desaparecer con
+  /// temporizadores. El pasajero veía autos en el mapa y creía que había
+  /// conductores cerca — pero no existía ninguno. Ahora se consultan los
+  /// conductores REALES conectados vía POST /api/drivers/nearby, que ya
+  /// devuelve latitude, longitude y heading de cada uno. Si no hay ninguno
+  /// disponible, el mapa se muestra vacío, que es la verdad.
   Future<void> _addSimulatedDriverMarkers(LatLng center) async {
     _simulatedCenter = center;
-    final random = Random();
-    const int driverCount = 5;
 
     try {
       _cachedCarIcon = await MapMarkerUtils.getCarTopViewIcon();
@@ -889,30 +915,60 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       _cachedCarIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
     }
 
-    _simDrivers.clear();
-    final now = DateTime.now();
-    for (int i = 0; i < driverCount; i++) {
-      final angle = (i / driverCount) * 2 * pi + (random.nextDouble() - 0.5) * 0.5;
-      final distance = 0.0015 + random.nextDouble() * 0.003;
-      _simDrivers.add(_SimDriver(
-        lat: center.latitude + cos(angle) * distance,
-        lng: center.longitude + sin(angle) * distance,
-        heading: random.nextDouble() * 360,
-        speed: 0.00004 + random.nextDouble() * 0.00012,
-        alpha: 1.0,
-        visible: true,
-        nextMove: now.add(Duration(milliseconds: 500 + random.nextInt(2000))),
-        nextDisappear: now.add(Duration(seconds: 10 + random.nextInt(25))),
-      ));
-    }
+    await _refreshNearbyDrivers(center);
 
-    _syncSimDriverMarkers();
-
+    // Refrescar periódicamente las posiciones reales.
     _driverAnimationTimer?.cancel();
-    _driverAnimationTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _driverAnimationTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (!mounted || _isDisposed) return;
-      _tickSimDrivers();
+      final c = _simulatedCenter;
+      if (c != null) unawaited(_refreshNearbyDrivers(c));
     });
+  }
+
+  /// Consulta los conductores realmente conectados cerca de [center] y
+  /// sincroniza los marcadores del mapa con sus posiciones.
+  Future<void> _refreshNearbyDrivers(LatLng center) async {
+    try {
+      final resp = await RapiApiClient.instance.nearbyDrivers(
+        latitude: center.latitude,
+        longitude: center.longitude,
+        radiusKm: 5,
+        limit: 15,
+      );
+      final list = (resp['drivers'] as List?) ?? const [];
+
+      final parsed = <_SimDriver>[];
+      final now = DateTime.now();
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        final lat = double.tryParse('${raw['latitude']}');
+        final lng = double.tryParse('${raw['longitude']}');
+        if (lat == null || lng == null) continue;
+        parsed.add(_SimDriver(
+          lat: lat,
+          lng: lng,
+          heading: double.tryParse('${raw['heading']}') ?? 0.0,
+          speed: 0.0, // Las posiciones vienen del servidor, no se interpolan.
+          alpha: 1.0,
+          visible: true,
+          nextMove: now,
+          nextDisappear: now.add(const Duration(days: 1)),
+        ));
+      }
+
+      if (!mounted || _isDisposed) return;
+      _simDrivers
+        ..clear()
+        ..addAll(parsed);
+      _syncSimDriverMarkers();
+    } catch (e) {
+      // Sin conexión o error del servidor: dejamos el mapa como esté en vez de
+      // rellenarlo con conductores inventados.
+      AppLogger.warning(
+          'No se pudieron cargar conductores cercanos: '
+          '${userFriendlyError(e, fallback: "error de red")}');
+    }
   }
 
   void _tickSimDrivers() {
@@ -1444,8 +1500,13 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       _offeredPrice = 0.0;
       _isManualPriceEntry = false;
     });
-    // Re-add simulated driver markers at current location
-    _requestLocationPermission();
+    // Ronda 255: aquí solo se PEDÍA el permiso — nunca se recargaba la
+    // ubicación. Como el campo de origen acababa de vaciarse, la barra
+    // mostraba "Obteniendo ubicación..." sin que nada estuviera cargando, y
+    // el pasajero tenía que tocar el botón de mi-ubicación a mano. Al
+    // terminar un viaje debe volver sola tu dirección actual, igual que al
+    // abrir la app.
+    unawaited(_autoFillCurrentLocation());
     AppLogger.info('Estado reseteado después de viaje completado/cancelado');
   }
 
@@ -1471,6 +1532,10 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
       _offeredPrice = 0.0;
     });
 
+    // Ronda 255: al cancelar la búsqueda o volver atrás, el origen quedaba
+    // vacío y no se recargaba nada. Mismo criterio: recuperar la ubicación
+    // actual automáticamente.
+    unawaited(_autoFillCurrentLocation());
     AppLogger.info('Estado reseteado completamente - usuario puede comenzar de nuevo');
   }
 

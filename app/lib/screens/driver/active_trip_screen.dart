@@ -87,6 +87,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   bool _routeInFlight = false;
   bool _isFollowingDriver = true; // Toggle for camera follow
 
+  // Ronda 255: medimos la altura REAL del bottom sheet para colocar encima los
+  // botones flotantes del mapa. Antes se usaban constantes (clamp 280-430) que
+  // se quedaban cortas cuando el sheet crecía, y el sheet terminaba tapando el
+  // botón de recentrar y el de navegación.
+  final GlobalKey _sheetKey = GlobalKey();
+  double _sheetHeight = 0;
+
+  /// Separación desde abajo para los controles flotantes: justo encima del
+  /// sheet. Mientras no se haya medido, usa un valor conservador.
+  double get _floatingBottomOffset =>
+      (_sheetHeight > 0 ? _sheetHeight : 300.0) + 16;
+
+  /// Vuelve a medir el sheet después de cada frame. Es barato (solo lee el
+  /// RenderBox ya calculado) y solo llama a setState cuando la altura cambió
+  /// de verdad, así que no provoca bucles de rebuild.
+  void _measureSheet() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _sheetKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      final h = box.size.height;
+      if ((h - _sheetHeight).abs() > 1.0) {
+        setState(() => _sheetHeight = h);
+      }
+    });
+  }
+
   // Waiting timer for arrived at pickup state
   Timer? _waitingTimer;
   int _waitingSeconds = 0;
@@ -1213,6 +1240,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Remedir el sheet en cada frame: su altura cambia con el estado del viaje
+    // y con lo largas que sean las direcciones.
+    _measureSheet();
     final canLeave = _tripState == DriverTripState.completed;
     return PopScope(
       canPop: canLeave,
@@ -1257,6 +1287,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               left: 0,
               right: 0,
               child: Container(
+                // Ronda 255: el gradiente se desvanecía a TRANSPARENTE desde el
+                // 70%, y justo ahí viven "Tiempo de espera 00:13" y "El
+                // pasajero fue notificado" — quedaban flotando sobre el mapa,
+                // encimados con los nombres de calles y negocios. El fondo se
+                // acababa antes que el contenido. Ahora es sólido hasta el 92%
+                // y solo se difumina en el último tramo.
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -1264,10 +1300,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                     colors: [
                       AppColors.getSurface(context),
                       AppColors.getSurface(context),
-                      AppColors.getSurface(context).withValues(alpha: 0.85),
+                      AppColors.getSurface(context),
                       AppColors.getSurface(context).withValues(alpha: 0.0),
                     ],
-                    stops: const [0.0, 0.4, 0.7, 1.0],
+                    stops: const [0.0, 0.85, 0.92, 1.0],
                   ),
                 ),
                 child: SafeArea(
@@ -1293,16 +1329,23 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             // Ronda 214: bottom hardcoded 380/390 asumía sheet altura fija.
             // En iPhone SE (667px) el pill quedaba tapado por el sheet.
             // Usar % del screen con clamp para adaptar a todos los sizes.
+            // Ronda 255: el `bottom` era un numero magico —
+            // clamp(280,420) asumia que el bottom sheet nunca pasa de 420px.
+            // Pero el sheet CRECE con el contenido (nombre largo, direcciones
+            // de dos lineas), y al crecer se tragaba estos botones: en las
+            // capturas el de recentrar aparecia cortado por el borde del
+            // sheet. Ahora se mide la altura real del sheet y se colocan
+            // encima de el.
             Positioned(
               left: 16,
-              bottom: (MediaQuery.of(context).size.height * 0.42).clamp(280.0, 420.0),
+              bottom: _floatingBottomOffset,
               child: _buildNavigatorPill(),
             ),
 
             // Floating round buttons (right side)
             Positioned(
               right: 16,
-              bottom: (MediaQuery.of(context).size.height * 0.43).clamp(290.0, 430.0),
+              bottom: _floatingBottomOffset + 10,
               child: Column(
                 children: [
                   _buildRoundFloatingButton(
@@ -1338,7 +1381,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               left: 0,
               right: 0,
               bottom: 0,
-              child: _buildPassengerBottomSheet(),
+              child: Container(
+                key: _sheetKey,
+                child: _buildPassengerBottomSheet(),
+              ),
             ),
 
             // Loading overlay
@@ -1606,17 +1652,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
+            // Ronda 255: un pasajero sin calificaciones mostraba "★ 0.0", que
+            // se lee como la PEOR nota posible. Sin calificaciones no hay nota
+            // que enseñar: se dice "Nuevo" y se omite la estrella.
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.star, color: Colors.amber, size: 14),
-                const SizedBox(width: 2),
+                if (passengerRating > 0) ...[
+                  const Icon(Icons.star, color: Colors.amber, size: 14),
+                  const SizedBox(width: 2),
+                ],
                 Text(
-                  passengerRating.toStringAsFixed(1),
+                  passengerRating > 0
+                      ? passengerRating.toStringAsFixed(1)
+                      : 'Nuevo',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.getTextPrimary(context),
+                    color: passengerRating > 0
+                        ? AppColors.getTextPrimary(context)
+                        : AppColors.getTextSecondary(context),
                   ),
                 ),
               ],
