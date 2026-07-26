@@ -588,14 +588,23 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: ElevatedButton(
                 onPressed: _isLoading ? null : _cancelEmergency,
-                icon: const Icon(Icons.cancel),
-                label: const Text('CANCELAR EMERGENCIA (Solo Falsa Alarma)'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Cancelar emergencia',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('Solo si fue falsa alarma',
+                        style: TextStyle(fontSize: 12),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
                 ),
               ),
             ),

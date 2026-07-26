@@ -242,7 +242,10 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           style: TextStyle(
             color: context.surfaceColor,
             fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(
@@ -977,64 +980,91 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 ],
               ),
               SizedBox(height: 16),
-              Container(
-                height: 200,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: context.surfaceColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.secondaryText.withValues(alpha: 0.3)),
+              // Ronda 238: mostrar imagen real desde el backend con auth
+              // header. La URL es relativa /api/media/... y requiere Bearer
+              // token porque el scope de la mayoría de docs es privado.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.image,
-                      size: 64,
-                      color: context.secondaryText,
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Vista previa del documento',
-                      style: TextStyle(
-                        color: context.secondaryText,
-                      ),
-                    ),
-                    Text(
-                      '(Simulación)',
-                      style: TextStyle(
-                        color: context.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    color: context.surfaceColor,
+                    child: (document.fileUrl != null && document.fileUrl!.isNotEmpty)
+                        ? Image.network(
+                            document.fileUrl!.startsWith('http')
+                                ? document.fileUrl!
+                                : '${RapiApiClient.baseUrl}${document.fileUrl}',
+                            headers: {
+                              if (RapiApiClient.instance.currentAccessToken != null)
+                                'Authorization': 'Bearer ${RapiApiClient.instance.currentAccessToken}',
+                            },
+                            fit: BoxFit.contain,
+                            loadingBuilder: (ctx, child, progress) {
+                              if (progress == null) return child;
+                              return SizedBox(
+                                height: 200,
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            },
+                            errorBuilder: (ctx, e, s) => SizedBox(
+                              height: 200,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.broken_image, size: 48, color: context.secondaryText),
+                                  SizedBox(height: 8),
+                                  Text('No se pudo cargar la imagen',
+                                      style: TextStyle(color: context.secondaryText)),
+                                ],
+                              ),
+                            ),
+                          )
+                        : SizedBox(
+                            height: 200,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.image_outlined, size: 48, color: context.secondaryText),
+                                SizedBox(height: 8),
+                                Text('Sin documento subido',
+                                    style: TextStyle(color: context.secondaryText)),
+                              ],
+                            ),
+                          ),
+                  ),
                 ),
               ),
               SizedBox(height: 16),
+              // Ronda 238: botones sin `.icon` para que el texto no se
+              // corte en pantallas angostas. El texto queda legible siempre.
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed: () {
                         Navigator.pop(context);
                         _uploadDocument(document);
                       },
-                      icon: Icon(Icons.cloud_upload),
-                      label: Text('Actualizar'),
+                      child: Text('Reemplazar',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
                     ),
                   ),
                   SizedBox(width: 12),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
                         _downloadDocument(document);
                       },
-                      icon: Icon(Icons.download),
-                      label: Text('Descargar'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ModernTheme.rappiOrange,
+                        foregroundColor: Colors.white,
                       ),
+                      child: Text('Descargar',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
                     ),
                   ),
                 ],

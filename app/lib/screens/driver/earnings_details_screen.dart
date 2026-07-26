@@ -325,7 +325,10 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
           style: TextStyle(
             color: context.onPrimaryText,
             fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(

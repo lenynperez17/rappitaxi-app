@@ -1408,7 +1408,7 @@ class _WalletScreenState extends State<WalletScreen>
                     Text(
                       'Comisión: ${CurrencyFormatter.formatCurrency(transaction.commission!)}',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 12,
                         color: context.secondaryText,
                       ),
                     ),

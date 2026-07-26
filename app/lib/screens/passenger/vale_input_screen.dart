@@ -89,7 +89,7 @@ class _ValeInputScreenState extends State<ValeInputScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Ingresa tu Vale Corporativo'),
+        title: Text('Ingresa tu Vale', style: TextStyle(fontSize: 18), maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: Icon(_isManualEntry ? Icons.qr_code_scanner : Icons.keyboard),

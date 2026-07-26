@@ -259,14 +259,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           title: Text(title,
               style: TextStyle(
                   fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-                  color: AppColors.getTextPrimary(context))),
+                  color: AppColors.getTextPrimary(context)),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (body.toString().isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(body.toString(),
-                    style: TextStyle(color: AppColors.getTextSecondary(context))),
+                    style: TextStyle(color: AppColors.getTextSecondary(context)),
+                    maxLines: 3, overflow: TextOverflow.ellipsis),
               ],
               if (createdAt != null) ...[
                 const SizedBox(height: 4),

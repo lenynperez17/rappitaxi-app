@@ -277,7 +277,10 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
           style: TextStyle(
             color: Theme.of(context).colorScheme.onPrimary,
             fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(

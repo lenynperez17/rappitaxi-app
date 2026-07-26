@@ -330,7 +330,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
           style: TextStyle(
             color: Theme.of(context).colorScheme.surface,
             fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(

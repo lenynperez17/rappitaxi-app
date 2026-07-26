@@ -318,7 +318,9 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
           backgroundColor: ModernTheme.rappiOrange,
           title: Text(
             AppLocalizations.of(context)!.paymentMethodsTitle,
-            style: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+            style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontSize: 18),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           leading: IconButton(
             icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimary),
