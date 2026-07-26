@@ -1005,11 +1005,17 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
           if (_currentLocation == null) return;
 
-          final pickupData = data['pickupLocation'];
-          if (pickupData is! Map || pickupData['latitude'] == null || pickupData['longitude'] == null) return;
+          // Ronda 239: backend Node envía `pickup: {address, lat, lng}`,
+          // legacy Firestore usaba `pickupLocation: {latitude, longitude}`.
+          // Aceptamos ambos formatos.
+          final pickupData = (data['pickup'] ?? data['pickupLocation']) as Map?;
+          if (pickupData == null) return;
+          final pickupLatRaw = pickupData['lat'] ?? pickupData['latitude'];
+          final pickupLngRaw = pickupData['lng'] ?? pickupData['longitude'];
+          if (pickupLatRaw == null || pickupLngRaw == null) return;
 
-          final pickupLat = (pickupData['latitude'] as num).toDouble();
-          final pickupLng = (pickupData['longitude'] as num).toDouble();
+          final pickupLat = (pickupLatRaw as num).toDouble();
+          final pickupLng = (pickupLngRaw as num).toDouble();
           final distanceInMeters = Geolocator.distanceBetween(
             _currentLocation!.latitude, _currentLocation!.longitude,
             pickupLat, pickupLng,
@@ -1019,7 +1025,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final rideId = (data['id'] as String?) ?? (event['rideId'] as String?);
           if (rideId == null) return;
 
-          final destData = data['destinationLocation'] as Map?;
+          final destData = (data['destination'] ?? data['destinationLocation']) as Map?;
           final negotiation = PriceNegotiation(
             id: rideId,
             passengerId: data['passengerId'] as String? ?? '',
@@ -1027,17 +1033,25 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             pickup: LocationPoint(
               latitude: pickupLat,
               longitude: pickupLng,
-              address: data['pickupAddress'] as String? ?? 'Dirección no disponible',
+              address: (pickupData['address'] as String?)
+                  ?? (data['pickupAddress'] as String?)
+                  ?? 'Dirección no disponible',
             ),
             destination: LocationPoint(
-              latitude: (destData?['latitude'] as num?)?.toDouble() ?? 0.0,
-              longitude: (destData?['longitude'] as num?)?.toDouble() ?? 0.0,
-              address: data['destinationAddress'] as String? ?? 'Destino no disponible',
+              latitude: ((destData?['lat'] ?? destData?['latitude']) as num?)?.toDouble() ?? 0.0,
+              longitude: ((destData?['lng'] ?? destData?['longitude']) as num?)?.toDouble() ?? 0.0,
+              address: (destData?['address'] as String?)
+                  ?? (data['destinationAddress'] as String?)
+                  ?? 'Destino no disponible',
             ),
             status: NegotiationStatus.waiting,
-            suggestedPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
-            offeredPrice: (data['fare'] as num?)?.toDouble() ?? 0.0,
-            distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
+            // Ronda 239: backend Node envía estimatedFare + distanceKm.
+            // Mantenemos legacy fare/distance como fallback.
+            suggestedPrice: ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ?? 0.0,
+            offeredPrice: ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ?? 0.0,
+            distance: ((data['distanceKm']
+                    ?? (data['distanceMeters'] is num ? (data['distanceMeters'] as num) / 1000.0 : null)
+                    ?? data['distance']) as num?)?.toDouble() ?? 0.0,
             estimatedTime: (data['estimatedTime'] as num?)?.toInt() ?? 0,
             passengerName: data['passengerName'] as String? ?? 'Pasajero',
             passengerPhoto: data['passengerPhoto'] as String? ?? '',

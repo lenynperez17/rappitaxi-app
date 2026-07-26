@@ -63,23 +63,44 @@ class PriceNegotiation {
     this.guestPassengerPhone,
   });
 
-  // Factory para crear desde Map (Firestore)
+  // Factory para crear desde Map (Firestore legacy + backend Node actual)
+  // Ronda 239: el backend /api/rides/available devuelve estimatedFare/
+  // distanceKm/passengerPhotoUrl mientras que el modelo legacy esperaba
+  // offeredPrice/distance/passengerPhoto. Acepta ambos con fallback chain
+  // para que S/0 y ~0.0km dejen de aparecer en la card del driver.
   factory PriceNegotiation.fromMap(String id, Map<String, dynamic> map) {
+    // Fare: backend Node = estimatedFare, legacy Firestore = offeredPrice/fare
+    final fareNum = (map['estimatedFare'] ?? map['offeredPrice'] ?? map['fare'] ?? 0.0) as num;
+    final fare = fareNum.toDouble();
+    final suggestedNum = (map['suggestedPrice'] ?? fareNum) as num;
+    // Distance: backend Node = distanceKm (o distanceMeters/1000), legacy = distance
+    final distKmNum = map['distanceKm'] as num?;
+    final distMetersNum = map['distanceMeters'] as num?;
+    final legacyDist = map['distance'] as num?;
+    final distanceKm = distKmNum?.toDouble()
+        ?? (distMetersNum != null ? distMetersNum.toDouble() / 1000.0 : null)
+        ?? legacyDist?.toDouble()
+        ?? 0.0;
+    // ExpiresAt: si el backend no lo envía, damos 5 min desde createdAt
+    final createdAt = _parseDateTime(map['createdAt']);
+    final expiresAt = map['expiresAt'] != null
+        ? _parseDateTime(map['expiresAt'])
+        : createdAt.add(const Duration(minutes: 5));
     return PriceNegotiation(
       id: id,
       passengerId: map['passengerId'] ?? '',
       passengerName: map['passengerName'] ?? 'Usuario',
       passengerPhone: map['passengerPhone'] ?? '',
-      passengerPhoto: map['passengerPhoto'] ?? '',
-      passengerRating: (map['passengerRating'] ?? 0.0).toDouble(),
+      passengerPhoto: map['passengerPhotoUrl'] ?? map['passengerPhoto'] ?? '',
+      passengerRating: (map['passengerRating'] ?? 5.0).toDouble(),
       pickup: LocationPoint.fromMap(map['pickup'] ?? {}),
       destination: LocationPoint.fromMap(map['destination'] ?? {}),
-      suggestedPrice: (map['suggestedPrice'] ?? 0.0).toDouble(),
-      offeredPrice: (map['offeredPrice'] ?? 0.0).toDouble(),
-      distance: (map['distance'] ?? 0.0).toDouble(),
-      estimatedTime: ((map['estimatedTime'] ?? 0) as num).toInt(),
-      createdAt: _parseDateTime(map['createdAt']),
-      expiresAt: _parseDateTime(map['expiresAt']),
+      suggestedPrice: suggestedNum.toDouble(),
+      offeredPrice: fare,
+      distance: distanceKm,
+      estimatedTime: ((map['estimatedTime'] ?? map['durationSeconds'] ?? 0) as num).toInt(),
+      createdAt: createdAt,
+      expiresAt: expiresAt,
       status: _statusFromString(map['status'] ?? 'waiting'),
       driverOffers: (map['driverOffers'] as List<dynamic>?)
               ?.map((offer) => DriverOffer.fromMap(offer))

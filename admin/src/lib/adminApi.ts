@@ -262,6 +262,16 @@ class AdminApi {
     return this.rawFetch(`/api/admin/recharges`, { method: 'POST', body: input })
   }
 
+  async refundRecharge(
+    rechargeId: string,
+    reason: string,
+  ): Promise<{ success: boolean; rechargeId?: string; refundedAmount?: number; noop?: boolean; message?: string }> {
+    return this.rawFetch(`/api/admin/recharges/${rechargeId}/refund`, {
+      method: 'POST',
+      body: { reason },
+    })
+  }
+
   async listEmergencies(params: {
     status?: string; type?: string; page?: number; pageSize?: number
   } = {}): Promise<{ emergencies: AdminEmergency[]; total: number; page: number; totalPages: number }> {

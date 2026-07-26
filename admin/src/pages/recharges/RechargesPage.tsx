@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, AlertCircle, CreditCard, Plus, X, CheckCircle2 } from 'lucide-react'
+import { Loader2, AlertCircle, CreditCard, Plus, X, CheckCircle2, RotateCcw } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminRecharge, type AdminDriver } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
 import { relativeTime, toDate } from '../../utils/timeFormat'
@@ -34,6 +34,7 @@ export function RechargesPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [refundTarget, setRefundTarget] = useState<AdminRecharge | null>(null)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
   const load = async () => {
@@ -106,6 +107,7 @@ export function RechargesPage() {
                   <th className="text-left px-4 py-3">Estado</th>
                   <th className="text-left px-4 py-3">Referencia</th>
                   <th className="text-left px-4 py-3">Fecha</th>
+                  <th className="text-right px-4 py-3">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -126,6 +128,19 @@ export function RechargesPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{r.reference ?? '—'}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">{relativeTime(toDate(r.createdAt))}</td>
+                    <td className="px-4 py-3 text-right">
+                      {r.status === 'completed' || r.status === 'approved' ? (
+                        <button
+                          onClick={() => setRefundTarget(r)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 font-medium"
+                          title="Anular esta recarga y restar el monto del saldo del conductor"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Anular
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -144,6 +159,103 @@ export function RechargesPage() {
           }}
         />
       )}
+
+      {refundTarget && (
+        <RefundRechargeModal
+          recharge={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onRefunded={(msg) => {
+            setRefundTarget(null)
+            setFlash({ kind: 'ok', msg })
+            void load()
+          }}
+          onError={(msg) => {
+            setRefundTarget(null)
+            setFlash({ kind: 'err', msg })
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function RefundRechargeModal({
+  recharge, onClose, onRefunded, onError,
+}: {
+  recharge: AdminRecharge
+  onClose: () => void
+  onRefunded: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submittingRef.current) return
+    const r = reason.trim()
+    if (r.length < 3) {
+      onError('Escribe un motivo (mín. 3 caracteres).')
+      return
+    }
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const resp = await adminApi.refundRecharge(recharge.id, r)
+      if (resp.noop) {
+        onRefunded('La recarga ya estaba anulada.')
+      } else {
+        onRefunded(`Recarga anulada. Se restaron ${formatPEN(resp.refundedAmount ?? recharge.amount)} del saldo.`)
+      }
+    } catch (err) {
+      onError(err instanceof AdminApiError ? err.message : 'Error al anular la recarga')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Anular recarga</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+            <div className="font-medium">Se restarán <strong>{formatPEN(recharge.amount)}</strong> del saldo de {recharge.driverName ?? 'este conductor'}.</div>
+            <div className="text-xs text-red-700 mt-1">
+              Método original: <strong>{METHOD_LABEL[recharge.method] ?? recharge.method}</strong>.
+              Si el conductor ya gastó el saldo, quedará negativo.
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Motivo de la anulación</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Ej: le recargué de más por error, el conductor no pagó, etc."
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button type="button" onClick={onClose} disabled={submitting}
+              className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Cancelar
+            </button>
+            <button type="submit" disabled={submitting}
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Anular recarga
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
