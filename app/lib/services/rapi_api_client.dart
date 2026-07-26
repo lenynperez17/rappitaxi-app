@@ -933,6 +933,12 @@ class RapiApiClient {
         'isPrimary': isPrimary,
       }))!;
 
+  /// Ronda 253: DELETE /api/emergency-contacts/:id existe en el backend desde
+  /// la ronda 214, pero el cliente no lo exponía.
+  Future<void> deleteEmergencyContact(String id) async {
+    await _authedDelete('/api/emergency-contacts/$id');
+  }
+
   // ---------------------------------------------------------------------------
   // NOTIFICATIONS + FAVORITES + PAYMENT METHODS
   // ---------------------------------------------------------------------------

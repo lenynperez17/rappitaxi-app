@@ -93,7 +93,12 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
 
   void _setupAmountListener() {
     _withdrawalAmountController.addListener(() {
-      final amount = double.tryParse(_withdrawalAmountController.text) ?? 0.0;
+      // Ronda 253: double.tryParse acepta "Infinity", "NaN" y "1e999" — al
+      // pegar cualquiera de esos el conductor veía "S/ Infinity" / "S/ NaN"
+      // como monto neto, y el valor viajaba así hacia la validación.
+      final parsed = double.tryParse(_withdrawalAmountController.text.trim());
+      final amount =
+          (parsed != null && parsed.isFinite && parsed >= 0) ? parsed : 0.0;
       setState(() {
         _withdrawalAmount = amount;
         _calculateWithdrawalFee();
@@ -113,7 +118,10 @@ class _EarningsWithdrawalScreenState extends State<EarningsWithdrawalScreen>
       default:
         _withdrawalFee = 0.0;
     }
-    _netAmount = _withdrawalAmount - _withdrawalFee;
+    // El neto nunca puede ser negativo: con un monto menor a la comisión se
+    // mostraba "- S/ 3.00" como cantidad a recibir.
+    final net = _withdrawalAmount - _withdrawalFee;
+    _netAmount = (net.isFinite && net > 0) ? net : 0.0;
   }
 
   Future<void> _initializeServices() async {

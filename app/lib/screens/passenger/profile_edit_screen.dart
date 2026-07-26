@@ -1090,6 +1090,61 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
   }
   
   /// Guarda el perfil llamando al backend Node (upload + PATCH /me).
+  /// Guarda el contacto de emergencia en su módulo real
+  /// (/api/emergency-contacts). Si ya existe uno marcado como principal, lo
+  /// reemplaza; así el formulario del perfil (que solo tiene un contacto) no
+  /// va acumulando duplicados cada vez que se guarda el perfil.
+  ///
+  /// No lanza: un fallo aquí no debe tumbar el guardado del perfil, que ya se
+  /// completó — pero sí se avisa al usuario, porque es un dato de seguridad.
+  Future<void> _saveEmergencyContact() async {
+    final name = _emergencyNameController.text.trim();
+    final phone = _emergencyPhoneController.text.trim();
+    if (name.isEmpty || phone.isEmpty) return;
+
+    try {
+      final existing = await _api.listEmergencyContacts();
+      final list = (existing['contacts'] ?? existing['items'] ?? []) as List;
+
+      // ¿Ya está guardado exactamente este contacto? Entonces no hay nada que
+      // hacer y evitamos un POST innecesario en cada guardado del perfil.
+      final already = list.whereType<Map<String, dynamic>>().any((c) =>
+          (c['name'] ?? '').toString().trim() == name &&
+          (c['phone'] ?? '').toString().trim() == phone);
+      if (already) return;
+
+      final primary = list.whereType<Map<String, dynamic>>().firstWhere(
+            (c) => c['isPrimary'] == true,
+            orElse: () => const <String, dynamic>{},
+          );
+
+      await _api.addEmergencyContact(
+        name: name,
+        phone: phone,
+        relationship: 'Contacto de emergencia',
+        isPrimary: true,
+      );
+
+      // Quitar el principal anterior solo DESPUÉS de crear el nuevo, para no
+      // dejar al usuario sin ningún contacto si el POST falla.
+      final oldId = primary['id']?.toString();
+      if (oldId != null && oldId.isNotEmpty) {
+        await _api.deleteEmergencyContact(oldId);
+      }
+    } catch (e) {
+      AppLogger.error('Error guardando contacto de emergencia: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e,
+              fallback: 'Tu perfil se guardó, pero no se pudo guardar el '
+                  'contacto de emergencia. Revísalo en Seguridad.')),
+          backgroundColor: ModernTheme.warning,
+        ),
+      );
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -1165,6 +1220,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         );
         return;
       }
+
+      // Ronda 253: el contacto de emergencia se pasaba dentro de `extraFields`,
+      // pero AuthProvider.updateProfile acepta ese parámetro y NUNCA lo
+      // reenvía a updateMe — y el backend tampoco tiene columnas para él. Así
+      // que el pasajero llenaba a quién avisar en una emergencia, leía "Perfil
+      // actualizado exitosamente", y el dato se perdía. Existe un módulo
+      // dedicado (/api/emergency-contacts) que es donde debe ir.
+      await _saveEmergencyContact();
 
       if (mounted) {
         setState(() {
