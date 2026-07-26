@@ -72,6 +72,8 @@ interface RideUpdateRow {
 }
 
 interface RideMessageRow {
+  sender_name?: string | null
+  sender_photo?: string | null
   id: string
   ride_id: string
   sender_id: string | null
@@ -385,10 +387,17 @@ export async function GET(req: NextRequest) {
 
           // 4.3) nuevos mensajes en rides del user, enviados por otros
           const messages = await query<RideMessageRow>(
+            // Ronda 246: incluimos el nombre y la foto del remitente. Sin
+            // ellos el chat mostraba el avatar como "?" y sin nombre en cada
+            // mensaje que llegaba en vivo (por HTTP sí venía, por eso solo
+            // fallaban los mensajes recién recibidos).
             `SELECT rm.id, rm.ride_id, rm.sender_id, rm.body,
-                    rm.attachment_url, rm.created_at
+                    rm.attachment_url, rm.created_at,
+                    COALESCE(u.display_name, u.full_name) AS sender_name,
+                    u.profile_photo_url AS sender_photo
                FROM ride_messages rm
                JOIN rides r ON r.id = rm.ride_id
+               LEFT JOIN users u ON u.id = rm.sender_id
               WHERE (r.passenger_id = $1 OR r.driver_id = $1)
                 AND rm.sender_id <> $1
                 AND rm.created_at > $2
@@ -403,6 +412,8 @@ export async function GET(req: NextRequest) {
                   id: m.id,
                   rideId: m.ride_id,
                   senderId: m.sender_id,
+                  senderName: m.sender_name,
+                  senderPhoto: m.sender_photo,
                   body: m.body,
                   attachmentUrl: m.attachment_url,
                   createdAt: m.created_at.toISOString(),

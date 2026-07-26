@@ -24,6 +24,31 @@ import '../utils/logger.dart';
 /// 📳 Vibración continua y alertas visuales
 /// 📞 Llamada automática a servicios de emergencia
 class EmergencyService {
+  /// Ronda 246: traduce cualquier alias histórico al enum que acepta el
+  /// backend. Cualquier valor desconocido cae en 'panic' (el más seguro:
+  /// registra la emergencia igual en vez de perderla por un 400).
+  static const Map<String, String> _emergencyTypeMap = {
+    'sos_panic': 'panic',
+    'sos': 'panic',
+    'panic': 'panic',
+    'general': 'panic',
+    'security': 'harassment',
+    'harassment': 'harassment',
+    'medical': 'medical',
+    'accident': 'accident',
+    'vehicleBreakdown': 'mechanical',
+    'vehicle_breakdown': 'mechanical',
+    'mechanical': 'mechanical',
+    'robbery': 'robbery',
+    'theft': 'robbery',
+    'other': 'other',
+  };
+
+  static String _toBackendEmergencyType(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'panic';
+    return _emergencyTypeMap[raw.trim()] ?? 'panic';
+  }
+
   static final EmergencyService _instance = EmergencyService._internal();
   factory EmergencyService() => _instance;
   EmergencyService._internal();
@@ -107,7 +132,13 @@ class EmergencyService {
 
       // 3. REGISTRAR EMERGENCIA EN EL BACKEND (Rapi API)
       final response = await _api.createEmergency(
-        type: emergencyType ?? 'sos_panic',
+        // Ronda 246 SEGURIDAD CRÍTICA: se enviaba 'sos_panic', que NO está en
+        // el enum que valida el backend {panic, medical, mechanical, accident,
+        // harassment, robbery, other} → respondía 400 invalid_type y la
+        // emergencia NUNCA se registraba. El usuario sentía la vibración y la
+        // alarma (pasos locales) y creía que el SOS se había activado, pero
+        // no se avisaba a nadie: ni contactos, ni admins, ni SMS.
+        type: _toBackendEmergencyType(emergencyType),
         latitude: position.latitude,
         longitude: position.longitude,
         rideId: rideId,
@@ -150,7 +181,7 @@ class EmergencyService {
           'user_type': userType,
           'emergency_id': emergencyId,
           'ride_id': rideId ?? '',
-          'emergency_type': emergencyType ?? 'sos_panic',
+          'emergency_type': _toBackendEmergencyType(emergencyType),
         },
       );
 
@@ -588,7 +619,7 @@ class EmergencyService {
   static List<EmergencyType> getEmergencyTypes() {
     return [
       EmergencyType(
-        id: 'sos_panic',
+        id: 'panic',
         name: 'Botón de Pánico',
         description: 'Emergencia general - ayuda inmediata',
         icon: '🚨',

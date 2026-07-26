@@ -482,13 +482,20 @@ class ChatService {
         senderId: (map['senderId'] ?? '').toString(),
         senderName:
             (map['senderName'] ?? fallbackSenderName ?? '').toString(),
-        message: (map['text'] ?? map['message'] ?? '').toString(),
+        // Ronda 246 BUG BLOQUEANTE: el backend serializa el cuerpo del mensaje
+        // como `body` (GET/POST /rides/:id/messages y el evento SSE
+        // new_message). Acá se leía `text`/`message`, que NO existen → TODA
+        // burbuja salía vacía y solo se veía la hora ("Ahora"). Igual pasaba
+        // con el adjunto (`attachmentUrl`) y con el estado de leído, que el
+        // backend expresa como `readAt` (timestamp), no como un bool `isRead`
+        // — por eso el doble check nunca se ponía azul.
+        message: (map['body'] ?? map['text'] ?? map['message'] ?? '').toString(),
         messageType: messageType,
-        mediaUrl: map['mediaUrl']?.toString(),
+        mediaUrl: (map['attachmentUrl'] ?? map['mediaUrl'])?.toString(),
         mediaFileName: map['mediaFileName']?.toString(),
         senderRole: (map['senderRole'] ?? '').toString(),
         timestamp: ts,
-        isRead: map['isRead'] as bool? ?? false,
+        isRead: map['isRead'] as bool? ?? (map['readAt'] != null),
         readAt: readAt,
       );
     } catch (e) {

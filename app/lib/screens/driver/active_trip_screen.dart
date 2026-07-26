@@ -2005,46 +2005,182 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     );
   }
 
+  /// Ronda 246: motivos de cancelación del conductor.
+  /// Antes se mandaba siempre `reason: 'driver_cancelled'` sin preguntar nada,
+  /// y el conductor no sufría ninguna consecuencia — podía soltar viajes sin
+  /// coste. Ahora, igual que en inDriver: elige un motivo, se le descuenta un
+  /// porcentaje, y el equipo revisa el caso desde el panel para devolvérselo
+  /// si el motivo era justificado.
+  static const List<Map<String, String>> _cancelReasons = [
+    {'code': 'passenger_no_show', 'label': 'El pasajero no apareció'},
+    {'code': 'passenger_request', 'label': 'El pasajero me pidió cancelar'},
+    {'code': 'passenger_wrong_address', 'label': 'Dirección incorrecta o inaccesible'},
+    {'code': 'vehicle_issue', 'label': 'Problema con mi vehículo'},
+    {'code': 'traffic_or_road', 'label': 'Vía bloqueada o tráfico extremo'},
+    {'code': 'safety_concern', 'label': 'Motivo de seguridad'},
+    {'code': 'personal_emergency', 'label': 'Emergencia personal'},
+    {'code': 'too_far', 'label': 'El punto está demasiado lejos'},
+    {'code': 'price_disagreement', 'label': 'Desacuerdo con la tarifa'},
+    {'code': 'other', 'label': 'Otro motivo'},
+  ];
+
   void _showCancelConfirmation() {
-    showDialog(
+    String? selectedCode;
+    final detailController = TextEditingController();
+
+    showResponsiveBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancelar Viaje'),
-        content: const Text(
-          '¿Estás seguro de que deseas cancelar este viaje? '
-          'Esto puede afectar tu tasa de aceptación.',
+      maxHeightFraction: 0.9,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            20, 8, 20, MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '¿Por qué cancelas el viaje?',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextPrimary(ctx),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 20, color: Colors.amber.shade800),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Cancelar un viaje aceptado tiene un descuento. '
+                        'Revisaremos tu motivo y, si está justificado, te lo devolvemos.',
+                        style: TextStyle(fontSize: 12.5, color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // RadioGroup (API vigente); RadioListTile.groupValue/onChanged
+              // quedaron deprecados tras Flutter 3.32.
+              RadioGroup<String>(
+                groupValue: selectedCode,
+                onChanged: (v) => setSheetState(() => selectedCode = v),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _cancelReasons.map((r) {
+                    return RadioListTile<String>(
+                      value: r['code']!,
+                      title: Text(r['label']!, style: const TextStyle(fontSize: 14.5)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      activeColor: AppColors.rappiRed,
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: detailController,
+                maxLines: 2,
+                maxLength: 300,
+                decoration: InputDecoration(
+                  labelText: selectedCode == 'other'
+                      ? 'Cuéntanos qué pasó *'
+                      : 'Detalle (opcional)',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(sheetCtx),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Volver'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: selectedCode == null ||
+                              (selectedCode == 'other' &&
+                                  detailController.text.trim().isEmpty)
+                          ? null
+                          : () {
+                              final code = selectedCode!;
+                              final detail = detailController.text.trim();
+                              Navigator.pop(sheetCtx);
+                              _cancelTrip(
+                                reasonCode: code,
+                                reason: detail.isNotEmpty
+                                    ? detail
+                                    : _cancelReasons
+                                        .firstWhere((r) => r['code'] == code)['label'],
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.error,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('Cancelar viaje'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _cancelTrip();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
-            child: const Text('Sí, cancelar'),
-          ),
-        ],
       ),
     );
   }
 
-  Future<void> _cancelTrip() async {
+  Future<void> _cancelTrip({String? reasonCode, String? reason}) async {
     setState(() => _isLoading = true);
 
     try {
-      await _api
-          .cancelRide(widget.tripId, reason: 'driver_cancelled')
+      final resp = await _api
+          .cancelRide(
+            widget.tripId,
+            reason: reason ?? 'driver_cancelled',
+            reasonCode: reasonCode,
+          )
           .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout cancelando viaje');
       });
 
+      final penalty = (resp['driverPenalty'] as num?)?.toDouble() ?? 0.0;
+
       if (mounted) {
+        // Ronda 246: informamos con transparencia cuánto se descontó y que
+        // será revisado. Antes el conductor no se enteraba de nada.
+        if (penalty > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Viaje cancelado. Se descontaron S/ ${penalty.toStringAsFixed(2)}. '
+                'Revisaremos tu motivo y te avisaremos si se te devuelve.',
+              ),
+              backgroundColor: Colors.orange.shade800,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
         Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (route) => false);
       }
     } catch (e) {

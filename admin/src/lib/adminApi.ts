@@ -50,6 +50,26 @@ export interface AdminUserListResponse {
   totalPages: number
 }
 
+export interface AdminCancellation {
+  rideId: string
+  cancelledBy: string | null
+  cancelledByDriver: boolean
+  reason: string | null
+  reasonCode: string | null
+  penaltyAmount: number
+  reviewStatus: 'none' | 'pending' | 'approved' | 'rejected'
+  reviewedBy: string | null
+  reviewedAt: string | null
+  reviewNotes: string | null
+  estimatedFare: number | null
+  pickupAddress: string | null
+  destinationAddress: string | null
+  cancelledAt: string | null
+  createdAt: string
+  driver: { id: string | null; fullName: string | null; email: string | null; phone: string | null; photoUrl: string | null }
+  passengerName: string | null
+}
+
 export interface AdminDriver {
   id: string; fullName: string | null; email: string | null; phone: string | null
   userType: string; isActive: boolean; isVerified: boolean
@@ -347,6 +367,26 @@ class AdminApi {
     input: { status: 'approved' | 'rejected' | 'expired'; rejectionReason?: string; expiresAt?: string },
   ): Promise<{ document: { id: string; status: string }; driverVerified: boolean | null }> {
     return this.rawFetch(`/api/admin/documents/${id}`, { method: 'PATCH', body: input })
+  }
+
+  // ─── Ronda 246: revisión de penalidades por cancelación ─────────
+  async listCancellations(params: {
+    status?: 'pending' | 'approved' | 'rejected' | 'all'
+    page?: number
+    pageSize?: number
+  } = {}): Promise<{ cancellations: AdminCancellation[]; total: number; page: number; totalPages: number }> {
+    const qp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && String(v) !== '') qp.set(k, String(v))
+    }
+    return this.rawFetch(`/api/admin/cancellations?${qp.toString()}`, { method: 'GET' })
+  }
+
+  async reviewCancellation(
+    rideId: string,
+    input: { decision: 'approved' | 'rejected'; notes?: string },
+  ): Promise<{ rideId: string; decision: string; penalty: number; refunded: number }> {
+    return this.rawFetch(`/api/admin/cancellations/${rideId}/review`, { method: 'PATCH', body: input })
   }
 
   /**

@@ -434,7 +434,8 @@ class FirebaseService {
         rideId: rideId,
         latitude: (position?.latitude as num?)?.toDouble() ?? 0.0,
         longitude: (position?.longitude as num?)?.toDouble() ?? 0.0,
-        type: 'sos',
+        // Ronda 246: 'sos' no existe en el enum del backend → era 400.
+        type: 'panic',
         description: 'Emergencia reportada desde seguimiento de viaje',
       );
 
@@ -541,6 +542,30 @@ class FirebaseService {
       if (vehicle?['make'] != null) 'brand': vehicle!['make'],
       if (vehicle?['model'] != null) 'model': vehicle!['model'],
       if (vehicle?['color'] != null) 'color': vehicle!['color'],
+      // Ronda 246: la pantalla de viaje activo del CONDUCTOR lee los datos del
+      // pasajero desde este mismo mapa (`vehicleInfo['passengerName']` y
+      // `['passengerPhoto']`). Al no incluirlos, el conductor veía siempre
+      // "Pasajero" con avatar genérico, aunque el backend sí manda
+      // passengerName/passengerPhotoUrl en la raíz del ride.
+      if (data['passengerName'] != null) 'passengerName': data['passengerName'],
+      if (data['passengerPhotoUrl'] != null) 'passengerPhoto': data['passengerPhotoUrl'],
+      if (data['passengerPhone'] != null) 'passengerPhone': data['passengerPhone'],
+      if (data['passengerRating'] != null) 'passengerRating': data['passengerRating'],
+    };
+    return info.isEmpty ? null : info;
+  }
+
+  /// Ronda 246: `passengerInfo` nunca se poblaba desde el backend Node — el
+  /// JSON no trae esa clave, sus datos van en la raíz. Por eso el botón de
+  /// llamar al pasajero decía "Número de teléfono no disponible" AUNQUE la
+  /// cuenta sí tuviera teléfono registrado.
+  Map<String, dynamic>? _passengerInfoFromRoot(Map<String, dynamic> data) {
+    final info = <String, dynamic>{
+      if (data['passengerName'] != null) 'passengerName': data['passengerName'],
+      if (data['passengerPhone'] != null) 'passengerPhone': data['passengerPhone'],
+      if (data['passengerPhone'] != null) 'phone': data['passengerPhone'],
+      if (data['passengerPhotoUrl'] != null) 'passengerPhoto': data['passengerPhotoUrl'],
+      if (data['passengerRating'] != null) 'passengerRating': data['passengerRating'],
     };
     return info.isEmpty ? null : info;
   }
@@ -610,6 +635,8 @@ class FirebaseService {
         // Lo componemos a partir de lo que realmente llega.
         vehicleInfo: (data['vehicleInfo'] as Map?)?.cast<String, dynamic>() ??
             _vehicleInfoFromRoot(data),
+        passengerInfo: (data['passengerInfo'] as Map?)?.cast<String, dynamic>() ??
+            _passengerInfoFromRoot(data),
         route: data['route'] is List
             ? (data['route'] as List)
                 .whereType<Map>()

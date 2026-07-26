@@ -16,6 +16,7 @@ import {
   FileMinus,
   ShieldCheck,
   X,
+  Ban,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -31,6 +32,7 @@ const navItems: NavItem[] = [
   { label: 'Usuarios', path: '/users', icon: Users },
   { label: 'Conductores', path: '/drivers', icon: Car },
   { label: 'Verificaciones', path: '/verifications', icon: ShieldCheck },
+  { label: 'Cancelaciones', path: '/cancellations', icon: Ban },
   { label: 'Viajes', path: '/trips', icon: Route },
   // Bloque de Recargas y Facturación
   { label: 'Recargas', path: '/recharges', icon: CreditCard },

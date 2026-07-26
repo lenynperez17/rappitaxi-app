@@ -34,13 +34,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 
-  let body: { reason?: string } = {}
+  let body: { reason?: string; reasonCode?: string } = {}
   try {
     body = await req.json()
   } catch {
     // reason es opcional; body vacío está bien
   }
   const reason = body.reason?.trim().slice(0, 500) || null
+  // Ronda 246: código de motivo estructurado (para poder revisarlo en el panel
+  // y agrupar estadísticas). El texto libre `reason` sigue siendo el detalle.
+  const ALLOWED_REASON_CODES = new Set([
+    'passenger_no_show',      // el pasajero no apareció
+    'passenger_wrong_address',// dirección incorrecta / inaccesible
+    'passenger_request',      // el pasajero pidió cancelar
+    'vehicle_issue',          // avería / problema mecánico
+    'traffic_or_road',        // vía bloqueada, tráfico extremo
+    'safety_concern',         // motivo de seguridad
+    'personal_emergency',     // emergencia personal
+    'too_far',                // el punto quedaba demasiado lejos
+    'price_disagreement',     // desacuerdo con la tarifa
+    'other',
+  ])
+  const reasonCode =
+    typeof body.reasonCode === 'string' && ALLOWED_REASON_CODES.has(body.reasonCode.trim())
+      ? body.reasonCode.trim()
+      : null
 
   // Roles del user
   const requester = await maybeOne<{ is_admin: boolean; user_type: string }>(
@@ -83,6 +101,42 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       //     → cancel_fee S/2 (compensación al driver por reserva).
       //   - Driver cancela cualquier estado → sin fee (política empresa: el driver
       //     se penaliza en su rating, no monetariamente).
+      // ---------------------------------------------------------------
+      // Ronda 246: penalidad al CONDUCTOR que cancela (modelo tipo inDriver)
+      // ---------------------------------------------------------------
+      // Antes, un conductor podía cancelar cuantos viajes quisiera sin coste
+      // alguno ("se penaliza en su rating"), lo que en la práctica no penaliza
+      // nada: aceptaba viajes y los soltaba sin consecuencia, dejando al
+      // pasajero tirado. Ahora se le descuenta un porcentaje de la tarifa y
+      // queda PENDIENTE DE REVISIÓN: el conductor declara un motivo y un
+      // admin decide desde el panel si se lo devuelve.
+      //
+      // Motivos que el conductor puede alegar (los "justificables" igualmente
+      // se cobran de entrada y se marcan para revisión; el admin decide).
+      const DRIVER_PENALTY_RATE = 0.12 // 12% de la tarifa estimada
+      const DRIVER_PENALTY_MIN = 1.00
+      const DRIVER_PENALTY_MAX = 10.00
+
+      let driverPenalty = 0
+      let penaltyReviewStatus: 'none' | 'pending' = 'none'
+
+      if (isDriver && !isAdmin) {
+        // Solo penalizamos si el conductor ya se había comprometido con el
+        // viaje (aceptado en adelante). Rechazar antes de aceptar no penaliza.
+        const compromisoEstados = new Set(['accepted', 'on_way', 'arrived', 'in_progress'])
+        if (compromisoEstados.has(ride.status)) {
+          const base = Number(ride.estimated_fare ?? 0)
+          const raw = base > 0 ? base * DRIVER_PENALTY_RATE : DRIVER_PENALTY_MIN
+          driverPenalty = Math.min(
+            DRIVER_PENALTY_MAX,
+            Math.max(DRIVER_PENALTY_MIN, Math.round(raw * 100) / 100),
+          )
+          // Toda penalidad nace "pendiente de revisión": el conductor dio un
+          // motivo y el equipo lo evalúa desde el panel para devolvérsela.
+          penaltyReviewStatus = 'pending'
+        }
+      }
+
       const CANCEL_FEE = 2.00
       let cancelFee = 0
       if (isPassenger && !isAdmin) {
@@ -113,13 +167,64 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancelled_reason = $2,
+                cancel_reason_code = $5,
+                cancel_penalty_amount = $6::numeric,
+                penalty_review_status = $7,
                 completed_at = now(),
                 final_fare = NULL,
                 metadata = COALESCE(metadata, '{}'::jsonb)
-                         || jsonb_build_object('cancellationFee', $3::numeric)
+                         || jsonb_build_object(
+                              'cancellationFee', $3::numeric,
+                              'driverPenalty', $6::numeric,
+                              'cancelReasonCode', $5::text
+                            )
           WHERE id = $4`,
-        [auth.userId, reason, cancelFee > 0 ? cancelFee : 0, id],
+        [
+          auth.userId,
+          reason,
+          cancelFee > 0 ? cancelFee : 0,
+          id,
+          reasonCode,
+          driverPenalty,
+          penaltyReviewStatus,
+        ],
       )
+
+      // ---------------------------------------------------------------
+      // Ronda 246: cobrar la penalidad al conductor que canceló.
+      // Queda como transacción de tipo 'penalty' en su billetera, con el
+      // motivo en metadata para que el panel pueda revisarla y devolverla.
+      // ---------------------------------------------------------------
+      if (driverPenalty > 0 && ride.driver_id) {
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1, 42))`,
+          [ride.driver_id],
+        )
+        const drvBalRes = await client.query<{ balance: string }>(
+          'SELECT rapi_team_user_balance($1)::text AS balance',
+          [ride.driver_id],
+        )
+        const drvBalance = Number(drvBalRes.rows[0]?.balance ?? 0)
+        await client.query(
+          `INSERT INTO wallet_transactions
+             (user_id, type, amount, balance_after, description, status, ride_id, completed_at, metadata)
+           VALUES ($1, 'debit', $2, $3, $4, 'completed', $5, now(), $6::jsonb)`,
+          [
+            ride.driver_id,
+            -driverPenalty,
+            Math.round((drvBalance - driverPenalty) * 100) / 100,
+            `Penalidad por cancelar viaje (S/${driverPenalty.toFixed(2)}) — en revisión`,
+            id,
+            JSON.stringify({
+              kind: 'driver_cancel_penalty',
+              reasonCode,
+              reason,
+              reviewStatus: 'pending',
+              rideStatusAtCancel: ride.status,
+            }),
+          ],
+        )
+      }
 
       // Aplicar cancel fee al passenger si corresponde (via wallet debit).
       // Solo cobrable si el ride tenía wallet como payment method — para cash
@@ -242,6 +347,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         reason,
         passengerId: ride.passenger_id,
         driverId: ride.driver_id,
+        driverPenalty,
+        penaltyReviewStatus,
       }
     })
 
@@ -281,6 +388,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       rideId: result.rideId,
       cancelledBy: result.cancelledBy,
       reason: result.reason,
+      // Ronda 246: el cliente muestra al conductor cuánto se le descontó y
+      // que puede pedir revisión.
+      driverPenalty: result.driverPenalty,
+      penaltyReviewStatus: result.penaltyReviewStatus,
     })
   } catch (err) {
     const knownCode = (err as { code?: string; message?: string })?.code

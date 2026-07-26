@@ -657,9 +657,16 @@ class RapiApiClient {
   Future<Map<String, dynamic>> acceptRide(String rideId) async =>
       (await _authedPost('/api/rides/$rideId/accept'))!;
 
-  Future<Map<String, dynamic>> cancelRide(String rideId, {String? reason}) async =>
+  /// Ronda 246: `reasonCode` es el motivo estructurado que el panel usa para
+  /// revisar la penalidad del conductor y decidir si se le devuelve.
+  Future<Map<String, dynamic>> cancelRide(
+    String rideId, {
+    String? reason,
+    String? reasonCode,
+  }) async =>
       (await _authedPost('/api/rides/$rideId/cancel', body: {
         if (reason != null) 'reason': reason,
+        if (reasonCode != null) 'reasonCode': reasonCode,
       }))!;
 
   Future<Map<String, dynamic>> markRideArrived(String rideId) async =>

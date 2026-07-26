@@ -101,11 +101,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (ride.driver_id && ride.driver_id !== ride.passenger_id) {
         lockIds.push(ride.driver_id)
       }
+      // Ronda 246 BUG BLOQUEANTE: esta query tiraba
+      //   "no existe la función hashtextextended(uuid, integer)"
+      // y como está dentro de la tx, TODO /complete devolvía HTTP 500 →
+      // el conductor no podía finalizar NINGÚN viaje ("Error finalizando
+      // viaje") y por tanto tampoco cobrar.
+      // Dos errores en una línea:
+      //   1. `hashtextextended` opera sobre TEXT, no sobre uuid — el cast a
+      //      `uuid[]` hacía que Postgres no encontrara ninguna sobrecarga.
+      //   2. Los user_id de esta base NO siempre son UUID: las cuentas
+      //      migradas de Firebase usan ids tipo 'UmC79Ois57brSGI2VvkEIOXqAx53',
+      //      así que `$1::uuid[]` habría reventado igual con esos usuarios.
+      // Solución: tratar los ids como text (que es lo que son) y castear el
+      // seed a bigint, que es la firma real hashtextextended(text, int8).
       if (lockIds.length > 0) {
         await client.query(
-          `SELECT pg_advisory_xact_lock(hashtextextended(id, 42))
-             FROM unnest($1::uuid[]) AS t(id)
-             ORDER BY hashtextextended(t.id, 42) ASC`,
+          `SELECT pg_advisory_xact_lock(hashtextextended(t.id, 42::bigint))
+             FROM unnest($1::text[]) AS t(id)
+             ORDER BY hashtextextended(t.id, 42::bigint) ASC`,
           [lockIds],
         )
       }

@@ -20,6 +20,7 @@ import { InvoicesPage } from './pages/recharges/InvoicesPage'
 import { CreditNotesPage } from './pages/recharges/CreditNotesPage'
 import { VerificationsPage } from './pages/verifications/VerificationsPage'
 import { DriverVerificationDetailPage } from './pages/verifications/DriverVerificationDetailPage'
+import { CancellationsPage } from './pages/cancellations/CancellationsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +71,7 @@ function AppRoutes() {
         <Route path="drivers" element={<DriversPage />} />
         <Route path="verifications" element={<VerificationsPage />} />
         <Route path="verifications/:driverId" element={<DriverVerificationDetailPage />} />
+        <Route path="cancellations" element={<CancellationsPage />} />
         <Route path="trips" element={<TripsPage />} />
         <Route path="recharges" element={<RechargesPage />} />
         <Route path="recharges/:rechargeId" element={<RechargeDetailPage />} />
