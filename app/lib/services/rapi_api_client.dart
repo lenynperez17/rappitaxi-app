@@ -1002,6 +1002,10 @@ class RapiApiClient {
     await _authedDelete('/api/payment-methods/$paymentMethodId');
   }
 
+  /// Ronda 247: el backend lee el tamaño de página como `limit`, no como
+  /// `pageSize` — mandábamos `pageSize` y siempre devolvía el default de 50.
+  /// Cualquier cálculo sobre "los últimos N movimientos" quedaba truncado en
+  /// silencio (p. ej. pedir 200 y recibir 50). Enviamos ambos por compatibilidad.
   Future<Map<String, dynamic>> listWalletTransactions({
     String? type,
     int page = 1,
@@ -1010,6 +1014,7 @@ class RapiApiClient {
       (await _authedGet('/api/wallet/transactions', queryParams: {
         if (type != null) 'type': type,
         'page': page.toString(),
+        'limit': pageSize.toString(),
         'pageSize': pageSize.toString(),
       }))!;
 

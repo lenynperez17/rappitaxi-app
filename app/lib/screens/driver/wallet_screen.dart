@@ -60,8 +60,12 @@ class _WalletScreenState extends State<WalletScreen>
   // Timer para polling de balance (reemplaza el StreamSubscription de Firestore)
   Timer? _walletPollTimer;
 
-  // Transacciones reales desde el backend Node (inicialmente vacío)
-  final List<Transaction> _transactions = [];
+  // Ronda 247 BUG BLOQUEANTE: esta lista era `final` y NUNCA se poblaba — la
+  // pantalla jamás llamaba a /api/wallet/transactions. Resultado: un conductor
+  // con cientos de viajes cobrados veía Ganancias Hoy S/0.00, Viajes 0,
+  // Comisión S/0.00, gráfico plano, pestañas vacías y PDF/CSV en blanco. Solo
+  // el círculo del saldo era real.
+  List<Transaction> _transactions = [];
   
   // Estadísticas
   Map<String, dynamic> get _statistics {
@@ -122,11 +126,19 @@ class _WalletScreenState extends State<WalletScreen>
   /// y arranca el polling periódico (reemplaza el listener reactivo de Firestore).
   Future<void> _bootstrap() async {
     try {
-      final me = await _api.me();
+      final meResp = await _api.me();
       if (!mounted) return;
-      if (me != null) {
+      if (meResp != null) {
+        // Ronda 247: /api/auth/me responde {success, user:{...}} — el objeto va
+        // ANIDADO bajo `user`. Al leer del root, el id quedaba null para
+        // siempre y el retiro abortaba con "Usuario no autenticado".
+        // Además el backend manda `fullName`, no `name`.
+        final me = (meResp['user'] is Map)
+            ? (meResp['user'] as Map).cast<String, dynamic>()
+            : meResp;
         _currentUserId = (me['id'] ?? me['uid'])?.toString();
-        _currentUserName = (me['name'] ?? me['displayName']) as String?;
+        _currentUserName =
+            (me['fullName'] ?? me['displayName'] ?? me['name']) as String?;
         _currentUserEmail = me['email'] as String?;
       }
     } catch (e) {
@@ -134,6 +146,7 @@ class _WalletScreenState extends State<WalletScreen>
     }
 
     await _refreshWalletBalance();
+    await _refreshTransactions();
 
     // ✅ Polling cada 30s como sustituto del listener reactivo de Firestore.
     // TODO(node-migration): reemplazar con RapiSseClient.instance.walletUpdates
@@ -141,6 +154,7 @@ class _WalletScreenState extends State<WalletScreen>
     _walletPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       _refreshWalletBalance();
+      _refreshTransactions();
     });
   }
 
@@ -165,6 +179,59 @@ class _WalletScreenState extends State<WalletScreen>
       if (!_isBalanceLoaded && mounted) {
         setState(() => _isBalanceLoaded = true);
       }
+    }
+  }
+
+  /// Ronda 247: carga las transacciones reales del backend. Sin esto toda la
+  /// pantalla (ganancias, viajes, comisión, gráfico, exportaciones) mostraba
+  /// ceros permanentes.
+  Future<void> _refreshTransactions() async {
+    try {
+      final resp = await _api.listWalletTransactions(pageSize: 200);
+      final raw = (resp['transactions'] ?? resp['items'] ?? []) as List<dynamic>;
+      final parsed = <Transaction>[];
+      for (final r in raw) {
+        if (r is! Map) continue;
+        final t = r.cast<String, dynamic>();
+        final amount = (t['amount'] as num?)?.toDouble() ?? 0.0;
+        final typeStr = (t['type'] ?? '').toString();
+        final meta = t['metadata'] is Map
+            ? (t['metadata'] as Map).cast<String, dynamic>()
+            : const <String, dynamic>{};
+
+        // Mapear los tipos del backend al enum local.
+        TransactionType type;
+        if (typeStr == 'withdrawal' || meta['kind'] == 'withdrawal') {
+          type = TransactionType.withdrawal;
+        } else if (typeStr == 'bonus' || meta['kind'] == 'bonus') {
+          type = TransactionType.bonus;
+        } else if (meta['kind'] == 'driver_cancel_penalty' ||
+            typeStr == 'penalty' ||
+            typeStr == 'commission') {
+          type = TransactionType.penalty;
+        } else if (amount >= 0) {
+          type = TransactionType.tripEarning;
+        } else {
+          type = TransactionType.penalty;
+        }
+
+        parsed.add(Transaction(
+          id: (t['id'] ?? '').toString(),
+          type: type,
+          amount: amount.abs(),
+          date: DateTime.tryParse((t['createdAt'] ?? t['completedAt'] ?? '').toString()) ??
+              DateTime.now(),
+          description: (t['description'] ?? 'Movimiento').toString(),
+          passenger: t['passengerName']?.toString(),
+          status: (t['status'] ?? 'completed').toString(),
+          // Comisión real del viaje, si el backend la adjuntó.
+          commission: (meta['commissionAmount'] as num?)?.toDouble(),
+        ));
+      }
+      if (!mounted) return;
+      setState(() => _transactions = parsed);
+    } catch (e) {
+      debugPrint(userFriendlyError(e, fallback: 'Error cargando transacciones'));
     }
   }
 
