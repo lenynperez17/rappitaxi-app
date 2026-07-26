@@ -75,4 +75,35 @@
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@android:color/holo_red_dark"/>
     </application>
+
+    <!--
+      Ronda 253: desde Android 11 (API 30) las apps solo ven las otras apps que
+      declaran aquí. Con targetSdk 35 y SIN este bloque, canLaunchUrl() devuelve
+      false para tel:, mailto:, sms: y https:, así que el botón de LLAMAR al
+      pasajero/conductor, el de WhatsApp y el correo de soporte respondían
+      "No se puede abrir la app de teléfono" en TODOS los Android modernos —
+      aunque el teléfono sí tuviera app de llamadas.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 </manifest>
