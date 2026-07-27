@@ -341,11 +341,48 @@ export async function GET(req: NextRequest) {
               LIMIT 50`,
             [userId, ACTIVE_RIDE_STATUSES as unknown as string[], lastRideUpdateAt],
           )
+          // Ronda 259: incluir las ofertas pendientes del ride.
+          //
+          // El cliente del conductor usa `driverOffers` para saber si su
+          // oferta sigue viva: si NO la encuentra, cierra el overlay diciendo
+          // "El pasajero rechazó tu oferta". Como este evento nunca enviaba el
+          // campo, el cliente leía una lista vacía y anunciaba un rechazo
+          // inexistente en cuanto llegaba cualquier actualización — la
+          // pantalla se le cerraba sola al ofertar. El cliente ya se blindó
+          // (solo concluye rechazo si la lista viene de verdad), pero además
+          // enviamos el dato para que el rechazo REAL se siga detectando.
+          const offersByRide = new Map<string, Array<Record<string, unknown>>>()
+          if (rides.length > 0) {
+            const offerRows = await query<{
+              ride_id: string
+              driver_id: string
+              amount: string
+              eta_seconds: number | null
+              status: string
+            }>(
+              `SELECT ride_id, driver_id, amount::text, eta_seconds, status
+                 FROM ride_offers
+                WHERE ride_id = ANY($1::uuid[]) AND status = 'pending'`,
+              [rides.map((r) => r.id)],
+            )
+            for (const o of offerRows) {
+              const list = offersByRide.get(o.ride_id) ?? []
+              list.push({
+                driverId: o.driver_id,
+                amount: Number(o.amount),
+                etaSeconds: o.eta_seconds,
+                status: o.status,
+              })
+              offersByRide.set(o.ride_id, list)
+            }
+          }
+
           for (const r of rides) {
             if (
               !send(
                 sseEvent('ride_update', {
                   rideId: r.id,
+                  driverOffers: offersByRide.get(r.id) ?? [],
                   passengerId: r.passenger_id,
                   driverId: r.driver_id,
                   status: r.status,

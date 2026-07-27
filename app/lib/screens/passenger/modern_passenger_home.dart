@@ -768,38 +768,20 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     });
   }
 
+  /// Ronda 259: esta función sembraba SIETE "puntos de recogida sugeridos"
+  /// alrededor del pasajero generados con Random() — y ni siquiera ajustados a
+  /// calles reales: `_snapToNearestRoads` devuelve los candidatos crudos desde
+  /// la ronda 216. Eran los circulitos grises que se veían sueltos por el mapa.
+  /// Si el pasajero tocaba uno, su punto de recogida acababa en mitad de una
+  /// manzana, en un sitio donde ningún coche puede parar.
+  ///
+  /// Mismo criterio que con los conductores simulados: si el dato no es real,
+  /// no se pinta. Se conserva la función (vacía) porque varios sitios la
+  /// llaman y limpian marcadores 'ref_dot' que ya no se crean.
   Future<void> _addReferencePointDots(LatLng center) async {
-    _refDotIcon = await getReferencePointIcon();
-    _refDotActiveIcon = await getReferencePointActiveIcon();
     _markers.removeWhere((m) => m.markerId.value.startsWith('ref_dot'));
     _refDotPositions.clear();
     _activeRefDotIndex = -1;
-
-    final random = Random();
-    const int dotCount = 7;
-
-    final candidates = <LatLng>[];
-    for (int i = 0; i < dotCount; i++) {
-      final angle = (i / dotCount) * 2 * pi + (random.nextDouble() - 0.5) * 0.4;
-      final dist = 0.0003 + random.nextDouble() * 0.0008;
-      candidates.add(LatLng(
-        center.latitude + cos(angle) * dist,
-        center.longitude + sin(angle) * dist,
-      ));
-    }
-
-    final positions = await _snapToNearestRoads(candidates);
-
-    for (int i = 0; i < positions.length; i++) {
-      _refDotPositions.add(positions[i]);
-      _markers.add(Marker(
-        markerId: MarkerId('ref_dot_$i'),
-        position: positions[i],
-        icon: _refDotIcon!,
-        anchor: const Offset(0.5, 0.5),
-        zIndex: 1,
-      ));
-    }
     if (mounted) setState(() {});
   }
 

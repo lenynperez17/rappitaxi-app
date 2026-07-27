@@ -156,10 +156,16 @@ export async function POST(req: NextRequest) {
           AND u.is_active = true
           AND u.suspended_at IS NULL
           AND ($3::text IS NULL OR p.vehicle_type = $3::text)
+          -- Ronda 259: excluir al propio usuario. Con una cuenta DUAL
+          -- (pasajero + conductor) conectada como conductor, su propio coche
+          -- se devolvía como "conductor cercano" y se pintaba justo encima de
+          -- su pin de recogida: el marcador y el carro aparecían encimados en
+          -- el mismo punto, que es lo que se veía raro en el mapa.
+          AND p.driver_id <> $6::text
           AND haversine_km(p.latitude, p.longitude, $1::numeric, $2::numeric) <= $4::numeric
         ORDER BY distance_km ASC
         LIMIT $5`,
-      [latitude, longitude, vehicleType, radiusKm, limit],
+      [latitude, longitude, vehicleType, radiusKm, limit, auth.userId],
     )
 
     const drivers = rows.map((r) => ({

@@ -805,9 +805,21 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         }
       }
 
-      // Check if offer was rejected (removed from driverOffers array)
-      if (status == 'requested' && _driverId != null) {
-        final driverOffers = data['driverOffers'] as List<dynamic>? ?? [];
+      // Ronda 259: ESTE ERA EL "SE CIERRA SOLO" AL OFERTAR.
+      //
+      // El evento SSE NO incluye `driverOffers` — el serializador del stream
+      // nunca lo ha enviado. Así que `driverOffers` era SIEMPRE una lista
+      // vacía, `myOfferStillExists` SIEMPRE false, y en el primer evento que
+      // llegara tras ofertar se cerraba el overlay anunciando "El pasajero
+      // rechazó tu oferta" — sin que nadie hubiera rechazado nada. El
+      // conductor ofertaba y la pantalla se le cerraba sola.
+      //
+      // Ahora solo se trata como rechazo si el evento REALMENTE trae la lista
+      // de ofertas. Si no viene, no hay información y no se concluye nada: el
+      // rechazo real llega igualmente por el evento de estado del viaje.
+      final rawOffers = data['driverOffers'];
+      if (status == 'requested' && _driverId != null && rawOffers is List) {
+        final driverOffers = rawOffers;
         final myOfferStillExists = driverOffers.any((o) => (o as Map<String, dynamic>)['driverId'] == _driverId);
         if (!myOfferStillExists && _offeringOverlayText != null) {
           _myOfferSubscription?.cancel();
@@ -822,7 +834,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           });
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('El pasajero rechazo tu oferta'), backgroundColor: Colors.orange),
+              SnackBar(content: Text('El pasajero rechazó tu oferta'), backgroundColor: Colors.orange),
             );
           }
           return;
@@ -1456,10 +1468,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         return;
       }
 
-      // Check if my offer was rejected in the driverOffers array
-      if (status == 'waiting' || status == 'negotiating') {
-        final List<dynamic> driverOffers = data['driverOffers'] ?? [];
-        final myOffer = driverOffers.where((o) => o['driverId'] == _driverId).toList();
+      // Ronda 259: mismo fallo que arriba, segunda copia. Si el evento no trae
+      // `driverOffers` (el SSE nunca lo envía), `?? []` daba lista vacía y se
+      // anunciaba un rechazo inexistente cerrando la pantalla del conductor.
+      // Solo se concluye rechazo cuando la lista viene de verdad.
+      final rawOffers2 = data['driverOffers'];
+      if ((status == 'waiting' || status == 'negotiating') && rawOffers2 is List) {
+        final myOffer = rawOffers2.where((o) => o['driverId'] == _driverId).toList();
 
         if (myOffer.isEmpty && _offeringOverlayText != null) {
           _dismissOfferingOverlay('El pasajero rechazó tu oferta');
