@@ -47,6 +47,14 @@ export async function PATCH(req: NextRequest) {
   // sin auditoría estructurada. Cada key acá debe corresponder a un setting
   // realmente usado por el runtime; añadir explícitamente al agregar features.
   const ALLOWED_SETTING_KEYS = new Set([
+    // Ronda 263: `rides.commission_percent` es el ajuste que el panel MUESTRA
+    // (es el que tiene descripción legible), pero NO estaba en esta lista
+    // blanca: el administrador lo editaba, pulsaba Guardar y el servidor lo
+    // descartaba en silencio. Además el código de comisión leía el otro
+    // (`commission_rate`), así que había dos valores distintos y ninguno
+    // hacía lo que el panel daba a entender. Ahora `commission_percent` es la
+    // fuente única y sí se puede guardar.
+    'rides.commission_percent',
     'rides.commission_rate',
     'rides.surge_cap',
     'rides.max_search_radius_km',

@@ -205,15 +205,35 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       // Ronda 199: leer commissionRate SIEMPRE (no solo para wallet) — se usa
       // también en cash para descontar la comisión de la plataforma al driver.
       const commissionRateRes = await client.query<{ value: unknown }>(
-        `SELECT value FROM app_settings WHERE key = 'rides.commission_rate' LIMIT 1`,
+        // Ronda 263: había DOS ajustes de comisión en la base de datos:
+        //   rides.commission_percent = 22   (el que el panel MUESTRA, con
+        //                                    descripción legible)
+        //   rides.commission_rate    = 0.20 (el único que el código LEÍA)
+        // El administrador cambiaba el 22 en el panel y no pasaba nada: se
+        // seguía cobrando según el otro. Ahora manda `commission_percent`
+        // (0-100, que es lo que se ve y se entiende en el panel) y
+        // `commission_rate` queda solo como respaldo heredado.
+        `SELECT
+            (SELECT value FROM app_settings WHERE key = 'rides.commission_percent') AS pct,
+            (SELECT value FROM app_settings WHERE key = 'rides.commission_rate')    AS rate`,
       )
-      const rawSettingVal = commissionRateRes.rows[0]?.value
-      const rawRate = typeof rawSettingVal === 'number'
-        ? rawSettingVal
-        : Number(rawSettingVal)
+      const row = commissionRateRes.rows[0] as unknown as
+        { pct?: unknown; rate?: unknown } | undefined
+
+      // Prioridad 1: rides.commission_percent (0-100). Es el que el panel
+      // muestra con descripción, así que es el que el administrador cree que
+      // está editando — y ahora es el que manda de verdad.
+      const pctNum = Number(row?.pct)
+      // Prioridad 2 (heredado): rides.commission_rate (0-1).
+      const rateNum = Number(row?.rate)
+
       let commissionRate = 0.20
-      if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 1) {
-        commissionRate = rawRate
+      let rawSettingVal: unknown = row?.pct ?? row?.rate
+      if (Number.isFinite(pctNum) && pctNum >= 0 && pctNum <= 100) {
+        commissionRate = pctNum / 100
+      } else if (Number.isFinite(rateNum) && rateNum >= 0 && rateNum <= 1) {
+        commissionRate = rateNum
+        rawSettingVal = row?.rate
       } else if (rawSettingVal !== null && rawSettingVal !== undefined) {
         console.warn(
           `[rides/complete] app_settings.rides.commission_rate inválido (${String(rawSettingVal)}) — usando fallback 0.20. Corregir en admin.`,
