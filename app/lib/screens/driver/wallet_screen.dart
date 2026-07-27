@@ -380,7 +380,11 @@ class _WalletScreenState extends State<WalletScreen>
               tabs: const [
                 Tab(text: 'Todo'),
                 Tab(text: 'Ingresos'),
-                Tab(text: 'Gastos'),
+                // Ronda 266: esta pestaña NO muestra gastos — contiene el
+                // formulario de RECARGA. Un conductor que se quedaba sin saldo
+                // no tenía forma de adivinar que para recargar debía entrar en
+                // "Gastos". Se renombra a lo que realmente hace.
+                Tab(text: 'Recargar'),
                 Tab(text: 'Retirar'),
               ],
             ),

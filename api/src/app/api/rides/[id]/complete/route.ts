@@ -383,7 +383,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
             updated.driver_id,
             -commissionAmount,
             driverBalAfter,
-            `Comisión plataforma viaje ${id} (${updated.payment_method})`,
+            // Ronda 266: aquí se metía el UUID completo del viaje en la
+            // descripción, y el conductor lo veía tal cual en su historial:
+            // "Comisión plataforma viaje fb910e29-e24d-482d-a8b4-4853d425f7d6
+            // (cash)". El id sigue guardado en la columna ride_id, que es donde
+            // corresponde; la descripción ahora es legible para una persona.
+            `Comisión del viaje`,
             id,
             JSON.stringify({
               finalFare,
