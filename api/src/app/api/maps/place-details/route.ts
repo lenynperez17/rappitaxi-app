@@ -44,6 +44,44 @@ export async function GET(req: NextRequest) {
   // pero pueden llegar también "N123"/"W456"/"R789" (osm_id explícito) o
   // numéricos plain. Ronda 53 Bug#2: para numéricos plain usar /details
   // (place_id) NO /lookup (que requiere osm_id != place_id).
+  // Ronda 262: los identificadores de Mapbox ('address.8248033810671360',
+  // 'poi.123…') NO son de OSM y este endpoint no sabía resolverlos: caía por
+  // todas las ramas y devolvía error. Como la app usaba esta vía cuando le
+  // faltaba la coordenada, el destino se quedaba sin resolver y no se marcaba
+  // la ruta. El cliente ya no necesita esta llamada (usa lat/lng de la propia
+  // predicción), pero se resuelve igualmente por si alguna pantalla la usa.
+  if (/^(address|poi|place|neighborhood|locality|district|region|country)\./i.test(placeId)) {
+    const token = process.env.MAPBOX_ACCESS_TOKEN
+    if (token) {
+      try {
+        const r = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(placeId)}.json` +
+            `?access_token=${token}&country=pe&limit=1`,
+          { signal: AbortSignal.timeout(6000) },
+        )
+        if (r.ok) {
+          const d = await r.json() as {
+            features?: Array<{ center?: [number, number]; place_name?: string; text?: string }>
+          }
+          const f = d.features?.[0]
+          if (f?.center && f.center.length >= 2) {
+            const [lon, la] = f.center
+            return NextResponse.json({
+              success: true,
+              placeId,
+              name: f.text ?? f.place_name ?? '',
+              formattedAddress: f.place_name ?? '',
+              lat: la,
+              lng: lon,
+            })
+          }
+        }
+      } catch {
+        // cae a la resolución OSM de abajo
+      }
+    }
+  }
+
   try {
     let details: OsmDetails | null = null
 

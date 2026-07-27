@@ -1078,11 +1078,21 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         final preds = (data['predictions'] as List?) ?? const [];
         final results = preds
             .whereType<Map<String, dynamic>>()
+            // Ronda 262: aquí se DESCARTABAN lat/lng, que el backend sí envía
+            // en cada predicción. Sin ellas, al tocar una sugerencia la app
+            // caía a placeDetails(placeId) — y los identificadores de Mapbox
+            // ('address.8248…') no los sabe resolver ese endpoint, pensado
+            // para los de OSM. Resultado: el texto se quedaba escrito en el
+            // campo pero NUNCA se obtenía la coordenada, así que no se
+            // marcaba el destino ni se dibujaba la ruta. Tocabas y no pasaba
+            // nada.
             .map((p) => PlacePrediction(
                   placeId: (p['placeId'] as String?) ?? '',
                   description: (p['description'] as String?) ?? '',
                   mainText: (p['mainText'] as String?) ?? (p['description'] as String?) ?? '',
                   secondaryText: (p['secondaryText'] as String?) ?? '',
+                  lat: (p['lat'] as num?)?.toDouble(),
+                  lng: (p['lng'] as num?)?.toDouble(),
                 ))
             .toList();
         setState(() {
@@ -1164,12 +1174,16 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         );
         if (!mounted) return;
         setState(() {
+          // Ronda 262: mismo fallo que en el destino — esta copia perdía
+          // lat/lng y obligaba a resolver el placeId por segunda vía.
           _originSearchResults = preds
               .map((p) => PlacePrediction(
                     placeId: p.placeId,
                     description: p.description,
                     mainText: p.mainText,
                     secondaryText: p.secondaryText,
+                    lat: p.lat,
+                    lng: p.lng,
                   ))
               .toList();
           _isSearchingPlaces = false;
