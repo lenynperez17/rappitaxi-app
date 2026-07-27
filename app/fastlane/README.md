@@ -39,6 +39,14 @@ Upload metadata
 
 
 
+### ios review_status
+
+```sh
+[bundle exec] fastlane ios review_status
+```
+
+
+
 ### ios upload_ipa
 
 ```sh
