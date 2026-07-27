@@ -1252,15 +1252,40 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     double northEastLat = max(_pickupCoordinates!.latitude, _destinationCoordinates!.latitude);
     double northEastLng = max(_pickupCoordinates!.longitude, _destinationCoordinates!.longitude);
 
+    // Ronda 260: mismo blindaje que en el mini-mapa del conductor. Con un
+    // destino corrupto (los viajes guardados con el destino en Austria) el
+    // encuadre abarcaba Perú + Europa: el mapa quedaba centrado en mitad del
+    // Atlántico y se veía COMPLETAMENTE AZUL, sin tierra ni marcadores.
+    // Si las coordenadas no son creíbles, se encuadra solo el origen.
+    final vals = [southWestLat, southWestLng, northEastLat, northEastLng];
+    final coordsOk = vals.every((v) => v.isFinite) &&
+        southWestLat >= -90 && northEastLat <= 90 &&
+        southWestLng >= -180 && northEastLng <= 180;
+
+    _isSnapping = true;
+    if (!coordsOk) {
+      _mapController!.moveCamera(
+        CameraUpdate.newLatLngZoom(_pickupCoordinates!, _kZoomLevelMedium),
+      );
+      AppLogger.warning('Coordenadas de destino fuera de rango; '
+          'se encuadra solo el origen');
+      return;
+    }
+
     LatLngBounds bounds = LatLngBounds(
       southwest: LatLng(southWestLat, southWestLng),
       northeast: LatLng(northEastLat, northEastLng),
     );
 
-    _isSnapping = true;
-    _mapController!.moveCamera(
-      CameraUpdate.newLatLngBounds(bounds, 60.0),
-    );
+    try {
+      _mapController!.moveCamera(
+        CameraUpdate.newLatLngBounds(bounds, 60.0),
+      );
+    } catch (e) {
+      _mapController!.moveCamera(
+        CameraUpdate.newLatLngZoom(_pickupCoordinates!, _kZoomLevelMedium),
+      );
+    }
 
     AppLogger.info('Zoom ajustado para mostrar origen y destino');
   }

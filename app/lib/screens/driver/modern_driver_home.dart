@@ -3461,14 +3461,37 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
           ? widget.pickup.longitude
           : widget.destination.longitude,
     );
-    // El mapa necesita estar renderizado antes de aceptar el encuadre.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      c.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(southwest: sw, northeast: ne),
-          48,
-        ),
-      );
+    // Ronda 260: esto TIRABA LA APP ENTERA. Con un destino corrupto (los
+    // viajes que se guardaron con el destino en Austria, lat 46.78/lng 15.57)
+    // los bounds abarcaban medio planeta y `newLatLngBounds` revienta; además
+    // lanza si el mapa aún no tiene tamaño, o si las coordenadas son NaN.
+    // Al tocar la solicitud, el conductor se quedaba sin app.
+    //
+    // Se valida que las cuatro coordenadas sean finitas y estén dentro de
+    // rango, y se envuelve el encuadre: si algo falla se cae al zoom simple
+    // sobre el origen, nunca al cierre de la app.
+    final coords = [sw.latitude, sw.longitude, ne.latitude, ne.longitude];
+    final valid = coords.every((v) => v.isFinite) &&
+        sw.latitude >= -90 && ne.latitude <= 90 &&
+        sw.longitude >= -180 && ne.longitude <= 180;
+    if (!valid) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await c.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            LatLngBounds(southwest: sw, northeast: ne),
+            48,
+          ),
+        );
+      } catch (e) {
+        // Fallback seguro: encuadrar solo el origen.
+        try {
+          await c.animateCamera(
+            CameraUpdate.newLatLngZoom(widget.pickup, 13.0),
+          );
+        } catch (_) {/* el mapa se destruyó; nada que hacer */}
+      }
     });
   }
 

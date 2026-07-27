@@ -153,19 +153,30 @@ export async function POST(req: NextRequest) {
   // Ronda 79: validar rango lat/lng además de tipo. Sin esto, coords absurdas
   // (999, -4000) llegaban a Postgres y contaminaban Haversine + crasheaban
   // Google Maps client + envenenaban analytics.
+  // Ronda 260: además del rango planetario, se exige que el punto caiga
+  // dentro de PERÚ. Última línea de defensa: si el geocodificador vuelve a
+  // fallar, el viaje no se crea con basura. En producción se guardaron tres
+  // viajes con el destino en AUSTRIA (lat 46.78, lng 15.57) porque Photon
+  // devolvió un resultado europeo — pasaban esta validación sin problema al
+  // ser coordenadas "válidas" en el sentido geométrico. El mapa salía todo
+  // azul, la distancia quedaba nula y la app del conductor se cerraba.
+  // Perú: lat -18.4..0.0, lng -81.4..-68.6 (con margen).
+  const inPeru = (lat: number, lng: number): boolean =>
+    lat >= -19 && lat <= 0.5 && lng >= -82 && lng <= -68
   const isValidCoord = (lat: unknown, lng: unknown): boolean =>
     typeof lat === 'number' && typeof lng === 'number' &&
     Number.isFinite(lat) && Number.isFinite(lng) &&
-    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+    inPeru(lat, lng)
   if (!pickup || !isValidCoord(pickup.lat, pickup.lng)) {
     return NextResponse.json(
-      { success: false, error: 'invalid_pickup', message: 'pickup.lat ∈ [-90,90] y pickup.lng ∈ [-180,180] son obligatorios' },
+      { success: false, error: 'invalid_pickup', message: 'El punto de recogida debe estar dentro de Perú' },
       { status: 400 },
     )
   }
   if (!destination || !isValidCoord(destination.lat, destination.lng)) {
     return NextResponse.json(
-      { success: false, error: 'invalid_destination', message: 'destination.lat ∈ [-90,90] y destination.lng ∈ [-180,180] son obligatorios' },
+      { success: false, error: 'invalid_destination', message: 'El destino debe estar dentro de Perú' },
       { status: 400 },
     )
   }

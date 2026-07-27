@@ -118,9 +118,21 @@ async function fromPhoton(q: string, lat?: string, lng?: string): Promise<Predic
     if (!coords || coords.length < 2) continue
     const [lon, la] = coords
     const p = f.properties ?? {}
+
+    // Ronda 260: BUG CRÍTICO introducido en la ronda 258. El filtro era
+    // `if (country && country !== 'PE') continue` — solo descartaba cuando
+    // Photon DEVOLVÍA countrycode. Cuando no lo devolvía (bastante común), el
+    // resultado pasaba sin control; y como Photon es de komoot (alemán) su
+    // índice prioriza Europa: al buscar "Jirón Las Coralinas 870" devolvía un
+    // punto en AUSTRIA (lat 46.78, lng 15.57). Se guardó así en producción en
+    // tres viajes reales: el mapa salía completamente azul (el punto medio
+    // entre Perú y Austria cae en el Atlántico) y la distancia quedaba nula.
+    //
+    // Ahora se valida la COORDENADA contra el recuadro de Perú, que no depende
+    // de que el proveedor etiquete bien el país.
     const country = String(p.countrycode ?? '')
-    // Restringimos a Perú (Photon no tiene filtro de país en la query).
     if (country && country.toUpperCase() !== 'PE') continue
+    if (la < -19 || la > 0.5 || lon < -82 || lon > -68) continue
 
     const street = p.street ? String(p.street) : (p.name ? String(p.name) : '')
     const houseNumber = p.housenumber ? String(p.housenumber) : (userNumber ?? '')
