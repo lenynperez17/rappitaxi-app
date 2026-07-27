@@ -113,12 +113,17 @@ export async function POST(
           }),
         ],
       )
-      // Marcar la recarga como refunded
+      // Marcar la recarga como refunded.
+      // Ronda 265: aquí se actualizaba `updated_at`, una columna que NO existe
+      // en driver_recharges (sus columnas: id, driver_id, amount, method,
+      // status, reference, notes, approved_by, external_ref, metadata,
+      // created_at, approved_at, idempotency_key). La consulta reventaba la
+      // transacción entera, así que el botón "Anular recarga" del panel
+      // devolvía 500 y el dinero nunca se revertía.
       await client.query(
         `UPDATE driver_recharges
             SET status = 'refunded',
-                notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE E'\n' END || $1,
-                updated_at = now()
+                notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE E'\n' END || $1
           WHERE id = $2`,
         [`[ANULADA por admin ${auth.userId}]: ${reason}`, rechargeId],
       )
