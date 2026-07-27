@@ -19,6 +19,7 @@ export const runtime = 'nodejs'
 const PLACES_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const PHOTON_URL = 'https://photon.komoot.io/api/'
+const MAPBOX_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places'
 
 interface Prediction {
   placeId: string | null
@@ -87,6 +88,76 @@ function extractHouseNumber(query: string): string | null {
  * coordenada del resultado que el usuario tocó, sin una segunda consulta que
  * pueda resolver a otro sitio distinto.
  */
+/**
+ * Ronda 261: Mapbox Geocoding.
+ *
+ * POR QUÉ HACE FALTA: OpenStreetMap NO tiene mapeada la numeración de las
+ * calles de Lima. Comprobado consultando el dato crudo: para "Av. Túpac Amaru
+ * 1150, Comas" OSM responde `house_number: NO MAPEADO` y devuelve el centroide
+ * del tramo de la avenida. Como esas avenidas miden varios kilómetros, el
+ * nombre sale correcto pero la coordenada se desvía 4-9 km. Medido sobre 15
+ * direcciones con número: 10/15 dentro de 3 km, y los 5 desvíos eran todos
+ * por esta causa (calle correcta, número inexistente en el mapa base).
+ *
+ * Mapbox interpola la numeración a lo largo del tramo, que es justo lo que
+ * falta. Su nivel gratuito cubre 100.000 peticiones al mes.
+ *
+ * ACTIVACIÓN: basta con poner MAPBOX_ACCESS_TOKEN en el .env; si no está, la
+ * cadena sigue funcionando igual con Photon y Nominatim.
+ */
+async function fromMapbox(q: string, token: string, lat?: string, lng?: string): Promise<Prediction[] | null> {
+  const params = new URLSearchParams({
+    access_token: token,
+    country: 'pe',
+    language: 'es',
+    limit: '8',
+    types: 'address,poi,place,neighborhood,street',
+  })
+  // `proximity` solo ordena por cercanía; nunca excluye resultados lejanos.
+  if (lat && lng) params.set('proximity', `${lng},${lat}`)
+
+  try {
+    const url = `${MAPBOX_URL}/${encodeURIComponent(q)}.json?${params.toString()}`
+    const r = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    if (!r.ok) {
+      console.warn('[maps] Mapbox HTTP', r.status, '— cayendo al siguiente proveedor')
+      return null
+    }
+    const data = await r.json() as {
+      features?: Array<{
+        center?: [number, number]
+        text?: string
+        place_name?: string
+        address?: string
+        id?: string
+      }>
+    }
+    const out: Prediction[] = []
+    for (const f of data.features ?? []) {
+      const c = f.center
+      if (!c || c.length < 2) continue
+      const [lon, la] = c
+      // Misma guarda geográfica que el resto de proveedores.
+      if (la < -19 || la > 0.5 || lon < -82 || lon > -68) continue
+      const main = f.address && f.text ? `${f.text} ${f.address}` : (f.text ?? '')
+      const full = f.place_name ?? main
+      if (!main) continue
+      out.push({
+        placeId: f.id ?? null,
+        description: full,
+        mainText: main,
+        secondaryText: full.split(',').slice(1).join(',').trim(),
+        lat: Number(la),
+        lng: Number(lon),
+      })
+    }
+    return out.length > 0 ? out : null
+  } catch (e) {
+    console.warn('[maps] Mapbox excepción:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 async function fromPhoton(q: string, lat?: string, lng?: string): Promise<Prediction[]> {
   // Photon SOLO acepta lang en/de/fr/it — con `lang=es` responde HTTP 400 y
   // el proveedor entero quedaba descartado en silencio. Se omite el
@@ -275,7 +346,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. Photon: geocodificador gratuito con mucha mejor precisión que la
+  // 2. Mapbox: el único de la cadena que interpola numeración de calles, que
+  // es exactamente lo que OSM no tiene en Lima. Solo se usa si hay token.
+  const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN
+  if (mapboxToken) {
+    const m = await fromMapbox(q, mapboxToken, lat, lng)
+    if (m !== null) {
+      return NextResponse.json({ success: true, predictions: m, provider: 'mapbox' })
+    }
+  }
+
+  // 3. Photon: geocodificador gratuito con mucha mejor precisión que la
   // búsqueda de texto libre de Nominatim (ver docblock de fromPhoton).
   try {
     const predictions = await fromPhoton(q, lat, lng)
@@ -287,7 +368,7 @@ export async function GET(req: NextRequest) {
       err instanceof Error ? err.message : err)
   }
 
-  // 3. Último recurso: Nominatim.
+  // 4. Último recurso: Nominatim.
   try {
     const predictions = await fromNominatim(q, lat, lng)
     return NextResponse.json({ success: true, predictions, provider: 'nominatim' })
