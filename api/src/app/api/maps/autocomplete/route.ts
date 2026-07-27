@@ -111,7 +111,12 @@ async function fromMapbox(q: string, token: string, lat?: string, lng?: string):
     country: 'pe',
     language: 'es',
     limit: '8',
-    types: 'address,poi,place,neighborhood,street',
+    // Ronda 261: 'street' NO es un tipo válido en la API v5 de Mapbox y la
+    // petición entera se rechazaba con HTTP 422 — el proveedor quedaba
+    // descartado en silencio y todo seguía cayendo a Photon. Tipos válidos:
+    // country, region, postcode, district, place, locality, neighborhood,
+    // address, poi.
+    types: 'address,poi,place,neighborhood,locality,district',
   })
   // `proximity` solo ordena por cercanía; nunca excluye resultados lejanos.
   if (lat && lng) params.set('proximity', `${lng},${lat}`)
