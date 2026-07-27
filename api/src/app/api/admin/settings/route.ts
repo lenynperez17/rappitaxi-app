@@ -56,6 +56,25 @@ export async function PATCH(req: NextRequest) {
     // fuente única y sí se puede guardar.
     'rides.commission_percent',
     'rides.commission_rate',
+    // Ronda 264: la lista blanca se había escrito con nombres SUPUESTOS
+    // ('rides.surge_cap', 'rides.min_price', 'rides.max_price'…) que NO
+    // existen en la base de datos, y le faltaban los que sí existen y el
+    // panel muestra. Resultado: de los 15 ajustes visibles en el panel, 11 se
+    // descartaban en SILENCIO al guardar — incluidos el modo mantenimiento,
+    // el alta de conductores y pasajeros, y la tarifa mínima. El admin
+    // pulsaba Guardar, veía el mensaje de éxito, y nada cambiaba.
+    // Estos son los que existen de verdad (verificados contra app_settings):
+    'company.name',
+    'company.ruc',
+    'company.address',
+    'company.support_email',
+    'maintenance_mode',
+    'registration.driver_enabled',
+    'registration.passenger_enabled',
+    'rides.max_distance_km',
+    'rides.min_fare',
+    'rides.negotiable',
+    // Los de abajo se conservan por si se crean más adelante desde admin.
     'rides.surge_cap',
     'rides.max_search_radius_km',
     'rides.min_price',
