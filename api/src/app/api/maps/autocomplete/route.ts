@@ -18,6 +18,7 @@ export const runtime = 'nodejs'
 
 const PLACES_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+const PHOTON_URL = 'https://photon.komoot.io/api/'
 
 interface Prediction {
   placeId: string | null
@@ -68,6 +69,84 @@ function extractHouseNumber(query: string): string | null {
   return matches.length > 0 ? matches[matches.length - 1]![1]! : null
 }
 
+/**
+ * Ronda 258: Photon (komoot) — geocodificador gratuito sobre datos OSM, sin
+ * API key ni facturación, PENSADO para autocompletar (Nominatim está pensado
+ * para búsqueda exacta).
+ *
+ * Por qué se añade: la búsqueda de texto libre en Nominatim devolvía
+ * coordenadas equivocadas de forma sistemática. Comprobado con casos reales:
+ *   "Jirón Las Coralinas 870"  → Nominatim: lon -77.080 (Callao, ERROR)
+ *                                Photon:    lon -77.009 (San Juan de
+ *                                           Lurigancho, correcto)
+ *   "Parque Kennedy"           → Nominatim: -12.36,-76.79 (a 40 km, ERROR)
+ * El mismo Nominatim acierta si se le pasan street/city por separado, pero el
+ * usuario escribe texto libre, así que no siempre hay distrito que extraer.
+ *
+ * Además devolvemos lat/lng EN LA PREDICCIÓN: así la app usa exactamente la
+ * coordenada del resultado que el usuario tocó, sin una segunda consulta que
+ * pueda resolver a otro sitio distinto.
+ */
+async function fromPhoton(q: string, lat?: string, lng?: string): Promise<Prediction[]> {
+  // Photon SOLO acepta lang en/de/fr/it — con `lang=es` responde HTTP 400 y
+  // el proveedor entero quedaba descartado en silencio. Se omite el
+  // parámetro: los nombres propios de calles y lugares vienen igual en
+  // español desde OSM, el idioma solo afecta a etiquetas genéricas.
+  const params = new URLSearchParams({ q, limit: '8' })
+  // Photon usa lat/lon solo para PRIORIZAR cercanía, nunca para excluir.
+  if (lat && lng) {
+    params.set('lat', lat)
+    params.set('lon', lng)
+  }
+  const r = await fetch(`${PHOTON_URL}?${params.toString()}`, {
+    headers: { 'User-Agent': 'RapiTeam/1.0 (contact: facturacion.rapiteam@gmail.com)' },
+    signal: AbortSignal.timeout(6000),
+  })
+  if (!r.ok) throw new Error(`photon_http_${r.status}`)
+  const data = await r.json() as {
+    features?: Array<{
+      geometry?: { coordinates?: [number, number] }
+      properties?: Record<string, string | number>
+    }>
+  }
+
+  const userNumber = extractHouseNumber(q)
+  const out: Prediction[] = []
+
+  for (const f of data.features ?? []) {
+    const coords = f.geometry?.coordinates
+    if (!coords || coords.length < 2) continue
+    const [lon, la] = coords
+    const p = f.properties ?? {}
+    const country = String(p.countrycode ?? '')
+    // Restringimos a Perú (Photon no tiene filtro de país en la query).
+    if (country && country.toUpperCase() !== 'PE') continue
+
+    const street = p.street ? String(p.street) : (p.name ? String(p.name) : '')
+    const houseNumber = p.housenumber ? String(p.housenumber) : (userNumber ?? '')
+    const district = p.district ? String(p.district) : ''
+    const city = p.city ? String(p.city) : (p.county ? String(p.county) : '')
+    const state = p.state ? String(p.state) : ''
+
+    const main = houseNumber && street ? `${street} ${houseNumber}` : (street || String(p.name ?? ''))
+    if (!main) continue
+
+    const rest = [district, city, state].filter((x) => x && x !== main)
+    // Quitar repetidos consecutivos ("Miraflores, Miraflores, Lima").
+    const secondary = rest.filter((x, i) => i === 0 || x !== rest[i - 1]).join(', ')
+
+    out.push({
+      placeId: p.osm_id != null ? `osm:${p.osm_id}` : null,
+      description: secondary ? `${main}, ${secondary}` : main,
+      mainText: main,
+      secondaryText: secondary,
+      lat: Number(la),
+      lng: Number(lon),
+    })
+  }
+  return out
+}
+
 async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Prediction[]> {
   const params = new URLSearchParams({
     q,
@@ -77,29 +156,23 @@ async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Pre
     limit: '8',
     addressdetails: '1',
   })
-  if (lat && lng) {
-    // Viewbox solo si el pickup está en Perú (aprox lat -18 a 0, lng -82 a -68).
-    // Fuera de Perú (ej. Simulator en SF), usamos country=pe sin viewbox.
-    const latN = Number(lat), lngN = Number(lng)
-    const inPeru = latN >= -19 && latN <= 0 && lngN >= -82 && lngN <= -68
-    if (inPeru) {
-      // Ronda 256: ESTE ERA EL BUG DE "el destino marca por otro lado".
-      //
-      // El viewbox iba con `bounded=1`, que hace que Nominatim DESCARTE todo
-      // lo que caiga fuera de la caja de ±0.3° alrededor del ORIGEN del viaje
-      // (unos 33 km). Un pasajero en Puente Piedra que buscaba "Parque
-      // Kennedy" (Miraflores, a ~28 km al sur) recibía el sitio correcto
-      // fuera de la caja o en su borde, así que Nominatim lo descartaba y
-      // devolvía OTRO lugar peor pero dentro de la caja. La app guardaba ese
-      // texto con esas coordenadas equivocadas: el destino real estaba en
-      // -12.1211,-77.0296 y se guardaba -12.0342,-77.0625 — 10 km de error.
-      //
-      // Ampliamos la caja a ±1.0° (cubre toda Lima Metropolitana y alrededores)
-      // y quitamos `bounded`: así el viewbox solo PRIORIZA los resultados
-      // cercanos en el orden, sin excluir los de más lejos.
-      params.set('viewbox', `${lngN - 1.0},${latN + 1.0},${lngN + 1.0},${latN - 1.0}`)
-    }
-  }
+  // Ronda 258: se ELIMINÓ el viewbox por completo.
+  //
+  // Historia: primero iba con `bounded=1`, que DESCARTABA todo lo que cayera
+  // fuera de ±0.3° del origen — así un pasajero en Puente Piedra buscando
+  // "Parque Kennedy" (Miraflores) no lo encontraba y recibía otro sitio.
+  // Después se amplió a ±1.0° sin bounded, pero eso trajo un problema nuevo:
+  // el viewbox SESGA el ranking hacia el centro de la caja (el origen), así
+  // que al buscar "Jirón Las Coralinas 870" desde Puente Piedra promovía
+  // calles homónimas del OESTE (Callao, lon -77.08) por encima de la real de
+  // San Juan de Lurigancho (lon -77.01). El usuario veía DOS opciones con el
+  // texto idéntico "…, San Juan de Lurigancho" y coordenadas opuestas.
+  //
+  // Comprobado consultando Nominatim directamente: SIN viewbox devuelve solo
+  // los resultados correctos en SJL. Su orden por `importance` ya es bueno y
+  // `countrycodes=pe` acota lo suficiente. El sesgo geográfico hacía más daño
+  // que bien en una ciudad con calles de nombre repetido entre distritos.
+
   const r = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
     headers: { 'User-Agent': 'RapiTeam/1.0 (contact: facturacion.rapiteam@gmail.com)' },
     signal: AbortSignal.timeout(6000),
@@ -190,7 +263,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. Fallback Nominatim (gratis, sin billing)
+  // 2. Photon: geocodificador gratuito con mucha mejor precisión que la
+  // búsqueda de texto libre de Nominatim (ver docblock de fromPhoton).
+  try {
+    const predictions = await fromPhoton(q, lat, lng)
+    if (predictions.length > 0) {
+      return NextResponse.json({ success: true, predictions, provider: 'photon' })
+    }
+  } catch (err) {
+    console.warn('[maps] Photon falló, cayendo a Nominatim:',
+      err instanceof Error ? err.message : err)
+  }
+
+  // 3. Último recurso: Nominatim.
   try {
     const predictions = await fromNominatim(q, lat, lng)
     return NextResponse.json({ success: true, predictions, provider: 'nominatim' })

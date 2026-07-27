@@ -154,6 +154,13 @@ class MapsService {
       );
       final preds = (data['predictions'] as List?) ?? const [];
 
+      // Ronda 258: el cliente DESCARTABA lat/lng aunque el backend los envía en
+      // cada predicción. Al ignorarlos, la app hacía una segunda consulta
+      // (placeDetails por placeId) que podía resolver a un lugar DISTINTO del
+      // que el usuario acababa de tocar: se mostraba "Jirón Las Coralinas 870,
+      // San Juan de Lurigancho" y se guardaba una coordenada del Callao.
+      // Usando la coordenada que viene con el resultado, lo que se marca en el
+      // mapa es exactamente lo que el usuario eligió.
       final predictions = preds.map((p) {
         final m = p as Map;
         return PlacePrediction(
@@ -162,6 +169,8 @@ class MapsService {
           mainText: m['mainText'] as String? ?? '',
           secondaryText: m['secondaryText'] as String? ?? '',
           distanceMeters: (m['distanceMeters'] as num?)?.toInt(),
+          lat: (m['lat'] as num?)?.toDouble(),
+          lng: (m['lng'] as num?)?.toDouble(),
         );
       }).toList(growable: false);
 
@@ -251,12 +260,20 @@ class PlacePrediction {
   /// no devolvió distancia para esta suggestion.
   final int? distanceMeters;
 
+  /// Ronda 258: coordenadas del propio resultado, tal como las devolvió el
+  /// geocodificador. Usarlas evita una segunda consulta por placeId que puede
+  /// resolver a un lugar distinto del que el usuario tocó.
+  final double? lat;
+  final double? lng;
+
   const PlacePrediction({
     required this.description,
     required this.placeId,
     required this.mainText,
     required this.secondaryText,
     this.distanceMeters,
+    this.lat,
+    this.lng,
   });
 }
 
