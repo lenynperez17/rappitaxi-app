@@ -20,6 +20,7 @@ const PLACES_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const PHOTON_URL = 'https://photon.komoot.io/api/'
 const MAPBOX_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places'
+const MAPBOX_SEARCHBOX_URL = 'https://api.mapbox.com/search/searchbox/v1/forward'
 
 interface Prediction {
   placeId: string | null
@@ -30,7 +31,25 @@ interface Prediction {
   lng?: number
 }
 
+/**
+ * Ronda 267: cortacircuitos para Google.
+ *
+ * Con la facturación desactivada en Google Cloud, Places responde
+ * REQUEST_DENIED a TODAS las peticiones. Aun así se le seguía consultando en
+ * cada pulsación de tecla del autocompletado, y cada intento fallido añadía su
+ * ida y vuelta a la red antes de pasar al proveedor siguiente. El pasajero
+ * pagaba esa espera en cada letra que escribía.
+ *
+ * Tras un fallo se deja de llamar a Google durante 5 minutos. Es un fallo de
+ * configuración de cuenta, no un error transitorio: reintentar cada tecla no
+ * lo arregla. Al reintentar pasados los 5 minutos, el día que se active la
+ * facturación la cadena vuelve sola a Google sin tocar código ni reiniciar.
+ */
+let googleDisabledUntil = 0
+const GOOGLE_COOLDOWN_MS = 5 * 60_000
+
 async function fromGoogle(q: string, key: string, session?: string, lat?: string, lng?: string): Promise<Prediction[] | null> {
+  if (Date.now() < googleDisabledUntil) return null
   const params = new URLSearchParams({ input: q, key, language: 'es', components: 'country:pe' })
   if (session) params.set('sessiontoken', session)
   if (lat && lng) {
@@ -41,9 +60,12 @@ async function fromGoogle(q: string, key: string, session?: string, lat?: string
     const r = await fetch(`${PLACES_URL}?${params.toString()}`, { signal: AbortSignal.timeout(6000) })
     const data = await r.json()
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.warn('[maps] Google status=', data.status, '—cayendo a Nominatim')
+      googleDisabledUntil = Date.now() + GOOGLE_COOLDOWN_MS
+      console.warn('[maps] Google status=', data.status,
+        '— desactivado 5 min, usando Mapbox/Photon')
       return null
     }
+    googleDisabledUntil = 0
     return (data.predictions ?? []).map((p: {
       place_id?: string; description?: string
       structured_formatting?: { main_text?: string; secondary_text?: string }
@@ -54,7 +76,8 @@ async function fromGoogle(q: string, key: string, session?: string, lat?: string
       secondaryText: p.structured_formatting?.secondary_text,
     }))
   } catch (e) {
-    console.warn('[maps] Google exception:', e instanceof Error ? e.message : e)
+    googleDisabledUntil = Date.now() + GOOGLE_COOLDOWN_MS
+    console.warn('[maps] Google excepción:', e instanceof Error ? e.message : e)
     return null
   }
 }
@@ -105,6 +128,98 @@ function extractHouseNumber(query: string): string | null {
  * ACTIVACIÓN: basta con poner MAPBOX_ACCESS_TOKEN en el .env; si no está, la
  * cadena sigue funcionando igual con Photon y Nominatim.
  */
+/**
+ * Ronda 267: Mapbox Search Box — el único proveedor de la cadena que indexa
+ * NEGOCIOS por su nombre comercial.
+ *
+ * POR QUÉ HACE FALTA: con la facturación de Google Cloud desactivada, Places
+ * responde REQUEST_DENIED y la cadena cae a geocodificadores de DIRECCIONES.
+ * Esos no saben qué es "Mega Plaza". Comprobado en producción:
+ *   "mega plaza"           → Photon: "Alfredo Mendiola 3698, Independencia"
+ *   "plaza norte"          → Mapbox v5: "Pasaje Plaza"
+ *   "jockey plaza"         → Mapbox v5: "Ingreso Estacionamiento Jockey Plaza"
+ *   "real plaza salaverry" → Mapbox v5: "Avenida Salaverry"
+ * El primero es literalmente la dirección de MegaPlaza, pero sin el nombre que
+ * el pasajero reconoce nadie lo elige, así que el destino nunca se marcaba.
+ *
+ * Search Box devuelve el sitio por su nombre y con coordenadas correctas:
+ *   plaza norte → Falabella Plaza Norte    (-12.0063, -77.0571)
+ *   jockey plaza → Falabella Jockey Plaza  (-12.0865, -76.9780)
+ *
+ * Va ANTES de la v5 porque no pierde nada a cambio: medido sobre direcciones
+ * con numeración —el caso que motivó añadir la v5 en la ronda 261— devuelve la
+ * coordenada idéntica, dígito a dígito. La v5 se conserva detrás como respaldo.
+ *
+ * Se usa `/forward` y no `/suggest` porque suggest solo da el nombre y exige
+ * una segunda llamada a `/retrieve` para las coordenadas; forward las trae de
+ * una vez, que es lo que necesita la predicción.
+ *
+ * Mismo MAPBOX_ACCESS_TOKEN que la v5.
+ */
+async function fromMapboxSearchBox(q: string, token: string, lat?: string, lng?: string): Promise<Prediction[] | null> {
+  const params = new URLSearchParams({
+    q,
+    access_token: token,
+    country: 'pe',
+    language: 'es',
+    limit: '8',
+  })
+  if (lat && lng) params.set('proximity', `${lng},${lat}`)
+
+  try {
+    const r = await fetch(`${MAPBOX_SEARCHBOX_URL}?${params.toString()}`, {
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!r.ok) {
+      console.warn('[maps] Mapbox SearchBox HTTP', r.status, '— cayendo al siguiente proveedor')
+      return null
+    }
+    const data = await r.json() as {
+      features?: Array<{
+        geometry?: { coordinates?: [number, number] }
+        properties?: {
+          mapbox_id?: string
+          name?: string
+          full_address?: string
+          place_formatted?: string
+        }
+      }>
+    }
+    const out: Prediction[] = []
+    // Search Box devuelve la misma tienda repetida cuando tiene varias
+    // entradas en el índice: "tottus" traía dos veces "Tottus Jockey Plaza" y
+    // "parque kennedy" dos veces "SSHH del Parque Kennedy", ocupando la lista
+    // corta que ve el pasajero. Se descarta el duplicado por nombre + posición
+    // redondeada a ~11 m, que es la precisión con la que dos entradas del
+    // índice se refieren al mismo local.
+    const seen = new Set<string>()
+    for (const f of data.features ?? []) {
+      const c = f.geometry?.coordinates
+      const p = f.properties
+      if (!c || c.length < 2 || !p?.name) continue
+      const [lon, la] = c
+      // Misma guarda geográfica que el resto de proveedores.
+      if (la < -19 || la > 0.5 || lon < -82 || lon > -68) continue
+      const dedupeKey = `${p.name.toLowerCase()}|${la.toFixed(4)}|${lon.toFixed(4)}`
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
+      const secondary = p.full_address ?? p.place_formatted
+      out.push({
+        placeId: p.mapbox_id ?? null,
+        description: secondary ? `${p.name}, ${secondary}` : p.name,
+        mainText: p.name,
+        secondaryText: secondary,
+        lat: Number(la),
+        lng: Number(lon),
+      })
+    }
+    return out.length > 0 ? out : null
+  } catch (e) {
+    console.warn('[maps] Mapbox SearchBox excepción:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 async function fromMapbox(q: string, token: string, lat?: string, lng?: string): Promise<Prediction[] | null> {
   const params = new URLSearchParams({
     access_token: token,
@@ -235,7 +350,10 @@ async function fromPhoton(q: string, lat?: string, lng?: string): Promise<Predic
   return out
 }
 
-async function fromNominatim(q: string, lat?: string, lng?: string): Promise<Prediction[]> {
+// Sin lat/lng a propósito: desde que se eliminó el viewbox (nota de abajo)
+// Nominatim ya no recibe sesgo geográfico, y mantener los parámetros en la
+// firma solo dejaba dos argumentos muertos que el compilador marcaba.
+async function fromNominatim(q: string): Promise<Prediction[]> {
   const params = new URLSearchParams({
     q,
     format: 'json',
@@ -351,9 +469,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. Mapbox: el único de la cadena que interpola numeración de calles, que
-  // es exactamente lo que OSM no tiene en Lima. Solo se usa si hay token.
+  // 2. Mapbox Search Box: el único que encuentra negocios por su nombre
+  // ("Mega Plaza", "Jockey Plaza"). También resuelve direcciones con número
+  // con la misma precisión que la v5. Solo se usa si hay token.
   const mapboxToken = process.env.MAPBOX_ACCESS_TOKEN
+  if (mapboxToken) {
+    const s = await fromMapboxSearchBox(q, mapboxToken, lat, lng)
+    if (s !== null) {
+      return NextResponse.json({ success: true, predictions: s, provider: 'mapbox-searchbox' })
+    }
+  }
+
+  // 3. Mapbox Geocoding v5: respaldo si Search Box no responde. Interpola la
+  // numeración de calles, que es exactamente lo que OSM no tiene en Lima.
   if (mapboxToken) {
     const m = await fromMapbox(q, mapboxToken, lat, lng)
     if (m !== null) {
@@ -361,7 +489,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 3. Photon: geocodificador gratuito con mucha mejor precisión que la
+  // 4. Photon: geocodificador gratuito con mucha mejor precisión que la
   // búsqueda de texto libre de Nominatim (ver docblock de fromPhoton).
   try {
     const predictions = await fromPhoton(q, lat, lng)
@@ -373,9 +501,9 @@ export async function GET(req: NextRequest) {
       err instanceof Error ? err.message : err)
   }
 
-  // 4. Último recurso: Nominatim.
+  // 5. Último recurso: Nominatim.
   try {
-    const predictions = await fromNominatim(q, lat, lng)
+    const predictions = await fromNominatim(q)
     return NextResponse.json({ success: true, predictions, provider: 'nominatim' })
   } catch (err) {
     console.error('[maps/autocomplete] Nominatim failed:', err)
