@@ -94,6 +94,38 @@ async function fromGoogle(q: string, key: string, session?: string, lat?: string
   }
 }
 
+/**
+ * Ronda 268: expande las abreviaturas peruanas antes de consultar.
+ *
+ * OpenStreetMap guarda las vías con el nombre completo ("Jirón Las Coralinas"),
+ * y Photon busca sobre ese texto: no sabe que "Jr." es lo mismo. Nadie escribe
+ * "Jirón" al teclear un destino. Comprobado contra photon.nynelmkt.cloud:
+ *   "Jr. Las Coralinas 870"    → 1 resultado, y era "87" (basura)
+ *   "Jirón Las Coralinas 870"  → 3 resultados, el primero el correcto
+ * El pasajero escribía bien la dirección y no le salía nada.
+ *
+ * El punto es opcional a propósito: en la práctica se teclea "Av Arequipa" y
+ * "Jr Coralinas" sin punto.
+ *
+ * Tomado de App-Plus (`maps_service.dart`), donde ya estaba resuelto.
+ */
+const STREET_ABBREVIATIONS: Array<[RegExp, string]> = [
+  [/\bJr\.?\s+/gi, 'Jirón '],
+  [/\bAv\.?\s+/gi, 'Avenida '],
+  [/\bCa\.?\s+/gi, 'Calle '],
+  [/\bPsje\.?\s+/gi, 'Pasaje '],
+  [/\bPje\.?\s+/gi, 'Pasaje '],
+  [/\bMz\.?\s+/gi, 'Manzana '],
+  [/\bLt\.?\s+/gi, 'Lote '],
+  [/\bUrb\.?\s+/gi, 'Urbanización '],
+]
+
+function expandPeruvianAbbreviations(q: string): string {
+  let out = q.trim()
+  for (const [pattern, full] of STREET_ABBREVIATIONS) out = out.replace(pattern, full)
+  return out
+}
+
 // Extrae el número de casa/edificio del query del usuario.
 // Nominatim en Perú rara vez tiene house_number mapeado, así que preservamos
 // el número que el usuario escribió y lo añadimos al mainText/description.
@@ -246,6 +278,15 @@ async function fromMapboxSearchBox(q: string, token: string, lat?: string, lng?:
     country: 'pe',
     language: 'es',
     limit: '8',
+    // Solo lo que sirve como destino de un viaje: se excluyen country, region
+    // y postcode, que no son sitios a los que se pueda llevar a alguien.
+    // Sin esta restricción, "starbucks larcomar" devolvía "Jirón Larcomar" en
+    // Ventanilla, a 40 km del Larcomar de Miraflores.
+    //
+    // Ojo: 'street' SÍ es válido aquí. En la API v5 de más abajo no lo es y la
+    // petición entera se rechaza con HTTP 422 — son dos APIs distintas con
+    // listas de tipos distintas.
+    types: 'poi,address,street,place,locality,neighborhood',
   })
   if (lat && lng) params.set('proximity', `${lng},${lat}`)
 
@@ -361,7 +402,10 @@ async function fromMapbox(q: string, token: string, lat?: string, lng?: string):
   }
 }
 
-async function fromPhoton(q: string, lat?: string, lng?: string, baseUrl = PHOTON_URL): Promise<Prediction[]> {
+async function fromPhoton(rawQuery: string, lat?: string, lng?: string, baseUrl = PHOTON_URL): Promise<Prediction[]> {
+  // Solo para Photon: OSM guarda el nombre completo de la vía. Mapbox sí
+  // entiende las abreviaturas, así que allí no hace falta.
+  const q = expandPeruvianAbbreviations(rawQuery)
   // Photon SOLO acepta lang en/de/fr/it — con `lang=es` responde HTTP 400 y
   // el proveedor entero quedaba descartado en silencio. Se omite el
   // parámetro: los nombres propios de calles y lugares vienen igual en
