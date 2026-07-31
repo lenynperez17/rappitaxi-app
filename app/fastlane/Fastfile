@@ -90,10 +90,18 @@ platform :ios do
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false
     )
-    # Ronda 196: Apple no permite activar `hasAccessToAllBuilds=true` via
-    # API pública. Como workaround, tras el upload distribuimos el build
-    # nuevo al grupo "Team Rapi Interno" automáticamente. Requiere el key
-    # ID + issuer del bloque anterior.
-    sh("cd .. && ./fastlane/distribute_to_internal_group.sh")
+    # Ronda 268: se ELIMINA la llamada a distribute_to_internal_group.sh.
+    #
+    # Ese script existía (ronda 196) porque Apple no dejaba activar
+    # `hasAccessToAllBuilds=true` por API pública, así que había que asignar
+    # cada build al grupo interno a mano. Desde la ronda 224 el grupo
+    # "Team Rapi Auto" ya lo tiene activado y Apple asigna solo.
+    #
+    # Mantenerlo hacía daño: al subir el 186 se quedó 36 minutos haciendo
+    # polling y terminó marcando la lane entera como fallida cuando la subida
+    # había ido perfectamente — el build estaba VALID en TestFlight desde el
+    # primer minuto. Un fallo falso en el deploy es peor que no tener el paso.
+    #
+    # Para comprobar que un build llegó: `fastlane builds_status`.
   end
 end

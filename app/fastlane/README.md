@@ -47,6 +47,14 @@ Upload metadata
 
 
 
+### ios builds_status
+
+```sh
+[bundle exec] fastlane ios builds_status
+```
+
+
+
 ### ios upload_ipa
 
 ```sh
