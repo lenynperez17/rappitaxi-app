@@ -65,6 +65,21 @@ class PassengerDrawer extends StatelessWidget {
                       }
                     },
                   ),
+                  // Ronda 269: se recupera el acceso a los métodos de pago.
+                  //
+                  // Su única entrada vivía en `widgets/passenger_drawer.dart`,
+                  // un archivo que NADIE importa (hay dos clases con el mismo
+                  // nombre `PassengerDrawer` y la app monta la de esta carpeta).
+                  // Resultado: la pantalla existía, la ruta estaba declarada, y
+                  // el pasajero no tenía forma humana de llegar a ella.
+                  _DrawerItem(
+                    icon: Icons.credit_card_rounded,
+                    title: 'Métodos de pago',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/passenger/payment-methods');
+                    },
+                  ),
                   _DrawerItem(
                     icon: Icons.share_rounded,
                     title: 'Compartir App',
@@ -74,9 +89,21 @@ class PassengerDrawer extends StatelessWidget {
                     },
                   ),
                   const Divider(),
+                  // Ronda 269: "Soporte" abría AboutScreen —la pantalla de
+                  // "Acerca de"—, así que quien tenía un problema acababa
+                  // leyendo la versión de la app. SupportScreen ya existía y
+                  // estaba enrutada; simplemente nadie la enlazó aquí.
                   _DrawerItem(
                     icon: Icons.support_agent_rounded,
                     title: 'Soporte',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.pushNamed(context, '/shared/support');
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.info_outline_rounded,
+                    title: 'Acerca de',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => AboutScreen()));

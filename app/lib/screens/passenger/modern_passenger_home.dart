@@ -1765,11 +1765,26 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
               ),
             ),
 
-          // Ronda 233 fix: cuando aparece _buildRouteAddressCard en modo
+          // Ronda 233: cuando aparece _buildRouteAddressCard en modo
           // negociación, este SafeArea con menu + pickup se superpone y el
-          // botón del menú queda tapado sin ser clicable. Ocultamos este
-          // bloque cuando la route card está activa.
-          if (!(_isWaitingForDriver && false) && !(_showPriceNegotiation && !_isWaitingForDriver && !_showDriverOffers))
+          // botón del menú queda tapado sin ser clicable. Se oculta el bloque
+          // mientras la route card está activa.
+          //
+          // Ronda 269: ocultarlo dejaba al pasajero SIN NINGÚN acceso al menú
+          // lateral durante toda la negociación — y por tanto sin el botón
+          // "Cambiar a conductor", que es una de las quejas reportadas. Peor
+          // aún: `_showPriceNegotiation` se activa desde ~12 sitios distintos y
+          // si un flujo termina mal se queda pegado en true, dejando la app sin
+          // menú de forma permanente hasta reiniciarla.
+          //
+          // La solución no es volver a mostrar este bloque (se seguiría
+          // superponiendo), sino garantizar el acceso por otra vía: durante la
+          // negociación el menú se dibuja junto al botón de retroceso, más
+          // abajo, donde no hay nada que tape. Ver el bloque de _showPriceNegotiation.
+          //
+          // (La condición `!(_isWaitingForDriver && false)` era código muerto
+          // —siempre verdadera— resto de un parche a medias; se elimina.)
+          if (!(_showPriceNegotiation && !_isWaitingForDriver && !_showDriverOffers))
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1795,24 +1810,40 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
             Positioned(
               top: MediaQuery.paddingOf(context).top + 120,
               left: 12,
-              child: GestureDetector(
-                onTap: _cancelPriceNegotiation,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(context),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.15),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: _cancelPriceNegotiation,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.getSurface(context),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
+                      child: Icon(Icons.arrow_back, size: 20, color: AppColors.getTextPrimary(context)),
+                    ),
                   ),
-                  child: Icon(Icons.arrow_back, size: 20, color: AppColors.getTextPrimary(context)),
-                ),
+                  const SizedBox(width: 10),
+                  // Ronda 269: el menú lateral también aquí. Mientras se negocia
+                  // el precio, la barra superior está oculta (se superponía con
+                  // la tarjeta de ruta), y con ella desaparecía el único acceso
+                  // al drawer — y por tanto a "Cambiar a conductor", a los
+                  // viajes y a la configuración. A esta altura no hay nada que
+                  // tape, así que el acceso queda garantizado en todo momento.
+                  //
+                  // Se reutiliza el mismo widget de la barra superior en lugar
+                  // de copiarlo: si mañana cambia el icono o el comportamiento,
+                  // cambia en los dos sitios a la vez.
+                  _buildInDriveMenuButton(),
+                ],
               ),
             ),
 
@@ -4410,6 +4441,19 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     );
   }
   
+  // ⚠️ CÓDIGO MUERTO — NO EDITAR AQUÍ (Ronda 269)
+  //
+  // Este drawer y su botón de modo conductor NO se usan. El `drawer:` de esta
+  // pantalla monta `PassengerDrawer` de `widgets/indrive/passenger_drawer.dart`.
+  //
+  // Se deja porque quitarlo a mano son ~250 líneas en un archivo de 4900 y el
+  // riesgo no compensa; pero conviene saberlo: durante meses se corrigieron
+  // cosas del menú en este bloque y no cambiaba nada en pantalla, porque el
+  // usuario nunca ve esto. Había además una tercera copia en
+  // `widgets/passenger_drawer.dart` (ya eliminada) que tampoco importaba nadie.
+  //
+  // Si vas a tocar el menú lateral del pasajero, el archivo es
+  // `widgets/indrive/passenger_drawer.dart`.
   Widget _buildDrawer() {
     final l10n = AppLocalizations.of(context)!;
     final authProvider = context.watch<AuthProvider>();

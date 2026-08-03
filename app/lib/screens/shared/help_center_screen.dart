@@ -146,24 +146,139 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> with SingleTickerPr
     );
   }
 
+  // Ronda 269: las guías eran cuatro títulos con `onTap: () {}` — flecha de
+  // "entrar" incluida y nada detrás. La ronda 249 arregló las tarjetas de
+  // contacto de arriba por este mismo motivo, pero esta lista se quedó fuera.
+  //
+  // Ahora cada guía tiene su texto y se abre en una hoja inferior. El contenido
+  // describe la app tal y como funciona hoy: la guía de "compartir ubicación"
+  // se sustituyó por el cambio de modo pasajero/conductor, porque compartir el
+  // viaje en vivo todavía no está implementado y no tiene sentido documentar
+  // algo que el usuario no va a encontrar.
+  static const List<Map<String, Object>> _guides = [
+    {
+      'title': 'Cómo solicitar tu primer viaje',
+      'icon': Icons.play_circle,
+      'body': '1. En la pantalla principal, tu ubicación ya aparece como punto '
+          'de recogida.\n\n'
+          '2. Elige el servicio: Express, Ejecutivo o VIP.\n\n'
+          '3. Pulsa "¿A dónde y por cuánto?" y escribe tu destino. '
+          'Toca siempre una sugerencia de la lista: si solo escribes el texto, '
+          'el destino no queda marcado en el mapa.\n\n'
+          '4. Propón cuánto quieres pagar. La app sugiere una tarifa y te '
+          'muestra el mínimo y el máximo.\n\n'
+          '5. Pulsa "Encontrar ofertas" y espera. Los conductores cercanos '
+          'pueden aceptar tu precio o proponerte otro.',
+    },
+    {
+      'title': 'Configurar métodos de pago',
+      'icon': Icons.payment,
+      'body': 'Puedes pagar de dos formas distintas:\n\n'
+          'Directo al conductor — efectivo, Yape o Plin. Le pagas a él al '
+          'terminar el viaje, igual que en un taxi de calle.\n\n'
+          'Con tu saldo — el importe se descuenta automáticamente de tu '
+          'billetera al finalizar. Necesitas saldo suficiente antes de pedir el '
+          'viaje; puedes recargar con tarjeta desde Métodos de pago.\n\n'
+          'El método se elige en la misma pantalla donde propones tu tarifa, '
+          'antes de buscar conductor.',
+    },
+    {
+      'title': 'Usar promociones y descuentos',
+      'icon': Icons.local_offer,
+      'body': 'Si tienes un código promocional, introdúcelo en la pantalla '
+          'donde propones tu tarifa: verás la línea "¿Tienes un código '
+          'promocional? Úsalo aquí".\n\n'
+          'El descuento se aplica sobre el importe final del viaje. Cada código '
+          'tiene un número máximo de usos y una fecha de caducidad.',
+    },
+    {
+      'title': 'Cambiar entre pasajero y conductor',
+      'icon': Icons.swap_horiz,
+      'body': 'Si tu cuenta está habilitada como conductor, abre el menú '
+          'lateral (las tres líneas de arriba a la izquierda) y pulsa '
+          '"Modo Conductor".\n\n'
+          'Para volver a pasajero, en el menú del modo conductor pulsa '
+          '"Modo pasajero".\n\n'
+          'Si todavía no eres conductor, ese mismo botón te lleva al alta: '
+          'tendrás que subir tu DNI, licencia, SOAT y la tarjeta de propiedad '
+          'del vehículo. Hasta que los aprueben no podrás recibir viajes.',
+    },
+  ];
+
+  void _openGuide(Map<String, Object> guide) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.getSurface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.getTextSecondary(sheetContext).withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(guide['icon'] as IconData, color: AppColors.rappiOrange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      guide['title'] as String,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextPrimary(sheetContext),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                guide['body'] as String,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.5,
+                  color: AppColors.getTextPrimary(sheetContext),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGuides() {
-    final guides = [
-      {'title': 'Como solicitar tu primer viaje', 'icon': Icons.play_circle},
-      {'title': 'Configurar metodos de pago', 'icon': Icons.payment},
-      {'title': 'Usar promociones y descuentos', 'icon': Icons.local_offer},
-      {'title': 'Compartir tu ubicacion', 'icon': Icons.location_on},
-    ];
     return ListView.builder(
-      padding: const EdgeInsets.all(16), itemCount: guides.length,
+      padding: const EdgeInsets.all(16), itemCount: _guides.length,
       itemBuilder: (context, index) {
-        final guide = guides[index];
+        final guide = _guides[index];
         return Card(
           color: AppColors.getSurface(context), margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             leading: Icon(guide['icon'] as IconData, color: AppColors.rappiOrange),
             title: Text(guide['title'] as String, style: TextStyle(color: AppColors.getTextPrimary(context))),
             trailing: Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.getTextSecondary(context)),
-            onTap: () {},
+            onTap: () => _openGuide(guide),
           ),
         );
       },
