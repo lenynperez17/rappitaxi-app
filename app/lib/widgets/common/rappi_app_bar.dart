@@ -15,6 +15,25 @@ class RappiAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showLogo = true,
   });
 
+  /// Ronda 269: retroceso seguro — la flecha atrás dejaba la app en NEGRO.
+  ///
+  /// Antes hacía `Navigator.pop(context)` sin más. Pantallas como
+  /// "Conviértete en Conductor" se abren con `pushReplacementNamed` desde el
+  /// arranque, así que son la ÚNICA entrada de la pila: el pop la retira, no
+  /// queda nada debajo y la app se queda en una pantalla negra que no responde
+  /// a nada. Comprobado en el simulador: hay que forzar el cierre para salir.
+  ///
+  /// Ahora se comprueba si hay algo detrás. Si no lo hay, se vuelve al inicio,
+  /// que decide a dónde corresponde según la sesión — nunca a la nada.
+  void _goBack(BuildContext context) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    navigator.pushNamedAndRemoveUntil('/', (_) => false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppBar(
@@ -24,7 +43,7 @@ class RappiAppBar extends StatelessWidget implements PreferredSizeWidget {
       leading: showBackButton
           ? IconButton(
               icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimary),
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => _goBack(context),
             )
           : null,
       title: Row(
