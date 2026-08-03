@@ -158,6 +158,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   double _serviceFee = 0.0;
   double _minServiceCredits = 0.0;
   bool _hasEnoughCredits = true; // No minimum balance required — only 12% commission on completed trips
+
+  /// Ronda 269: ¿ha subido el conductor algún documento?
+  ///
+  /// Alimenta la pantalla de verificación pendiente, que antes afirmaba
+  /// "Documentos enviados ✓" a todo el mundo. Se arranca en `null` —"aún no lo
+  /// sabemos"— y hasta que llegue la respuesta se muestra el texto neutro, para
+  /// no dar por hecho ni una cosa ni la otra durante la carga.
+  bool? _documentsSubmitted;
+  bool get _hasSubmittedDocuments => _documentsSubmitted ?? true;
   bool _isCheckingCredits = false;
 
   // Offering overlay state
@@ -2328,6 +2337,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         currentUser.isVerified &&
         (currentUser.userType == 'dual' || currentUser.userType == 'driver');
     if (currentUser != null && !isDriverApproved && currentUser.driverStatus != 'approved') {
+      // Ronda 269: al entrar aquí se comprueba si de verdad hay documentos
+      // subidos, para no afirmar que están "enviados" cuando no lo están.
+      if (_documentsSubmitted == null) _checkDocumentsSubmitted();
       return _buildPendingVerificationScreen();
     }
 
@@ -2796,6 +2808,22 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     return DriverPerformanceScreen(parentScaffoldKey: _scaffoldKey);
   }
 
+  /// Ronda 269: consulta si el conductor tiene documentos subidos.
+  ///
+  /// Se usa solo para decidir el texto de la pantalla de espera. Si la consulta
+  /// falla se deja el mensaje optimista de siempre: es preferible a alarmar a
+  /// alguien que sí los subió porque en ese momento no había cobertura.
+  Future<void> _checkDocumentsSubmitted() async {
+    try {
+      final res = await _api.myDocuments().timeout(const Duration(seconds: 8));
+      final docs = res['documents'];
+      if (!mounted) return;
+      setState(() => _documentsSubmitted = docs is List && docs.isNotEmpty);
+    } catch (e) {
+      AppLogger.info('[driver] no se pudo comprobar documentos: $e');
+    }
+  }
+
   Widget _buildPendingVerificationScreen() {
     return Scaffold(
       appBar: AppBar(
@@ -2810,10 +2838,29 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             children: [
               Icon(Icons.hourglass_top_rounded, size: 80, color: Colors.orange),
               SizedBox(height: 24),
-              Text('Verificación en Proceso', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              // Ronda 269: esta pantalla mentía a quien no había subido nada.
+              //
+              // Los tres pasos estaban escritos a mano y salían SIEMPRE iguales:
+              // "Documentos enviados ✓ / Revisión en proceso / Aprobación
+              // pendiente". Comprobado con una cuenta real que tiene CERO
+              // documentos en la base de datos: le decía que ya los había
+              // enviado y que el equipo los estaba revisando.
+              //
+              // El daño es directo: ese conductor se queda esperando una
+              // revisión que nunca va a ocurrir, no vuelve a entrar, y cuando
+              // reclama nadie entiende por qué —en el panel aparece "Sin
+              // verificar" y sin documentos que revisar—. Ahora el texto
+              // depende de si realmente subió algo.
+              Text(
+                _hasSubmittedDocuments ? 'Verificación en Proceso' : 'Faltan tus documentos',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
               SizedBox(height: 16),
               Text(
-                'Tu cuenta de conductor está siendo revisada por nuestro equipo. Una vez aprobada, podrás comenzar a recibir viajes.',
+                _hasSubmittedDocuments
+                    ? 'Tu cuenta de conductor está siendo revisada por nuestro equipo. Una vez aprobada, podrás comenzar a recibir viajes.'
+                    : 'Todavía no has subido tus documentos, así que no hay nada que revisar. Súbelos y en cuanto los aprobemos podrás recibir viajes.',
                 style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),
@@ -2822,9 +2869,19 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(children: [
-                    Row(children: [Icon(Icons.check_circle, color: Colors.green, size: 20), SizedBox(width: 8), Text('Documentos enviados')]),
+                    Row(children: [
+                      Icon(_hasSubmittedDocuments ? Icons.check_circle : Icons.radio_button_unchecked,
+                          color: _hasSubmittedDocuments ? Colors.green : Colors.grey, size: 20),
+                      SizedBox(width: 8),
+                      Text('Documentos enviados'),
+                    ]),
                     SizedBox(height: 8),
-                    Row(children: [Icon(Icons.pending, color: Colors.orange, size: 20), SizedBox(width: 8), Text('Revisión en proceso')]),
+                    Row(children: [
+                      Icon(_hasSubmittedDocuments ? Icons.pending : Icons.radio_button_unchecked,
+                          color: _hasSubmittedDocuments ? Colors.orange : Colors.grey, size: 20),
+                      SizedBox(width: 8),
+                      Text('Revisión en proceso'),
+                    ]),
                     SizedBox(height: 8),
                     Row(children: [Icon(Icons.radio_button_unchecked, color: Colors.grey, size: 20), SizedBox(width: 8), Text('Aprobación pendiente')]),
                   ]),
@@ -2833,8 +2890,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: () => Navigator.pushNamed(context, '/driver/documents'),
-                icon: Icon(Icons.folder_open),
-                label: Text('Ver mis documentos'),
+                icon: Icon(_hasSubmittedDocuments ? Icons.folder_open : Icons.upload_file),
+                label: Text(_hasSubmittedDocuments ? 'Ver mis documentos' : 'Subir mis documentos'),
                 style: ElevatedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
               ),
               SizedBox(height: 12),
