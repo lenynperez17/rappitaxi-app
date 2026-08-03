@@ -76,6 +76,73 @@ platform :ios do
     end
   end
 
+  # Ronda 269: por qué Apple rechaza mandar una versión a revisión.
+  #
+  # Al enviar el 1.3.3 la API contestó solo "This resource cannot be reviewed,
+  # please check associated errors to see why" — sin decir cuál. Esta lane
+  # enseña las piezas que Apple exige por separado (build enganchado, capturas
+  # por idioma, datos de contacto de revisión) para no ir a ciegas.
+  lane :version_blockers do |options|
+    version = options[:version] or UI.user_error!('Falta version: fastlane version_blockers version:1.3.3')
+    api_key = app_store_connect_api_key(
+      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
+      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
+      in_house: false
+    )
+    Spaceship::ConnectAPI.auth(
+      key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
+    )
+    app = Spaceship::ConnectAPI::App.find('com.rapiteam.app')
+    v = app.get_app_store_versions.find { |x| x.version_string == version }
+    UI.user_error!("No existe la versión #{version}") if v.nil?
+
+    UI.important("version #{v.version_string} — #{v.app_store_state} — release #{v.release_type}")
+    UI.important("build: #{(v.build&.version rescue nil) || 'NINGUNO'}")
+
+    detail = (v.fetch_app_store_review_detail rescue nil)
+    UI.important("datos de revisión: #{detail ? "#{detail.contact_first_name} #{detail.contact_last_name} / #{detail.contact_email} / #{detail.contact_phone}" : 'FALTAN'}")
+    UI.important("cuenta demo: #{detail && detail.demo_account_required ? "#{detail.demo_account_name} / #{detail.demo_account_password}" : 'no requerida'}")
+
+    v.get_app_store_version_localizations.each do |loc|
+      sets = (loc.get_app_screenshot_sets rescue [])
+      total = sets.sum { |s| (s.app_screenshots || []).size }
+      UI.important("#{loc.locale}: #{sets.size} tamaño(s) de captura, #{total} imagen(es) · notas #{loc.whats_new.to_s.empty? ? 'VACÍAS' : 'ok'}")
+    end
+  end
+
+  # Ronda 269: borra un idioma de una versión que aún no se ha enviado.
+  #
+  # Hizo falta porque la carpeta local de metadatos se llamaba `es-MX` mientras
+  # la ficha de la App Store vive en `es-ES`. `deliver` creó el idioma que le
+  # decía la carpeta, y un idioma nuevo nace SIN capturas: Apple rechazaba la
+  # versión entera con un escueto "cannot be reviewed" sin decir cuál faltaba.
+  #
+  # Uso: fastlane drop_locale version:1.3.3 locale:es-MX
+  lane :drop_locale do |options|
+    version = options[:version] or UI.user_error!('Falta version:')
+    locale  = options[:locale]  or UI.user_error!('Falta locale:')
+    api_key = app_store_connect_api_key(
+      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
+      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
+      in_house: false
+    )
+    Spaceship::ConnectAPI.auth(
+      key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
+    )
+    app = Spaceship::ConnectAPI::App.find('com.rapiteam.app')
+    v = app.get_app_store_versions.find { |x| x.version_string == version }
+    UI.user_error!("No existe la versión #{version}") if v.nil?
+    UI.user_error!("La versión #{version} ya está en #{v.app_store_state}; no se toca") unless v.app_store_state == 'PREPARE_FOR_SUBMISSION'
+
+    loc = v.get_app_store_version_localizations.find { |l| l.locale == locale }
+    if loc.nil?
+      UI.important("La versión #{version} no tiene el idioma #{locale}; nada que borrar")
+    else
+      loc.delete!
+      UI.success("Idioma #{locale} borrado de la versión #{version}")
+    end
+  end
+
   # Ronda 269: crea la versión en App Store Connect, le engancha el build ya
   # procesado y la manda a revisión para producción.
   #

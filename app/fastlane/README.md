@@ -55,6 +55,30 @@ Upload metadata
 
 
 
+### ios version_blockers
+
+```sh
+[bundle exec] fastlane ios version_blockers
+```
+
+
+
+### ios drop_locale
+
+```sh
+[bundle exec] fastlane ios drop_locale
+```
+
+
+
+### ios submit_release
+
+```sh
+[bundle exec] fastlane ios submit_release
+```
+
+
+
 ### ios upload_ipa
 
 ```sh
