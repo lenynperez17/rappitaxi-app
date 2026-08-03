@@ -13,6 +13,33 @@ export function DriverVerificationDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [revoking, setRevoking] = useState(false)
+
+  /// Ronda 269: retira la verificación a un conductor ya aprobado.
+  ///
+  /// Deja de recibir viajes de inmediato: el emparejador solo tiene en cuenta
+  /// conductores verificados. Se pide confirmación explícita porque, si estaba
+  /// trabajando, lo deja sin ingresos hasta que se le vuelva a aprobar.
+  const revokeVerification = async () => {
+    if (!driverId || !user) return
+    const ok = window.confirm(
+      `¿Quitar la verificación a ${user.fullName ?? 'este conductor'}?\n\n` +
+      'Dejará de recibir solicitudes de viaje inmediatamente. Sus documentos se ' +
+      'conservan: para volver a habilitarlo basta con aprobarlos de nuevo.',
+    )
+    if (!ok) return
+    setRevoking(true)
+    setActionError(null)
+    try {
+      const updated = await adminApi.updateUser(driverId, { isVerified: false })
+      setUser(updated)
+      setFlash('Verificación retirada. El conductor ya no recibirá viajes.')
+    } catch (err) {
+      setActionError(err instanceof AdminApiError ? err.message : 'No se pudo quitar la verificación')
+    } finally {
+      setRevoking(false)
+    }
+  }
 
   useEffect(() => {
     if (!driverId) return
@@ -89,6 +116,24 @@ export function DriverVerificationDetailPage() {
               <OriginBadge createdFrom={user.createdFrom} />
             </div>
           </div>
+
+          {/* Ronda 269: revertir la verificación desde el panel.
+              Antes solo se podía verificar, nunca deshacerlo: si se aprobaba a
+              alguien por error, o un conductor dejaba de cumplir (SOAT vencido,
+              licencia suspendida, una queja grave), no había forma de retirarle
+              el permiso sin tocar la base de datos a mano. El backend ya lo
+              admitía; solo faltaba el botón. */}
+          {user.isVerified && (
+            <button
+              type="button"
+              onClick={() => void revokeVerification()}
+              disabled={revoking}
+              className="shrink-0 px-3 py-2 rounded-lg text-sm border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {revoking ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+              Quitar verificación
+            </button>
+          )}
         </div>
       </div>
 
