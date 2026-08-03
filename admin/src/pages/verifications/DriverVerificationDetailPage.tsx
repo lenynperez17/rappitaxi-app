@@ -13,31 +13,47 @@ export function DriverVerificationDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
-  const [revoking, setRevoking] = useState(false)
+  const [savingVerified, setSavingVerified] = useState(false)
 
-  /// Ronda 269: retira la verificación a un conductor ya aprobado.
+  /// Ronda 269: concede o retira la verificación de un conductor.
   ///
-  /// Deja de recibir viajes de inmediato: el emparejador solo tiene en cuenta
-  /// conductores verificados. Se pide confirmación explícita porque, si estaba
-  /// trabajando, lo deja sin ingresos hasta que se le vuelva a aprobar.
-  const revokeVerification = async () => {
+  /// Verificar es lo que le permite recibir viajes: el emparejador solo tiene
+  /// en cuenta conductores verificados. Retirarla lo saca de la cola al
+  /// instante, por eso ambas acciones piden confirmación explícita.
+  ///
+  /// Hasta ahora verificar NO era una acción propia: ocurría de rebote al
+  /// aprobar el último documento pendiente. En cuanto se añadió el botón de
+  /// retirar apareció un callejón sin salida — a un conductor con todos los
+  /// documentos ya aprobados no le quedaba ninguno pendiente que aprobar, así
+  /// que no había forma de volver a habilitarlo sin tocar la base de datos.
+  const setVerified = async (next: boolean) => {
     if (!driverId || !user) return
+    const name = user.fullName ?? 'este conductor'
     const ok = window.confirm(
-      `¿Quitar la verificación a ${user.fullName ?? 'este conductor'}?\n\n` +
-      'Dejará de recibir solicitudes de viaje inmediatamente. Sus documentos se ' +
-      'conservan: para volver a habilitarlo basta con aprobarlos de nuevo.',
+      next
+        ? `¿Verificar a ${name}?\n\n` +
+          'Podrá recibir solicitudes de viaje de inmediato. Comprueba antes que ' +
+          'sus documentos estén aprobados y vigentes.'
+        : `¿Quitar la verificación a ${name}?\n\n` +
+          'Dejará de recibir solicitudes de viaje inmediatamente. Sus documentos ' +
+          'se conservan y puedes volver a verificarlo desde esta misma pantalla.',
     )
     if (!ok) return
-    setRevoking(true)
+    setSavingVerified(true)
     setActionError(null)
     try {
-      const updated = await adminApi.updateUser(driverId, { isVerified: false })
+      const updated = await adminApi.updateUser(driverId, { isVerified: next })
       setUser(updated)
-      setFlash('Verificación retirada. El conductor ya no recibirá viajes.')
+      setFlash(
+        next
+          ? 'Conductor verificado. Ya puede recibir viajes.'
+          : 'Verificación retirada. El conductor ya no recibirá viajes.',
+      )
     } catch (err) {
-      setActionError(err instanceof AdminApiError ? err.message : 'No se pudo quitar la verificación')
+      const fallback = next ? 'No se pudo verificar al conductor' : 'No se pudo quitar la verificación'
+      setActionError(err instanceof AdminApiError ? err.message : fallback)
     } finally {
-      setRevoking(false)
+      setSavingVerified(false)
     }
   }
 
@@ -117,21 +133,32 @@ export function DriverVerificationDetailPage() {
             </div>
           </div>
 
-          {/* Ronda 269: revertir la verificación desde el panel.
-              Antes solo se podía verificar, nunca deshacerlo: si se aprobaba a
-              alguien por error, o un conductor dejaba de cumplir (SOAT vencido,
-              licencia suspendida, una queja grave), no había forma de retirarle
-              el permiso sin tocar la base de datos a mano. El backend ya lo
-              admitía; solo faltaba el botón. */}
-          {user.isVerified && (
+          {/* Ronda 269: conceder y revertir la verificación desde el panel.
+              Antes solo se podía verificar de rebote (aprobando documentos) y
+              nunca deshacerlo: si se aprobaba a alguien por error, o un
+              conductor dejaba de cumplir (SOAT vencido, licencia suspendida,
+              una queja grave), no había forma de retirarle el permiso sin
+              tocar la base de datos a mano. El backend ya admitía las dos
+              direcciones; solo faltaban los botones. */}
+          {user.isVerified ? (
             <button
               type="button"
-              onClick={() => void revokeVerification()}
-              disabled={revoking}
+              onClick={() => void setVerified(false)}
+              disabled={savingVerified}
               className="shrink-0 px-3 py-2 rounded-lg text-sm border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 inline-flex items-center gap-2"
             >
-              {revoking ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+              {savingVerified ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
               Quitar verificación
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void setVerified(true)}
+              disabled={savingVerified}
+              className="shrink-0 px-3 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {savingVerified ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Verificar conductor
             </button>
           )}
         </div>
