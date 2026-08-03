@@ -99,9 +99,14 @@ platform :ios do
     UI.important("version #{v.version_string} — #{v.app_store_state} — release #{v.release_type}")
     UI.important("build: #{(v.build&.version rescue nil) || 'NINGUNO'}")
 
+    # Solo se dice si cada dato ESTÁ, nunca su valor: esta salida acaba en el
+    # log de fastlane, que se pega en chats y se sube a CI. Para saber por qué
+    # Apple bloquea la versión basta con "falta" o "está".
     detail = (v.fetch_app_store_review_detail rescue nil)
-    UI.important("datos de revisión: #{detail ? "#{detail.contact_first_name} #{detail.contact_last_name} / #{detail.contact_email} / #{detail.contact_phone}" : 'FALTAN'}")
-    UI.important("cuenta demo: #{detail && detail.demo_account_required ? "#{detail.demo_account_name} / #{detail.demo_account_password}" : 'no requerida'}")
+    contacto = detail && !detail.contact_email.to_s.empty? && !detail.contact_phone.to_s.empty?
+    UI.important("datos de contacto de revisión: #{contacto ? 'completos' : 'FALTAN'}")
+    demo_ok = detail && !detail.demo_account_name.to_s.empty? && !detail.demo_account_password.to_s.empty?
+    UI.important("cuenta demo: #{detail&.demo_account_required ? (demo_ok ? 'configurada' : 'REQUERIDA Y VACÍA') : 'no requerida'}")
 
     v.get_app_store_version_localizations.each do |loc|
       sets = (loc.get_app_screenshot_sets rescue [])
