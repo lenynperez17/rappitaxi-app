@@ -9,6 +9,7 @@ import '../../core/constants/app_colors.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/home_route_resolver.dart';
 import '../../utils/logger.dart';
 
 /// Pantalla mínima para completar perfil tras login social (Google / Apple).
@@ -31,15 +32,78 @@ class CompleteProfileScreen extends StatefulWidget {
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
+  final _nameController = TextEditingController();
 
   bool _isLoading = false;
   bool _otpSent = false;
+  String? _nameError;
+
+  /// Ronda 269: si al usuario le falta el nombre, se le pide aquí.
+  ///
+  /// Quien entra por SMS no da su nombre en ningún momento del alta, así que el
+  /// conductor recibía la solicitud a nombre de "Usuario" y en el perfil salía
+  /// vacío. En un servicio donde dos desconocidos comparten coche, saber con
+  /// quién vas es lo mínimo — y es lo que pidió el cliente en su informe.
+  ///
+  /// Se resuelve en esta pantalla y no en una nueva porque ya es "el sitio
+  /// donde se completa lo que falta": mismo botón de retroceso, misma
+  /// protección contra salirse a medias, y el usuario ve un único trámite en
+  /// lugar de dos pantallas encadenadas.
+  bool get _needsPhone {
+    final user = context.read<AuthProvider>().currentUser;
+    return user == null || user.phone.isEmpty;
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
     _otpController.dispose();
+    _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveName() async {
+    final name = _nameController.text.trim();
+    // Se exige nombre y apellido: un nombre suelto no identifica a nadie ante
+    // el conductor, que es para lo que sirve este dato.
+    if (name.length < 3 || !name.contains(' ')) {
+      setState(() => _nameError = 'Escribe tu nombre y tu apellido');
+      return;
+    }
+    setState(() { _isLoading = true; _nameError = null; });
+    try {
+      final auth = context.read<AuthProvider>();
+      final ok = await auth.updateProfile(fullName: name);
+      if (!mounted) return;
+      if (!ok) {
+        setState(() {
+          _isLoading = false;
+          _nameError = auth.errorMessage ?? 'No pudimos guardar tu nombre';
+        });
+        return;
+      }
+      setState(() => _isLoading = false);
+      _continueAfterProfileComplete();
+    } catch (e) {
+      AppLogger.error('[complete-profile] guardar nombre', e);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _nameError = 'No pudimos guardar tu nombre. Revisa tu conexión.';
+      });
+    }
+  }
+
+  /// Sale de esta pantalla hacia donde corresponda una vez el perfil está
+  /// completo. Usa el mismo resolutor que el splash y el login, para no volver
+  /// a tener tres criterios distintos de enrutado.
+  void _continueAfterProfileComplete() {
+    if (!mounted) return;
+    final user = context.read<AuthProvider>().currentUser;
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      HomeRouteResolver.resolve(user),
+      (_) => false,
+    );
   }
 
   String get _providerName {
@@ -204,7 +268,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 const SizedBox(height: 8),
                 _buildHeader(),
                 const SizedBox(height: 32),
-                _otpSent ? _buildOtpStep() : _buildPhoneStep(),
+                // El teléfono manda: sin él no hay cuenta utilizable. Una vez
+                // resuelto, si falta el nombre se pide aquí mismo.
+                if (_needsPhone)
+                  (_otpSent ? _buildOtpStep() : _buildPhoneStep())
+                else
+                  _buildNameStep(),
               ],
             ),
           ),
@@ -232,9 +301,48 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Iniciaste con $_providerName. Necesitamos tu número para completar tu cuenta.',
+          _needsPhone
+              ? 'Iniciaste con $_providerName. Necesitamos tu número para completar tu cuenta.'
+              : '¿Cómo te llamas? Tu conductor verá este nombre cuando aceptes un viaje.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNameStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _nameController,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _isLoading ? null : _saveName(),
+          decoration: InputDecoration(
+            labelText: 'Nombre y apellido',
+            hintText: 'Ej. María Torres',
+            errorText: _nameError,
+            prefixIcon: const Icon(Icons.person_outline),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _saveName,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ModernTheme.rappiOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  height: 20, width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Continuar',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ),
       ],
     );

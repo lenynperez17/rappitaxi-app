@@ -642,10 +642,17 @@ class AuthProvider with ChangeNotifier {
   }
 
   bool needsProfileCompletion() {
-    // Solo pedir completar si falta el teléfono. Login SMS ya tiene teléfono
-    // por definición; login Google/Apple no siempre lo provee y se pide después.
     if (_currentUser == null) return true;
-    return _currentUser!.phone.isEmpty;
+    // Falta el teléfono: login SMS siempre lo trae, pero Google/Apple no.
+    if (_currentUser!.phone.isEmpty) return true;
+    // Ronda 269: también falta el nombre.
+    //
+    // Quien entra por SMS no da su nombre en ningún momento, así que el
+    // conductor recibía la solicitud de "Usuario" y el pasajero veía su propio
+    // perfil vacío. Con el nombre pedido de entrada, ambos lados del viaje
+    // saben con quién están tratando, que es lo mínimo en un servicio donde
+    // dos desconocidos comparten coche.
+    return _currentUser!.fullName.trim().isEmpty;
   }
 
   // ─── Deprecados (compatibilidad hacia atrás) ───────────────────────────────

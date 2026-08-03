@@ -132,7 +132,28 @@ export async function POST(req: NextRequest) {
         { status: 503 },
       )
     }
-    return NextResponse.json({ success: false, error: 'sms_error', message: result.error }, { status: 500 })
+    // Ronda 269: NO devolver al cliente el error crudo del proveedor.
+    //
+    // `result.error` es el texto literal de Twilio, y con la cuenta suspendida
+    // llegaba al móvil de cualquier persona que intentara registrarse:
+    //   "Twilio 20003: authentication failed, account AC<redactado>
+    //    with status 4 is not active"
+    // Dos problemas de golpe: filtra el Account SID de la cuenta —un dato que
+    // no debe salir del servidor— y le dice a un usuario normal algo que no
+    // entiende ni puede resolver. Es el punto 7 del informe del cliente
+    // ("mensajes de error poco claros"), agravado con una fuga de datos.
+    //
+    // El detalle real queda en los logs del servidor, que es donde sirve.
+    console.error('[auth/sms/send] fallo del proveedor SMS:', result.error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'sms_error',
+        message: 'No pudimos enviarte el código ahora mismo. '
+          + 'Vuelve a intentarlo en unos minutos o entra con Google o Apple.',
+      },
+      { status: 500 },
+    )
   }
 
   // Reserva ya se hizo arriba con INSERT ON CONFLICT DO UPDATE — no necesitamos
