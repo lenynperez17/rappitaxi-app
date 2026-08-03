@@ -260,3 +260,4 @@ __pycache__/
 .serena/
 app/ios/keys/
 *.png
+app/fastlane/report.xml
