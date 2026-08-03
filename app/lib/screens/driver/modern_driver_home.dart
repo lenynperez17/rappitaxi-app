@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_animarker/flutter_map_marker_animation.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../shared/help_center_screen.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/credit_constants.dart';
 import '../../core/theme/modern_theme.dart';
@@ -2223,9 +2224,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/settings');
                   }),
+                  // Ronda 269: "Ayuda" abría `rapiteam.com/ayuda` en el
+                  // navegador, y esa página NO EXISTE — comprobado desde el
+                  // simulador: el conductor salía de la app para encontrarse un
+                  // "No se ha podido encontrar la página".
+                  //
+                  // Ahora abre el centro de ayuda que ya vive dentro de la app,
+                  // con las guías reales. Además no le echa fuera: si está
+                  // trabajando, salir al navegador puede costarle una solicitud.
                   _buildDrawerItem(Icons.info_outline, 'Ayuda', () {
                     Navigator.pop(context);
-                    launchUrl(Uri.parse('https://rapiteam.com/ayuda'), mode: LaunchMode.externalApplication);
+                    Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const HelpCenterScreen()));
                   }),
                   _buildDrawerItem(Icons.support_agent_rounded, 'Soporte', () {
                     Navigator.pop(context);
