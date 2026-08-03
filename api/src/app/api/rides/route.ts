@@ -363,11 +363,14 @@ export async function GET(req: NextRequest) {
   const where: string[] = []
   const params: unknown[] = []
 
+  // Ronda 269: columnas cualificadas con `r.` — la consulta de abajo pasó a
+  // hacer JOIN con `users` para traer los nombres, y sin el prefijo Postgres
+  // rechaza `status` y los ids por ambiguos.
   params.push(auth.userId)
   if (role === 'passenger') {
-    where.push(`passenger_id = $${params.length}`)
+    where.push(`r.passenger_id = $${params.length}`)
   } else {
-    where.push(`driver_id = $${params.length}`)
+    where.push(`r.driver_id = $${params.length}`)
   }
 
   if (status) {
@@ -378,15 +381,28 @@ export async function GET(req: NextRequest) {
       )
     }
     params.push(status)
-    where.push(`status = $${params.length}`)
+    where.push(`r.status = $${params.length}`)
   }
 
   const whereSql = `WHERE ${where.join(' AND ')}`
-  const rows = await query<RideRow & { total: string }>(
-    `SELECT *, COUNT(*) OVER() AS total
-       FROM rides
+  // Ronda 269: se añaden los nombres de las dos partes.
+  //
+  // El listado solo devolvía identificadores. La app del conductor lo usa al
+  // arrancar para recuperar un viaje en curso, y sin el nombre mostraba
+  // "Pasajero desconocido" en el aviso de viaje pendiente: se le pedía decidir
+  // si continuar o cancelar un servicio sin decirle a quién llevaba.
+  //
+  // `COALESCE(display_name, full_name)` es el mismo criterio que usa el aviso
+  // push al ofrecer el viaje, para que el conductor vea siempre el mismo nombre.
+  const rows = await query<RideRow & { total: string; passenger_name: string | null; driver_name: string | null }>(
+    `SELECT r.*, COUNT(*) OVER() AS total,
+            COALESCE(p.display_name, p.full_name) AS passenger_name,
+            COALESCE(d.display_name, d.full_name) AS driver_name
+       FROM rides r
+       LEFT JOIN users p ON p.id = r.passenger_id
+       LEFT JOIN users d ON d.id = r.driver_id
        ${whereSql}
-       ORDER BY created_at DESC
+       ORDER BY r.created_at DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
     params,
   )
@@ -394,7 +410,11 @@ export async function GET(req: NextRequest) {
   const total = rows.length ? Number(rows[0].total) : 0
   return NextResponse.json({
     success: true,
-    rides: rows.map(serializeRide),
+    rides: rows.map((r) => ({
+      ...serializeRide(r),
+      passengerName: r.passenger_name,
+      driverName: r.driver_name,
+    })),
     page,
     pageSize,
     total,

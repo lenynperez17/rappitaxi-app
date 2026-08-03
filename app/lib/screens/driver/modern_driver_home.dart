@@ -275,7 +275,22 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         );
         if (activeRide.isNotEmpty && mounted) {
           final id = activeRide['id'] as String? ?? '';
-          if (id.isNotEmpty) _showOldTripDialog(id, activeRide, 0);
+          // Ronda 269: aquí se forzaba SIEMPRE el diálogo de "Viaje pendiente"
+          // con `0` minutos fijos, sin mirar la antigüedad del viaje.
+          //
+          // Resultado, comprobado reabriendo la app con un viaje recién
+          // aceptado: en vez de volver a la pantalla del viaje, al conductor le
+          // salía "Se encontró un viaje iniciado hace 0 minutos que no fue
+          // completado. ¿Qué deseas hacer? Cancelar / Continuar" — con el
+          // pasajero y el origen en blanco. Es decir, se le pedía decidir sobre
+          // un viaje en curso sin darle un solo dato, y la opción de cancelar
+          // estaba a un toque. Basta con que la app se cierre en mitad de un
+          // servicio para que aparezca.
+          //
+          // `_navigateToActiveTrip` ya distingue los dos casos: viaje reciente
+          // → directo a la pantalla del viaje; viaje de más de 30 minutos →
+          // diálogo, que es para lo que se escribió.
+          if (id.isNotEmpty) _navigateToActiveTrip(id, activeRide);
         }
       } catch (e) {
         AppLogger.info('No active rides found or server unreachable');
@@ -507,8 +522,26 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   void _showOldTripDialog(String tripId, Map<String, dynamic> tripData, int minutesAgo) {
     if (!mounted) return;
 
-    final passengerName = tripData['passengerName'] ?? 'Pasajero desconocido';
-    final origin = tripData['originAddress'] ?? tripData['origin']?['address'] ?? 'Origen no disponible';
+    // Ronda 269: este diálogo salía con "Pasajero desconocido" y "Origen no
+    // disponible" SIEMPRE. Detectado al reabrir la app con un viaje aceptado:
+    // el conductor recuperaba el viaje sin saber a quién iba a recoger ni dónde,
+    // y tenía que decidir entre "Continuar" y "Cancelar" completamente a ciegas.
+    //
+    // Causa: nombres de campo que el backend no usa. Devuelve `pickupAddress`
+    // (`api/src/app/api/rides/route.ts:311`), no `originAddress` ni un objeto
+    // `origin`. Y el nombre del pasajero solo viaja como `passengerName` en el
+    // detalle del viaje; en el listado no viene, de ahí el "desconocido".
+    //
+    // Se aceptan las variantes por si alguna respuesta antigua las trae, pero la
+    // primera de cada lista es la que el backend manda hoy.
+    final passengerName = tripData['passengerName']
+        ?? tripData['passenger']?['fullName']
+        ?? 'Pasajero desconocido';
+    final origin = tripData['pickupAddress']
+        ?? tripData['originAddress']
+        ?? tripData['pickup']?['address']
+        ?? tripData['origin']?['address']
+        ?? 'Origen no disponible';
 
     showDialog(
       context: context,
