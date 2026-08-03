@@ -2905,6 +2905,40 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 label: Text('Verificar estado'),
                 style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
               ),
+              SizedBox(height: 12),
+              // Ronda 269: SALIDA. Sin esto el conductor quedaba ATRAPADO aquí.
+              //
+              // Esta pantalla no tiene menú lateral ni flecha de retroceso, y el
+              // botón de cambio de modo de la barra superior se oculta cuando la
+              // cuenta tiene un solo rol (`mode_switch_button.dart:46`) — que es
+              // justo el caso de un conductor puro. Comprobado en el simulador
+              // con una cuenta real: se entra desde "Modo Conductor" y ya no se
+              // puede salir; hay que forzar el cierre de la app.
+              //
+              // Y como el cambio de modo sí se guardó en el servidor, al volver
+              // a abrir aterrizaba otra vez aquí. Un conductor pendiente de
+              // aprobación se quedaba sin poder ni siquiera pedirse un viaje.
+              TextButton.icon(
+                onPressed: () async {
+                  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                  final navigator = Navigator.of(context);
+                  final messenger = ScaffoldMessenger.of(context);
+                  final ok = await authProvider.switchMode('passenger');
+                  if (!mounted) return;
+                  if (!ok) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('No pudimos cambiar de modo. Revisa tu conexión.'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                    return;
+                  }
+                  navigator.pushNamedAndRemoveUntil('/passenger/home', (_) => false);
+                },
+                icon: Icon(Icons.arrow_back),
+                label: Text('Volver al modo pasajero'),
+              ),
               // Ronda 249: se eliminó la línea de diagnóstico
               // "v146+ · userType=… · verified=… · docStatus=…" que la ronda
               // 230 añadió para encontrar el bug de is_verified. Ya cumplió su
