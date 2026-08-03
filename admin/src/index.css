@@ -14,3 +14,41 @@ html, body, #root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--color-rapi-bg);
 }
+
+/* ---------------------------------------------------------------------------
+   Mapa en vivo (ronda 270)
+   Leaflet pinta sus DivIcon con fondo y borde propios; se anulan para que el
+   SVG del marcador se vea sin el recuadro blanco de serie.
+--------------------------------------------------------------------------- */
+.rt-marker {
+  background: transparent;
+  border: none;
+}
+
+/* Los conductores dentro de un viaje laten. El movimiento los distingue de los
+   libres sin depender del color, que no todo el mundo separa igual. */
+.rt-marker-pulse svg {
+  animation: rtPulse 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes rtPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
+}
+
+/* Quien prefiere menos movimiento no debería perder la distinción: sin la
+   animación, el marcador se queda algo más grande de forma permanente. */
+@media (prefers-reduced-motion: reduce) {
+  .rt-marker-pulse svg {
+    animation: none;
+    transform: scale(1.12);
+  }
+}
+
+/* Popups de Leaflet: el ancho por defecto (300px) desborda en móviles de 390px
+   una vez sumados los márgenes de la punta y la sombra. */
+.leaflet-popup-content {
+  margin: 10px 12px;
+  max-width: min(16rem, 70vw);
+}

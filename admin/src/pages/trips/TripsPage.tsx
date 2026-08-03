@@ -62,16 +62,20 @@ export function TripsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      {/* Ronda 270: ver nota en InvoicesPage. Aquí además la etiqueta era la
+          más larga del panel y se acortaba sola en pantallas estrechas. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Viajes</h1>
           <p className="text-sm text-gray-500 mt-1">Total: <strong>{total}</strong></p>
         </div>
         <Link
           to="/map"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg flex-shrink-0 whitespace-nowrap"
         >
-          <MapPinned className="w-4 h-4" /> Nuevo viaje en el mapa
+          <MapPinned className="w-4 h-4" />
+          <span className="hidden sm:inline">Nuevo viaje en el mapa</span>
+          <span className="sm:hidden">Nuevo viaje</span>
         </Link>
       </div>
 

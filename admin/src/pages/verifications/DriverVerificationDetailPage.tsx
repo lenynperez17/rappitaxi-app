@@ -116,11 +116,14 @@ export function DriverVerificationDetailPage() {
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
-        <div className="flex items-start gap-4">
+        {/* Ronda 270: `flex-wrap` + `min-w-0`. En móvil el botón de verificar
+            competía por el ancho con el correo del conductor y ambos quedaban
+            aplastados; ahora el botón baja a su propia línea. */}
+        <div className="flex flex-wrap items-start gap-4">
           <Avatar name={user.fullName ?? undefined} src={pickPhotoUrl(user.profilePhotoUrl)} size="xl" />
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">{user.fullName ?? '(sin nombre)'}</h1>
-            <p className="text-sm text-gray-500 mt-1">{user.email ?? user.phone ?? user.id}</p>
+          <div className="flex-1 min-w-[12rem]">
+            <h1 className="text-2xl font-bold text-gray-900 break-words">{user.fullName ?? '(sin nombre)'}</h1>
+            <p className="text-sm text-gray-500 mt-1 break-all">{user.email ?? user.phone ?? user.id}</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {user.isVerified ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">

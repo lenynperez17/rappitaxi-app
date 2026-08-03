@@ -84,14 +84,16 @@ export function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      {/* Ronda 270: `flex-wrap` + `min-w-0`. Sin ellos el botón se comía el
+          borde derecho de la pantalla en móvil y se recortaba a la mitad. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Facturación</h1>
           <p className="text-sm text-gray-500 mt-1">Total: <strong>{total}</strong> comprobante(s)</p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg flex-shrink-0 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" /> Emitir comprobante
         </button>
