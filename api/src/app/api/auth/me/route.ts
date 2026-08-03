@@ -33,6 +33,37 @@ interface UserRow {
   created_at: Date
 }
 
+/**
+ * Ronda 269: `driverStatus` derivado.
+ *
+ * El cliente lleva desde siempre un campo `driverStatus` (`user_model.dart:39`)
+ * y el splash decide con él a qué pantalla enviar al conductor
+ * (`modern_splash_screen.dart:313`, rama `'pending_approval'`). Pero el backend
+ * NUNCA lo ha devuelto: no existe la columna ni el concepto. Como
+ * `json['driverStatus']` era siempre `null`, esa rama jamás se cumplía y el
+ * conductor con documentos en revisión terminaba en `/upgrade-to-driver`, es
+ * decir, se le pedía darse de alta otra vez.
+ *
+ * No hace falta columna nueva: el estado ya está implícito en los datos que sí
+ * existen. Se deriva de ellos para que cliente y servidor digan lo mismo.
+ *
+ *   approved         → el alta está completa (`users.is_verified`)
+ *   pending_approval → subió documentos y aún no están todos aprobados
+ *   null             → todavía no ha subido nada, no ha empezado el alta
+ */
+async function resolveDriverStatus(
+  userId: string,
+  user: { user_type: string; is_verified: boolean },
+): Promise<string | null> {
+  if (user.user_type !== 'driver' && user.user_type !== 'dual') return null
+  if (user.is_verified) return 'approved'
+  const docs = await maybeOne<{ total: string }>(
+    'SELECT count(*)::text AS total FROM driver_documents WHERE driver_id = $1',
+    [userId],
+  )
+  return Number(docs?.total ?? 0) > 0 ? 'pending_approval' : null
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req)
   if (!auth.ok) return auth.response
@@ -54,6 +85,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'account_suspended' }, { status: 403 })
   }
 
+  const driverStatus = await resolveDriverStatus(auth.userId, user)
+
   return NextResponse.json({
     success: true,
     user: {
@@ -70,6 +103,7 @@ export async function GET(req: NextRequest) {
       // navegar (activeMode = currentMode ?? userType). Sin este campo,
       // un usuario dual siempre caía en /passenger/home.
       currentMode: user.current_mode,
+      driverStatus,
       profileComplete: user.profile_complete,
       profilePhotoUrl: user.profile_photo_url,
       authProvider: user.auth_provider,
@@ -218,6 +252,7 @@ export async function PATCH(req: NextRequest) {
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
             user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document, current_mode,
+            rating::text, total_ratings,
             is_active, created_at
        FROM users WHERE id = $1 LIMIT 1`,
     [auth.userId],
@@ -226,10 +261,24 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 404 })
   }
 
+  const updatedDriverStatus = await resolveDriverStatus(auth.userId, updated)
+
   // Ronda 16 MEDIUM#6: incluir displayName/birthDate/identityDocument en el
   // response del PATCH — GET los devuelve, PATCH no lo hacía → el cliente
   // Flutter que rehidrataba desde este response veía los campos como null
   // inmediatamente después de guardarlos.
+  //
+  // Ronda 269: mismo problema, y esta vez con consecuencias de navegación.
+  // Faltaban `currentMode`, `rating` y `totalRatings`. `switchMode()` del
+  // cliente reconstruye el usuario con ESTE response y lo persiste en el
+  // almacenamiento seguro (`auth_provider.dart:612`), así que al cambiar a
+  // conductor se guardaba `currentMode: null` — y en el siguiente arranque en
+  // frío `activeMode` valía `userType` en vez de `'driver'`, mandando al
+  // conductor a la pantalla de pasajero. El rating, además, volvía a 5,0
+  // porque el cliente hace `json['rating'] ?? 5.0`.
+  //
+  // Regla para quien toque esto: el PATCH debe devolver EXACTAMENTE los mismos
+  // campos que el GET. Si divergen, el cliente cachea un usuario degradado.
   return NextResponse.json({
     success: true,
     user: {
@@ -242,11 +291,15 @@ export async function PATCH(req: NextRequest) {
       phoneVerified: updated.phone_verified,
       userType: updated.user_type,
       isVerified: updated.is_verified,
+      currentMode: updated.current_mode,
+      driverStatus: updatedDriverStatus,
       profileComplete: updated.profile_complete,
       profilePhotoUrl: updated.profile_photo_url,
       authProvider: updated.auth_provider,
       birthDate: updated.birth_date,
       identityDocument: updated.identity_document,
+      rating: updated.rating !== null ? Number(updated.rating) : null,
+      totalRatings: updated.total_ratings ?? 0,
       createdAt: updated.created_at,
     },
   })

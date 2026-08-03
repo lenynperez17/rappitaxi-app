@@ -2208,11 +2208,40 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
+                  // Ronda 269: este botón dejaba la cuenta descuadrada.
+                  //
+                  // Hacía `Navigator.pop`, lanzaba `switchMode('passenger')`
+                  // SIN esperarlo y navegaba. Si la petición no llegaba —red
+                  // caída, app suspendida al cambiar de pantalla— el servidor
+                  // seguía teniendo `current_mode = 'driver'` mientras el
+                  // usuario estaba en la pantalla de pasajero, y **el siguiente
+                  // arranque lo mandaba al home de conductor**. Ése era el
+                  // "entro y salgo y me lleva a pantallas que no tienen nada
+                  // que ver". Además cogía el `Provider` del context del drawer
+                  // DESPUÉS de haberle hecho pop, es decir, de un context ya
+                  // desactivado.
+                  //
+                  // Ahora: se resuelve el provider antes de cerrar nada, se
+                  // espera la confirmación del servidor, y si falla se avisa y
+                  // no se navega — mejor quedarse en conductor que acabar en
+                  // pasajero con el servidor diciendo lo contrario.
+                  onPressed: () async {
                     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                    authProvider.switchMode('passenger');
-                    Navigator.pushReplacementNamed(context, '/passenger/home');
+                    final navigator = Navigator.of(context);
+                    final messenger = ScaffoldMessenger.of(context);
+                    navigator.pop();
+                    final ok = await authProvider.switchMode('passenger');
+                    if (!mounted) return;
+                    if (!ok) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('No pudimos cambiar a modo pasajero. Revisa tu conexión.'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                      return;
+                    }
+                    navigator.pushReplacementNamed('/passenger/home');
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.rappiOrange,

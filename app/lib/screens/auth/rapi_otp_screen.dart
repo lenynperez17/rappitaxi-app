@@ -11,7 +11,12 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import 'package:flutter/services.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/auth_session_bootstrap.dart';
+import '../../core/utils/home_route_resolver.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../widgets/rappi_spinner.dart';
@@ -55,12 +60,31 @@ class _RapiOtpScreenState extends State<RapiOtpScreen> {
           backgroundColor: ModernTheme.success,
         ),
       );
-      // Usuario phone ya tiene teléfono verificado — va directo al home.
-      // Completar profile (nombre, email) puede hacerse desde el perfil después.
-      final userType = (data['user']?['userType'] as String?) ?? 'passenger';
-      final home = userType == 'driver' ? '/driver/home'
-                 : userType == 'admin' ? '/admin/dashboard'
-                 : '/passenger/home';
+      // Ronda 269: dejar la sesión lista antes de navegar (hidrata
+      // AuthProvider y abre el canal en vivo). Antes se navegaba con el JSON
+      // de la respuesta y el provider quedaba vacío: el menú del pasajero no
+      // sabía que la cuenta era de conductor y ofrecía darse de alta a quien
+      // ya lo estaba.
+      await AuthSessionBootstrap.hydrate(context);
+      if (!mounted) return;
+
+      final authProvider = context.read<AuthProvider>();
+
+      // Si falta algún dato obligatorio del perfil (nombre, teléfono), se pide
+      // ahora y no se le deja entrar a medias.
+      if (authProvider.needsProfileCompletion()) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          HomeRouteResolver.completeProfile,
+          (_) => false,
+          arguments: {'loginMethod': 'sms'},
+        );
+        return;
+      }
+
+      final user = authProvider.currentUser;
+      final home = user != null
+          ? HomeRouteResolver.resolve(user)
+          : HomeRouteResolver.resolveFromJson(data['user'] as Map<String, dynamic>?);
       Navigator.of(context).pushNamedAndRemoveUntil(home, (_) => false);
     } on RapiApiException catch (e) {
       final msg = e.code == 'code_expired' ? 'El código expiró. Solicita uno nuevo.'

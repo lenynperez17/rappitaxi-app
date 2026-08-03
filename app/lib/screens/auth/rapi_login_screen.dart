@@ -23,7 +23,12 @@ import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import 'package:provider/provider.dart';
+
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/auth_session_bootstrap.dart';
+import '../../core/utils/home_route_resolver.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import 'rapi_otp_screen.dart';
@@ -187,28 +192,37 @@ class _RapiLoginScreenState extends State<RapiLoginScreen> {
     }
   }
 
-  void _goHome(Map<String, dynamic> data, {String loginMethod = 'sms'}) {
-    final userType = (data['user']?['userType'] as String?) ?? 'passenger';
-    final phone = (data['user']?['phone'] as String?) ?? '';
+  Future<void> _goHome(Map<String, dynamic> data, {String loginMethod = 'sms'}) async {
     if (!mounted) return;
-    // Solo va a completar perfil si falta el teléfono. Login SMS ya lo tiene.
-    if (phone.isEmpty) {
+    // Ronda 269: hidratar AuthProvider ANTES de navegar.
+    //
+    // Antes se navegaba directamente con el JSON de la respuesta HTTP, así que
+    // `AuthProvider.currentUser` seguía en null al llegar al home. El menú
+    // lateral lee de ahí el tipo de cuenta para decidir entre "Cambiar a
+    // conductor" y "Empieza a ganar dinero": sin usuario mostraba lo segundo y
+    // mandaba a registrarse a conductores que ya lo eran. Al reabrir la app el
+    // splash sí hidrataba y el botón salía bien — de ahí el "a veces sí, a
+    // veces no" que reportaban.
+    await AuthSessionBootstrap.hydrate(context);
+    if (!mounted) return;
+
+    final authProvider = context.read<AuthProvider>();
+    final user = authProvider.currentUser;
+
+    if (authProvider.needsProfileCompletion()) {
       Navigator.of(context).pushReplacementNamed(
         '/auth/complete-profile',
         arguments: {'loginMethod': loginMethod},
       );
       return;
     }
-    switch (userType) {
-      case 'driver':
-        Navigator.of(context).pushReplacementNamed('/driver/home');
-        break;
-      case 'admin':
-        Navigator.of(context).pushReplacementNamed('/admin/dashboard');
-        break;
-      default:
-        Navigator.of(context).pushReplacementNamed('/passenger/home');
-    }
+
+    // Si la hidratación falló (sin red, por ejemplo) se usa el usuario que vino
+    // en la respuesta del login, que para esto trae lo justo.
+    final route = user != null
+        ? HomeRouteResolver.resolve(user)
+        : HomeRouteResolver.resolveFromJson(data['user'] as Map<String, dynamic>?);
+    Navigator.of(context).pushReplacementNamed(route);
   }
 
   @override

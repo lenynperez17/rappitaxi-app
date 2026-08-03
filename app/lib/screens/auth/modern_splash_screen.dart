@@ -1,4 +1,5 @@
 // ignore_for_file: use_build_context_synchronously, unused_import, unused_field, dead_code
+import 'dart:async' show unawaited;
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,7 @@ import '../../dev_tour_orchestrator.dart';
 import '../../services/rapi_api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/error_messages.dart';
+import '../../core/utils/home_route_resolver.dart';
 
 /// Pantalla de splash con animaciones modernas
 ///
@@ -262,77 +264,31 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
           return;
         }
 
-        // Determinar ruta según tipo y modo
-        String route;
+        // Ronda 269: la decisión vive en HomeRouteResolver, compartido con el
+        // login y la pantalla de OTP. Antes estaba escrita aquí y otras dos
+        // veces con criterios distintos, y el mismo usuario acababa en
+        // pantallas diferentes según entrara en frío o por SMS.
+        final route = HomeRouteResolver.resolve(user);
 
-        if (user.isAdmin) {
-          // Admin siempre va al dashboard
-          route = '/admin/dashboard';
-          AppLogger.navigation('ModernSplashScreen', route, {'reason': 'Usuario admin'});
-        } else {
-          // Usuario dual o single: usar currentMode o activeMode
-          final mode = user.activeMode; // Usa currentMode si existe, sino userType
+        AppLogger.navigation('ModernSplashScreen', route, {
+          'userType': user.userType,
+          'activeMode': user.activeMode,
+          'driverStatus': user.driverStatus,
+          'isVerified': user.isVerified,
+        });
 
-          if (mode == 'driver') {
-            // Ronda 233 fix: backend NO envía documentVerified — siempre era
-            // false y el driver aprobado nunca aterrizaba en /driver/home
-            // desde el splash. Ahora usamos isVerified+userType (mismo criterio
-            // que el gate del driver home en Ronda 231).
-            final isDriverApproved = user.isVerified &&
-                (user.userType == 'driver' || user.userType == 'dual');
-            if (isDriverApproved) {
-              route = '/driver/home';
-              AppLogger.navigation('ModernSplashScreen', route, {
-                'reason': 'Conductor aprobado',
-                'isDual': user.isDualAccount,
-              });
-            } else {
-              // Conductor sin documentos aprobados
-              // Verificar si ya envió documentos (pending_approval) o es nuevo
-              final driverStatus = user.driverStatus ?? 'pending_documents';
-
-              // FIX BUG ROL: Sincronizar currentMode con la pantalla real
-              // Si el usuario está en modo 'driver' pero NO tiene documentos verificados,
-              // actualizar currentMode a 'passenger' para evitar inconsistencia visual
-              if (user.currentMode == 'driver') {
-                AppLogger.info('Sincronizando currentMode a passenger (documentos no verificados)');
-                // TODO(node-migration): reemplazar con endpoint PATCH /api/auth/me
-                // (o /api/users/me/mode) cuando exista. Por ahora usamos switchMode
-                // del AuthProvider, que refresca desde el backend.
-                try {
-                  await authProvider.switchMode('passenger');
-                } catch (e) {
-                  // No crashear si falla - solo log warning
-                  AppLogger.warning(userFriendlyError(e, fallback: 'Error sincronizando currentMode'));
-                }
-                // Verificar mounted después de operaciones async
-                if (!mounted) return;
-              }
-
-              if (driverStatus == 'pending_approval') {
-                // Ya envió documentos, puede usar como pasajero mientras espera
-                route = '/passenger/home';
-                AppLogger.navigation('ModernSplashScreen', route, {
-                  'reason': 'Conductor esperando aprobación - usando como pasajero',
-                  'driverStatus': driverStatus,
-                });
-              } else {
-                // Conductor nuevo, debe subir documentos
-                route = '/upgrade-to-driver';
-                AppLogger.navigation('ModernSplashScreen', route, {
-                  'reason': 'Conductor nuevo - debe subir documentos',
-                  'driverStatus': driverStatus,
-                });
-              }
-            }
-          } else {
-            // Default: modo pasajero (passenger o cualquier otro)
-            route = '/passenger/home';
-            AppLogger.navigation('ModernSplashScreen', route, {
-              'reason': 'Usuario en modo pasajero',
-              'isDual': user.isDualAccount,
-            });
-          }
+        // Si el modo guardado contradice la pantalla destino, se corrige en
+        // segundo plano. Antes esto era un `await switchMode(...)` SIN timeout
+        // en plena ruta de arranque: con red lenta el splash se quedaba
+        // colgado hasta 25 s más sobre los 10 que ya había esperado.
+        if (HomeRouteResolver.needsModeSync(user)) {
+          unawaited(
+            authProvider.switchMode('passenger').catchError((Object e) {
+              AppLogger.warning(
+                  userFriendlyError(e, fallback: 'Error sincronizando currentMode'));
+              return false;
+            }),
+          );
         }
 
         Navigator.pushReplacementNamed(context, route);
@@ -344,6 +300,27 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
             'reason': 'Sistema en modo mantenimiento (usuario no autenticado)',
           });
           Navigator.pushReplacementNamed(context, '/maintenance');
+          return;
+        }
+
+        // Ronda 269: no expulsar a login a quien SÍ tiene sesión.
+        //
+        // El bucle de arriba espera 10 s a que AuthProvider termine, pero la
+        // inicialización puede tardar más (HTTP hasta 25 s + registro de token
+        // FCM hasta 10 s). Al agotarse la espera, `isAuthenticated` seguía en
+        // false y se mandaba al usuario a la pantalla de login **con la sesión
+        // guardada intacta**: tenía que volver a pedir un SMS sin motivo. Pasaba
+        // sobre todo con red lenta y en el primer arranque tras instalar.
+        //
+        // Los tokens están en el almacenamiento seguro y `isSignedIn` solo mira
+        // el refresh token, así que se puede preguntar sin esperar a nadie. Si
+        // hay sesión, se entra al home de pasajero y `AuthProvider` termina de
+        // hidratar por detrás; el usuario ve la app, no un login injustificado.
+        if (RapiApiClient.instance.isSignedIn) {
+          AppLogger.warning(
+              'AuthProvider no terminó a tiempo pero hay sesión guardada: '
+              'entrando igualmente en vez de mandar a login');
+          Navigator.pushReplacementNamed(context, HomeRouteResolver.passengerHome);
           return;
         }
 
