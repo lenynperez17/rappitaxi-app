@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuth } from './hooks/useAuth'
@@ -13,7 +14,16 @@ import { AnalyticsPage } from './pages/analytics/AnalyticsPage'
 import { EmergenciesPage } from './pages/emergencies/EmergenciesPage'
 import { PromotionsPage } from './pages/promotions/PromotionsPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
-import { LiveMapPage } from './pages/map/LiveMapPage'
+/**
+ * Ronda 270: el mapa se carga aparte.
+ *
+ * Arrastra Leaflet y MapLibre, que juntos pesan un megabyte largo. Metidos en
+ * el paquete principal, quien entra a ver una factura desde el móvil se lo
+ * descarga igual sin llegar a abrir el mapa. Así solo lo paga quien lo usa.
+ */
+const LiveMapPage = lazy(() =>
+  import('./pages/map/LiveMapPage').then((m) => ({ default: m.LiveMapPage })),
+)
 import { RechargesPage } from './pages/recharges/RechargesPage'
 import { RechargeDetailPage } from './pages/recharges/RechargeDetailPage'
 import { InvoicesPage } from './pages/recharges/InvoicesPage'
@@ -81,7 +91,21 @@ function AppRoutes() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="emergencies" element={<EmergenciesPage />} />
         <Route path="promotions" element={<PromotionsPage />} />
-        <Route path="map" element={<LiveMapPage />} />
+        <Route
+          path="map"
+          element={
+            <Suspense fallback={
+              <div className="h-full flex items-center justify-center bg-gray-50">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-4 border-[#E31E24] border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-gray-500">Cargando el mapa…</p>
+                </div>
+              </div>
+            }>
+              <LiveMapPage />
+            </Suspense>
+          }
+        />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertCircle, ChevronUp, Phone, Star, Crosshair,
 } from 'lucide-react'
 import {
-  MapContainer, TileLayer, Marker, Popup, Polyline, ZoomControl, useMap, useMapEvents,
+  MapContainer, Marker, Popup, Polyline, ZoomControl, useMap, useMapEvents,
 } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -14,6 +14,7 @@ import { relativeTime, toDate } from '../../utils/timeFormat'
 import { formatPEN } from '../../utils/currency'
 import { driverIcon, pickupIcon, destinationIcon, MAP_COLORS } from '../../components/map/mapIcons'
 import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
+import { VectorBasemap } from '../../components/map/VectorBasemap'
 
 /**
  * Mapa en vivo del despacho.
@@ -337,10 +338,7 @@ export function LiveMapPage() {
           scrollWheelZoom
           zoomControl={false}
         >
-          <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <VectorBasemap />
           <ZoomControl position="bottomright" />
           <AutoFit points={fitPoints} onReady={(fit) => { fitRef.current = fit }} />
           <FlyTo target={focus} />
@@ -1039,10 +1037,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
       </p>
       <div className="rounded-lg overflow-hidden border border-gray-200 h-[45vh] min-h-[240px] max-h-[360px]">
         <MapContainer center={DEFAULT_CENTER} zoom={13} style={{ height: '100%' }}>
-          <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <VectorBasemap />
           <ClickCapture onClick={handleClick} />
           {pickup && <Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon()} />}
           {destination && <Marker position={[destination.lat, destination.lng]} icon={destinationIcon()} />}
