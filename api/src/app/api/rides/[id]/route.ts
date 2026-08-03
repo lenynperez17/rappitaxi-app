@@ -48,6 +48,11 @@ interface RideDetailRow {
   driver_name: string | null
   driver_phone: string | null
   driver_photo_url: string | null
+  vehicle_plate: string | null
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_color: string | null
+  vehicle_year: number | null
 }
 
 // Ronda 174 PRIVACY: PII de la contraparte solo visible mientras el ride
@@ -110,6 +115,20 @@ function serializeRideDetail(r: RideDetailRow) {
     driverName: isActive ? r.driver_name : maskName(r.driver_name),
     driverPhone: isActive ? r.driver_phone : null,
     driverPhotoUrl: isActive ? r.driver_photo_url : null,
+    // Ronda 269: el vehículo asignado. Se manda con las mismas claves que ya
+    // lee la app (`vehiclePlate`, `vehicleModel`, `vehicleColor`) — el
+    // adaptador del cliente esperaba un objeto `vehicle` con claves distintas
+    // (`model` frente a `vehicleModel`), así que aunque hubiéramos enviado el
+    // objeto, el modelo habría seguido saliendo vacío por el desajuste.
+    //
+    // La placa solo mientras el viaje está activo, por el mismo criterio de
+    // privacidad que el nombre y el teléfono: identifica un vehículo concreto
+    // y no hay razón para conservarla accesible meses después.
+    vehiclePlate: isActive ? r.vehicle_plate : null,
+    vehicleMake: r.vehicle_make,
+    vehicleModel: r.vehicle_model,
+    vehicleColor: r.vehicle_color,
+    vehicleYear: r.vehicle_year,
   }
 }
 
@@ -125,6 +144,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 
+  // Ronda 269: se añade el vehículo del conductor.
+  //
+  // La app del pasajero lleva desde siempre el hueco para pintar placa, modelo
+  // y color —los lee en `trip_tracking_screen.dart:1294-1304`— pero esta
+  // consulta nunca los devolvía, así que salían en blanco: el pasajero no sabía
+  // qué coche estaba esperando. Es justo el dato que evita subirse al vehículo
+  // equivocado, y el que pide el informe del cliente.
+  //
+  // `DISTINCT ON` porque un conductor puede tener varios vehículos dados de
+  // alta; se toma el activo más reciente, igual criterio que
+  // `/api/drivers/me/vehicle`.
   const ride = await maybeOne<RideDetailRow>(
     `SELECT r.*,
             p.full_name AS passenger_name,
@@ -132,10 +162,22 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
             p.profile_photo_url AS passenger_photo_url,
             d.full_name AS driver_name,
             d.phone     AS driver_phone,
-            d.profile_photo_url AS driver_photo_url
+            d.profile_photo_url AS driver_photo_url,
+            v.plate AS vehicle_plate,
+            v.make  AS vehicle_make,
+            v.model AS vehicle_model,
+            v.color AS vehicle_color,
+            v.year  AS vehicle_year
        FROM rides r
        LEFT JOIN users p ON p.id = r.passenger_id
        LEFT JOIN users d ON d.id = r.driver_id
+       LEFT JOIN LATERAL (
+         SELECT plate, make, model, color, year
+           FROM driver_vehicles
+          WHERE driver_id = r.driver_id
+          ORDER BY is_active DESC, updated_at DESC
+          LIMIT 1
+       ) v ON true
        WHERE r.id = $1`,
     [id],
   )

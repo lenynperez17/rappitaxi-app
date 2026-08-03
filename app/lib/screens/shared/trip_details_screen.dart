@@ -337,12 +337,50 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
               final messenger = ScaffoldMessenger.of(dialogContext); final navigator = Navigator.of(dialogContext);
               final description = reportController.text.trim();
               if (description.isEmpty) { messenger.showSnackBar(SnackBar(content: Text('Por favor describe el problema'), backgroundColor: AppColors.warning)); return; }
-              // TODO(node-migration): reemplazar con endpoint POST /api/support/tickets
-              // cuando exista. Por ahora simulamos el envio para no romper el UX.
-              await Future<void>.delayed(const Duration(milliseconds: 300));
+
+              // Ronda 269: el reporte ahora SALE de verdad.
+              //
+              // Antes esto esperaba 300 ms y respondía "Reporte registrado".
+              // No existe `/api/support/tickets`, así que el texto que escribía
+              // el pasajero —incluidos problemas de seguridad, que es una de
+              // las categorías del desplegable— se perdía sin que nadie lo
+              // leyera nunca. Decirle "te contactaremos" a alguien que acaba de
+              // denunciar un trato inapropiado, y no contactarle, es peor que
+              // no ofrecer el botón.
+              //
+              // Mientras no haya endpoint de tickets, el reporte se envía por
+              // correo al buzón de soporte con los datos del viaje ya
+              // rellenados. Llega a una persona, que es lo que importa.
+              final reportedTrip = _trip ?? widget.trip;
+              final tripId = reportedTrip?.id ?? 'sin identificar';
+              final subject = 'Reporte de viaje $tripId — $selectedIssue';
+              final body = StringBuffer()
+                ..writeln('Tipo de problema: $selectedIssue')
+                ..writeln()
+                ..writeln(description)
+                ..writeln()
+                ..writeln('---')
+                ..writeln('Viaje: $tripId');
+              if (reportedTrip != null) {
+                body.writeln('Fecha: ${_formatDateTime(reportedTrip.requestedAt)}');
+              }
+              final uri = Uri(
+                scheme: 'mailto',
+                path: 'facturacion.rapiteam@gmail.com',
+                query: 'subject=${Uri.encodeComponent(subject)}'
+                    '&body=${Uri.encodeComponent(body.toString())}',
+              );
               reportController.dispose();
               navigator.pop(dialogContext);
-              messenger.showSnackBar(SnackBar(content: Text('Reporte registrado'), backgroundColor: AppColors.success, duration: Duration(seconds: 3)));
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri);
+              } else {
+                messenger.showSnackBar(SnackBar(
+                  content: Text('Escríbenos a facturacion.rapiteam@gmail.com indicando el viaje $tripId'),
+                  backgroundColor: AppColors.warning,
+                  duration: Duration(seconds: 8),
+                ));
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning, foregroundColor: Colors.white),
             child: Text('Enviar Reporte'),

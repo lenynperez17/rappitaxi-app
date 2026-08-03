@@ -512,19 +512,9 @@ class RideProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------------------------------------------------------------------
-  // Verificación mutua de códigos
-  // ---------------------------------------------------------------------------
-
-  /// Generar código de verificación de 4 dígitos localmente (fallback).
-  String _generateVerificationCode() {
-    final random = Random();
-    String code = '';
-    for (int i = 0; i < 4; i++) {
-      code += random.nextInt(10).toString();
-    }
-    return code;
-  }
+  // Ronda 269: se eliminó `_generateVerificationCode()`, que fabricaba un PIN
+  // de 4 dígitos en el propio móvil cuando el backend no lo enviaba (siempre).
+  // Ver el comentario extenso en `requestRide`.
 
   /// Crear viaje con código de verificación para el pasajero.
   ///
@@ -561,11 +551,24 @@ class RideProvider with ChangeNotifier {
       );
 
       final rideJson = _extractRide(response);
-      // Si el backend no devuelve el código, lo generamos localmente.
-      final passengerCode = rideJson['passengerVerificationCode'] ??
-          rideJson['verificationCode'] ??
-          _generateVerificationCode();
 
+      // Ronda 269: se elimina el código de verificación del viaje.
+      //
+      // Aquí se generaba un PIN de 4 dígitos EN EL PROPIO MÓVIL del pasajero
+      // cuando el backend no lo mandaba — que era siempre, porque el backend
+      // nunca lo ha mandado: no existe la columna en la base de datos ni
+      // validación en `POST /api/rides/:id/start`, que arranca el viaje sin
+      // comprobar nada.
+      //
+      // Un código inventado por el propio cliente no protege de nada: el
+      // conductor pedía un número que el servidor desconocía, la comparación
+      // (si llegaba a hacerse) era local y no se guardaba en ningún sitio, y en
+      // la práctica el conductor solo veía "El pasajero aún no tiene código
+      // asignado". Era una función de seguridad aparente.
+      //
+      // Se retira por decisión expresa. Si algún día se quiere de verdad, el
+      // camino es: columna en `rides`, generación en el servidor al crear el
+      // viaje, y que `/start` rechace la petición sin el código correcto.
       final trip = TripModel.fromJson({
         ..._defaultTripFieldsForRequest(
           userId: userId,
@@ -577,8 +580,6 @@ class RideProvider with ChangeNotifier {
           paymentMethod: 'cash',
         ),
         ...rideJson,
-        'passengerVerificationCode': passengerCode,
-        'verificationCode': passengerCode,
         'estimatedDistance': estimatedDistance,
       });
 
@@ -587,8 +588,7 @@ class RideProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
 
-      debugPrint(
-          '✅ Viaje creado con código de verificación del pasajero: $passengerCode');
+      debugPrint('✅ Viaje creado: ${trip.id}');
       return trip;
     } catch (e) {
       _errorMessage = userFriendlyError(e, fallback: 'Error creando viaje');
@@ -610,14 +610,12 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
 
       final response = await _api.acceptRide(tripId);
-      final rideJson = _extractRide(response);
+      _extractRide(response);
 
-      final driverCode = rideJson['driverVerificationCode'] ??
-          _generateVerificationCode();
-
+      // Ronda 269: mismo motivo que en la creación del viaje — el código del
+      // conductor también se inventaba en el cliente y no lo validaba nadie.
       if (_currentTrip?.id == tripId) {
         _currentTrip = _currentTrip!.copyWith(
-          driverVerificationCode: driverCode,
           driverId: driverId,
           status: 'accepted',
           acceptedAt: DateTime.now(),

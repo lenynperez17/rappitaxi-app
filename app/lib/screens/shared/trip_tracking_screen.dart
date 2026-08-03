@@ -1018,49 +1018,57 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
     }
   }
 
-  Future<void> _showEmergencyDialog() async {
-    return showDialog(
+  /// Ronda 269: alerta de emergencia real, conectada al backend.
+  ///
+  /// Pide confirmación (para que un roce accidental no dispare una alarma) y,
+  /// si el usuario confirma, registra la emergencia con su posición. A partir
+  /// de ahí el backend ya se encarga: la guarda, la muestra en el panel de
+  /// administración y notifica a los contactos de confianza.
+  ///
+  /// Antes existía `_showEmergencyDialog` con esta misma intención, pero
+  /// **ningún botón la llamaba**: el pasajero pulsaba "Llamar 105", se abría el
+  /// marcador del teléfono y nadie en la empresa se enteraba de nada.
+  Future<void> _triggerSosAlert() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.warning, color: Colors.red, size: 28),
-              SizedBox(width: 12),
-              Text('Emergencia', style: TextStyle(color: Colors.red)),
-            ],
-          ),
-          content: const Text('¿Deseas activar el modo de emergencia? Se contactara a los servicios de emergencia.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await _activateEmergency();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Activar emergencia'),
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.crisis_alert, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Expanded(child: Text('Enviar alerta', style: TextStyle(color: Colors.red))),
           ],
-        );
-      },
+        ),
+        content: const Text(
+          'Se avisará a Rapi Team con tu ubicación y los datos de este viaje. '
+          'También se notificará a tus contactos de emergencia.\n\n'
+          'Si estás en peligro inmediato, llama además al 105.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Enviar alerta'),
+          ),
+        ],
+      ),
     );
+
+    if (confirmed != true || !mounted) return;
+    await _activateEmergency();
   }
 
   Future<void> _activateEmergency() async {
     try {
-      // Call emergency services
-      final Uri emergencyUri = Uri(scheme: 'tel', path: '911');
-      if (await canLaunchUrl(emergencyUri)) {
-        await launchUrl(emergencyUri);
-      }
-
-      // Notify the system
+      // Ronda 269: se quitó el `tel:911` que había aquí. Era un número de
+      // Estados Unidos —en Perú la policía es el 105— y además abrir el
+      // marcador ANTES de registrar la alerta mandaba la app a segundo plano,
+      // con lo que la petición podía no llegar a completarse. Ahora se avisa
+      // primero a la central; llamar a la policía es un botón aparte.
       await FirebaseService().reportEmergency(
         widget.rideId,
         _currentPosition,
@@ -1069,18 +1077,32 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Emergencia activada. Se ha notificado a los servicios de emergencia.'),
-            duration: Duration(seconds: 5),
+            content: Text('Alerta enviada. Rapi Team ya tiene tu ubicación y los datos del viaje.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 6),
           ),
         );
       }
     } catch (e, stackTrace) {
       AppLogger.error('Error al activar emergencia', e, stackTrace);
       if (mounted) {
+        // Si la alerta no sale, hay que decirlo con claridad y ofrecer la
+        // llamada: callarlo dejaría al pasajero creyendo que le están
+        // atendiendo cuando nadie se ha enterado.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al activar emergencia')),
+            content: Text(userFriendlyError(e,
+                fallback: 'No pudimos enviar la alerta. Llama al 105 si estás en peligro.')),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Llamar 105',
+              textColor: Colors.white,
+              onPressed: () async {
+                final uri = Uri(scheme: 'tel', path: '105');
+                if (await canLaunchUrl(uri)) await launchUrl(uri);
+              },
+            ),
           ),
         );
       }
@@ -2046,37 +2068,73 @@ class _TripTrackingScreenState extends State<TripTrackingScreen>
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isEs ? 'Compartiendo...' : 'Sharing...')));
                 }),
                 const SizedBox(width: 12),
+                // Ronda 269: "Soporte" solo hacía `Navigator.pop` — se tocaba y
+                // la hoja se cerraba sin más, en el panel de SEGURIDAD, que es
+                // donde menos se puede fingir que algo funciona. La pantalla ya
+                // existía y estaba enrutada; solo faltaba enlazarla.
                 _buildSecurityAction(Icons.chat_bubble_outline, isEs ? 'Soporte' : 'Support', () {
                   Navigator.pop(ctx);
+                  Navigator.pushNamed(context, '/shared/support');
                 }),
-                const SizedBox(width: 12),
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    _buildSecurityAction(Icons.people_outline, isEs ? 'Contactos\nde emergencia' : 'Emergency\ncontacts', () {
-                      Navigator.pop(ctx);
-                    }),
-                    Positioned(top: -2, right: -2, child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle))),
-                  ],
-                ),
+                // Ronda 269: se retira "Contactos de emergencia". Hacía lo
+                // mismo (cerrar la hoja) y encima lucía un punto rojo de aviso,
+                // como si hubiera algo pendiente que atender. El pasajero NO
+                // tiene ninguna pantalla donde gestionar esos contactos: la
+                // única que existe (`emergency_sos_screen.dart`) está huérfana,
+                // sin ruta ni referencias. Prometer una función de seguridad
+                // que no está es peor que no ofrecerla.
+                //
+                // El backend sí avisa a los contactos guardados al recibir una
+                // emergencia; lo que falta es la pantalla del pasajero para
+                // darlos de alta. Queda anotado como pendiente real.
               ],
             ),
             const SizedBox(height: 16),
 
-            // Call 105
+            // Ronda 269: el SOS ahora AVISA A RAPI TEAM, no solo marca el 105.
+            //
+            // Hasta ahora este botón únicamente abría el marcador telefónico.
+            // Nadie en la empresa se enteraba de que un pasajero estaba en
+            // apuros: la emergencia no quedaba registrada, no llegaba al panel
+            // y no se avisaba a sus contactos. El endpoint que hace todo eso
+            // (`POST /api/emergencies`) llevaba tiempo funcionando, y el código
+            // que lo llama estaba escrito aquí mismo, en `_activateEmergency`
+            // — pero ningún botón lo invocaba. Estaba muerto.
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () async {
                   Navigator.pop(ctx);
-                  final Uri uri = Uri(scheme: 'tel', path: '105');
-                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                  await _triggerSosAlert();
                 },
-                icon: const Icon(Icons.local_hospital, color: Colors.white),
-                label: Text(isEs ? 'Llamar 105' : 'Call 105', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                icon: const Icon(Icons.crisis_alert, color: Colors.white),
+                label: Text(isEs ? 'Alertar a Rapi Team' : 'Alert Rapi Team',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Llamada directa a la policía, aparte del aviso a la central: son
+            // dos cosas distintas y el pasajero debe poder hacer ambas.
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final Uri uri = Uri(scheme: 'tel', path: '105');
+                  if (await canLaunchUrl(uri)) await launchUrl(uri);
+                },
+                icon: const Icon(Icons.local_police_outlined, color: Colors.red),
+                label: Text(isEs ? 'Llamar a la policía (105)' : 'Call police (105)',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.red)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),

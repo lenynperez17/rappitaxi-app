@@ -218,6 +218,44 @@ export async function POST(req: NextRequest) {
     ? Math.round(body.durationSeconds)
     : null
 
+  // Ronda 269: comprobar el saldo AL PEDIR el viaje, no al terminarlo.
+  //
+  // El cobro con billetera está bien hecho (débito al pasajero + crédito al
+  // conductor, doble entrada) pero vive en `/rides/[id]/complete`, es decir, al
+  // FINAL. Si el pasajero pedía un viaje con billetera sin saldo suficiente, el
+  // conductor lo recogía, lo llevaba hasta el destino y al cerrar el viaje
+  // saltaba `insufficient_funds`: trabajo hecho, cero cobrado y un viaje que no
+  // se puede cerrar. El pasajero tampoco tenía forma de saberlo por adelantado.
+  //
+  // 'card' se trata igual que 'wallet': en este negocio la tarjeta se usa para
+  // recargar la billetera, no para cobrar cada viaje suelto.
+  //
+  // Efectivo, Yape y Plin no se comprueban: en esos el pasajero le paga
+  // directamente al conductor y la plataforma solo cobra su comisión.
+  const PREPAID_METHODS = ['wallet', 'card']
+  if (PREPAID_METHODS.includes(paymentMethod)) {
+    const requiredFare = proposedFare ?? 0
+    const balRow = await maybeOne<{ balance: string }>(
+      'SELECT rapi_team_user_balance($1)::text AS balance',
+      [auth.userId],
+    )
+    const balance = Number(balRow?.balance ?? 0)
+    if (!Number.isFinite(balance) || balance < requiredFare) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'insufficient_balance',
+          balance,
+          required: requiredFare,
+          message: requiredFare > 0
+            ? `Necesitas S/ ${requiredFare.toFixed(2)} en tu billetera y tienes S/ ${balance.toFixed(2)}. Recarga o paga en efectivo.`
+            : 'No tienes saldo en tu billetera. Recarga o elige otro método de pago.',
+        },
+        { status: 402 },
+      )
+    }
+  }
+
   const metadata: Record<string, unknown> = { negotiable }
   if (proposedFare !== null) metadata.proposedFare = proposedFare
 

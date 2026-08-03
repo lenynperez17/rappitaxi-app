@@ -531,17 +531,40 @@ class FirebaseService {
   /// campos que el backend sí envía en la raíz del ride. Devuelve null si no
   /// hay nada útil, para no crear un objeto vacío que dispare secciones de UI.
   Map<String, dynamic>? _vehicleInfoFromRoot(Map<String, dynamic> data) {
+    // Ronda 269: los datos del vehículo llegan planos en la raíz del ride
+    // (`vehiclePlate`, `vehicleModel`…), no dentro de un objeto `vehicle`.
+    //
+    // Antes se leían de `data['vehicle']`, un objeto que el backend nunca ha
+    // enviado, y encima con claves distintas de las que pinta la UI: aquí se
+    // producía `'model'` mientras la pantalla lee `vehicleInfo['vehicleModel']`.
+    // Doble desajuste: aunque el backend hubiera mandado el objeto, el modelo
+    // habría seguido saliendo vacío. El pasajero no veía ni placa, ni marca, ni
+    // color — no sabía qué coche esperar.
+    //
+    // Se mantiene la lectura del objeto anidado como respaldo por si alguna
+    // respuesta antigua lo trae.
     final vehicle = (data['vehicle'] as Map?)?.cast<String, dynamic>();
+    final plate = data['vehiclePlate'] ?? vehicle?['plate'];
+    final make = data['vehicleMake'] ?? vehicle?['make'];
+    final model = data['vehicleModel'] ?? vehicle?['model'];
+    final color = data['vehicleColor'] ?? vehicle?['color'];
     final info = <String, dynamic>{
       if (data['driverName'] != null) 'driverName': data['driverName'],
       if (data['driverPhone'] != null) 'driverPhone': data['driverPhone'],
       if (data['driverPhotoUrl'] != null) 'driverPhoto': data['driverPhotoUrl'],
       if (data['driverRating'] != null) 'driverRating': data['driverRating'],
       if (data['vehicleType'] != null) 'type': data['vehicleType'],
-      if (vehicle?['plate'] != null) 'plate': vehicle!['plate'],
-      if (vehicle?['make'] != null) 'brand': vehicle!['make'],
-      if (vehicle?['model'] != null) 'model': vehicle!['model'],
-      if (vehicle?['color'] != null) 'color': vehicle!['color'],
+      // Se emiten con las dos convenciones de nombre porque distintas pantallas
+      // leen una u otra, y unificarlas ahora tocaría media docena de archivos.
+      if (plate != null) 'plate': plate,
+      if (plate != null) 'vehiclePlate': plate,
+      if (make != null) 'brand': make,
+      if (make != null) 'vehicleBrand': make,
+      if (model != null) 'model': model,
+      if (model != null) 'vehicleModel': model,
+      if (color != null) 'color': color,
+      if (color != null) 'vehicleColor': color,
+      if (data['vehicleYear'] != null) 'year': data['vehicleYear'],
       // Ronda 246: la pantalla de viaje activo del CONDUCTOR lee los datos del
       // pasajero desde este mismo mapa (`vehicleInfo['passengerName']` y
       // `['passengerPhoto']`). Al no incluirlos, el conductor veía siempre
