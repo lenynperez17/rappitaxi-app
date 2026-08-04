@@ -20,6 +20,7 @@ interface UserRow {
   phone: string | null
   phone_verified: boolean
   user_type: string
+  is_admin: boolean
   is_verified: boolean
   profile_complete: boolean
   profile_photo_url: string | null
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
 
   const user = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
-            user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
+            user_type, is_admin, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document, current_mode,
             rating::text, total_ratings,
             is_active, created_at
@@ -98,6 +99,12 @@ export async function GET(req: NextRequest) {
       phone: user.phone,
       phoneVerified: user.phone_verified,
       userType: user.user_type,
+      // Ronda 271: sin `isAdmin` el panel web expulsaba a cualquier
+      // administrador cuyo `user_type` no fuera literalmente 'admin'. Su guard
+      // acepta `isAdmin || userType === 'admin'`, pero este endpoint nunca
+      // enviaba el primero: al dueño, que tiene su cuenta como conductor para
+      // probar la app, el panel lo sacaba al instante después de entrar bien.
+      isAdmin: user.is_admin,
       isVerified: user.is_verified,
       // Ronda 245: el cliente lee currentMode para decidir a qué home
       // navegar (activeMode = currentMode ?? userType). Sin este campo,
@@ -250,7 +257,7 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await maybeOne<UserRow>(
     `SELECT id, full_name, display_name, email, email_verified, phone, phone_verified,
-            user_type, is_verified, profile_complete, profile_photo_url, auth_provider,
+            user_type, is_admin, is_verified, profile_complete, profile_photo_url, auth_provider,
             birth_date, identity_document, current_mode,
             rating::text, total_ratings,
             is_active, created_at

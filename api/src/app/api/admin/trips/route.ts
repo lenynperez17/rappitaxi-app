@@ -2,12 +2,16 @@
  * GET  /api/admin/trips?status=&passengerId=&driverId=&search=&fromDate=&toDate=
  * POST /api/admin/trips — crea un viaje manualmente desde el admin.
  */
+import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
+import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne, tx } from '@/lib/db'
 import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
 
 export const runtime = 'nodejs'
+
+const E164 = /^\+[1-9][0-9]{9,14}$/
 
 interface RideRow {
   id: string
@@ -117,9 +121,66 @@ export async function GET(req: NextRequest) {
 }
 
 /**
+ * Ronda 271: cliente que llama por teléfono y no tiene la app.
+ *
+ * Hasta ahora el panel solo sabía crear viajes para alguien ya registrado, así
+ * que la central no podía atender la llamada de un cliente nuevo: el operador
+ * tenía que irse a Usuarios, darlo de alta a mano, volver al mapa y buscarlo.
+ *
+ * Se busca primero por teléfono y se reutiliza la ficha si ya existe. El
+ * teléfono solo es único cuando está verificado, así que sin esta búsqueda un
+ * cliente habitual acabaría con una ficha nueva por cada llamada y su historial
+ * repartido entre todas.
+ *
+ * Devuelve también si la ficha se creó o se reutilizó, para poder decírselo al
+ * operador en vez de dejarlo dudando de si acaba de duplicar a alguien.
+ */
+async function findOrCreateGuestPassenger(
+  req: NextRequest,
+  adminId: string,
+  fullName: string,
+  phone: string,
+): Promise<{ id: string; created: boolean }> {
+  const existing = await maybeOne<{ id: string; user_type: string }>(
+    `SELECT id, user_type FROM users
+      WHERE phone = $1 AND deleted_at IS NULL
+      ORDER BY phone_verified DESC, created_at ASC
+      LIMIT 1`,
+    [phone],
+  )
+  if (existing) {
+    // Un conductor puede pedir un viaje como pasajero, pero su ficha tiene que
+    // pasar a 'dual' o el POST lo rechazaría por no ser pasajero.
+    if (existing.user_type === 'driver') {
+      await query(`UPDATE users SET user_type = 'dual', updated_at = now() WHERE id = $1`, [existing.id])
+    }
+    return { id: existing.id, created: false }
+  }
+
+  const id = randomUUID()
+  await query(
+    `INSERT INTO users
+       (id, full_name, phone, phone_number, user_type, is_admin, is_active,
+        is_verified, profile_complete, auth_provider, created_from)
+     VALUES ($1, $2, $3, $3, 'passenger', false, true, false, true, 'admin_manual', 'admin_panel')`,
+    [id, fullName, phone],
+  )
+  await query(
+    `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
+     VALUES ($1, 'admin_create_user', 'admin', $2, $3, $4)`,
+    [
+      id, getClientIp(req), req.headers.get('user-agent'),
+      JSON.stringify({ createdBy: adminId, userType: 'passenger', phone, via: 'trip_guest' }),
+    ],
+  )
+  return { id, created: true }
+}
+
+/**
  * POST /api/admin/trips — crea un viaje manualmente.
  * Body: {
- *   passengerId, driverId?, pickupAddress, pickupLat, pickupLng,
+ *   passengerId | guestPassenger: { fullName, phone },
+ *   driverId?, pickupAddress, pickupLat, pickupLng,
  *   destinationAddress, destinationLat, destinationLng,
  *   estimatedFare?, vehicleType?, paymentMethod?, status?
  * }
@@ -130,6 +191,7 @@ export async function POST(req: NextRequest) {
 
   let body: {
     passengerId?: string
+    guestPassenger?: { fullName?: string; phone?: string }
     driverId?: string | null
     pickupAddress?: string
     pickupLat?: number
@@ -148,8 +210,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'bad_json' }, { status: 400 })
   }
 
-  if (!body.passengerId) {
+  // El pasajero llega de una de dos formas: el id de alguien ya registrado, o
+  // el nombre y teléfono de quien llamó por teléfono y no tiene la app.
+  const guestName = body.guestPassenger?.fullName?.trim()
+  const guestPhone = body.guestPassenger?.phone?.trim()
+  const wantsGuest = Boolean(guestName || guestPhone)
+
+  if (!body.passengerId && !wantsGuest) {
     return NextResponse.json({ success: false, error: 'passenger_id_required' }, { status: 400 })
+  }
+  if (wantsGuest) {
+    if (!guestName) {
+      return NextResponse.json(
+        { success: false, error: 'guest_name_required', message: 'Escribe el nombre del cliente.' },
+        { status: 400 },
+      )
+    }
+    if (!guestPhone || !E164.test(guestPhone)) {
+      return NextResponse.json(
+        { success: false, error: 'guest_phone_invalid', message: 'Teléfono en formato +51999888777.' },
+        { status: 400 },
+      )
+    }
   }
   if (!body.pickupAddress || !body.destinationAddress) {
     return NextResponse.json({ success: false, error: 'addresses_required' }, { status: 400 })
@@ -211,10 +293,29 @@ export async function POST(req: NextRequest) {
     ? body.status
     : (body.driverId ? 'accepted' : 'requested')
 
+  // El alta del cliente nuevo se hace aquí, después de validar todo lo demás:
+  // si se hiciera antes, un viaje rechazado por unas coordenadas o una tarifa
+  // mala dejaría igualmente una ficha suelta en Usuarios.
+  let guestCreated = false
+  let passengerId = body.passengerId
+  if (!passengerId && wantsGuest) {
+    try {
+      const guest = await findOrCreateGuestPassenger(req, auth.userId, guestName!, guestPhone!)
+      passengerId = guest.id
+      guestCreated = guest.created
+    } catch (err) {
+      console.error('[admin/trips POST] alta de cliente falló:', err instanceof Error ? err.message : err)
+      return NextResponse.json(
+        { success: false, error: 'guest_create_failed', message: 'No se pudo registrar al cliente.' },
+        { status: 500 },
+      )
+    }
+  }
+
   // Verificar que el pasajero existe y no está eliminado
   const passenger = await maybeOne<{ id: string }>(
     `SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL AND user_type IN ('passenger', 'dual')`,
-    [body.passengerId],
+    [passengerId],
   )
   if (!passenger) {
     return NextResponse.json({ success: false, error: 'passenger_not_found' }, { status: 404 })
@@ -222,7 +323,7 @@ export async function POST(req: NextRequest) {
 
   // Verificar conductor si se pasó (mismo user no puede ser pasajero+conductor)
   if (body.driverId) {
-    if (body.driverId === body.passengerId) {
+    if (body.driverId === passengerId) {
       return NextResponse.json({ success: false, error: 'passenger_is_driver' }, { status: 400 })
     }
     const driver = await maybeOne<{ id: string }>(
@@ -250,7 +351,7 @@ export async function POST(req: NextRequest) {
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id, created_at`,
         [
-          body.passengerId, body.driverId ?? null, status,
+          passengerId, body.driverId ?? null, status,
           body.pickupAddress, body.pickupLat, body.pickupLng,
           body.destinationAddress, body.destinationLat, body.destinationLng,
           body.estimatedFare ?? null, canonicalVehicleType,
@@ -295,7 +396,7 @@ export async function POST(req: NextRequest) {
   try {
     const passenger = await maybeOne<{ full_name: string | null; phone: string | null }>(
       `SELECT full_name, phone FROM users WHERE id = $1`,
-      [body.passengerId],
+      [passengerId],
     )
     const targetDrivers = body.driverId
       ? [body.driverId]
@@ -324,5 +425,9 @@ export async function POST(req: NextRequest) {
     success: true,
     trip: { id: created.id, status, createdAt: created.created_at },
     fanout: notified,
+    // `passenger.created` distingue "se dio de alta ahora" de "ya era cliente":
+    // el panel lo dice en el aviso para que el operador sepa si acaba de crear
+    // una ficha o si reconoció a un habitual por su teléfono.
+    passenger: { id: passengerId, created: guestCreated },
   }, { status: 201 })
 }

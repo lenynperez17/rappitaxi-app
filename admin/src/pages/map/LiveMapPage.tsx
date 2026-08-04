@@ -470,9 +470,13 @@ export function LiveMapPage() {
         <CreateTripOverlay
           onlineDrivers={data?.onlineDrivers ?? []}
           onClose={() => setCreating(false)}
-          onCreated={(fanout) => {
+          onCreated={(fanout, passengerCreated) => {
             setCreating(false)
-            setFlash({ kind: 'ok', msg: `Viaje creado. ${fanout.notified} conductor(es) notificado(s), ${fanout.fcmSent} push enviado(s).` })
+            setFlash({
+              kind: 'ok',
+              msg: `Viaje creado${passengerCreated ? ' y cliente registrado' : ''}. `
+                + `${fanout.notified} conductor(es) notificado(s), ${fanout.fcmSent} push enviado(s).`,
+            })
             void load()
           }}
           onError={(msg) => setFlash({ kind: 'err', msg })}
@@ -732,6 +736,29 @@ function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
 // Crear viaje desde el mapa
 // ---------------------------------------------------------------------------
 
+/**
+ * Ronda 271: el pasajero de un viaje creado desde el panel ya no tiene por qué
+ * estar registrado.
+ *
+ * La central atiende llamadas de gente que no tiene la app, y el panel solo
+ * sabía buscar entre los usuarios existentes: el operador tenía que irse a
+ * Usuarios, dar de alta al cliente a mano, volver al mapa y buscarlo, con el
+ * cliente esperando al teléfono.
+ */
+type TripPassenger =
+  | { kind: 'registered'; user: AdminUser }
+  | { kind: 'guest'; fullName: string; phone: string }
+
+/** Nombre a mostrar, venga de donde venga el pasajero. */
+function passengerLabel(p: TripPassenger): string {
+  return p.kind === 'registered' ? (p.user.fullName ?? '(sin nombre)') : p.fullName
+}
+
+/** Contacto secundario: teléfono, o correo si el registrado no tiene teléfono. */
+function passengerContact(p: TripPassenger): string {
+  return p.kind === 'registered' ? (p.user.phone ?? p.user.email ?? p.user.id) : p.phone
+}
+
 function CreateTripOverlay({
   onlineDrivers,
   onClose,
@@ -740,11 +767,11 @@ function CreateTripOverlay({
 }: {
   onlineDrivers: LiveData['onlineDrivers']
   onClose: () => void
-  onCreated: (fanout: { notified: number; fcmSent: number }) => void
+  onCreated: (fanout: { notified: number; fcmSent: number }, passengerCreated: boolean) => void
   onError: (msg: string) => void
 }) {
   const [step, setStep] = useState<'passenger' | 'pickup' | 'destination' | 'confirm'>('passenger')
-  const [passenger, setPassenger] = useState<AdminUser | null>(null)
+  const [passenger, setPassenger] = useState<TripPassenger | null>(null)
   const [pickup, setPickup] = useState<Point | null>(null)
   const [destination, setDestination] = useState<Point | null>(null)
   const [driverId, setDriverId] = useState<string>('')
@@ -778,7 +805,9 @@ function CreateTripOverlay({
     setSaving(true)
     try {
       const resp = await adminApi.createTrip({
-        passengerId: passenger.id,
+        ...(passenger.kind === 'registered'
+          ? { passengerId: passenger.user.id }
+          : { guestPassenger: { fullName: passenger.fullName, phone: passenger.phone } }),
         driverId: driverId || null,
         pickupAddress: pickup.address,
         pickupLat: pickup.lat,
@@ -790,7 +819,7 @@ function CreateTripOverlay({
         vehicleType,
         paymentMethod,
       })
-      onCreated(resp.fanout)
+      onCreated(resp.fanout, resp.passenger?.created ?? false)
     } catch (err) {
       onError(err instanceof AdminApiError ? err.message : 'Error creando viaje')
     } finally {
@@ -877,7 +906,7 @@ function CreateTripOverlay({
 
 function Steps({ step, passenger, pickup, destination, onGoto }: {
   step: 'passenger' | 'pickup' | 'destination' | 'confirm'
-  passenger: AdminUser | null
+  passenger: TripPassenger | null
   pickup: Point | null
   destination: Point | null
   onGoto: (s: 'passenger' | 'pickup' | 'destination' | 'confirm') => void
@@ -911,13 +940,17 @@ function Steps({ step, passenger, pickup, destination, onGoto }: {
 }
 
 function PassengerSearch({ selected, onPick }: {
-  selected: AdminUser | null
-  onPick: (u: AdminUser) => void
+  selected: TripPassenger | null
+  onPick: (p: TripPassenger) => void
 }) {
+  const [mode, setMode] = useState<'registered' | 'guest'>(
+    selected?.kind === 'guest' ? 'guest' : 'registered',
+  )
   const [q, setQ] = useState('')
   const [results, setResults] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const selectedId = selected?.kind === 'registered' ? selected.user.id : null
 
   useEffect(() => {
     if (q.trim().length < 2) { setResults([]); setSearchError(null); return }
@@ -947,6 +980,33 @@ function PassengerSearch({ selected, onPick }: {
 
   return (
     <div className="p-4 space-y-3">
+      {/* Ronda 271: dos vías para el pasajero. La central recibe llamadas de
+          gente sin la app, y antes solo se podía buscar entre los registrados. */}
+      <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+        <button
+          type="button"
+          onClick={() => setMode('registered')}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            mode === 'registered' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Cliente registrado
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('guest')}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            mode === 'guest' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Cliente nuevo
+        </button>
+      </div>
+
+      {mode === 'guest' && <GuestPassengerForm initial={selected} onPick={onPick} />}
+
+      {mode === 'registered' && (
+        <>
       <p className="text-xs text-gray-500">Busca al pasajero por nombre, correo o teléfono</p>
       <div className="relative">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -969,8 +1029,8 @@ function PassengerSearch({ selected, onPick }: {
           {results.map((u) => (
             <button
               key={u.id}
-              onClick={() => onPick(u)}
-              className={`w-full p-3 flex items-center gap-3 text-left hover:bg-gray-50 ${selected?.id === u.id ? 'bg-red-50' : ''}`}
+              onClick={() => onPick({ kind: 'registered', user: u })}
+              className={`w-full p-3 flex items-center gap-3 text-left hover:bg-gray-50 ${selectedId === u.id ? 'bg-red-50' : ''}`}
             >
               <div className="w-9 h-9 flex-shrink-0 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold">
                 {(u.fullName ?? u.email ?? '?').charAt(0).toUpperCase()}
@@ -987,8 +1047,100 @@ function PassengerSearch({ selected, onPick }: {
         </div>
       )}
       {!loading && q.trim().length >= 2 && results.length === 0 && (
-        <div className="text-center py-8 text-sm text-gray-500">Sin resultados</div>
+        <div className="text-center py-6 text-sm text-gray-500 space-y-2">
+          <p>Sin resultados</p>
+          {/* Un buscador que no encuentra nada es justo el momento en que hace
+              falta el alta: se ofrece aquí en vez de dejar al operador atascado. */}
+          <button
+            type="button"
+            onClick={() => setMode('guest')}
+            className="text-xs font-medium text-[#E31E24] hover:underline"
+          >
+            Registrar a este cliente como nuevo
+          </button>
+        </div>
       )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Alta rápida del cliente que llama por teléfono.
+ *
+ * Solo se piden nombre y teléfono: es lo que necesita el conductor para
+ * recogerlo y lo único que el operador tiene a mano en mitad de una llamada.
+ * El backend busca ese teléfono antes de crear nada, así que un habitual no
+ * acumula una ficha por llamada.
+ */
+function GuestPassengerForm({ initial, onPick }: {
+  initial: TripPassenger | null
+  onPick: (p: TripPassenger) => void
+}) {
+  const [fullName, setFullName] = useState(initial?.kind === 'guest' ? initial.fullName : '')
+  const [phone, setPhone] = useState(initial?.kind === 'guest' ? initial.phone : '+51')
+  const [touched, setTouched] = useState(false)
+
+  const trimmedName = fullName.trim()
+  const trimmedPhone = phone.trim()
+  const nameOk = trimmedName.length >= 2
+  // Mismo formato que exige el backend; validarlo aquí evita el viaje de ida y
+  // vuelta al servidor para decir lo que ya se sabe en el navegador.
+  const phoneOk = /^\+[1-9][0-9]{9,14}$/.test(trimmedPhone)
+
+  const submit = () => {
+    setTouched(true)
+    if (!nameOk || !phoneOk) return
+    onPick({ kind: 'guest', fullName: trimmedName, phone: trimmedPhone })
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-gray-500">
+        Para quien pide el viaje por teléfono y no tiene la app. Se le crea una ficha
+        con estos datos; si ya llamó antes, se reutiliza la suya.
+      </p>
+      <div>
+        <label htmlFor="guest-name" className="block text-xs font-medium text-gray-700 mb-1">
+          Nombre del cliente
+        </label>
+        <input
+          id="guest-name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="María Quispe"
+          autoFocus
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        />
+        {touched && !nameOk && (
+          <p className="text-xs text-red-600 mt-1">Escribe el nombre del cliente.</p>
+        )}
+      </div>
+      <div>
+        <label htmlFor="guest-phone" className="block text-xs font-medium text-gray-700 mb-1">
+          Teléfono
+        </label>
+        <input
+          id="guest-phone"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+          placeholder="+51999888777"
+          inputMode="tel"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        />
+        {touched && !phoneOk && (
+          <p className="text-xs text-red-600 mt-1">Con código de país, así: +51999888777.</p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={submit}
+        className="w-full px-3 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg"
+      >
+        Continuar con este cliente
+      </button>
     </div>
   )
 }
@@ -1082,7 +1234,7 @@ function Confirm({
   paymentMethod, onPaymentChange,
   fare, onFareChange,
 }: {
-  passenger: AdminUser; pickup: Point; destination: Point
+  passenger: TripPassenger; pickup: Point; destination: Point
   distanceKm: number | null
   onlineDrivers: LiveData['onlineDrivers']
   driverId: string; onDriverChange: (v: string) => void
@@ -1095,7 +1247,14 @@ function Confirm({
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5 text-sm">
         <div className="flex items-start gap-2">
           <User className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-          <span className="min-w-0 break-words"><strong>{passenger.fullName ?? '—'}</strong> · {passenger.phone ?? passenger.email}</span>
+          <span className="min-w-0 break-words">
+            <strong>{passengerLabel(passenger)}</strong> · {passengerContact(passenger)}
+            {passenger.kind === 'guest' && (
+              <span className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 whitespace-nowrap">
+                Cliente nuevo
+              </span>
+            )}
+          </span>
         </div>
         <div className="flex items-start gap-2"><MapPin className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" /><span className="text-gray-700 break-words">{pickup.address}</span></div>
         <div className="flex items-start gap-2"><MapPin className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" /><span className="text-gray-700 break-words">{destination.address}</span></div>

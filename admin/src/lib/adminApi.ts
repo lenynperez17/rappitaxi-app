@@ -217,8 +217,15 @@ class AdminApi {
     return this.rawFetch(`/api/admin/trips?${qp.toString()}`, { method: 'GET' })
   }
 
+  /**
+   * Ronda 271: el pasajero puede ser alguien ya registrado (`passengerId`) o un
+   * cliente que llamó por teléfono y no tiene la app (`guestPassenger`). En el
+   * segundo caso el backend busca su ficha por teléfono y la crea sólo si no
+   * existe, para que un cliente habitual no acumule una ficha por llamada.
+   */
   async createTrip(input: {
-    passengerId: string
+    passengerId?: string
+    guestPassenger?: { fullName: string; phone: string }
     driverId?: string | null
     pickupAddress: string
     pickupLat: number
@@ -230,7 +237,11 @@ class AdminApi {
     vehicleType?: string
     paymentMethod?: string
     status?: string
-  }): Promise<{ trip: { id: string; status: string; createdAt: string }; fanout: { notified: number; fcmSent: number } }> {
+  }): Promise<{
+    trip: { id: string; status: string; createdAt: string }
+    fanout: { notified: number; fcmSent: number }
+    passenger: { id: string; created: boolean }
+  }> {
     return this.rawFetch('/api/admin/trips', { method: 'POST', body: input })
   }
 
