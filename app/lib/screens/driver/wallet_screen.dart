@@ -2189,7 +2189,7 @@ class _WalletScreenState extends State<WalletScreen>
 
   String _generateTransactionsData() {
     final buffer = StringBuffer();
-    buffer.writeln('HISTORIAL DE TRANSACCIONES - RAPPI TEAM');
+    buffer.writeln('HISTORIAL DE TRANSACCIONES - RAPI TEAM');
     buffer.writeln('Fecha de generación: ${DateTime.now().toString().split('.')[0]}');
     buffer.writeln('');
     buffer.writeln('RESUMEN:');
@@ -2230,7 +2230,7 @@ class _WalletScreenState extends State<WalletScreen>
     try {
       // ✅ IMPLEMENTACIÓN REAL: Generar archivo CSV de transacciones
       final List<List<dynamic>> csvData = [
-        ['HISTORIAL DE TRANSACCIONES - RAPPI TEAM'],
+        ['HISTORIAL DE TRANSACCIONES - RAPI TEAM'],
         ['Fecha de generación', DateTime.now().toString().split('.')[0]],
         [],
         ['RESUMEN'],
@@ -2344,7 +2344,7 @@ class _WalletScreenState extends State<WalletScreen>
                     ),
                     pw.SizedBox(height: 8),
                     pw.Text(
-                      'RAPPI TEAM',
+                      'RAPI TEAM',
                       style: pw.TextStyle(
                         font: ttfRegular, // ✅ Usar fuente custom
                         color: PdfColors.white,

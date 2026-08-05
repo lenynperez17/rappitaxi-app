@@ -11,7 +11,7 @@ import 'location_service.dart';
 import 'rapi_api_client.dart';
 import '../utils/logger.dart';
 
-/// SERVICIO DE EMERGENCIAS RAPPI TEAM - FLUTTER
+/// SERVICIO DE EMERGENCIAS RAPI TEAM - FLUTTER
 /// =============================================
 ///
 /// Funcionalidades críticas implementadas:

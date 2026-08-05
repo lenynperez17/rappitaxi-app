@@ -166,7 +166,7 @@ class RappiTeamDrawerHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'RAPPI TEAM',
+                      'RAPI TEAM',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary,
                         fontSize: 20,

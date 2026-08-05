@@ -1256,7 +1256,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
     try {
       // Generar archivo CSV de transacciones
       final List<List<dynamic>> csvData = [
-        ['HISTORIAL DE TRANSACCIONES - RAPPI TEAM'],
+        ['HISTORIAL DE TRANSACCIONES - RAPI TEAM'],
         ['Fecha de generación', DateTime.now().toString().split('.')[0]],
         [],
         ['RESUMEN'],
@@ -1378,7 +1378,7 @@ class _TransactionsHistoryScreenState extends State<TransactionsHistoryScreen>
                     ),
                     pw.SizedBox(height: 8),
                     pw.Text(
-                      'RAPPI TEAM',
+                      'RAPI TEAM',
                       style: pw.TextStyle(
                         font: ttfRegular,
                         color: PdfColors.white,

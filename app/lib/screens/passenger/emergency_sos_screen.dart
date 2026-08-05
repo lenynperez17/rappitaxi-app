@@ -8,7 +8,7 @@ import '../../widgets/loading_overlay.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../utils/error_messages.dart';
 
-/// PANTALLA DE EMERGENCIA SOS - RAPPI TEAM
+/// PANTALLA DE EMERGENCIA SOS - RAPI TEAM
 /// =======================================
 /// 
 /// Funcionalidades críticas:

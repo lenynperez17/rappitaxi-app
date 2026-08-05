@@ -1163,7 +1163,7 @@ abstract class AppLocalizations {
   /// No description provided for @rappiTeam.
   ///
   /// In es, this message translates to:
-  /// **'RAPPI TEAM'**
+  /// **'RAPI TEAM'**
   String get rappiTeam;
 
   /// No description provided for @preparingExperience.

@@ -135,7 +135,7 @@ void main() {
       return true;
     };
 
-    AppLogger.separator('INICIANDO RAPPI TEAM APP');
+    AppLogger.separator('INICIANDO RAPI TEAM APP');
     AppLogger.info('Iniciando aplicación Rapi Team...');
 
     try {

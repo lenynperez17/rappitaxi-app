@@ -1160,7 +1160,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
 
     // Generar reporte en texto
     final buffer = StringBuffer();
-    buffer.writeln('=== REPORTE DE GANANCIAS - RAPPI TEAM ===');
+    buffer.writeln('=== REPORTE DE GANANCIAS - RAPI TEAM ===');
     buffer.writeln('Fecha de generación: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}');
     buffer.writeln('Período: ${_selectedPeriod == 'week' ? 'Semanal' : _selectedPeriod == 'month' ? 'Mensual' : 'Anual'}');
     buffer.writeln('');

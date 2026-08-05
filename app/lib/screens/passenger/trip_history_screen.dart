@@ -1256,7 +1256,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'RAPPI TEAM',
+                          'RAPI TEAM',
                           style: pw.TextStyle(
                             fontSize: 24,
                             fontWeight: pw.FontWeight.bold,

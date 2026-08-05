@@ -573,7 +573,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get enterPrice => 'Ingresa tu precio';
 
   @override
-  String get rappiTeam => 'RAPPI TEAM';
+  String get rappiTeam => 'RAPI TEAM';
 
   @override
   String get preparingExperience => 'Preparando tu experiencia...';

@@ -569,7 +569,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get enterPrice => 'Enter your price';
 
   @override
-  String get rappiTeam => 'RAPPI TEAM';
+  String get rappiTeam => 'RAPI TEAM';
 
   @override
   String get preparingExperience => 'Preparing your experience...';

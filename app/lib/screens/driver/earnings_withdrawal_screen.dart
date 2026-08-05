@@ -12,7 +12,7 @@ import '../../utils/logger.dart';
 import '../../core/theme/modern_theme.dart';
 import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
-/// PANTALLA DE RETIRO DE GANANCIAS - CONDUCTORES RAPPI TEAM
+/// PANTALLA DE RETIRO DE GANANCIAS - CONDUCTORES RAPI TEAM
 /// ========================================================
 /// 
 /// Funcionalidades implementadas:

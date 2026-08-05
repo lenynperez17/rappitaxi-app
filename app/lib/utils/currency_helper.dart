@@ -1,4 +1,4 @@
-// UTILIDADES DE MONEDA - RAPPI TEAM PERÚ
+// UTILIDADES DE MONEDA - RAPI TEAM PERÚ
 // =======================================
 //
 // 🇵🇪 Manejo preciso de Soles Peruanos (PEN)

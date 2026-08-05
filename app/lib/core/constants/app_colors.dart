@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // ============================================================================
-  // COLORES PRINCIPALES RAPPI TEAM
+  // COLORES PRINCIPALES RAPI TEAM
   // ============================================================================
 
   // Color principal de Rapi Team - Rojo corporativo

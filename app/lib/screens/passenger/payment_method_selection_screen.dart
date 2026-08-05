@@ -11,7 +11,7 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
 
-/// PANTALLA DE SELECCIÓN DE MÉTODO DE PAGO - RAPPI TEAM
+/// PANTALLA DE SELECCIÓN DE MÉTODO DE PAGO - RAPI TEAM
 /// ====================================================
 /// 
 /// Métodos de pago implementados:

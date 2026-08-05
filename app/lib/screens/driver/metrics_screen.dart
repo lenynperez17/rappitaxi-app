@@ -1230,7 +1230,7 @@ class _MetricsScreenState extends State<MetricsScreen>
   String _generateReportData() {
     // ✅ Generar datos del reporte en formato texto
     final buffer = StringBuffer();
-    buffer.writeln('REPORTE DE MÉTRICAS - RAPPI TEAM');
+    buffer.writeln('REPORTE DE MÉTRICAS - RAPI TEAM');
     buffer.writeln('Fecha: ${DateTime.now().toString().split('.')[0]}');
     buffer.writeln(userFriendlyError(_selectedPeriod, fallback: 'Período'));
     buffer.writeln('');
@@ -1252,7 +1252,7 @@ class _MetricsScreenState extends State<MetricsScreen>
     try {
       // ✅ IMPLEMENTACIÓN REAL: Generar archivo CSV
       final List<List<dynamic>> csvData = [
-        ['REPORTE DE MÉTRICAS - RAPPI TEAM'],
+        ['REPORTE DE MÉTRICAS - RAPI TEAM'],
         ['Fecha', DateTime.now().toString().split('.')[0]],
         ['Período', _selectedPeriod],
         [],
@@ -1356,7 +1356,7 @@ class _MetricsScreenState extends State<MetricsScreen>
                       ),
                       pw.SizedBox(height: 8),
                       pw.Text(
-                        'RAPPI TEAM',
+                        'RAPI TEAM',
                         style: pw.TextStyle(
                           font: ttfRegular, // ✅ Usar fuente custom
                           color: PdfColors.white,

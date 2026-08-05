@@ -1,4 +1,4 @@
-// API Exceptions for RAPPI TEAM
+// API Exceptions for RAPI TEAM
 abstract class ApiException implements Exception {
   final String message;
   final int? statusCode;

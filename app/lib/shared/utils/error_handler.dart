@@ -1,4 +1,4 @@
-// Global Error Handler for RAPPI TEAM
+// Global Error Handler for RAPI TEAM
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

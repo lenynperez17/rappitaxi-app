@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'firebase_service.dart';
 import 'rapi_api_client.dart';
 
-/// SERVICIO COMPLETO DE PAGOS RAPPI TEAM - PERÚ
+/// SERVICIO COMPLETO DE PAGOS RAPI TEAM - PERÚ
 /// ============================================
 ///
 /// Tras la migración al backend Node:
