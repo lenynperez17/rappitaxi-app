@@ -1,7 +1,4 @@
 Mejoras de esta versión:
 
-- Corregido el cambio entre modo pasajero y conductor: la app abre siempre en la pantalla que corresponde.
-- La flecha de retroceso ya no deja la app en negro.
-- Los conductores en revisión pueden seguir usando la app como pasajeros mientras esperan la aprobación.
-- Búsqueda de direcciones mejorada: ahora encuentra centros comerciales y lugares conocidos.
-- Correcciones de estabilidad y mensajes de error más claros.
+- Corregido el nombre de la app: ahora dice Rapi Team en todas las pantallas, en los permisos y bajo el icono.
+- Correcciones menores de estabilidad.
