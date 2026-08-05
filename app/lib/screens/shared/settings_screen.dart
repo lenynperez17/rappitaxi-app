@@ -229,7 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             _animatedSection(
               Center(
                 child: Text(
-                  'Rappi Team v1.0.0',
+                  'Rapi Team v1.0.0',
                   style: TextStyle(
                     color: AppColors.getTextSecondary(context),
                     fontSize: 12,
@@ -560,7 +560,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _contactSupport() async {
     final whatsappUrl = Uri.parse(
-      'https://wa.me/51928469836?text=Hola,%20necesito%20ayuda%20con%20Rappi%20Team'
+      'https://wa.me/51928469836?text=Hola,%20necesito%20ayuda%20con%20Rapi%20Team'
     );
     try {
       await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
@@ -608,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               child: Icon(Icons.local_taxi, color: Colors.white, size: 24),
             ),
             SizedBox(width: 12),
-            Text('Rappi Team'),
+            Text('Rapi Team'),
           ],
         ),
         content: SingleChildScrollView(

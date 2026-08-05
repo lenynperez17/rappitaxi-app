@@ -1288,7 +1288,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       // Compartir archivo usando share_plus
       await Share.shareXFiles(
         [XFile(filePath)],
-        subject: 'Reporte de Métricas - Rappi Team',
+        subject: 'Reporte de Métricas - Rapi Team',
         text: 'Reporte de métricas generado el ${DateTime.now().toString().split('.')[0]}',
       );
 
@@ -1445,7 +1445,7 @@ class _MetricsScreenState extends State<MetricsScreen>
       // Compartir archivo usando share_plus
       await Share.shareXFiles(
         [XFile(filePath)],
-        subject: 'Reporte de Métricas - Rappi Team',
+        subject: 'Reporte de Métricas - Rapi Team',
         text: 'Reporte de métricas generado el ${DateTime.now().toString().split('.')[0]}',
       );
 

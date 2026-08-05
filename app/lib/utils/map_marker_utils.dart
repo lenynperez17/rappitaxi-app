@@ -594,7 +594,7 @@ class _PinTailPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ── Reference Point Dot Icons (small circles for map, like Rappi Team) ──
+// ── Reference Point Dot Icons (small circles for map, like Rapi Team) ──
 
 /// Small gray circle for inactive reference points
 Future<BitmapDescriptor> getReferencePointIcon() async {

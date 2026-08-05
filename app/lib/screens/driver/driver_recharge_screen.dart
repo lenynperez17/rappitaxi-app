@@ -289,7 +289,7 @@ class _DriverRechargeScreenState extends State<DriverRechargeScreen> {
 
       final rechargeId = 'RECARGA_${DateTime.now().millisecondsSinceEpoch}';
       final amount = _selectedAmount.toDouble();
-      final description = 'Recarga de saldo Rappi Team - $userName';
+      final description = 'Recarga de saldo Rapi Team - $userName';
 
       final preferenceResult = await _paymentService.createMercadoPagoPreference(
         rideId: rechargeId,

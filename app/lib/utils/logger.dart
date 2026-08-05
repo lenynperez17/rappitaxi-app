@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class AppLogger {
-  static const String _prefix = '🚕 RappiTeam';
+  static const String _prefix = '🚕 RapiTeam';
   static bool _debugMode = false; // DESHABILITADO para producción
   
   static void enableDebugMode() {

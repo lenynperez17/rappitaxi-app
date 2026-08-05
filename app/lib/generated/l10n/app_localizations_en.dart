@@ -317,7 +317,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openSettingsManually =>
-      'Please open Settings > Apps > Rappi Team > Permissions manually';
+      'Please open Settings > Apps > Rapi Team > Permissions manually';
 
   @override
   String get passenger => 'Passenger';
@@ -587,7 +587,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get back => 'Back';
 
   @override
-  String get howToUseRappiTeam => 'How do you want to use Rappi Team?';
+  String get howToUseRappiTeam => 'How do you want to use Rapi Team?';
 
   @override
   String get requestTrips => 'Request rides and negotiate prices';
@@ -837,7 +837,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addMethod => 'Add Method';
 
   @override
-  String get rappiWallet => 'Rappi Team Wallet';
+  String get rappiWallet => 'Rapi Team Wallet';
 
   @override
   String get recharge => 'Recharge';

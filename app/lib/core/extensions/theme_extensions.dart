@@ -24,7 +24,7 @@ extension ThemeColors on BuildContext {
   /// Modo oscuro: azul-gris oscuro (#1E2937)
   Color get backgroundColor => Theme.of(this).scaffoldBackgroundColor;
 
-  /// Color primario corporativo (Rappi Team Green - no cambia con el tema)
+  /// Color primario corporativo (Rapi Team Green - no cambia con el tema)
   Color get primaryColor => ModernTheme.rappiOrange;
 
   /// Color de error que se adapta al tema

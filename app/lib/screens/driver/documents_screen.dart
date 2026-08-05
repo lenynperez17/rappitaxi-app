@@ -1624,7 +1624,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       content.writeln('');
       content.writeln('Para más información, contacta a soporte.');
       content.writeln('');
-      content.writeln('Rappi Team - Tu aliado en el camino');
+      content.writeln('Rapi Team - Tu aliado en el camino');
       content.writeln('═══════════════════════════════════════════');
 
       // Crear archivo temporal
@@ -1637,8 +1637,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       // Compartir/guardar archivo
       await Share.shareXFiles(
         [XFile(file.path)],
-        subject: 'Lista de Documentos - Rappi Team',
-        text: 'Lista de documentos requeridos para conductores de Rappi Team',
+        subject: 'Lista de Documentos - Rapi Team',
+        text: 'Lista de documentos requeridos para conductores de Rapi Team',
       );
 
       if (!mounted) return;

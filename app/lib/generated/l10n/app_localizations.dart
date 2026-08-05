@@ -713,7 +713,7 @@ abstract class AppLocalizations {
   /// Instrucciones abrir configuración manualmente
   ///
   /// In es, this message translates to:
-  /// **'Por favor, abre Configuración > Apps > Rappi Team > Permisos manualmente'**
+  /// **'Por favor, abre Configuración > Apps > Rapi Team > Permisos manualmente'**
   String get openSettingsManually;
 
   /// Rol de usuario pasajero
@@ -830,7 +830,7 @@ abstract class AppLocalizations {
   /// **'Regístrate'**
   String get register;
 
-  /// Eslogan de Rappi Team
+  /// Eslogan de Rapi Team
   ///
   /// In es, this message translates to:
   /// **'Tu viaje, tu precio'**
@@ -1199,7 +1199,7 @@ abstract class AppLocalizations {
   /// No description provided for @howToUseRappiTeam.
   ///
   /// In es, this message translates to:
-  /// **'¿Cómo quieres usar Rappi Team?'**
+  /// **'¿Cómo quieres usar Rapi Team?'**
   String get howToUseRappiTeam;
 
   /// No description provided for @requestTrips.
@@ -1682,10 +1682,10 @@ abstract class AppLocalizations {
   /// **'Agregar Método'**
   String get addMethod;
 
-  /// Título billetera Rappi Team
+  /// Título billetera Rapi Team
   ///
   /// In es, this message translates to:
-  /// **'Billetera Rappi Team'**
+  /// **'Billetera Rapi Team'**
   String get rappiWallet;
 
   /// Botón recargar
@@ -3173,7 +3173,7 @@ abstract class AppLocalizations {
   /// Item ayuda 4
   ///
   /// In es, this message translates to:
-  /// **'• La billetera Rappi Team te permite pagar sin tarjetas.'**
+  /// **'• La billetera Rapi Team te permite pagar sin tarjetas.'**
   String get helpItem4;
 
   /// Título agregar tarjeta

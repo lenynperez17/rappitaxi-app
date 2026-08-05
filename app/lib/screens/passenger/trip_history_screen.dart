@@ -1443,7 +1443,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
                   child: pw.Column(
                     children: [
                       pw.Text(
-                        'Gracias por viajar con Rappi Team',
+                        'Gracias por viajar con Rapi Team',
                         style: pw.TextStyle(
                           fontSize: 12,
                           color: PdfColors.grey600,
@@ -1474,7 +1474,7 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
       // Compartir el PDF
       await Share.shareXFiles(
         [XFile(file.path)],
-        subject: 'Recibo de viaje - Rappi Team',
+        subject: 'Recibo de viaje - Rapi Team',
         text: 'Recibo del viaje del ${widget.trip.requestedAt.day}/${widget.trip.requestedAt.month}/${widget.trip.requestedAt.year}',
       );
 

@@ -378,7 +378,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
                           const SizedBox(height: 8),
 
                           Text(
-                            'Gracias por viajar con Rappi Team',
+                            'Gracias por viajar con Rapi Team',
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.white.withValues(alpha: 0.9),
@@ -654,7 +654,7 @@ class _TripCompletedScreenState extends State<TripCompletedScreen>
       case 'cash':
         return 'Efectivo';
       case 'wallet':
-        return 'Billetera Rappi Team';
+        return 'Billetera Rapi Team';
       case 'yape_external':
         return 'Yape';
       case 'plin_external':

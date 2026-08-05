@@ -17,7 +17,7 @@ import '../../core/utils/home_route_resolver.dart';
 
 /// Pantalla de splash con animaciones modernas
 ///
-/// Muestra el logo de Rappi Team con animaciones mientras
+/// Muestra el logo de Rapi Team con animaciones mientras
 /// se inicializa el AuthProvider y determina la ruta inicial
 class ModernSplashScreen extends StatefulWidget {
   const ModernSplashScreen({super.key});

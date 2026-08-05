@@ -2283,7 +2283,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Al usar la aplicación Rappi Team, aceptas estos términos y condiciones en su totalidad. Si no estás de acuerdo, por favor no uses nuestros servicios.',
+                  'Al usar la aplicación Rapi Team, aceptas estos términos y condiciones en su totalidad. Si no estás de acuerdo, por favor no uses nuestros servicios.',
                   style: TextStyle(fontSize: 14),
                 ),
                 SizedBox(height: 16),
@@ -2293,7 +2293,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Rappi Team proporciona una plataforma para conectar pasajeros con conductores profesionales. Nos reservamos el derecho de modificar o discontinuar servicios sin previo aviso.',
+                  'Rapi Team proporciona una plataforma para conectar pasajeros con conductores profesionales. Nos reservamos el derecho de modificar o discontinuar servicios sin previo aviso.',
                   style: TextStyle(fontSize: 14),
                 ),
                 SizedBox(height: 16),
@@ -2337,7 +2337,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Rappi Team actúa como intermediario. No somos responsables por la conducta de conductores o pasajeros, accidentes, daños o pérdidas durante el servicio.',
+                  'Rapi Team actúa como intermediario. No somos responsables por la conducta de conductores o pasajeros, accidentes, daños o pérdidas durante el servicio.',
                   style: TextStyle(fontSize: 14),
                 ),
                 SizedBox(height: 16),
@@ -2519,7 +2519,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Por favor, abre Configuración > Apps > Rappi Team > Permisos manualmente',
+              'Por favor, abre Configuración > Apps > Rapi Team > Permisos manualmente',
             ),
             backgroundColor: ModernTheme.warning,
             duration: Duration(seconds: 4),

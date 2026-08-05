@@ -21,7 +21,7 @@
     <uses-permission android:name="android.permission.ACCESS_ADSERVICES_TOPICS" tools:node="remove"/>
 
     <application
-        android:label="Rappi Team"
+        android:label="Rapi Team"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

@@ -67,8 +67,8 @@ class DriverStrings {
   String get newContact => _en ? 'New contact' : 'Nuevo contacto';
   String get contactNameHint => _en ? 'Contact person name' : 'Nombre de la persona de contacto';
   String get changesOnlySavedInApp => _en
-      ? 'Changes will only be saved in the Rappi Team application and will not affect your device\'s contact list'
-      : 'Los cambios solo se guardarán en la aplicación Rappi Team y no afectarán a la lista de contactos de tu dispositivo';
+      ? 'Changes will only be saved in the Rapi Team application and will not affect your device\'s contact list'
+      : 'Los cambios solo se guardarán en la aplicación Rapi Team y no afectarán a la lista de contactos de tu dispositivo';
   String get enterContactName => _en ? 'Enter the contact name' : 'Ingresa el nombre del contacto';
   String get enterValidPhone => _en ? 'Enter a valid phone number' : 'Ingresa un número de teléfono válido';
   String contactAdded(String name) => _en ? '$name added as emergency contact' : '$name agregado como contacto de emergencia';
@@ -277,7 +277,7 @@ class DriverStrings {
       ? 'Unlock Platinum benefits — $n trips remaining'
       : 'Desbloquea beneficios Platino — faltan $n viajes';
   String get goToRequestList => _en ? 'Go to request list' : 'Ir a la lista de solicitudes';
-  String get aboutRappiTeamLevels => _en ? 'About Rappi Team levels' : 'Acerca de los niveles de Rappi Team';
+  String get aboutRappiTeamLevels => _en ? 'About Rapi Team levels' : 'Acerca de los niveles de Rapi Team';
   String get viewBenefits => _en ? 'View benefits' : 'Ver beneficios';
 
   // ── Benefit Detail Screen ───────────────────────
@@ -333,7 +333,7 @@ class DriverStrings {
   String get walletBalance => _en ? 'Wallet balance' : 'Saldo de la cartera';
   String get recharge => _en ? 'Recharge' : 'Recarga';
   String get bonifications => _en ? 'Bonuses' : 'Bonificaciones';
-  String get inviteFriendsTitle => _en ? 'Invite friends to Rappi Team' : 'Invita amigos a Rappi Team';
+  String get inviteFriendsTitle => _en ? 'Invite friends to Rapi Team' : 'Invita amigos a Rapi Team';
   String get inviteFriendsDesc => _en
       ? 'Share your invitation code and get S/100 for each friend who registers as a driver.'
       : 'Comparte tu código de invitación y obtén S/100 por cada amigo que se registre como conductor.';
@@ -344,19 +344,19 @@ class DriverStrings {
   // ── Wallet Simple Screen ────────────────────────
   String get serviceCommission => _en ? 'Service commission' : 'Comisión del servicio';
   String serviceCommissionDesc(String rate) => _en
-      ? 'Rappi Team charges a commission of $rate% per completed trip. This commission is automatically deducted from your balance.\n\nThis fee allows us to maintain the platform, provide support and continuously improve the service.'
-      : 'Rappi Team cobra una comisión del $rate% por cada viaje completado. Esta comisión se descuenta automáticamente de tu saldo.\n\nEsta tarifa nos permite mantener la plataforma, brindar soporte y mejorar continuamente el servicio.';
+      ? 'Rapi Team charges a commission of $rate% per completed trip. This commission is automatically deducted from your balance.\n\nThis fee allows us to maintain the platform, provide support and continuously improve the service.'
+      : 'Rapi Team cobra una comisión del $rate% por cada viaje completado. Esta comisión se descuenta automáticamente de tu saldo.\n\nEsta tarifa nos permite mantener la plataforma, brindar soporte y mejorar continuamente el servicio.';
   String serviceRateFair(String rate) => _en
-      ? '$rate% — Rappi Team service payment is fair'
-      : '$rate% — el pago por el servicio de Rappi Team es justo';
+      ? '$rate% — Rapi Team service payment is fair'
+      : '$rate% — el pago por el servicio de Rapi Team es justo';
   String get walletBalanceTitle => _en ? 'Wallet balance' : 'Saldo de la cartera';
   String walletBalanceDesc(String _) => _en
       ? 'Your balance is the available credit to receive ride requests. Each time you complete a trip, the service commission is deducted from your balance.\n\nWhen your balance reaches S/ 0.00, you will not be able to receive new requests until you recharge.'
       : 'Tu saldo es el crédito disponible para recibir solicitudes de viaje. Cada vez que completas un viaje, se descuenta la comisión del servicio de tu saldo.\n\nCuando tu saldo llegue a S/ 0.00, no podrás recibir nuevas solicitudes hasta que recargues.';
   String get paymentMethods => _en ? 'Payment methods' : 'Métodos de pago';
   String get paymentMethodsDesc => _en
-      ? 'Rappi Team accepts recharges through MercadoPago, which includes:\n\n• Credit and debit cards (Visa, Mastercard)\n• Yape\n• Bank transfers\n• PagoEfectivo (Tambo+, agents)'
-      : 'Rappi Team acepta recargas a través de MercadoPago, que incluye:\n\n• Tarjetas de crédito y débito (Visa, Mastercard)\n• Yape\n• Transferencias bancarias\n• PagoEfectivo (Tambo+, agentes)';
+      ? 'Rapi Team accepts recharges through MercadoPago, which includes:\n\n• Credit and debit cards (Visa, Mastercard)\n• Yape\n• Bank transfers\n• PagoEfectivo (Tambo+, agents)'
+      : 'Rapi Team acepta recargas a través de MercadoPago, que incluye:\n\n• Tarjetas de crédito y débito (Visa, Mastercard)\n• Yape\n• Transferencias bancarias\n• PagoEfectivo (Tambo+, agentes)';
   String get transactionHistory => _en ? 'Transaction history' : 'Historial de transacciones';
   String get transactionHistoryDesc => _en
       ? 'Here you can see the details of all your recharges and commission deductions for trips.\n\nEach transaction includes date, amount and type (recharge or commission deduction).'

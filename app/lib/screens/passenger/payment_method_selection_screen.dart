@@ -150,7 +150,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
       amount: widget.fareAmount,
       payerEmail: widget.passengerEmail,
       payerName: widget.passengerName,
-      description: 'Viaje Rappi Team #${widget.rideId}',
+      description: 'Viaje Rapi Team #${widget.rideId}',
     );
 
     if (result.success) {
@@ -345,7 +345,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                 final launched = await _paymentService.openYapeApp(
                   '946123456',
                   widget.fareAmount,
-                  'Viaje Rappi Team #${widget.rideId}',
+                  'Viaje Rapi Team #${widget.rideId}',
                 );
                 if (!launched) {
                   _showErrorDialog('No se pudo abrir la app de Yape');
@@ -410,7 +410,7 @@ class _PaymentMethodSelectionScreenState extends State<PaymentMethodSelectionScr
                 final launched = await _paymentService.openPlinApp(
                   '946123456',
                   widget.fareAmount,
-                  'Viaje Rappi Team #${widget.rideId}',
+                  'Viaje Rapi Team #${widget.rideId}',
                 );
                 if (!launched) {
                   _showErrorDialog('No se pudo abrir la app de Plin');

@@ -63,7 +63,7 @@ class AppConstants {
 
   // ==================== APP INFO ====================
   // App Info
-  static const String appName = 'Rappi Team';
+  static const String appName = 'Rapi Team';
   static const String appVersion = '1.0.0';
   static const String appBuildNumber = '1';
   

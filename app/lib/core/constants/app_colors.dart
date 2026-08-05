@@ -5,7 +5,7 @@ class AppColors {
   // COLORES PRINCIPALES RAPPI TEAM
   // ============================================================================
 
-  // Color principal de Rappi Team - Rojo corporativo
+  // Color principal de Rapi Team - Rojo corporativo
   static const Color rappiRed = Color(0xFFE31E24);
   static const Color rappiRedDark = Color(0xFFB91C1C);
   static const Color rappiRedLight = Color(0xFFFCA5A5);

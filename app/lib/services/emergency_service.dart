@@ -19,7 +19,7 @@ import '../utils/logger.dart';
 /// 📱 Notificación a 5 contactos de emergencia vía SMS
 /// 🎙️ Grabación de audio automática durante emergencia
 /// 📍 Compartir ubicación en tiempo real
-/// 🔔 Alerta inmediata a administradores de Rappi Team
+/// 🔔 Alerta inmediata a administradores de Rapi Team
 /// 💾 Registro completo en el backend Node (RapiApiClient) con prioridad máxima
 /// 📳 Vibración continua y alertas visuales
 /// 📞 Llamada automática a servicios de emergencia

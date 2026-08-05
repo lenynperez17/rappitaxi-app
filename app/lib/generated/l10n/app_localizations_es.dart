@@ -319,7 +319,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get openSettingsManually =>
-      'Por favor, abre Configuración > Apps > Rappi Team > Permisos manualmente';
+      'Por favor, abre Configuración > Apps > Rapi Team > Permisos manualmente';
 
   @override
   String get passenger => 'Pasajero';
@@ -591,7 +591,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get back => 'Atrás';
 
   @override
-  String get howToUseRappiTeam => '¿Cómo quieres usar Rappi Team?';
+  String get howToUseRappiTeam => '¿Cómo quieres usar Rapi Team?';
 
   @override
   String get requestTrips => 'Solicita viajes y negocia precios';
@@ -842,7 +842,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get addMethod => 'Agregar Método';
 
   @override
-  String get rappiWallet => 'Billetera Rappi Team';
+  String get rappiWallet => 'Billetera Rapi Team';
 
   @override
   String get recharge => 'Recargar';
@@ -1633,7 +1633,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get helpItem4 =>
-      '• La billetera Rappi Team te permite pagar sin tarjetas.';
+      '• La billetera Rapi Team te permite pagar sin tarjetas.';
 
   @override
   String get addCard => 'Agregar Tarjeta';

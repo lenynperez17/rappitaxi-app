@@ -183,7 +183,7 @@ class CompanyConfig {
 
   factory CompanyConfig.fromJson(Map<String, dynamic> json) {
     return CompanyConfig(
-      name: json['name'] ?? 'Rappi Team',
+      name: json['name'] ?? 'Rapi Team',
       phone: json['phone'] ?? '',
       email: json['email'] ?? 'facturacion.rapiteam@gmail.com',
       address: json['address'] ?? 'Perú',
@@ -193,7 +193,7 @@ class CompanyConfig {
 
   factory CompanyConfig.defaultConfig() {
     return CompanyConfig(
-      name: 'Rappi Team',
+      name: 'Rapi Team',
       phone: '+51 999 999 999',
       email: 'facturacion.rapiteam@gmail.com',
       address: 'Perú',

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ModernTheme {
-  // Colores corporativos de Rappi Team
+  // Colores corporativos de Rapi Team
   static const Color rappiOrange = Color(0xFFE31E24);
   static const Color rappiBlack = Color(0xFF2C2C2C); // Cambiado de negro puro a gris oscuro
   static const Color rappiWhite = Color(0xFFFFFFFF);

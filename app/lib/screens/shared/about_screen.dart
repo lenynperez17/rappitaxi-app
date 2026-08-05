@@ -59,7 +59,7 @@ class _AboutScreenState extends State<AboutScreen>
         backgroundColor: AppColors.rappiOrange,
         elevation: 0,
         title: Text(
-          'Acerca de Rappi Team',
+          'Acerca de Rapi Team',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -133,7 +133,7 @@ class _AboutScreenState extends State<AboutScreen>
                 ),
                 SizedBox(height: 24),
                 Text(
-                  'Rappi Team',
+                  'Rapi Team',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -178,8 +178,8 @@ class _AboutScreenState extends State<AboutScreen>
       Icons.info,
       AppColors.getTextPrimary(context),
       [
-        _buildInfoTile('Descripcion', 'Rappi Team es una plataforma de transporte que conecta pasajeros con conductores, ofreciendo precios negociables, viajes programados y seguimiento en tiempo real.', Icons.description),
-        _buildInfoTile('Desarrollado por', 'Rappi Team S.A.C.', Icons.business),
+        _buildInfoTile('Descripcion', 'Rapi Team es una plataforma de transporte que conecta pasajeros con conductores, ofreciendo precios negociables, viajes programados y seguimiento en tiempo real.', Icons.description),
+        _buildInfoTile('Desarrollado por', 'Rapi Team S.A.C.', Icons.business),
         _buildInfoTile('Fecha de lanzamiento', 'Enero 2025', Icons.calendar_today),
         _buildInfoTile('Categoria', 'Transporte y Viajes', Icons.category),
         _buildInfoTile('Tamano de la app', '45.2 MB', Icons.storage),
@@ -351,25 +351,25 @@ class _AboutScreenState extends State<AboutScreen>
   }
 
   void _shareApp() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Compartiendo Rappi Team...'), backgroundColor: AppColors.info));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Compartiendo Rapi Team...'), backgroundColor: AppColors.info));
   }
 
   void _showTermsAndConditions() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Términos y Condiciones', 'Los presentes Terminos y Condiciones regulan el uso de la aplicacion Rappi Team. Al utilizar nuestros servicios, usted acepta estos terminos en su totalidad. Rappi Team se reserva el derecho de modificar estos terminos en cualquier momento.')));
+    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Términos y Condiciones', 'Los presentes Terminos y Condiciones regulan el uso de la aplicacion Rapi Team. Al utilizar nuestros servicios, usted acepta estos terminos en su totalidad. Rapi Team se reserva el derecho de modificar estos terminos en cualquier momento.')));
   }
 
   void _showPrivacyPolicy() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Política de Privacidad', 'En Rappi Team, nos comprometemos a proteger su privacidad. Recopilamos informacion personal necesaria para brindar nuestros servicios de transporte, incluyendo nombre, telefono, ubicacion y datos de pago. Esta informacion se utiliza exclusivamente para facilitar los viajes y mejorar la experiencia del usuario.')));
+    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Política de Privacidad', 'En Rapi Team, nos comprometemos a proteger su privacidad. Recopilamos informacion personal necesaria para brindar nuestros servicios de transporte, incluyendo nombre, telefono, ubicacion y datos de pago. Esta informacion se utiliza exclusivamente para facilitar los viajes y mejorar la experiencia del usuario.')));
   }
 
   void _showCookiePolicy() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Politica de Cookies', 'Rappi Team utiliza cookies y tecnologias similares para mejorar la experiencia del usuario, analizar el trafico y personalizar el contenido.')));
+    Navigator.push(context, MaterialPageRoute(builder: (context) => _buildLegalDocumentScreen('Politica de Cookies', 'Rapi Team utiliza cookies y tecnologias similares para mejorar la experiencia del usuario, analizar el trafico y personalizar el contenido.')));
   }
 
   void _showLicenses() {
     showLicensePage(
       context: context,
-      applicationName: 'Rappi Team',
+      applicationName: 'Rapi Team',
       applicationVersion: '1.0.0',
       applicationIcon: Container(
         width: 64, height: 64,

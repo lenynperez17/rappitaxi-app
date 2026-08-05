@@ -146,7 +146,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
         userType: widget.userType,
         rideId: widget.rideId,
         emergencyType: _selectedEmergencyType?.id,
-        notes: 'Emergencia activada desde la aplicación Rappi Team',
+        notes: 'Emergencia activada desde la aplicación Rapi Team',
       );
 
       if (result.success) {
@@ -283,7 +283,7 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen>
                   Text('• 📱 SMS a tus contactos de emergencia'),
                   Text('• 🎙️ Iniciar grabación de audio'),
                   Text('• 📍 Compartir ubicación en tiempo real'),
-                  Text('• 🔔 Alertar a Rappi Team Central'),
+                  Text('• 🔔 Alertar a Rapi Team Central'),
                 ],
               ),
               const SizedBox(height: 16),

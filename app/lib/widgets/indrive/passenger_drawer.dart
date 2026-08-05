@@ -146,11 +146,11 @@ class PassengerDrawer extends StatelessWidget {
 
   void _shareApp() {
     Share.share(
-      '¡Descarga Rappi Team y viaja seguro!\n\n'
+      '¡Descarga Rapi Team y viaja seguro!\n\n'
       'La mejor app de transporte de tu ciudad.\n\n'
       'Android: https://play.google.com/store/apps/details?id=com.rapiteam.app\n'
       'iOS: https://apps.apple.com/app/rapiteam',
-      subject: 'Rappi Team - Tu app de transporte',
+      subject: 'Rapi Team - Tu app de transporte',
     );
     AppLogger.info('Usuario compartió la app');
   }

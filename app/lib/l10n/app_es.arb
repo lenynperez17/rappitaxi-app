@@ -511,7 +511,7 @@
     "description": "No se pudo abrir configuración"
   },
 
-  "openSettingsManually": "Por favor, abre Configuración > Apps > Rappi Team > Permisos manualmente",
+  "openSettingsManually": "Por favor, abre Configuración > Apps > Rapi Team > Permisos manualmente",
   "@openSettingsManually": {
     "description": "Instrucciones abrir configuración manualmente"
   },
@@ -613,7 +613,7 @@
 
   "tagline": "Tu viaje, tu precio",
   "@tagline": {
-    "description": "Eslogan de Rappi Team"
+    "description": "Eslogan de Rapi Team"
   },
 
   "tooManyAttempts": "Demasiados intentos fallidos. Intenta de nuevo en {minutes} minutos.",
@@ -928,7 +928,7 @@
   "createAccount": "Crear cuenta",
   "continueButton": "Continuar",
   "back": "Atrás",
-  "howToUseRappiTeam": "¿Cómo quieres usar Rappi Team?",
+  "howToUseRappiTeam": "¿Cómo quieres usar Rapi Team?",
   "requestTrips": "Solicita viajes y negocia precios",
   "acceptTrips": "Acepta viajes y gana dinero",
   "personalInfo": "Información personal",
@@ -1135,9 +1135,9 @@
     "description": "Botón agregar método"
   },
 
-  "rappiWallet": "Billetera Rappi Team",
+  "rappiWallet": "Billetera Rapi Team",
   "@rappiWallet": {
-    "description": "Título billetera Rappi Team"
+    "description": "Título billetera Rapi Team"
   },
 
   "recharge": "Recargar",
@@ -2465,7 +2465,7 @@
     "description": "Item ayuda 3"
   },
 
-  "helpItem4": "• La billetera Rappi Team te permite pagar sin tarjetas.",
+  "helpItem4": "• La billetera Rapi Team te permite pagar sin tarjetas.",
   "@helpItem4": {
     "description": "Item ayuda 4"
   },

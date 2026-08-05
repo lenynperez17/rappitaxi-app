@@ -1,4 +1,4 @@
-// Log entry model for Rappi Team
+// Log entry model for Rapi Team
 
 enum LogLevel {
   debug,

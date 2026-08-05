@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Colores principales - Tema Rappi Team
-  static const Color primaryColor = Color(0xFFE31E24); // Rojo Rappi Team oficial
+  // Colores principales - Tema Rapi Team
+  static const Color primaryColor = Color(0xFFE31E24); // Rojo Rapi Team oficial
   static const Color secondaryColor = Color(0xFF000000); // Negro
-  static const Color accentColor = Color(0xFFE31E24); // Rojo Rappi Team
+  static const Color accentColor = Color(0xFFE31E24); // Rojo Rapi Team
   
   // Colores neutros
   static const Color backgroundColor = Color(0xFFF5F5F5);

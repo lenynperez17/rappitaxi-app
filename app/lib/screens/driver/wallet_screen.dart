@@ -2279,7 +2279,7 @@ class _WalletScreenState extends State<WalletScreen>
       // Compartir archivo usando share_plus
       await Share.shareXFiles(
         [XFile(filePath)],
-        subject: 'Historial de Transacciones - Rappi Team',
+        subject: 'Historial de Transacciones - Rapi Team',
         text: 'Historial de transacciones generado el ${DateTime.now().toString().split('.')[0]}',
       );
 
@@ -2451,7 +2451,7 @@ class _WalletScreenState extends State<WalletScreen>
       // Compartir archivo usando share_plus
       await Share.shareXFiles(
         [XFile(filePath)],
-        subject: 'Historial de Transacciones - Rappi Team',
+        subject: 'Historial de Transacciones - Rapi Team',
         text: 'Historial de transacciones generado el ${DateTime.now().toString().split('.')[0]}',
       );
 

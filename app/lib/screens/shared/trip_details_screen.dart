@@ -279,8 +279,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
           final messenger = ScaffoldMessenger.of(context);
           try {
             final statusText = _trip!.status == 'completed' ? 'Viaje Completado' : _trip!.status;
-            final shareText = 'Detalles del Viaje - Rappi Team\nFecha: ${_formatDateTime(_trip!.requestedAt)}\nEstado: $statusText\nOrigen: ${_trip!.pickupAddress}\nDestino: ${_trip!.destinationAddress}\nDistancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km\n${_trip!.finalFare != null ? 'Tarifa final: S/${_trip!.finalFare!.toStringAsFixed(2)}' : 'Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}'}\nCompartido desde Rappi Team';
-            await Share.share(shareText, subject: 'Detalles del Viaje - Rappi Team');
+            final shareText = 'Detalles del Viaje - Rapi Team\nFecha: ${_formatDateTime(_trip!.requestedAt)}\nEstado: $statusText\nOrigen: ${_trip!.pickupAddress}\nDestino: ${_trip!.destinationAddress}\nDistancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km\n${_trip!.finalFare != null ? 'Tarifa final: S/${_trip!.finalFare!.toStringAsFixed(2)}' : 'Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}'}\nCompartido desde Rapi Team';
+            await Share.share(shareText, subject: 'Detalles del Viaje - Rapi Team');
           } catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al compartir')), backgroundColor: AppColors.error)); }
         }),
         if (_trip!.status == 'completed') ListTile(leading: Icon(Icons.receipt, color: AppColors.getTextPrimary(context)), title: Text('Descargar Recibo'), onTap: () async {
@@ -292,7 +292,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
             pdf.addPage(pw.Page(pageFormat: PdfPageFormat.a4, build: (pw.Context pdfContext) {
               return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                 pw.Text('Recibo de Viaje', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)), pw.SizedBox(height: 10),
-                pw.Text('Rappi Team', style: pw.TextStyle(fontSize: 18)), pw.Divider(thickness: 2), pw.SizedBox(height: 20),
+                pw.Text('Rapi Team', style: pw.TextStyle(fontSize: 18)), pw.Divider(thickness: 2), pw.SizedBox(height: 20),
                 pw.Text('Informacion del viaje', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                 pw.Text('ID: ${_trip!.id}'), pw.Text('Fecha: ${_formatDateTime(_trip!.requestedAt)}'),
                 if (_trip!.completedAt != null) pw.Text('Completado: ${_formatDateTime(_trip!.completedAt!)}'),
@@ -302,11 +302,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
                 pw.Text('Distancia: ${_trip!.estimatedDistance.toStringAsFixed(2)} km'),
                 if (_trip!.finalFare != null) pw.Text('Tarifa: S/${_trip!.finalFare!.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))
                 else pw.Text('Tarifa estimada: S/${_trip!.estimatedFare.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-                pw.Spacer(), pw.Divider(), pw.Text('Gracias por usar Rappi Team', style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic)),
+                pw.Spacer(), pw.Divider(), pw.Text('Gracias por usar Rapi Team', style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic)),
               ]);
             }));
             final output = await getTemporaryDirectory(); final file = File('${output.path}/recibo_${_trip!.id}.pdf'); await file.writeAsBytes(await pdf.save());
-            await Share.shareXFiles([XFile(file.path)], subject: 'Recibo de Viaje - Rappi Team', text: 'Recibo de viaje del ${_formatDateTime(_trip!.requestedAt)}');
+            await Share.shareXFiles([XFile(file.path)], subject: 'Recibo de Viaje - Rapi Team', text: 'Recibo de viaje del ${_formatDateTime(_trip!.requestedAt)}');
             messenger.showSnackBar(SnackBar(content: Text('Recibo generado exitosamente'), backgroundColor: AppColors.success));
           } catch (e) { messenger.showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al generar recibo')), backgroundColor: AppColors.error)); }
         }),

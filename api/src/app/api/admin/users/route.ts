@@ -110,19 +110,33 @@ export async function GET(req: NextRequest) {
   }
   if (search) {
     // Ronda 30 Bug#2: separar búsqueda por texto (lowercase) de búsqueda por
-    // teléfono (dígitos). Sin esto, "999" matcheaba email 'abc999@x.com' vía
-    // el LIKE contra `phone`. Detectamos "es teléfono" si tiene solo dígitos
-    // opcionalmente con + inicial y ≥5 chars.
-    const isPhoneLike = /^\+?\d{5,}$/.test(search)
-    const searchLower = `%${search.toLowerCase()}%`
+    // teléfono (dígitos). Sin esto, "999" matcheaba el email 'abc999@x.com'
+    // vía el LIKE contra `phone`.
+    //
+    // Ronda 274: el umbral era de 5 dígitos, así que teclear un prefijo como
+    // "+519" —lo primero que uno escribe al buscar un número peruano— no
+    // contaba como teléfono, se iba a buscar entre nombres y correos, y
+    // devolvía cero. Con 2 basta: el resultado sigue restringido a las
+    // columnas de teléfono, así que un número corto solo trae teléfonos.
+    //
+    // También se limpian espacios, guiones y paréntesis antes de comparar:
+    // en la base está guardado seguido (+51987654321), y quien lo copia de
+    // una agenda lo trae como "+51 987 654 321".
+    const normalized = search.replace(/[\s()\-.]/g, '')
+    const isPhoneLike = /^\+?\d{2,}$/.test(normalized)
     if (isPhoneLike) {
-      // Solo buscar en columnas phone (evita falsos positivos cruzados)
-      params.push(`%${search}%`)
+      params.push(`%${normalized}%`)
       where.push(`(phone LIKE $${params.length} OR phone_number LIKE $${params.length})`)
     } else {
-      // Solo buscar en texto (nombre/email)
-      params.push(searchLower)
-      where.push(`(LOWER(full_name) LIKE $${params.length} OR LOWER(email) LIKE $${params.length})`)
+      // Ronda 274: el buscador del panel dice "nombre, correo, teléfono o ID"
+      // pero el id nunca se consultaba, así que pegar un identificador no
+      // encontraba nada. Ahora sí.
+      params.push(`%${search.toLowerCase()}%`)
+      where.push(
+        `(LOWER(full_name) LIKE $${params.length}`
+        + ` OR LOWER(email) LIKE $${params.length}`
+        + ` OR LOWER(id) LIKE $${params.length})`,
+      )
     }
   }
 

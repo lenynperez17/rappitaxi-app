@@ -1,4 +1,4 @@
-// Error report model for Rappi Team
+// Error report model for Rapi Team
 
 // Error severity levels
 enum ErrorSeverity {

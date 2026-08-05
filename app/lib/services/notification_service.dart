@@ -95,7 +95,7 @@ class NotificationService {
     AndroidNotificationChannel(
       'rappi_general',
       'Notificaciones generales',
-      description: 'Notificaciones generales de Rappi Team',
+      description: 'Notificaciones generales de Rapi Team',
       importance: Importance.high,
       playSound: true,
       sound: const RawResourceAndroidNotificationSound('ride_accepted'),
@@ -343,7 +343,7 @@ class NotificationService {
       channelDescription: channel.description,
       importance: channel.importance,
       priority: Priority.max,
-      ticker: 'Rappi Team',
+      ticker: 'Rapi Team',
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE31E24),
       playSound: true,

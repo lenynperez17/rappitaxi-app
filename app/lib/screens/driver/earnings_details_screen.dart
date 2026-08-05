@@ -968,7 +968,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Comisión Rappi Team (12%):',
+                      'Comisión Rapi Team (12%):',
                       style: TextStyle(fontSize: 13, color: context.secondaryText),
                     ),
                     Text(
@@ -1174,7 +1174,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
       buffer.writeln('- ${DateFormat('dd/MM').format(day.date)}: ${day.earnings.toCurrency()} (${day.trips} viajes)');
     }
     buffer.writeln('');
-    buffer.writeln('Generado por Rappi Team App');
+    buffer.writeln('Generado por Rapi Team App');
 
     // Mostrar opciones de exportación
     showResponsiveBottomSheet(
@@ -1208,7 +1208,7 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
               title: Text('Compartir como texto'),
               onTap: () {
                 Navigator.pop(context);
-                Share.share(buffer.toString(), subject: 'Reporte de Ganancias - Rappi Team');
+                Share.share(buffer.toString(), subject: 'Reporte de Ganancias - Rapi Team');
               },
             ),
           ],
@@ -1232,16 +1232,16 @@ class _EarningsDetailsScreenState extends State<EarningsDetailsScreen>
                    _selectedPeriod == 'month' ? 'este mes' : 'este año';
 
     final message = '''
-📊 *Mi Reporte de Ganancias - Rappi Team*
+📊 *Mi Reporte de Ganancias - Rapi Team*
 
 💰 Total ganado $period: ${_earningsData!.totalEarnings.toCurrency()}
 🚗 Viajes completados: ${_earningsData!.totalTrips}
 📈 Promedio por viaje: ${_earningsData!.avgPerTrip.toCurrency()}
 
-¡Conduce con Rappi Team! 🚕
+¡Conduce con Rapi Team! 🚕
 ''';
 
-    Share.share(message, subject: 'Mi Reporte de Ganancias - Rappi Team');
+    Share.share(message, subject: 'Mi Reporte de Ganancias - Rapi Team');
   }
 }
 

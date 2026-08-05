@@ -260,7 +260,7 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
   void _openLiveChat() { DefaultTabController.of(context).animateTo(2); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Crea un ticket y te responderemos pronto'), backgroundColor: AppColors.rappiOrange)); }
 
   void _sendEmail() async {
-    try { final Uri emailUri = Uri(scheme: 'mailto', path: _supportEmail, query: 'subject=Soporte Rappi Team'); if (await canLaunchUrl(emailUri)) { await launchUrl(emailUri); } else { throw 'No se puede abrir el cliente de correo'; } }
+    try { final Uri emailUri = Uri(scheme: 'mailto', path: _supportEmail, query: 'subject=Soporte Rapi Team'); if (await canLaunchUrl(emailUri)) { await launchUrl(emailUri); } else { throw 'No se puede abrir el cliente de correo'; } }
     catch (e) { if (!mounted) return; ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al abrir email')), backgroundColor: Colors.red)); }
   }
 
@@ -303,7 +303,7 @@ class TicketDetailsScreen extends StatelessWidget {
       SizedBox(width: 12),
       Expanded(child: Container(padding: EdgeInsets.all(12), decoration: BoxDecoration(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.05) : AppColors.getSurface(context), borderRadius: BorderRadius.circular(8), border: Border.all(color: response.isFromSupport ? AppColors.rappiOrange.withValues(alpha: 0.2) : AppColors.getBorder(context))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Text(response.isFromSupport ? 'Soporte Rappi Team' : 'Tu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.getTextPrimary(context))), Spacer(), Text(_formatDateTimeStatic(context, response.createdAt), style: TextStyle(fontSize: 10, color: AppColors.getTextSecondary(context)))]),
+          Row(children: [Text(response.isFromSupport ? 'Soporte Rapi Team' : 'Tu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: response.isFromSupport ? AppColors.rappiOrange : AppColors.getTextPrimary(context))), Spacer(), Text(_formatDateTimeStatic(context, response.createdAt), style: TextStyle(fontSize: 10, color: AppColors.getTextSecondary(context)))]),
           SizedBox(height: 4), Text(response.message, style: TextStyle(height: 1.4, color: AppColors.getTextPrimary(context))),
         ]))),
     ]));

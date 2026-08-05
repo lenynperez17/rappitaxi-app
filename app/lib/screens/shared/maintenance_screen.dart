@@ -156,7 +156,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Rappi Team',
+                    'Rapi Team',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[500],

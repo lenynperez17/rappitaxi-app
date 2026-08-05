@@ -1247,7 +1247,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen>
 
     try {
       final text = '''
-🚕 Viaje Rappi Team
+🚕 Viaje Rapi Team
 
 📍 Desde: ${trip.pickupLocation.address}
 📍 Hasta: ${trip.destinationLocation.address}
@@ -1268,7 +1268,7 @@ ID de viaje: ${trip.id}
 
       await Share.share(
         text,
-        subject: 'Detalles de mi viaje en Rappi Team',
+        subject: 'Detalles de mi viaje en Rapi Team',
       );
 
       AppLogger.info('✅ Viaje compartido exitosamente');
@@ -1352,7 +1352,7 @@ ID de viaje: ${trip.id}
               pw.SizedBox(height: 10),
               pw.Center(
                 child: pw.Text(
-                  'Rappi Team',
+                  'Rapi Team',
                   style: pw.TextStyle(fontSize: 16),
                 ),
               ),
@@ -1452,7 +1452,7 @@ ID de viaje: ${trip.id}
               // Footer
               pw.Center(
                 child: pw.Text(
-                  'Gracias por viajar con Rappi Team',
+                  'Gracias por viajar con Rapi Team',
                   style: pw.TextStyle(
                     fontSize: 12,
                     fontStyle: pw.FontStyle.italic,

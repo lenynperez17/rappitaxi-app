@@ -89,8 +89,8 @@ class LocalNotificationService {
   }) async {
     final androidDetails = AndroidNotificationDetails(
       'rappi_team_channel',
-      'Rappi Team',
-      channelDescription: 'Notificaciones de Rappi Team',
+      'Rapi Team',
+      channelDescription: 'Notificaciones de Rapi Team',
       importance: Importance.high,
       priority: Priority.high,
       showWhen: true,
@@ -259,7 +259,7 @@ class LocalNotificationService {
   }) async {
     final androidDetails = AndroidNotificationDetails(
       'rappi_team_actions',
-      'Rappi Team Acciones',
+      'Rapi Team Acciones',
       channelDescription: 'Notificaciones con acciones',
       importance: Importance.high,
       priority: Priority.high,
@@ -304,7 +304,7 @@ class LocalNotificationService {
   }) async {
     const androidDetails = AndroidNotificationDetails(
       'rappi_team_scheduled',
-      'Rappi Team Programadas',
+      'Rapi Team Programadas',
       channelDescription: 'Notificaciones programadas',
       importance: Importance.high,
       priority: Priority.high,

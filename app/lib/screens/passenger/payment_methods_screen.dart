@@ -83,7 +83,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
     PaymentMethod(
       id: 'wallet',
       type: PaymentMethodType.wallet,
-      name: 'Billetera Rappi Team',
+      name: 'Billetera Rapi Team',
       walletBalance: '0.00',
       isDefault: false,
       icon: Icons.account_balance_wallet,
@@ -1549,7 +1549,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
                 pw.SizedBox(height: 10),
                 pw.Center(
                   child: pw.Text(
-                    'Rappi Team',
+                    'Rapi Team',
                     style: pw.TextStyle(fontSize: 18),
                   ),
                 ),

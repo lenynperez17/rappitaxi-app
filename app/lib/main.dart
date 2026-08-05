@@ -136,7 +136,7 @@ void main() {
     };
 
     AppLogger.separator('INICIANDO RAPPI TEAM APP');
-    AppLogger.info('Iniciando aplicación Rappi Team...');
+    AppLogger.info('Iniciando aplicación Rapi Team...');
 
     try {
       // Load .env (may fail on iOS, not critical)
@@ -273,7 +273,7 @@ class _ThemedMaterialApp extends StatelessWidget {
         final themeMode = darkMode ? ThemeMode.dark : ThemeMode.light;
 
         return MaterialApp(
-      title: 'Rappi Team',
+      title: 'Rapi Team',
       debugShowCheckedModeBanner: false,
       // navigatorKey global usado por NavigationHelper para navegar desde
       // callbacks externos al widget tree (notificaciones locales, etc.).

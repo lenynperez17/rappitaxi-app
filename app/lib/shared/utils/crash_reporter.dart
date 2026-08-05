@@ -1,4 +1,4 @@
-// Crash reporter for Rappi Team
+// Crash reporter for Rapi Team
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';

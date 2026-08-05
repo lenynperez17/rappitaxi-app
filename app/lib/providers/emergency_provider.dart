@@ -476,7 +476,7 @@ class EmergencyProvider extends ChangeNotifier {
   Future<void> _sendEmergencySMS(String phone, String alertId) async {
     try {
       final message = '''
-🚨 EMERGENCIA - Rappi Team
+🚨 EMERGENCIA - Rapi Team
 Tu contacto necesita ayuda.
 Ubicación: https://maps.google.com/?q=${_currentLocation?.latitude},${_currentLocation?.longitude}
 Ver detalles: https://rapiteam.app/emergency/$alertId
