@@ -52,24 +52,32 @@ App-Rapi-Team/
 ├── api/                          # Backend Next.js — EL QUE CORRE EN PRODUCCIÓN
 │                                 # VPS: /var/www/Rapi-Team-App-Api (pm2, puerto 3120)
 ├── admin/                        # Panel web React — se despliega por scp a Hostinger
-├── functions/                    # Firebase Cloud Functions — HERENCIA, sin usar
-├── firebase.json                 # Config Firebase — solo FCM sigue vivo
-├── firestore.rules               # Firestore — sin usar desde la migración
-└── storage.rules                 # Storage — sin usar; los archivos van al VPS
+└── store_assets/                 # Capturas fuente de las fichas de las tiendas
 ```
 
-> **Ronda 275**: se eliminaron `src/` (backend Express anterior a la migración),
-> `scripts/` y `terraform/` (ambos copiados del proyecto Oasis Taxi y nunca
-> aplicados aquí). Ninguno estaba desplegado ni referenciado. De Firebase solo
-> queda vivo el envío de notificaciones push (FCM).
+> **Ronda 275 — lo que se eliminó y por qué.**
+> `src/` era el backend Express anterior a la migración: no estaba desplegado
+> (el VPS corre Next.js) y nadie lo importaba. `scripts/` y `terraform/` venían
+> copiados del proyecto Oasis Taxi y nunca se aplicaron aquí. `functions/`,
+> `firebase.json`, `.firebaserc`, `firestore.rules` y `storage.rules` eran el
+> stack de Firebase de antes de la migración: nada los llamaba. `.github/workflows/`
+> desplegaba a Cloud Functions y a Firebase Hosting; su única ejecución, en
+> agosto de 2025, falló.
+>
+> **De Firebase solo queda el envío de notificaciones push (FCM)**, y eso no se
+> toca: es como los conductores reciben las ofertas de viaje. Lo que lo sostiene
+> es `firebase_core` + `firebase_messaging` en la app, `firebase_options.dart`,
+> `google-services.json`, `GoogleService-Info.plist`, y `firebase-admin` con la
+> clave de servicio en el backend.
 
-## Firebase Configuration
-- **Project ID**: `rapi-team`
-- **Project Number**: `52925359166`
-- **Android Package**: `com.rapiteam.app`
-- **iOS Bundle ID**: `com.rapiteam.app`
-- **Auth Domain**: `rapi-team.firebaseapp.com`
-- **Storage Bucket**: `rapi-team.firebasestorage.app`
+## Firebase — solo notificaciones push
+El proyecto `rapi-team` sigue existiendo únicamente para FCM. Auth, Firestore,
+Storage y Functions ya no se usan: la autenticación, los datos y los archivos
+están en el VPS.
+- **Project ID**: `rapi-team` · **Project Number**: `52925359166`
+- **Android Package / iOS Bundle ID**: `com.rapiteam.app`
+- `Auth Domain` y `Storage Bucket` aparecen en `firebase_options.dart` porque
+  los genera FlutterFire, pero no se usan.
 
 ## Tech Stack
 
