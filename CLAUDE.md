@@ -49,13 +49,19 @@ App-Rapi-Team/
 │   ├── android/                  # Android config
 │   ├── ios/                      # iOS config
 │   └── assets/                   # Images, markers, HTML
-├── src/                          # Backend Express.js (standalone)
-├── functions/                    # Firebase Cloud Functions
-├── firebase.json                 # Firebase services config
-├── .firebaserc                   # Active project: rapi-team
-├── firestore.rules               # Firestore security rules
-└── storage.rules                 # Storage security rules
+├── api/                          # Backend Next.js — EL QUE CORRE EN PRODUCCIÓN
+│                                 # VPS: /var/www/Rapi-Team-App-Api (pm2, puerto 3120)
+├── admin/                        # Panel web React — se despliega por scp a Hostinger
+├── functions/                    # Firebase Cloud Functions — HERENCIA, sin usar
+├── firebase.json                 # Config Firebase — solo FCM sigue vivo
+├── firestore.rules               # Firestore — sin usar desde la migración
+└── storage.rules                 # Storage — sin usar; los archivos van al VPS
 ```
+
+> **Ronda 275**: se eliminaron `src/` (backend Express anterior a la migración),
+> `scripts/` y `terraform/` (ambos copiados del proyecto Oasis Taxi y nunca
+> aplicados aquí). Ninguno estaba desplegado ni referenciado. De Firebase solo
+> queda vivo el envío de notificaciones push (FCM).
 
 ## Firebase Configuration
 - **Project ID**: `rapi-team`
@@ -80,12 +86,13 @@ App-Rapi-Team/
 - **i18n**: Flutter localization (ARB files)
 - **Theme**: Material Design 3 (ModernTheme)
 
-### Backend
+### Backend (`api/`)
 - **Runtime**: Node.js with TypeScript
-- **Framework**: Express.js
-- **Database**: Firebase Admin SDK (Firestore)
-- **Functions**: Firebase Cloud Functions
+- **Framework**: Next.js (App Router) — no Express
+- **Database**: PostgreSQL 17 en el VPS (no Firestore)
+- **Firebase**: solo `firebase-admin` para enviar push (FCM)
 - **Payments**: MercadoPago API
+- **Archivos subidos**: `/var/www/Rapi-Team-Storage` en el VPS (no Firebase Storage)
 
 ## Color Scheme
 - **Primary**: Orange `#FF6B00` (rappiOrange)
@@ -104,15 +111,18 @@ flutter run
 flutter build apk --release
 ```
 
-### Backend (from root)
+### Backend (from /api)
 ```bash
-npm install && npm run dev
+npm install && npm run dev        # local
+npx tsc --noEmit                  # comprobar tipos antes de desplegar
 ```
+Despliegue: `scp` del archivo al VPS → `npm run build` allí → `pm2 restart Rapi-Team-App-Api`.
+Cada paso a mano y verificado, sin scripts.
 
-### Cloud Functions (from /functions)
+### Panel admin (from /admin)
 ```bash
-npm install && npm run build
-firebase deploy --only functions
+npm run build
+# despliegue: scp -P 65002 dist/* dist/.htaccess a Hostinger
 ```
 
 ## User Roles
@@ -122,9 +132,10 @@ firebase deploy --only functions
 
 ## Important Notes
 - DO NOT modify `firebase_options.dart` without confirmation
-- MercadoPago keys are fetched dynamically from Cloud Functions
+- MercadoPago: la `publicKey` la devuelve el backend Node al crear la preferencia
+  (`payment_service.dart`), no Cloud Functions
 - OAuth Client IDs are in `lib/config/oauth_config.dart`
-- Environment variables in `app/.env` and `functions/.env`
+- Environment variables in `app/.env` y `/var/www/Rapi-Team-App-Api/.env` (VPS)
 - Support email: `facturacion.rapiteam@gmail.com`
 
 ---

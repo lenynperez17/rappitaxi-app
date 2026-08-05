@@ -1,8 +1,10 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AppConfig {
-  // API Configuration
-  static const String apiBaseUrl = 'https://api.rapiteam.app/v1';
+  // Ronda 275: se retira `apiBaseUrl`. Apuntaba a https://api.rapiteam.app,
+  // un dominio que ni siquiera resuelve (NXDOMAIN), y no lo leía nadie: la app
+  // habla con el backend a través de `RapiApiClient.baseUrl`. Tenerlo aquí solo
+  // invitaba a usarlo y a que la app dejara de funcionar sin explicación.
 
   // 🔐 GOOGLE MAPS API KEY - Cargada desde archivo .env
   // ============================================================================
