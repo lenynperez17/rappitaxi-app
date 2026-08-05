@@ -1,4 +1,4 @@
 Mejoras de esta versión:
 
-- Corregido el nombre de la app: ahora dice Rapi Team en todas las pantallas, en los permisos y bajo el icono.
+- Corregido el nombre de la app en la pantalla de inicio y en los reportes que puedes descargar: ahora dice Rapi Team en todas partes.
 - Correcciones menores de estabilidad.

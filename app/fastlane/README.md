@@ -63,6 +63,14 @@ Upload metadata
 
 
 
+### ios withdraw_review
+
+```sh
+[bundle exec] fastlane ios withdraw_review
+```
+
+
+
 ### ios drop_locale
 
 ```sh
