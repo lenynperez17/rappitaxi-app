@@ -17,6 +17,44 @@ const GROUPS: Record<string, string> = {
   maintenance_mode: 'Sistema',
 }
 
+/**
+ * Ronda 276: nombre legible de cada ajuste.
+ *
+ * La pantalla mostraba la clave de la base de datos tal cual —
+ * `wallet.min_withdrawal`, `rides.commission_percent` — como título de cada
+ * fila. Son identificadores técnicos, en inglés y con guiones bajos, en una
+ * pantalla que usa personal administrativo.
+ */
+const LABELS: Record<string, string> = {
+  'company.address': 'Dirección fiscal',
+  'company.name': 'Nombre comercial',
+  'company.ruc': 'RUC',
+  'company.support_email': 'Correo de soporte',
+  'maintenance_mode': 'Modo mantenimiento',
+  'registration.driver_enabled': 'Registro de conductores',
+  'registration.passenger_enabled': 'Registro de pasajeros',
+  'rides.commission_percent': 'Comisión por viaje',
+  'rides.max_distance_km': 'Distancia máxima por viaje',
+  'rides.min_fare': 'Tarifa mínima',
+  'rides.negotiable': 'Negociación de precio',
+  'wallet.min_recharge': 'Recarga mínima',
+  'wallet.min_withdrawal': 'Retiro mínimo',
+  'wallet.withdrawal_fee': 'Cargo por retiro',
+}
+
+/**
+ * Para un ajuste que se añada al backend y todavía no esté en `LABELS`, se
+ * arma un título presentable a partir de la clave en vez de dejar el
+ * identificador crudo: quita el prefijo del grupo, cambia guiones bajos por
+ * espacios y pone la inicial en mayúscula.
+ */
+function labelOf(key: string): string {
+  if (LABELS[key]) return LABELS[key]
+  const sinPrefijo = key.includes('.') ? key.slice(key.indexOf('.') + 1) : key
+  const palabras = sinPrefijo.replace(/_/g, ' ').trim()
+  return palabras.charAt(0).toUpperCase() + palabras.slice(1)
+}
+
 function groupOf(key: string): string {
   if (key.startsWith('company.')) return 'company'
   if (key.startsWith('rides.')) return 'rides'
@@ -100,7 +138,9 @@ export function SettingsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
-          <p className="text-sm text-gray-500 mt-1">Parámetros globales del sistema (tabla <code className="bg-gray-100 px-1 rounded text-xs">app_settings</code>)</p>
+          {/* Ronda 276: decía "(tabla app_settings)". El nombre de una tabla de
+              la base de datos no le dice nada a quien administra el negocio. */}
+          <p className="text-sm text-gray-500 mt-1">Parámetros que afectan a toda la plataforma</p>
         </div>
         <button
           onClick={save}
@@ -138,11 +178,21 @@ export function SettingsPage() {
                   return (
                     <div key={s.key} className="p-4 flex items-center gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{s.key}</code>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* El título es el nombre en castellano; la clave técnica
+                              se conserva en el tooltip porque sigue haciendo falta
+                              para dar soporte o mirar la tabla directamente. */}
+                          <span className="text-sm font-medium text-gray-900" title={`Clave: ${s.key}`}>
+                            {labelOf(s.key)}
+                          </span>
                           {isDirty && <span className="text-[10px] font-semibold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">modificado</span>}
                         </div>
-                        {s.description && <p className="text-xs text-gray-500 mt-1">{s.description}</p>}
+                        {/* La descripción solo aparece si aporta algo: para
+                            varios ajustes coincide palabra por palabra con el
+                            título y se leía repetida. */}
+                        {s.description && s.description.trim() !== labelOf(s.key) && (
+                          <p className="text-xs text-gray-500 mt-1">{s.description}</p>
+                        )}
                       </div>
                       <div className="flex-shrink-0">
                         {type === 'boolean' ? (
