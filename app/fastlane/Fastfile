@@ -1,12 +1,42 @@
 default_platform(:ios)
+
+# Ronda 278: credenciales de App Store Connect en un solo sitio.
+#
+# El bloque estaba copiado ocho veces, y con la ruta absoluta del portátil de
+# quien lo escribió: en cualquier otra máquina —o en un servidor de
+# integración— las ocho lanes fallaban.
+#
+# `key_id` e `issuer_id` NO son secretos: son identificadores públicos de la
+# cuenta, inservibles sin la clave. El secreto de verdad es el fichero .p8, que
+# no está en el repositorio y que `.gitignore` excluye con `*.p8`. Aun así se
+# leen del entorno para poder cambiarlos sin tocar el código; los valores de
+# aquí son el respaldo para el equipo que ya los tiene.
+#
+# La ruta de la clave se resuelve junto a este fichero, no desde donde se
+# ejecute fastlane.
+ASC_KEY_ID     = ENV['ASC_KEY_ID']     || 'HM52J5J9XA'
+ASC_ISSUER_ID  = ENV['ASC_ISSUER_ID']  || '77515464-9952-4f79-9de5-caa0561b9603'
+ASC_KEY_PATH   = ENV['ASC_KEY_FILEPATH'] || File.expand_path("../AuthKey_#{ASC_KEY_ID}.p8", __dir__)
+
+# Autentica contra App Store Connect y devuelve la api_key para `deliver`.
+def asc_api_key
+  unless File.exist?(ASC_KEY_PATH)
+    UI.user_error!(
+      "No encuentro la clave de App Store Connect en #{ASC_KEY_PATH}.\n" \
+      'Descárgala de App Store Connect > Usuarios y acceso > Claves, o indica ' \
+      'su ruta en la variable ASC_KEY_FILEPATH.',
+    )
+  end
+  app_store_connect_api_key(
+    key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID,
+    key_filepath: ASC_KEY_PATH, in_house: false
+  )
+end
+
 platform :ios do
   desc "Upload metadata"
   lane :upload_metadata do
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     deliver(api_key: api_key, skip_binary_upload: true, skip_screenshots: true, force: true,
       submit_for_review: false, automatic_release: false, app_identifier: 'com.rapiteam.app', team_id: '78N32BX46K')
   end
@@ -43,11 +73,7 @@ platform :ios do
   # en `WAITING_FOR_REVIEW` o `IN_REVIEW`, adjuntarle otro build la saca de la
   # cola y reinicia la espera de días. Antes se subía a ciegas.
   lane :review_status do
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     Spaceship::ConnectAPI.auth(
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
@@ -62,11 +88,7 @@ platform :ios do
   # `UPLOAD SUCCEEDED` de altool NO significa que el build exista: Apple lo
   # procesa después y puede rechazarlo en silencio. Esto lee la verdad.
   lane :builds_status do
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     Spaceship::ConnectAPI.auth(
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
@@ -84,11 +106,7 @@ platform :ios do
   # por idioma, datos de contacto de revisión) para no ir a ciegas.
   lane :version_blockers do |options|
     version = options[:version] or UI.user_error!('Falta version: fastlane version_blockers version:1.3.3')
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     Spaceship::ConnectAPI.auth(
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
@@ -115,14 +133,6 @@ platform :ios do
     end
   end
 
-  # Ronda 269: borra un idioma de una versión que aún no se ha enviado.
-  #
-  # Hizo falta porque la carpeta local de metadatos se llamaba `es-MX` mientras
-  # la ficha de la App Store vive en `es-ES`. `deliver` creó el idioma que le
-  # decía la carpeta, y un idioma nuevo nace SIN capturas: Apple rechazaba la
-  # versión entera con un escueto "cannot be reviewed" sin decir cuál faltaba.
-  #
-  # Uso: fastlane drop_locale version:1.3.3 locale:es-MX
   # Ronda 278: saca una versión de la cola de revisión de Apple.
   #
   # Sólo puede haber una versión editable a la vez: mientras la 1.3.4 esté en
@@ -133,11 +143,7 @@ platform :ios do
   # Uso: fastlane withdraw_review version:1.3.4
   lane :withdraw_review do |options|
     version = options[:version] or UI.user_error!('Falta version: fastlane withdraw_review version:1.3.4')
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     Spaceship::ConnectAPI.auth(
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
@@ -161,14 +167,18 @@ platform :ios do
     end
   end
 
+  # Ronda 269: borra un idioma de una versión que aún no se ha enviado.
+  #
+  # Hizo falta porque la carpeta local de metadatos se llamaba `es-MX` mientras
+  # la ficha de la App Store vive en `es-ES`. `deliver` creó el idioma que le
+  # decía la carpeta, y un idioma nuevo nace SIN capturas: Apple rechazaba la
+  # versión entera con un escueto "cannot be reviewed" sin decir cuál faltaba.
+  #
+  # Uso: fastlane drop_locale version:1.3.3 locale:es-MX
   lane :drop_locale do |options|
     version = options[:version] or UI.user_error!('Falta version:')
     locale  = options[:locale]  or UI.user_error!('Falta locale:')
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     Spaceship::ConnectAPI.auth(
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
@@ -200,11 +210,7 @@ platform :ios do
   lane :submit_release do |options|
     version = options[:version] or UI.user_error!('Falta version: fastlane submit_release version:1.3.3 build:187')
     build   = options[:build]   or UI.user_error!('Falta build: fastlane submit_release version:1.3.3 build:187')
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     deliver(
       api_key: api_key,
       app_version: version,
@@ -229,11 +235,7 @@ platform :ios do
   end
 
   lane :upload_ipa do
-    api_key = app_store_connect_api_key(
-      key_id: 'HM52J5J9XA', issuer_id: '77515464-9952-4f79-9de5-caa0561b9603',
-      key_filepath: '/Users/lenynperez/Proyectos/App-Rapi-Team/app/AuthKey_HM52J5J9XA.p8',
-      in_house: false
-    )
+    api_key = asc_api_key
     upload_to_app_store(
       api_key: api_key, skip_metadata: true, skip_screenshots: true, force: true,
       ipa: 'build/ios/ipa/Runner.ipa',
