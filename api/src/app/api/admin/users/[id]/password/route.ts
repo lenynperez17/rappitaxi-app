@@ -11,7 +11,7 @@ import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
 import { revokeAllUserSessions } from '@/lib/sessions'
-import { isUuid } from '@/lib/uuid'
+import { isUserId } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -20,7 +20,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
   // Ronda 142: UUID guard.
-  if (!isUuid(id)) {
+  if (!isUserId(id)) {
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 

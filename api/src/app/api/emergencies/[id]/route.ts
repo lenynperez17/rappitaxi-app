@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { maybeOne, tx } from '@/lib/db'
-import { isUuid } from '@/lib/uuid'
+import { isUuid, isUserId } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -152,11 +152,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     params.push(nextStatus)
   }
   if (body.resolvedBy !== undefined) {
-    // Ronda 214 SECURITY: validar que resolvedBy sea (a) UUID válido y (b)
-    // un admin real. Antes admin podía sembrar resolved_by='attacker-id'
-    // para culpar a otro operador y ensuciar audit trail forense.
+    // Ronda 214 SECURITY: validar que resolvedBy sea (a) un id con forma
+    // válida y (b) un admin real. Antes admin podía sembrar
+    // resolved_by='attacker-id' para culpar a otro operador y ensuciar el
+    // rastro forense.
+    //
+    // Ronda 272: era `isUuid`, y `resolved_by` guarda un id de usuario — que
+    // en las cuentas heredadas de Firebase no es un UUID. Un administrador de
+    // aquella época no podía cerrar una emergencia. La comprobación de que
+    // existe y es admin, que es la que de verdad protege, sigue intacta abajo.
     if (body.resolvedBy !== null) {
-      if (typeof body.resolvedBy !== 'string' || !isUuid(body.resolvedBy)) {
+      if (typeof body.resolvedBy !== 'string' || !isUserId(body.resolvedBy)) {
         return NextResponse.json(
           { success: false, error: 'invalid_resolved_by' },
           { status: 400 },

@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne, tx } from '@/lib/db'
-import { isUuid } from '@/lib/uuid'
+import { isUserId } from '@/lib/uuid'
 
 export const runtime = 'nodejs'
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
   // Ronda 142: UUID guard.
-  if (!isUuid(id)) {
+  if (!isUserId(id)) {
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 
@@ -95,7 +95,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
   const { id } = await ctx.params
-  if (!isUuid(id)) {
+  if (!isUserId(id)) {
     return NextResponse.json({ success: false, error: 'invalid_id' }, { status: 400 })
   }
 
