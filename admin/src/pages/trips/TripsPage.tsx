@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Loader2, AlertCircle, Route, Search, MapPin, MapPinned } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminTrip } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const STATUS_LABEL: Record<string, string> = {
   requested: 'Solicitado', searching: 'Buscando', accepted: 'Aceptado',
@@ -157,7 +157,7 @@ export function TripsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(t.createdAt))}
+                      <DateTime value={t.createdAt} />
                     </td>
                   </tr>
                 ))}

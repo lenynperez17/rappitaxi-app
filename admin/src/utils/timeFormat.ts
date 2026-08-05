@@ -1,5 +1,59 @@
 /**
+ * Ronda 273: fecha y hora exactas en todo el panel.
+ *
+ * Formato único: `dd/MM/yyyy HH:mm` — día, mes, año y hora, como se lee en
+ * Perú. Antes cada listado mostraba un tiempo relativo ("hace 3 h") o, pasada
+ * una semana, solo `21/5`: sin año, sin hora y sin saber si era de la mañana o
+ * de la tarde. Para cuadrar una recarga o reconstruir qué pasó en una
+ * emergencia eso no sirve.
+ *
+ * La zona horaria se fija a America/Lima en vez de dejar la del ordenador: el
+ * panel se consulta desde donde sea, y una recarga hecha a las 23:40 en Lima no
+ * puede aparecer con la fecha del día siguiente porque quien mira esté en otro
+ * huso.
+ */
+const LIMA = 'America/Lima'
+
+/** `dd/MM/yyyy HH:mm` — el formato visible en listados y fichas. */
+export function formatDateTime(value: unknown): string {
+  const date = toDate(value)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat('es-PE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: LIMA,
+  }).format(date).replace(',', '')
+}
+
+/**
+ * `dd/MM/yyyy HH:mm:ss` — con segundos, para el tooltip. Se reserva para ahí
+ * porque en una tabla los segundos son ruido, pero al cuadrar dos apuntes o
+ * ordenar los hechos de una emergencia son justo lo que hace falta.
+ */
+export function formatDateTimeExact(value: unknown): string {
+  const date = toDate(value)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat('es-PE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    timeZone: LIMA,
+  }).format(date).replace(',', '')
+}
+
+/** Solo la fecha, sin hora — para vencimientos y rangos de informes. */
+export function formatDate(value: unknown): string {
+  const date = toDate(value)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat('es-PE', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: LIMA,
+  }).format(date)
+}
+
+/**
  * Formats a date as a relative time string in Spanish.
+ *
+ * Se conserva como complemento —"hace 3 min" da la urgencia de un vistazo—
+ * pero ya no es lo único que se muestra: acompaña a la fecha exacta.
  *
  * Examples:
  *   < 1 min  -> "ahora"

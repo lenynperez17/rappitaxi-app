@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Search, Loader2, AlertCircle, ShieldCheck, Phone, Mail, CheckCircle2, ChevronRight } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 export function VerificationsPage() {
   const [drivers, setDrivers] = useState<AdminDriver[]>([])
@@ -105,7 +105,7 @@ export function VerificationsPage() {
                       )}
                       <OriginBadgeCompact createdFrom={d.createdFrom} />
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">{relativeTime(toDate(d.createdAt))}</div>
+                    <div className="text-xs text-gray-400 mt-1"><DateTime value={d.createdAt} /></div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
                 </Link>

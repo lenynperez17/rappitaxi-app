@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Loader2, Plus, Tag, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
+import { DateTime } from '../../components/DateTime'
 
 interface Vale {
   id: string
@@ -102,7 +103,9 @@ export function PromotionsPage() {
                     {v.usedCount}{v.maxUses ? ` / ${v.maxUses}` : ''}
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
-                    {v.expiresAt ? new Date(v.expiresAt).toLocaleDateString('es-PE') : 'Sin límite'}
+                    {/* Ronda 273: un vale caduca a una hora concreta, no "en algún
+                        momento del día". Antes solo se veía la fecha. */}
+                    {v.expiresAt ? <DateTime value={v.expiresAt} /> : 'Sin límite'}
                   </td>
                   <td className="px-4 py-3">
                     {v.isActive

@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Loader2, Mail, Phone, Calendar, User as UserIcon, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { formatDateTime } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const TYPE_BADGES: Record<string, string> = {
   passenger: 'bg-blue-100 text-blue-700',
@@ -99,11 +100,18 @@ export function UserDetailPage() {
 
         <Section title="Cuenta">
           <Info icon={UserIcon} label="Provider" value={user.authProvider ?? 'phone'} />
-          <Info icon={Calendar} label="Creado" value={relativeTime(toDate(user.createdAt))} />
-          <Info icon={Calendar} label="Actualizado" value={relativeTime(toDate(user.updatedAt))} />
+          {/* `Info` recibe texto, así que aquí se formatea directamente en vez
+              de usar <DateTime>. Mismo formato dd/MM/yyyy HH:mm. */}
+          <Info icon={Calendar} label="Creado" value={formatDateTime(user.createdAt)} />
+          <Info icon={Calendar} label="Actualizado" value={formatDateTime(user.updatedAt)} />
           {user.suspendedAt && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               <strong>Suspendido:</strong> {user.suspendedReason ?? 'sin motivo'}
+              {/* Ronda 273: decía el motivo pero no cuándo. Para saber si una
+                  suspensión es de hoy o de hace tres meses hacía falta la BD. */}
+              <div className="text-xs text-red-600 mt-1">
+                El <DateTime value={user.suspendedAt} />
+              </div>
             </div>
           )}
         </Section>

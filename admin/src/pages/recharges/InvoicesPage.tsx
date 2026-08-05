@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminInvoice } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const TYPE_LABEL: Record<string, string> = {
   receipt: 'Recibo interno', invoice: 'Factura', boleta: 'Boleta',
@@ -187,7 +187,7 @@ export function InvoicesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(inv.issuedAt))}
+                      <DateTime value={inv.issuedAt} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       {inv.status !== 'voided' && (

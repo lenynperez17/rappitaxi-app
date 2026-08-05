@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, MapPin, Phone, AlertTriangle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminEmergency } from '../../lib/adminApi'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const TYPE_LABEL: Record<string, string> = {
   panic: 'Pánico', medical: 'Médico', mechanical: 'Mecánico',
@@ -136,7 +136,7 @@ export function EmergenciesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(e.createdAt))}
+                      <DateTime value={e.createdAt} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <EmergencyActions emergency={e} onChanged={load} onError={setActionError} />

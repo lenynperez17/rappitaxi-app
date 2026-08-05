@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminCreditNote, type AdminInvoice } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const REASON_LABEL: Record<string, string> = {
   anulacion: 'Anulación',
@@ -150,7 +150,7 @@ export function CreditNotesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(cn.issuedAt))}
+                      <DateTime value={cn.issuedAt} />
                     </td>
                   </tr>
                 ))}

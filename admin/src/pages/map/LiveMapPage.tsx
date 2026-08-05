@@ -10,11 +10,11 @@ import {
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
-import { relativeTime, toDate } from '../../utils/timeFormat'
 import { formatPEN } from '../../utils/currency'
 import { driverIcon, pickupIcon, destinationIcon, MAP_COLORS } from '../../components/map/mapIcons'
 import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
 import { VectorBasemap } from '../../components/map/VectorBasemap'
+import { DateTime } from '../../components/DateTime'
 
 /**
  * Mapa en vivo del despacho.
@@ -256,7 +256,9 @@ export function LiveMapPage() {
             <div className="min-w-0">
               <div className="text-sm font-bold text-gray-900 leading-none truncate">Mapa en vivo</div>
               <div className="text-[10px] text-gray-500 leading-none mt-1 truncate">
-                {lastRefresh ? `Actualizado ${lastRefresh.toLocaleTimeString('es-PE')}` : 'Cargando…'}
+                {lastRefresh
+                  ? <>Actualizado <DateTime value={lastRefresh} /></>
+                  : 'Cargando…'}
               </div>
             </div>
             <div className="h-6 w-px bg-gray-200 flex-shrink-0" />
@@ -533,7 +535,10 @@ function TripPopup({ trip }: { trip: LiveTrip }) {
       <div className="text-gray-500">
         🚗 {trip.driver?.fullName ?? 'Sin asignar'}
       </div>
-      <div className="text-gray-400">🕐 {relativeTime(toDate(trip.createdAt))}</div>
+      {/* Ronda 273: en el mapa la antigüedad importa tanto como el reloj —
+          un viaje pedido hace 20 minutos y sin conductor es una alarma— así
+          que aquí se muestran las dos cosas. */}
+      <div className="text-gray-400">🕐 <DateTime value={trip.createdAt} relative /></div>
       {trip.driver?.id && (
         <Link to={`/users/${trip.driver.id}`} className="block text-center mt-1 px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
           Ver conductor
@@ -610,7 +615,7 @@ function ActiveTripsList({ data, selectedId, onFocus, onSelect }: {
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TRIP_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-700'}`}>
                     {TRIP_STATUS_LABEL[t.status] ?? t.status}
                   </span>
-                  <span className="text-xs text-gray-400">{relativeTime(toDate(t.createdAt))}</span>
+                  <span className="text-xs text-gray-400"><DateTime value={t.createdAt} relative /></span>
                 </div>
                 <div className="text-xs space-y-0.5">
                   <div className="flex items-center gap-1.5">

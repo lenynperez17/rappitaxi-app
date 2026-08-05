@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Search, Phone, Mail, Star, Car, Loader2, CheckCircle2, AlertCircle, FileText, Pencil } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 type StatusFilter = 'all' | 'active' | 'suspended' | 'verified' | 'unverified'
 
@@ -186,7 +186,7 @@ export function DriversPage() {
                       <OriginBadge createdFrom={d.createdFrom} />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(d.createdAt))}
+                      <DateTime value={d.createdAt} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">

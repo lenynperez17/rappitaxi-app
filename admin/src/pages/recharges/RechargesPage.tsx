@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, CreditCard, Plus, X, CheckCircle2, RotateCcw } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminRecharge, type AdminDriver } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Efectivo', transfer: 'Transferencia', mercadopago: 'MercadoPago',
@@ -127,7 +127,7 @@ export function RechargesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{r.reference ?? '—'}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{relativeTime(toDate(r.createdAt))}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500"><DateTime value={r.createdAt} /></td>
                     <td className="px-4 py-3 text-right">
                       {r.status === 'completed' || r.status === 'approved' ? (
                         <button

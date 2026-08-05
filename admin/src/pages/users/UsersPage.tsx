@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 type UserTypeFilter = 'all' | 'passenger' | 'driver' | 'dual' | 'admin'
 type StatusFilter = 'all' | 'active' | 'suspended' | 'deleted'
@@ -343,7 +343,7 @@ export function UsersPage() {
                       <OriginBadgeUsers createdFrom={u.createdFrom} />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {relativeTime(toDate(u.createdAt))}
+                      <DateTime value={u.createdAt} />
                     </td>
                     <td className="px-4 py-3 text-right relative">
                       <button

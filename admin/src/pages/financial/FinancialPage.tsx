@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, CreditCard, TrendingUp, AlertCircle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminStats, type AdminRecharge } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Efectivo', transfer: 'Transferencia', mercadopago: 'MercadoPago',
@@ -91,7 +91,7 @@ export function FinancialPage() {
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-green-600">{formatPEN(r.amount)}</td>
                     <td className="px-4 py-3 text-gray-700">{METHOD_LABEL[r.method] ?? r.method}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{relativeTime(toDate(r.createdAt))}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500"><DateTime value={r.createdAt} /></td>
                   </tr>
                 ))}
               </tbody>

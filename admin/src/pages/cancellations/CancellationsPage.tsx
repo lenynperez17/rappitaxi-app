@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminCancellation } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
-import { relativeTime, toDate } from '../../utils/timeFormat'
+import { DateTime } from '../../components/DateTime'
 
 /**
  * Ronda 246: bandeja de revisión de penalidades por cancelación.
@@ -193,7 +193,7 @@ export function CancellationsPage() {
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-gray-400">
-                      Pasajero: {c.passengerName ?? '—'} · Tarifa estimada: {c.estimatedFare !== null ? `S/ ${c.estimatedFare.toFixed(2)}` : '—'} · {relativeTime(toDate(c.cancelledAt ?? c.createdAt))}
+                      Pasajero: {c.passengerName ?? '—'} · Tarifa estimada: {c.estimatedFare !== null ? `S/ ${c.estimatedFare.toFixed(2)}` : '—'} · <DateTime value={c.cancelledAt ?? c.createdAt} />
                     </div>
 
                     {c.reviewStatus !== 'pending' && c.reviewNotes && (
@@ -238,7 +238,7 @@ export function CancellationsPage() {
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">
-                        Revisado {c.reviewedAt ? relativeTime(toDate(c.reviewedAt)) : ''}
+                        Revisado {c.reviewedAt && <DateTime value={c.reviewedAt} />}
                       </span>
                     )}
                   </div>
