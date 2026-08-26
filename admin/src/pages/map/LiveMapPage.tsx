@@ -7,9 +7,9 @@ import {
 import {
   MapContainer, Marker, Popup, Polyline, ZoomControl, useMap, useMapEvents,
 } from 'react-leaflet'
-import L from 'leaflet'
+import L, { type Map as LeafletMap } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
+import { adminApi, AdminApiError, type AdminUser, type PlacePrediction } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
 import { driverIcon, pickupIcon, destinationIcon, MAP_COLORS } from '../../components/map/mapIcons'
 import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
@@ -1177,6 +1177,77 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
   const [temp, setTemp] = useState<Point | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Ronda 281: buscar la dirección escribiéndola, además de tocando el mapa.
+  // Quien atiende el teléfono oye «Jockey Plaza»; buscar eso a ojo en el mapa
+  // es al revés de lo cómodo.
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<PlacePrediction[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  // El centro del mapa sesga las sugerencias hacia lo que se está mirando.
+  const [center, setCenter] = useState<{ lat: number; lng: number }>({
+    lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1],
+  })
+  // Descarta la respuesta vieja que llega después de la nueva. Mismo recurso
+  // que usa `VerificationsPage` para su buscador.
+  const requestSeq = useRef(0)
+  const mapRef = useRef<LeafletMap | null>(null)
+
+  useEffect(() => {
+    // El endpoint devuelve lista vacía con menos de 2 caracteres; no gastamos
+    // la petición.
+    if (q.trim().length < 2) { setResults([]); setSearchError(null); return }
+    const t = setTimeout(async () => {
+      const seq = ++requestSeq.current
+      setSearching(true)
+      setSearchError(null)
+      try {
+        const resp = await adminApi.searchPlaces(q.trim(), center)
+        if (seq !== requestSeq.current) return
+        setResults(resp.predictions ?? [])
+      } catch (e) {
+        if (seq !== requestSeq.current) return
+        setResults([])
+        setSearchError(
+          e instanceof AdminApiError
+            ? `Error al buscar: ${e.message || e.code}`
+            : 'Error al buscar direcciones (revisa conexión).',
+        )
+      } finally {
+        if (seq === requestSeq.current) setSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(t)
+    // `center` a propósito fuera: cambiarlo al volar el mapa no debe relanzar
+    // la búsqueda que acaba de provocar ese vuelo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q])
+
+  /**
+   * Ronda 281: al pasar de RECOJO a DESTINO hay que vaciar la selección.
+   *
+   * Este componente es el mismo en los dos pasos —solo cambia la prop `step`—,
+   * así que React conserva su estado. El marcador temporal del recojo seguía
+   * ahí al llegar al destino, con el botón ya diciendo «Usar este punto como
+   * DESTINO» y la dirección del recojo debajo: bastaba un clic distraído para
+   * mandar a alguien al sitio del que lo estabas recogiendo. El buscador nuevo
+   * lo empeoraba, porque además arrastraba el texto escrito.
+   *
+   * De paso, el mapa se acerca al recojo al entrar en el destino: casi siempre
+   * el viaje empieza cerca de ahí.
+   */
+  useEffect(() => {
+    setTemp(null)
+    setQ('')
+    setResults([])
+    setSearchError(null)
+    if (step === 'destination' && pickup) {
+      mapRef.current?.flyTo([pickup.lat, pickup.lng], 14)
+    }
+    // `pickup` fuera: solo interesa el momento en que se cambia de paso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
   const handleClick = async (lat: number, lng: number) => {
     setBusy(true)
     try {
@@ -1187,15 +1258,116 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
     } finally { setBusy(false) }
   }
 
+  /**
+   * Ronda 281: colocar en el mapa la sugerencia elegida.
+   *
+   * Si la predicción ya trae coordenadas, se usan. Solo si no las trae se pide
+   * `placeDetails`. El orden importa: los identificadores de Mapbox
+   * (`address.8248…`) no los sabe resolver ese endpoint, y saltarse las
+   * coordenadas que ya venían fue justo el fallo de la ronda 262 en la app —
+   * el texto se escribía y no pasaba nada más.
+   */
+  const handlePickPrediction = async (p: PlacePrediction) => {
+    setResults([])
+    setQ(p.description)
+    setBusy(true)
+    setSearchError(null)
+    try {
+      let lat = p.lat
+      let lng = p.lng
+      if ((lat == null || lng == null) && p.placeId) {
+        const d = await adminApi.placeDetails(p.placeId)
+        lat = d.lat ?? undefined
+        lng = d.lng ?? undefined
+      }
+      if (lat == null || lng == null) {
+        // Sin coordenada no hay punto. Se dice, en vez de dejar el texto
+        // puesto aparentando que se eligió algo.
+        setSearchError('No se pudo ubicar esa dirección. Elige otra o tócala en el mapa.')
+        return
+      }
+      setTemp({ lat, lng, address: p.description })
+      mapRef.current?.flyTo([lat, lng], 16)
+    } catch (e) {
+      setSearchError(
+        e instanceof AdminApiError
+          ? `No se pudo ubicar: ${e.message || e.code}`
+          : 'No se pudo ubicar esa dirección.',
+      )
+    } finally { setBusy(false) }
+  }
+
   return (
     <div className="p-4 space-y-3">
       <p className="text-xs text-gray-500">
-        {step === 'pickup' ? 'Toca en el mapa el punto de RECOJO' : 'Toca en el mapa el DESTINO'}
+        {step === 'pickup'
+          ? 'Escribe la dirección de RECOJO o tócala en el mapa'
+          : 'Escribe la dirección de DESTINO o tócala en el mapa'}
       </p>
+
+      {/* Ronda 281: buscador de direcciones. Mismo aspecto que el de pasajero
+          de esta misma pantalla, para que no parezcan dos buscadores. */}
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          type="text"
+          placeholder={step === 'pickup' ? 'Ej: Jockey Plaza, Surco' : '¿A dónde va?'}
+          className="w-full pl-10 pr-9 py-2 border border-gray-200 rounded-lg text-sm"
+        />
+        {(searching || q.length > 0) && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {searching ? (
+              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+            ) : (
+              <button
+                type="button"
+                aria-label="Limpiar búsqueda"
+                onClick={() => { setQ(''); setResults([]); setSearchError(null) }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+        {results.length > 0 && (
+          <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+            {results.map((p, i) => (
+              <li key={`${p.placeId ?? 'sin-id'}-${i}`}>
+                <button
+                  type="button"
+                  onClick={() => void handlePickPrediction(p)}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                >
+                  <div className="text-sm text-gray-900 truncate">{p.mainText || p.description}</div>
+                  {p.secondaryText && (
+                    <div className="text-xs text-gray-500 truncate">{p.secondaryText}</div>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {searchError && (
+        <p className="text-xs text-red-600">{searchError}</p>
+      )}
+      {!searching && !searchError && q.trim().length >= 2 && results.length === 0 && !temp && (
+        <p className="text-xs text-gray-500">Sin resultados. Prueba con otra escritura o tócalo en el mapa.</p>
+      )}
+
       <div className="rounded-lg overflow-hidden border border-gray-200 h-[45vh] min-h-[240px] max-h-[360px]">
-        <MapContainer center={DEFAULT_CENTER} zoom={13} style={{ height: '100%' }}>
+        <MapContainer
+          center={DEFAULT_CENTER}
+          zoom={13}
+          style={{ height: '100%' }}
+          ref={mapRef}
+        >
           <VectorBasemap />
           <ClickCapture onClick={handleClick} />
+          <CenterTracker onMove={setCenter} />
           {pickup && <Marker position={[pickup.lat, pickup.lng]} icon={pickupIcon()} />}
           {destination && <Marker position={[destination.lat, destination.lng]} icon={destinationIcon()} />}
           {temp && <Marker position={[temp.lat, temp.lng]} icon={step === 'pickup' ? pickupIcon() : destinationIcon()} />}
@@ -1223,6 +1395,21 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
       )}
     </div>
   )
+}
+
+/**
+ * Ronda 281: sigue el centro del mapa para sesgar las sugerencias hacia lo que
+ * el administrador está mirando. Sin esto, escribir «Los Olivos» devuelve
+ * resultados de todo el país en vez de los de al lado.
+ */
+function CenterTracker({ onMove }: { onMove: (c: { lat: number; lng: number }) => void }) {
+  const map = useMapEvents({
+    moveend: () => {
+      const c = map.getCenter()
+      onMove({ lat: c.lat, lng: c.lng })
+    },
+  })
+  return null
 }
 
 function ClickCapture({ onClick }: { onClick: (lat: number, lng: number) => void }) {

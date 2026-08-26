@@ -110,6 +110,22 @@ export interface AdminEmergency {
   createdAt: string
 }
 
+/**
+ * Ronda 281: una sugerencia del buscador de direcciones.
+ *
+ * `lat`/`lng` vienen rellenos con casi todos los proveedores (Photon, Mapbox,
+ * Nominatim); Google devuelve solo `placeId`. Quien la use debe preferir las
+ * coordenadas si están — ver `placeDetails`.
+ */
+export interface PlacePrediction {
+  placeId: string | null
+  description: string
+  mainText: string
+  secondaryText?: string
+  lat?: number
+  lng?: number
+}
+
 /** Ronda 279: una fila del catálogo de documentos del conductor. */
 export interface AdminDocumentType {
   code: string
@@ -261,6 +277,52 @@ class AdminApi {
 
   async reverseGeocode(lat: number, lng: number): Promise<{ address: string; displayName: string | null }> {
     return this.rawFetch(`/api/admin/geocode/reverse?lat=${lat}&lng=${lng}`, { method: 'GET' })
+  }
+
+  /**
+   * Ronda 281: buscar una dirección escribiéndola, como en la app del pasajero.
+   *
+   * Crear un viaje desde el panel obligaba a encontrar el punto a ojo en el
+   * mapa. Quien atiende el teléfono oye «Jockey Plaza» y necesita escribirlo.
+   *
+   * Es el MISMO endpoint que usa la app, no una copia: encadena Photon propio →
+   * Mapbox → Google → Nominatim, y es el que devuelve «Jockey Plaza Shopping
+   * Center» donde los datos comerciales devuelven «Falabella Jockey Plaza». El
+   * token del panel es un token de usuario normal, así que `requireAuth` lo
+   * acepta igual que el de la app.
+   *
+   * `near` sesga los resultados hacia donde está mirando el administrador.
+   */
+  async searchPlaces(
+    q: string,
+    near?: { lat: number; lng: number },
+  ): Promise<{ predictions: PlacePrediction[]; provider?: string }> {
+    const qp = new URLSearchParams({ q })
+    if (near) {
+      qp.set('lat', String(near.lat))
+      qp.set('lng', String(near.lng))
+    }
+    return this.rawFetch(`/api/maps/autocomplete?${qp.toString()}`, { method: 'GET' })
+  }
+
+  /**
+   * Las coordenadas de una sugerencia que no las traía.
+   *
+   * Solo hace falta cuando el proveedor devolvió un `placeId` sin lat/lng.
+   * Quien llame debe usar las coordenadas de la predicción si vienen: los
+   * identificadores de Mapbox (`address.8248…`) no los sabe resolver este
+   * endpoint, pensado para los de OpenStreetMap.
+   */
+  async placeDetails(placeId: string): Promise<{
+    lat: number | null
+    lng: number | null
+    formattedAddress: string | null
+    name: string | null
+  }> {
+    return this.rawFetch(
+      `/api/maps/place-details?placeId=${encodeURIComponent(placeId)}`,
+      { method: 'GET' },
+    )
   }
 
   async getLive(): Promise<{
