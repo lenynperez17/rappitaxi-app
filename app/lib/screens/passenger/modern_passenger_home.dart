@@ -39,6 +39,7 @@ import 'package:share_plus/share_plus.dart'; // Para compartir la app
 import 'passenger_negotiations_screen.dart'; // Pantalla de negociaciones
 import '../shared/map_picker_screen.dart'; // Map picker for selecting locations
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 // Enum para tipos de servicio disponibles (Estilo inDrive)
 enum ServiceType {
@@ -1611,18 +1612,15 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   Widget build(BuildContext context) {
     final rideProvider = Provider.of<RideProvider>(context, listen: false);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && rideProvider.hasActiveTrip) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No puedes salir mientras tienes un viaje activo'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      },
+    // Ronda 279: antes era `PopScope(canPop: false)` fijo, así que el botón
+    // atrás no hacía absolutamente nada — ni con la app recién abierta y sin
+    // viaje. Ahora sigue bloqueado mientras haya un viaje en curso, y sin él
+    // manda la app a segundo plano, que es lo que se espera del atrás en la
+    // pantalla principal.
+    return RootBackHandler(
+      blockWith: () => rideProvider.hasActiveTrip
+          ? 'No puedes salir mientras tienes un viaje activo'
+          : null,
       child: Scaffold(
       // Ronda 213 BUG FIX: bottom sheets inline (DraggableScrollableSheet) con
       // TextFields de origen/destino y precio se levantaban DEMASIADO al abrir

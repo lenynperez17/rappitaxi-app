@@ -5,6 +5,7 @@ import '../../core/extensions/theme_extensions.dart';
 import '../../providers/wallet_provider.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 class RechargeCreditsScreen extends StatefulWidget {
   const RechargeCreditsScreen({super.key});
@@ -577,8 +578,15 @@ class _RechargeCreditsScreenState extends State<RechargeCreditsScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
+                // Ronda 279: eran dos pops seguidos con el MISMO contexto, el
+                // del diálogo. El primero cierra el diálogo y deja ese contexto
+                // desmontado; el segundo apuntaba a un widget que ya no está y,
+                // si la recarga era la única ruta de la pila, dejaba el
+                // Navigator vacío. Ahora el diálogo se cierra con su contexto y
+                // el retroceso se resuelve con el de la pantalla.
                 Navigator.pop(context);
-                Navigator.pop(context); // Volver a la pantalla anterior
+                if (!mounted) return;
+                safePopOrHome(this.context, fallback: '/driver/home');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: ModernTheme.rappiOrange,

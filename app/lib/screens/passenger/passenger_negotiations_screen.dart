@@ -6,6 +6,7 @@ import '../../providers/price_negotiation_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/price_negotiation_model.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Pantalla de negociaciones para pasajeros
 /// Muestra las negociaciones activas y las ofertas de conductores
@@ -127,9 +128,15 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
 
         // Navegar al home después de un breve delay para que se vea el mensaje
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            Navigator.of(context).pop();
-          }
+          if (!mounted) return;
+          // Ronda 279: medio segundo es tiempo de sobra para que el usuario
+          // abra un diálogo o navegue a otro sitio. `isCurrent` comprueba que
+          // esta pantalla siga siendo la de arriba antes de retirarla; si no,
+          // el pop se llevaría lo que el usuario acaba de abrir. Y si esta era
+          // la única ruta de la pila, `safePopOrHome` va al home en vez de
+          // dejar el Navigator vacío (pantalla negra).
+          if (ModalRoute.of(context)?.isCurrent != true) return;
+          safePopOrHome(context, fallback: '/passenger/home');
         });
       }
     }
@@ -922,21 +929,16 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
         listen: false,
       );
 
-      try {
-        // Mostrar loading
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(color: AppColors.rappiOrange),
-          ),
-        );
+      // Ronda 279: el cargador se cierra con su propio contexto y una sola vez.
+      // Antes, si `pushReplacementNamed` fallaba después de haberlo cerrado, el
+      // `catch` hacía un segundo pop y se llevaba la pantalla de negociaciones.
+      final cargador = LoadingDialog.show(context, color: AppColors.rappiOrange);
 
+      try {
         // Aceptar oferta y obtener el ID del viaje creado
         final rideId = await provider.acceptDriverOffer(negotiationId, driverId);
 
-        // Cerrar loading
-        if (mounted) Navigator.pop(context);
+        cargador.close();
 
         if (rideId != null && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -961,8 +963,7 @@ class _PassengerNegotiationsScreenState extends State<PassengerNegotiationsScree
           );
         }
       } catch (e) {
-        // Cerrar loading si está abierto
-        if (mounted) Navigator.pop(context);
+        cargador.close(); // idempotente
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

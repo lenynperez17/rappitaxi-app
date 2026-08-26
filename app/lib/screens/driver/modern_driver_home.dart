@@ -41,6 +41,7 @@ import '../../generated/l10n/app_localizations.dart';
 import 'driver_profile_screen.dart';
 import 'active_trip_screen.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 // Top-level payment method helpers (used by multiple State classes in this file)
 PaymentMethod _parsePaymentMethod(String method) {
@@ -625,17 +626,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   Future<void> _cancelOldTrip(String tripId) async {
     if (!mounted) return;
 
+    // Ronda 279: el cargador se cierra con su propio contexto. Esto corre
+    // ENCIMA del home del conductor, que muchas veces es la única ruta de la
+    // pila: un `Navigator.pop` que errara el objetivo aquí no cerraría un
+    // diálogo, vaciaría el Navigator.
+    final cargador = LoadingDialog.show(context);
     try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => Center(child: CircularProgressIndicator()),
-      );
-
       await _api.cancelRide(tripId, reason: 'driver_cancelled_stale_ride');
 
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -652,8 +652,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
       _checkForActiveRidesOnce();
     } catch (e) {
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al cancelar')), backgroundColor: Colors.red),
       );
@@ -2343,15 +2343,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       return _buildPendingVerificationScreen();
     }
 
-    return PopScope(
-      canPop: !hasActiveTrip,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && hasActiveTrip) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No puedes salir mientras tienes un viaje activo'), backgroundColor: Colors.orange),
-          );
-        }
-      },
+    // Ronda 279: aquí estaba la pantalla negra. Con `PopScope(canPop:
+    // !hasActiveTrip)`, tras cancelar un viaje `hasActiveTrip` pasa a false y
+    // el atrás retiraba la última ruta de la pila — porque al cancelar se llega
+    // aquí con `pushNamedAndRemoveUntil(..., (route) => false)` y esta home es
+    // la única que queda. Navigator vacío = pantalla negra.
+    return RootBackHandler(
+      blockWith: () =>
+          hasActiveTrip ? 'No puedes salir mientras tienes un viaje activo' : null,
       child: Scaffold(
         key: _scaffoldKey,
         // Ronda 213: sheets inline con inputs se levantaban demasiado con
@@ -2825,7 +2824,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   Widget _buildPendingVerificationScreen() {
-    return Scaffold(
+    // Ronda 279: esta variante se devuelve ANTES del RootBackHandler del build
+    // principal, así que se quedaba sin ninguna protección de retroceso. Un
+    // conductor pendiente de aprobación que llegara aquí como ruta única y
+    // pulsara atrás caía en el mismo Navigator vacío.
+    return RootBackHandler(
+      child: Scaffold(
       appBar: AppBar(
         title: Text('Verificación Pendiente'),
         actions: [ModeSwitchButton(compact: true, fromMode: 'driver')],
@@ -2946,6 +2950,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }

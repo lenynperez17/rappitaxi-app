@@ -16,6 +16,7 @@ import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../models/trip_model.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 /// TripDetailsScreen - Complete trip details
 class TripDetailsScreen extends StatefulWidget {
@@ -63,7 +64,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
       else { throw Exception('Viaje no encontrado'); }
     } catch (e) {
       AppLogger.error('Error cargando datos del viaje', e);
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cargar los detalles del viaje'), backgroundColor: AppColors.error)); Navigator.pop(context); }
+      // Ronda 279: `Navigator.pop` a secas. Esta pantalla se abre también desde
+      // una notificación push con la app cerrada, y entonces es la ÚNICA ruta:
+      // el pop dejaba el Navigator vacío, que es pantalla negra.
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cargar los detalles del viaje'), backgroundColor: AppColors.error)); safePopOrRoleHome(context); }
     } finally { if (mounted) { setState(() { _isLoading = false; }); } }
   }
 
@@ -122,7 +126,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
 
   Widget _buildLoadingState() { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange)), SizedBox(height: 16), Text('Cargando detalles del viaje...', style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 16))])); }
 
-  Widget _buildErrorState() { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.error_outline, size: 64, color: AppColors.error), SizedBox(height: 16), Text('Viaje no encontrado', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))), SizedBox(height: 8), Text('No se pudieron cargar los detalles del viaje', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))), SizedBox(height: 24), ElevatedButton(onPressed: () => Navigator.pop(context), style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange), child: Text('Volver', style: TextStyle(color: Colors.white)))])); }
+  Widget _buildErrorState() { return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.error_outline, size: 64, color: AppColors.error), SizedBox(height: 16), Text('Viaje no encontrado', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))), SizedBox(height: 8), Text('No se pudieron cargar los detalles del viaje', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))), SizedBox(height: 24), ElevatedButton(onPressed: () => safePopOrRoleHome(context), style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange), child: Text('Volver', style: TextStyle(color: Colors.white)))])); }
 
   Widget _buildTripDetails() { return SingleChildScrollView(child: Column(children: [_buildTripMap(), SlideTransition(position: _detailsAnimation, child: _buildDetailsSection())])); }
 

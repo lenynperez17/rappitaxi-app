@@ -17,6 +17,7 @@ import '../../services/payment_service.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 enum CardType { visa, mastercard, amex, discover, other }
 enum PaymentMethodType { card, cash, wallet, paypal }
@@ -1333,21 +1334,17 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
   Future<void> _processRecharge(double amount) async {
     if (_userId == null) return;
 
+    // Ronda 279: aquí el `pop` del catch era especialmente peligroso, porque
+    // más abajo se abre el WebView de MercadoPago con `await Navigator.push`:
+    // un fallo dentro de esa navegación entraba al catch y el pop cerraba el
+    // WebView —o la propia pantalla— creyendo que cerraba el cargador.
+    final cargador = LoadingDialog.show(context, color: ModernTheme.rappiOrange);
     try {
-      // Mostrar loader
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Center(
-          child: CircularProgressIndicator(color: ModernTheme.rappiOrange),
-        ),
-      );
-
       // El backend arma la preferencia y devuelve el initPoint listo para WebView.
       final checkout = await _api.createRechargeCheckout(amount);
 
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context); // Cerrar loader
 
       final initPoint = (checkout['initPoint'] ??
               checkout['init_point'] ??
@@ -1358,8 +1355,8 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen>
         _showError('No se pudo generar la preferencia de pago');
       }
     } catch (e) {
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context); // Cerrar loader
       AppLogger.error(userFriendlyError(e, fallback: 'Error procesando recarga'));
       _showError(userFriendlyError(e, fallback: 'Error procesando recarga'));
     }

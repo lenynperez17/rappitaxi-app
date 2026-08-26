@@ -13,6 +13,7 @@ import '../../services/chat_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 /// ChatScreen - Real-time professional chat
 class ChatScreen extends StatefulWidget {
@@ -82,7 +83,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.currentUser;
-      if (user == null) { if (mounted) Navigator.pop(context); return; }
+      // Ronda 279: el chat se abre desde la notificación de mensaje nuevo, y en
+      // arranque en frío es la única ruta de la pila. Sin sesión, el pop pelado
+      // dejaba el Navigator vacío; ahora se sale al login por el resolutor.
+      if (user == null) { if (mounted) safePopOrRoleHome(context); return; }
 
       await _chatService.initialize(userId: user.id, userRole: user.activeMode);
       await _chatService.markMessagesAsRead(widget.rideId, user.id);

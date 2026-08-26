@@ -1,4 +1,6 @@
 Mejoras de esta versión:
 
-- Corregido el nombre de la app en la pantalla de inicio y en los reportes que puedes descargar: ahora dice Rapi Team en todas partes.
+- Corregida la pantalla en negro que aparecía al cancelar un viaje y volver atrás.
+- El botón atrás vuelve a funcionar en la pantalla principal del pasajero.
+- Los avisos de "procesando" de la billetera y de las recargas ya no cierran la pantalla por error si algo falla.
 - Correcciones menores de estabilidad.

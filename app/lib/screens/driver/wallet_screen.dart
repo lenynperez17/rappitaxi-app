@@ -17,6 +17,7 @@ import '../../services/payment_service.dart';
 import '../../services/rapi_api_client.dart';
 import '../../widgets/mercadopago_checkout_pro_widget.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -1860,27 +1861,14 @@ class _WalletScreenState extends State<WalletScreen>
     if (confirmed != true) return;
     if (!mounted) return;
 
-    // Mostrar diálogo de carga
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Center(
-        child: Container(
-          padding: EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: ModernTheme.rappiOrange),
-              SizedBox(height: 16),
-              Text('Procesando retiro...'),
-            ],
-          ),
-        ),
-      ),
+    // Ronda 279: el cargador se cierra con su propio contexto y una sola vez.
+    // Antes eran dos `Navigator.pop(context)` sueltos —uno en el camino feliz y
+    // otro en el catch— y como un fallo del servidor lanza excepción DESPUÉS de
+    // haber cerrado el cargador, el segundo pop se llevaba la billetera entera.
+    final cargador = LoadingDialog.show(
+      context,
+      color: ModernTheme.rappiOrange,
+      message: 'Procesando retiro...',
     );
 
     try {
@@ -1906,8 +1894,8 @@ class _WalletScreenState extends State<WalletScreen>
         accountHolderDocumentNumber: bankData['documentNumber'] ?? '',
       );
 
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context); // Cerrar diálogo de carga
 
       if (!withdrawalResult.success) {
         throw Exception(withdrawalResult.error ?? 'Error desconocido al procesar retiro');
@@ -1952,9 +1940,7 @@ class _WalletScreenState extends State<WalletScreen>
       // sea confirmada por MercadoPago a través del webhook
 
     } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context); // Cerrar diálogo de carga si todavía está abierto
-
+      cargador.close(); // si ya se cerró arriba, esto no hace nada
       if (!mounted) return;
 
       // Limpiar mensaje de error para mostrar algo amigable al usuario
@@ -2715,10 +2701,11 @@ class _WalletScreenState extends State<WalletScreen>
     if (confirmed != true) return;
     if (!mounted) return;
 
-    // Mostrar diálogo de carga
-    showDialog(
-      context: context,
-      barrierDismissible: false,
+    // Ronda 279: mismo arreglo que en el retiro. El diseño del cargador no
+    // cambia; lo que cambia es que ahora lo cierra su propio contexto y una
+    // sola vez, en vez de dos `Navigator.pop` que podían solaparse.
+    final cargador = LoadingDialog.show(
+      context,
       builder: (context) => Center(
         child: Container(
           margin: EdgeInsets.symmetric(horizontal: 40),
@@ -2809,11 +2796,13 @@ class _WalletScreenState extends State<WalletScreen>
         amount: amount,
         payerEmail: userEmail,
         payerName: userName,
-        description: 'Recarga de saldo RappiTeam - $userName',
+        // Ronda 279: decía "RappiTeam". Este texto lo ve el conductor en el
+        // checkout de MercadoPago y en su comprobante.
+        description: 'Recarga de saldo Rapi Team - $userName',
       );
 
+      cargador.close();
       if (!mounted) return;
-      Navigator.pop(context); // Cerrar diálogo de carga
 
       if (!preferenceResult.success || preferenceResult.initPoint == null) {
         throw Exception(preferenceResult.error ?? 'No se pudo crear la preferencia de pago');
@@ -2882,9 +2871,7 @@ class _WalletScreenState extends State<WalletScreen>
 
       // The MercadoPago webhook handles wallet balance updates
     } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context); // Cerrar diálogo de carga si todavía está abierto
-
+      cargador.close(); // idempotente: si ya se cerró arriba, no hace nada
       if (!mounted) return;
 
       String errorMessage = 'No se pudo iniciar la recarga. Intenta nuevamente.';

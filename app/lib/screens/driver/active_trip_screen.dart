@@ -27,6 +27,7 @@ import '../shared/rating_dialog.dart';
 import '../shared/chat_screen.dart';
 import '../../utils/map_marker_utils.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/safe_navigation.dart';
 
 /// Estados del viaje desde la perspectiva del conductor
 enum DriverTripState {
@@ -191,7 +192,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     // Guard: prevent Firestore query with empty tripId
     if (widget.tripId.isEmpty && widget.initialTrip == null) {
       debugPrint('Error: tripId is empty and no initialTrip provided');
-      if (mounted) Navigator.pop(context);
+      // Ronda 279: si esta pantalla se abrió como ruta única (por ejemplo desde
+      // una notificación con la app cerrada), un pop pelado deja la pila vacía.
+      if (mounted) safePopOrHome(context, fallback: '/driver/home');
       return;
     }
 
@@ -302,7 +305,13 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       ),
     );
 
-    Navigator.of(context).pop();
+    // Ronda 279: era `Navigator.of(context).pop()` a secas. Esto lo dispara el
+    // evento de cancelación que llega del servidor, y puede coincidir con el
+    // `pushNamedAndRemoveUntil` de `_cancelTrip`: si el pop cae cuando la home
+    // ya es la única ruta, retira lo último que quedaba y deja el Navigator
+    // vacío. `safePopOrHome` retrocede si hay a dónde y, si no, lleva a la home
+    // del conductor en vez de al vacío.
+    safePopOrHome(context, fallback: '/driver/home');
   }
 
   void _updateTripState() {
@@ -1232,7 +1241,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// Maneja el intento de salir de la pantalla
   Future<void> _handleBackPressed() async {
     if (_tripState == DriverTripState.completed) {
-      if (mounted) Navigator.pop(context);
+      // Ronda 279: mismo motivo que en `_handleRideGone` — sin comprobar si hay
+      // ruta debajo, el atrás sobre una pila de un elemento daba pantalla negra.
+      if (mounted) safePopOrHome(context, fallback: '/driver/home');
       return;
     }
     _showCancelConfirmation();
@@ -2244,6 +2255,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       });
 
       final penalty = (resp['driverPenalty'] as num?)?.toDouble() ?? 0.0;
+
+      // Ronda 279: soltamos el canal de eventos ANTES de navegar. El servidor
+      // difunde por SSE la cancelación que acabamos de pedir nosotros, y ese
+      // eco entraba por `_handleRideGone` justo mientras esta pantalla se
+      // estaba retirando: dos salidas compitiendo por la misma pila. Ya no
+      // necesitamos más noticias de este viaje.
+      _tripSubscription?.cancel();
+      _tripSubscription = null;
 
       if (mounted) {
         // Ronda 246: informamos con transparencia cuánto se descontó y que
