@@ -31,6 +31,7 @@
  */
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
+import { getEnabledDocumentTypes } from '@/lib/document-types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,6 +78,16 @@ export async function GET() {
 
   const s = new Map(rows.map((r) => [r.key, r.value]))
 
+  // Los documentos que la app debe pedirle al conductor. Si la consulta falla
+  // se devuelve lista vacía y la app usa su lista de siempre: mejor pedir de
+  // más que quedarse sin poder registrar conductores.
+  let documents: Awaited<ReturnType<typeof getEnabledDocumentTypes>> = []
+  try {
+    documents = await getEnabledDocumentTypes()
+  } catch (err) {
+    console.error('[config/app] no se pudo leer el catálogo de documentos:', err)
+  }
+
   const config = {
     maintenanceMode: asBool(s.get('maintenance_mode'), false),
     registration: {
@@ -103,6 +114,13 @@ export async function GET() {
       address: asString(s.get('company.address'), ''),
       supportEmail: asString(s.get('company.support_email'), 'facturacion.rapiteam@gmail.com'),
     },
+    documents: documents.map((d) => ({
+      code: d.code,
+      label: d.label,
+      description: d.description,
+      required: d.required,
+      sortOrder: d.sortOrder,
+    })),
   }
 
   return NextResponse.json(

@@ -12,18 +12,14 @@ import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
 import { sendPush } from '@/lib/send-push'
+import { getRequiredDocTypes } from '@/lib/document-types'
 
 export const runtime = 'nodejs'
 
-// Documentos requeridos para que un driver quede verificado.
-// Ajustar según política real de Rapi Team.
-const REQUIRED_DOC_TYPES = new Set([
-  'dni_front',
-  'dni_back',
-  'license_front',
-  'license_back',
-  'soat',
-])
+// Ronda 279: los documentos obligatorios ya no se escriben aquí. Vienen del
+// catálogo `driver_document_types`, que es lo que el administrador edita desde
+// el panel. Antes esta constante era una de las TRES copias de la misma lista
+// que había que mantener sincronizadas de memoria.
 
 const ALLOWED_STATUS = new Set(['approved', 'rejected', 'expired'])
 
@@ -70,6 +66,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     )
   }
 
+  // Ronda 279: se lee el catálogo ANTES de abrir la transacción. Es una
+  // consulta de solo lectura y cacheada; meterla dentro alargaría el `FOR
+  // UPDATE` sobre el documento sin ninguna necesidad.
+  const requiredDocTypes = await getRequiredDocTypes()
+  const requiredSet = new Set(requiredDocTypes)
+
   try {
     const result = await tx(async (client) => {
       // Cargar el documento y su driver
@@ -114,7 +116,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       // años después → driver con SOAT vencido queda is_verified=true, y en
       // un siniestro no hay cobertura + expone al operador a responsabilidad
       // civil/penal. NULL en expires_at = documento sin vencimiento (ok).
-      const requiredList = Array.from(REQUIRED_DOC_TYPES)
+      const requiredList = requiredDocTypes
       const approvedRes = await client.query<{ doc_type: string }>(
         `SELECT doc_type FROM driver_documents
           WHERE driver_id = $1 AND status = 'approved'
@@ -165,7 +167,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         driverVerified = true
       } else if (
         (newStatus === 'rejected' || newStatus === 'expired') &&
-        REQUIRED_DOC_TYPES.has(doc.doc_type)
+        requiredSet.has(doc.doc_type)
       ) {
         // Ronda 67: solo desverificar cuando el documento rechazado/expirado
         // ES uno de los REQUERIDOS. Antes: rechazar un doc opcional
@@ -229,15 +231,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
              SELECT 1 FROM driver_vehicles dv
               WHERE dv.driver_id = u.id AND dv.is_active = true
            )
+           -- Ronda 279: la lista y el número vienen del catálogo. Antes eran
+           -- un literal con cinco códigos y un ") = 5" escritos aquí dentro:
+           -- el día que se desactivara un documento sin bajar ese número,
+           -- ningún conductor volvía a verificarse, y sin un solo error en
+           -- los registros. Ahora los dos salen del mismo sitio y no pueden
+           -- desincronizarse.
            AND (
-             SELECT COUNT(*) FROM driver_documents dd
+             SELECT COUNT(DISTINCT dd.doc_type) FROM driver_documents dd
               WHERE dd.driver_id = u.id
                 AND dd.status = 'approved'
                 AND (dd.expires_at IS NULL OR dd.expires_at > now())
-                AND dd.doc_type = ANY(ARRAY['dni_front','dni_back','license_front','license_back','soat']::text[])
-           ) = 5
+                AND dd.doc_type = ANY($2::text[])
+           ) = $3::int
          RETURNING id`,
-        [result.doc.driver_id],
+        [result.doc.driver_id, requiredDocTypes, requiredDocTypes.length],
       )
       if (promoteRes.length > 0) {
         latePromoted = true

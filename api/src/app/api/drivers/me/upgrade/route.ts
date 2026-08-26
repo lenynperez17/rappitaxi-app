@@ -10,19 +10,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
+import { getRequiredDocTypes } from '@/lib/document-types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Documentos que el driver DEBE tener 'approved' antes del upgrade.
-// Debe coincidir con REQUIRED_DOC_TYPES en /api/admin/documents/[id]/route.ts
-const REQUIRED_DOC_TYPES = [
-  'dni_front',
-  'dni_back',
-  'license_front',
-  'license_back',
-  'soat',
-]
+// Ronda 279: aquí había una copia literal de la lista de documentos
+// obligatorios, con un comentario que pedía "debe coincidir con
+// REQUIRED_DOC_TYPES en /api/admin/documents/[id]/route.ts". Coincidir a mano
+// es precisamente lo que deja de pasar con el tiempo. Ahora las dos leen el
+// catálogo que el administrador edita en el panel.
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
@@ -55,16 +52,17 @@ export async function POST(req: NextRequest) {
   // documentos aprobados hace años con expires_at vencido pasaban el gate y el
   // pasajero se convertía en dual con licencia/SOAT expirados — exactamente
   // lo que este endpoint dice prevenir.
+  const requiredDocTypes = await getRequiredDocTypes()
   const approvedRes = await query<{ doc_type: string }>(
     `SELECT doc_type FROM driver_documents
       WHERE driver_id = $1
         AND status = 'approved'
         AND (expires_at IS NULL OR expires_at > now())
         AND doc_type = ANY($2::text[])`,
-    [auth.userId, REQUIRED_DOC_TYPES],
+    [auth.userId, requiredDocTypes],
   )
   const approvedTypes = new Set(approvedRes.map((r) => r.doc_type))
-  const missing = REQUIRED_DOC_TYPES.filter((t) => !approvedTypes.has(t))
+  const missing = requiredDocTypes.filter((t) => !approvedTypes.has(t))
   if (missing.length > 0) {
     return NextResponse.json({
       success: false,
@@ -99,7 +97,7 @@ export async function POST(req: NextRequest) {
      VALUES ($1, 'upgraded_to_driver', 'app', $2, $3, $4)`,
     [auth.userId, getClientIp(req), req.headers.get('user-agent'), JSON.stringify({
       previousType: user.user_type,
-      approvedDocs: REQUIRED_DOC_TYPES,
+      approvedDocs: requiredDocTypes,
       vehicleId: vehicle.id,
     })],
   )
