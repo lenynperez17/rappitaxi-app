@@ -102,13 +102,23 @@ export async function getRequiredDocTypes(): Promise<string[]> {
   }
 }
 
-/** `true` si ese código existe y está activo (se le puede pedir al conductor). */
-export async function isDocTypeEnabled(code: string): Promise<boolean> {
+/**
+ * `true` si ese código existe en el catálogo.
+ *
+ * OJO: comprueba que EXISTA, no que esté activo, y es deliberado. `enabled`
+ * dice qué se le PIDE al conductor desde la app; rechazar subidas por él
+ * rompería a todo el que tenga instalada una versión anterior, que sigue
+ * enviando los códigos de su época —`other`, sin ir más lejos— y se quedaría
+ * sin poder completar su alta con un 400 que no puede entender ni arreglar.
+ * Que un código sea válido lo garantiza además la clave foránea de la tabla;
+ * esto solo permite dar un error claro antes de llegar a ella.
+ */
+export async function isKnownDocType(code: string): Promise<boolean> {
   try {
-    return (await getDocumentTypes()).some((t) => t.code === code && t.enabled)
+    return (await getDocumentTypes()).some((t) => t.code === code)
   } catch {
-    // Ante un fallo de lectura no bloqueamos subidas: la FK de la tabla ya
-    // impide que entre un código inexistente.
+    // Ante un fallo de lectura no bloqueamos subidas: la FK ya impide que
+    // entre un código inexistente.
     return true
   }
 }

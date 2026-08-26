@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Loader2, AlertCircle, ShieldCheck, Phone, Mail, CheckCircle2, ChevronRight } from 'lucide-react'
+import { Search, Loader2, AlertCircle, ShieldCheck, Phone, Mail, CheckCircle2, ChevronRight, FileText } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { DateTime } from '../../components/DateTime'
@@ -42,9 +42,18 @@ export function VerificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Verificaciones</h1>
-        <p className="text-sm text-gray-500 mt-1">Conductores pendientes de verificación</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Verificaciones</h1>
+          <p className="text-sm text-gray-500 mt-1">Conductores pendientes de verificación</p>
+        </div>
+        {/* Ronda 279: acceso al catálogo de documentos. */}
+        <Link
+          to="/verifications/documentos"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <FileText className="w-4 h-4" /> Documentos solicitados
+        </Link>
       </div>
 
       {error && (

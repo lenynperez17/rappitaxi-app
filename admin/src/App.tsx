@@ -30,6 +30,7 @@ import { InvoicesPage } from './pages/recharges/InvoicesPage'
 import { CreditNotesPage } from './pages/recharges/CreditNotesPage'
 import { VerificationsPage } from './pages/verifications/VerificationsPage'
 import { DriverVerificationDetailPage } from './pages/verifications/DriverVerificationDetailPage'
+import { DocumentTypesPage } from './pages/verifications/DocumentTypesPage'
 import { CancellationsPage } from './pages/cancellations/CancellationsPage'
 
 const queryClient = new QueryClient({
@@ -80,6 +81,9 @@ function AppRoutes() {
         <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="verifications" element={<VerificationsPage />} />
+        {/* Ronda 279: antes de la ruta con parámetro, si no `:driverId`
+            capturaría "documentos" como si fuera un id de conductor. */}
+        <Route path="verifications/documentos" element={<DocumentTypesPage />} />
         <Route path="verifications/:driverId" element={<DriverVerificationDetailPage />} />
         <Route path="cancellations" element={<CancellationsPage />} />
         <Route path="trips" element={<TripsPage />} />

@@ -120,9 +120,14 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
         MapEntry('dni_front', _dniPhoto!),
         MapEntry('license_front', _licensePhoto!),
         MapEntry('vehicle_photo', _vehiclePhoto!),
-        MapEntry('other', _criminalRecordPhoto!),   // Antecedentes penales
+        // Ronda 279: estos dos subían con la MISMA clave 'other'. Con
+        // UNIQUE(driver_id, doc_type) y una subida que hace UPSERT, el segundo
+        // machacaba al primero: el conductor subía antecedentes penales y
+        // revisión técnica, y solo quedaba una de las dos, sin ningún aviso.
+        // Ya tienen código propio en el catálogo.
+        MapEntry('criminal_record', _criminalRecordPhoto!),
         MapEntry('soat', _soatPhoto!),
-        MapEntry('other', _technicalReviewPhoto!),  // Revisión técnica (usa 'other' hasta agregar enum)
+        MapEntry('technical_review', _technicalReviewPhoto!),
         MapEntry('ownership', _ownershipPhoto!),
       ];
 

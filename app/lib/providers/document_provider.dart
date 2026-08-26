@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/rapi_api_client.dart';
+import '../services/app_config_service.dart';
 import '../utils/error_messages.dart';
 import '../utils/document_storage_scope.dart';
 
@@ -27,12 +28,45 @@ class DocumentProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get vehicleDocuments => _vehicleDocuments;
   Map<String, dynamic>? get verificationStatus => _verificationStatus;
 
+  /// Ronda 279: los documentos que hay que pedir.
+  ///
+  /// Los decide el administrador desde el panel y llegan por
+  /// `/api/config/app`. Si el servidor no contestó, se cae a [_documentosFijos],
+  /// que es la lista de siempre: quedarse sin pedir documentos por un fallo de
+  /// red sería peor que pedir alguno de más.
+  List<Map<String, dynamic>> get requiredDocuments {
+    final catalogo = AppConfigService.instance.config.documents;
+    if (catalogo.isEmpty) return _documentosFijos;
+    return [
+      for (final d in catalogo)
+        {
+          'id': d.code,
+          'name': d.label,
+          'description': d.description,
+          'icon': _iconoDe(d.code),
+          'required': d.required,
+        },
+    ];
+  }
+
+  /// El icono es decoración de esta app; no viaja en el catálogo.
+  static IconData _iconoDe(String code) {
+    if (code.startsWith('dni')) return Icons.credit_card;
+    if (code.startsWith('license')) return Icons.badge;
+    if (code == 'soat') return Icons.security;
+    if (code == 'selfie') return Icons.person;
+    if (code == 'vehicle_photo') return Icons.photo_camera;
+    if (code == 'criminal_record') return Icons.gavel;
+    if (code == 'technical_review') return Icons.build_circle;
+    return Icons.directions_car;
+  }
+
   // Ronda 232: IDs alineados con el enum backend
-  // (driver_documents.doc_type CHECK: dni_front, dni_back, license_front,
+  // (driver_documents.doc_type: dni_front, dni_back, license_front,
   // license_back, soat, tarjeta_propiedad, ownership, selfie, vehicle_photo).
   // Antes eran IDs Firebase legacy (license, dni, criminal_record,
   // vehicle_card, technical_review) que no matcheaban con nada del backend.
-  final List<Map<String, dynamic>> requiredDocuments = [
+  static final List<Map<String, dynamic>> _documentosFijos = [
     {'id': 'dni_front',         'name': 'DNI (frente)',                 'description': 'Cara frontal del DNI',                'icon': Icons.credit_card,      'required': true},
     {'id': 'dni_back',          'name': 'DNI (reverso)',                'description': 'Cara posterior del DNI',              'icon': Icons.credit_card,      'required': true},
     {'id': 'license_front',     'name': 'Licencia (frente)',            'description': 'Licencia de conducir vigente — frente','icon': Icons.badge,            'required': true},

@@ -110,6 +110,20 @@ export interface AdminEmergency {
   createdAt: string
 }
 
+/** Ronda 279: una fila del catálogo de documentos del conductor. */
+export interface AdminDocumentType {
+  code: string
+  label: string
+  description: string
+  /** ¿Se le pide al conductor? Si no, ni siquiera aparece en la app. */
+  enabled: boolean
+  /** ¿Hace falta para quedar verificado? */
+  required: boolean
+  sortOrder: number
+  /** Cuántos documentos de este tipo hay ya subidos. */
+  uploadedCount: number
+}
+
 export interface AdminStats {
   users: { total: number; passengers: number; drivers: number; dual: number; admins: number; active: number; suspended: number }
   trips: { total: number; today: number; completed: number; cancelled: number }
@@ -522,6 +536,31 @@ class AdminApi {
     minRideAmount?: number; startsAt?: string; expiresAt?: string;
   }): Promise<{ vale: { id: string; code: string } }> {
     return this.rawFetch('/api/admin/vales', { method: 'POST', body: input })
+  }
+
+  /**
+   * Ronda 279: el catálogo de documentos que se le piden al conductor.
+   * Va aparte de `/api/admin/settings` porque aquélla solo guarda valores
+   * sueltos (texto, número, sí/no) y una lista con dos interruptores por fila
+   * se le corrompería al guardarla como texto.
+   */
+  async listDocumentTypes(): Promise<{ documentTypes: AdminDocumentType[] }> {
+    return this.rawFetch('/api/admin/document-types', { method: 'GET' })
+  }
+
+  /**
+   * `allowZeroRequired` solo se manda cuando el administrador ya confirmó que
+   * quiere quedarse sin ningún documento obligatorio; sin él, el servidor
+   * responde 409 y no toca nada.
+   */
+  async updateDocumentTypes(
+    updates: { code: string; enabled?: boolean; required?: boolean }[],
+    allowZeroRequired = false,
+  ): Promise<{ updated: number }> {
+    return this.rawFetch('/api/admin/document-types', {
+      method: 'PATCH',
+      body: { updates, ...(allowZeroRequired ? { allowZeroRequired: true } : {}) },
+    })
   }
 
   async getStats(): Promise<AdminStats> {

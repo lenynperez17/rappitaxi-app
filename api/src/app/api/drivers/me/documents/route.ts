@@ -13,13 +13,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
 import { deleteFile } from '@/lib/storage'
-import { isDocTypeEnabled } from '@/lib/document-types'
+import { isKnownDocType } from '@/lib/document-types'
 
 export const runtime = 'nodejs'
 
-// Ronda 279: la cuarta copia de la lista. Ahora se acepta lo que el catálogo
-// tenga ACTIVO: si el administrador desactiva un documento, el servidor deja
-// de aceptarlo aunque una versión antigua de la app siga intentando subirlo.
+// Ronda 279: aquí había la cuarta copia de la lista de documentos. La validez
+// del código la decide ahora el catálogo (y la clave foránea de la tabla).
 
 interface DocRow {
   id: string
@@ -118,13 +117,9 @@ export async function POST(req: NextRequest) {
   const docType = typeof body.docType === 'string' ? body.docType.trim() : ''
   const fileUrl = typeof body.fileUrl === 'string' ? body.fileUrl.trim() : ''
 
-  if (!docType || !(await isDocTypeEnabled(docType))) {
+  if (!docType || !(await isKnownDocType(docType))) {
     return NextResponse.json(
-      {
-        success: false,
-        error: 'invalid_doc_type',
-        message: 'Ese documento ya no se solicita.',
-      },
+      { success: false, error: 'invalid_doc_type' },
       { status: 400 },
     )
   }

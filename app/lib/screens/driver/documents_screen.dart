@@ -14,6 +14,7 @@ import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
 import '../../utils/document_storage_scope.dart';
+import '../../services/app_config_service.dart';
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
 
@@ -71,17 +72,51 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     super.dispose();
   }
   
+  /// Ronda 279: el catálogo que el administrador mantiene en el panel, si llegó.
+  ///
+  /// Devuelve `null` —y no una lista vacía— cuando el servidor no dijo nada,
+  /// para que quien llama distinga "el admin no pide documentos" de "no me he
+  /// enterado". Lo segundo debe caer en la lista de siempre.
+  Map<String, Map<String, Object>>? _docTypesFromConfig() {
+    final documentos = AppConfigService.instance.config.documents;
+    if (documentos.isEmpty) return null;
+    return {
+      for (final d in documentos)
+        d.code: {
+          'name': d.label,
+          'description': d.description,
+          'category': _categoriaDe(d.code),
+          'required': d.required,
+        },
+    };
+  }
+
+  /// La categoría es decoración: agrupa los documentos por color e icono en
+  /// esta pantalla. Por eso se deduce aquí y no viaja en el catálogo — al
+  /// servidor no le importa cómo se pintan.
+  static DocumentCategory _categoriaDe(String code) {
+    if (code.startsWith('dni') || code == 'selfie') return DocumentCategory.identity;
+    if (code.startsWith('license')) return DocumentCategory.license;
+    if (code == 'soat') return DocumentCategory.insurance;
+    if (code == 'criminal_record') return DocumentCategory.background;
+    return DocumentCategory.vehicle;
+  }
+
   Future<void> _loadDocuments() async {
     try {
       setState(() => _isLoading = true);
 
+      // Ronda 279: qué documentos se piden lo decide el administrador desde el
+      // panel, y llega por `/api/config/app`. La lista de abajo se conserva
+      // como red de seguridad para cuando el servidor no conteste: sin ella, un
+      // fallo de red dejaría la pantalla vacía y el conductor pensando que no
+      // tiene que subir nada.
+      //
       // Ronda 232 fix: los IDs deben coincidir con los docTypes reales del
-      // backend Node (driver_documents.doc_type CHECK constraint), no con
-      // los IDs legacy Firebase (license/id_card/insurance) que jamás
-      // matcheaban → 0/7 aprobados aunque hubiera 9 approved en DB.
-      // Enum backend: dni_front, dni_back, license_front, license_back,
-      // soat, tarjeta_propiedad, ownership, selfie, vehicle_photo, other.
-      final requiredDocTypes = {
+      // backend Node, no con los IDs legacy Firebase
+      // (license/id_card/insurance) que jamás matcheaban → 0/7 aprobados
+      // aunque hubiera 9 approved en DB.
+      final requiredDocTypes = _docTypesFromConfig() ?? {
         'dni_front':          {'name': 'DNI (frente)',                 'description': 'Documento Nacional de Identidad — cara frontal',   'category': DocumentCategory.identity, 'required': true},
         'dni_back':           {'name': 'DNI (reverso)',                'description': 'Documento Nacional de Identidad — cara posterior', 'category': DocumentCategory.identity, 'required': true},
         'license_front':      {'name': 'Licencia (frente)',            'description': 'Licencia de conducir vigente — cara frontal',      'category': DocumentCategory.license,  'required': true},

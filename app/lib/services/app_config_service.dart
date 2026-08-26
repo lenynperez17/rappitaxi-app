@@ -19,6 +19,40 @@ import 'rapi_api_client.dart';
 /// Cada campo tiene por defecto el valor con el que la app se comportaba antes
 /// de que este canal existiera. Así, si el servidor no responde —o responde
 /// raro— la app sigue funcionando igual que ayer en vez de quedarse bloqueada.
+/// Un documento del catálogo que el administrador mantiene desde el panel.
+@immutable
+class DocumentTypeConfig {
+  final String code;
+  final String label;
+  final String description;
+  final bool required;
+  final int sortOrder;
+
+  const DocumentTypeConfig({
+    required this.code,
+    required this.label,
+    this.description = '',
+    this.required = false,
+    this.sortOrder = 100,
+  });
+
+  factory DocumentTypeConfig.fromJson(Map<String, dynamic> json) => DocumentTypeConfig(
+        code: (json['code'] ?? '').toString(),
+        label: (json['label'] ?? '').toString(),
+        description: (json['description'] ?? '').toString(),
+        required: json['required'] == true,
+        sortOrder: json['sortOrder'] is num ? (json['sortOrder'] as num).toInt() : 100,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'label': label,
+        'description': description,
+        'required': required,
+        'sortOrder': sortOrder,
+      };
+}
+
 @immutable
 class AppConfig {
   final bool maintenanceMode;
@@ -42,6 +76,11 @@ class AppConfig {
   final String companyAddress;
   final String supportEmail;
 
+  /// Los documentos que hay que pedirle al conductor, en orden. Vacío significa
+  /// "el servidor no me lo dijo": quien lo consuma debe usar su lista de
+  /// siempre, no dejar de pedir documentos.
+  final List<DocumentTypeConfig> documents;
+
   const AppConfig({
     this.maintenanceMode = false,
     this.driverRegistrationEnabled = true,
@@ -57,6 +96,7 @@ class AppConfig {
     this.companyRuc = '',
     this.companyAddress = '',
     this.supportEmail = 'facturacion.rapiteam@gmail.com',
+    this.documents = const [],
   });
 
   /// Los valores de fábrica: exactamente el comportamiento previo a la ronda 279.
@@ -97,6 +137,13 @@ class AppConfig {
       companyRuc: _str(company['ruc'], d.companyRuc),
       companyAddress: _str(company['address'], d.companyAddress),
       supportEmail: _str(company['supportEmail'], d.supportEmail),
+      documents: (json['documents'] is List)
+          ? (json['documents'] as List)
+              .whereType<Map>()
+              .map((e) => DocumentTypeConfig.fromJson(e.cast<String, dynamic>()))
+              .where((e) => e.code.isNotEmpty && e.label.isNotEmpty)
+              .toList()
+          : const [],
     );
   }
 
@@ -123,6 +170,7 @@ class AppConfig {
           'address': companyAddress,
           'supportEmail': supportEmail,
         },
+        'documents': documents.map((d) => d.toJson()).toList(),
       };
 }
 
