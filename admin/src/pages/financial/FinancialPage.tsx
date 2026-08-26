@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, CreditCard, TrendingUp, AlertCircle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminStats, type AdminRecharge } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
+import { contactLine, nameOrDeleted } from '../../utils/contactDisplay'
 import { DateTime } from '../../components/DateTime'
 
 const METHOD_LABEL: Record<string, string> = {
@@ -86,8 +87,13 @@ export function FinancialPage() {
                 {recharges.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <div className="text-gray-900">{r.driverName ?? '—'}</div>
-                      <div className="text-xs text-gray-400">{r.driverPhone ?? r.driverEmail ?? ''}</div>
+                      {/* Ronda 279: aquí salía una fila con un guion por nombre
+                          y `deleted-748d9a74-…@rapiteam.local` debajo — la
+                          lápida interna de una cuenta borrada. */}
+                      <div className="text-gray-900">{nameOrDeleted(r.driverName)}</div>
+                      <div className="text-xs text-gray-400">
+                        {contactLine(r.driverPhone, r.driverEmail)}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-green-600">{formatPEN(r.amount)}</td>
                     <td className="px-4 py-3 text-gray-700">{METHOD_LABEL[r.method] ?? r.method}</td>

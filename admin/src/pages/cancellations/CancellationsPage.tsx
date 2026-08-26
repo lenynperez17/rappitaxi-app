@@ -3,6 +3,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, XCircle, Ban, MapPin, RotateCcw,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminCancellation } from '../../lib/adminApi'
+import { contactLine } from '../../utils/contactDisplay'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { DateTime } from '../../components/DateTime'
 
@@ -175,7 +176,9 @@ export function CancellationsPage() {
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {c.driver.phone ?? c.driver.email ?? c.driver.id}
+                      {/* Ronda 279: el correo lápida de una cuenta borrada no
+                          se enseña; se cae al id, que al menos es buscable. */}
+                      {contactLine(c.driver.phone, c.driver.email) || c.driver.id}
                     </div>
 
                     <div className="mt-2 text-sm text-gray-800">
