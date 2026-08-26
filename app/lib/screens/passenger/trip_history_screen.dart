@@ -934,7 +934,9 @@ class _TripDetailsModalState extends State<TripDetailsModal> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.errorSubmittingRating(e.toString())),
+            // Ronda 279: mismo motivo que en el home del pasajero — no se le
+            // enseña la excepción cruda a quien está calificando un viaje.
+            content: Text(userFriendlyError(e, fallback: 'No se pudo enviar tu calificación.')),
             backgroundColor: ModernTheme.error,
           ),
         );

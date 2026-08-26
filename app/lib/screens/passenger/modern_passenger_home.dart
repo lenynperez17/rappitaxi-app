@@ -1493,7 +1493,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.errorRequestingTrip(e.toString())),
+          // Ronda 279: aquí se pintaba `e.toString()`, así que al pasajero le
+          // salía literalmente "RapiApiException(400, invalid_pickup): ...".
+          // `userFriendlyError` ya sabe traducir los códigos del backend y, si
+          // no conoce uno, deja pasar el mensaje del servidor solo cuando es
+          // corto y sin markup.
+          content: Text(userFriendlyError(e, fallback: 'No se pudo solicitar el viaje.')),
           backgroundColor: Colors.red,
         ),
       );

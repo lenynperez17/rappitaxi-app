@@ -1417,7 +1417,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Error al enviar oferta: ${e.toString().replaceAll('Exception: ', '')}'),
+          content: Text(userFriendlyError(e, fallback: 'No se pudo enviar tu oferta.')),
           backgroundColor: AppColors.error,
         ),
       );

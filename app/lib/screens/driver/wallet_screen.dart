@@ -18,6 +18,7 @@ import '../../services/rapi_api_client.dart';
 import '../../widgets/mercadopago_checkout_pro_widget.dart';
 import '../../utils/error_messages.dart';
 import '../../utils/safe_navigation.dart';
+import '../../services/app_config_service.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -28,9 +29,14 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen>
     with TickerProviderStateMixin {
-  /// Monto mínimo de retiro. Debe coincidir con MIN_WITHDRAWAL del backend
-  /// (api/src/app/api/wallet/withdrawals/route.ts).
-  static const double _kMinWithdrawal = 20.0;
+  /// Monto mínimo de retiro.
+  ///
+  /// Ronda 279: era una constante de 20.0 con un comentario que pedía "debe
+  /// coincidir con MIN_WITHDRAWAL del backend". Coincidían las dos, y ninguna
+  /// coincidía con el panel: el administrador cambiaba el mínimo, veía
+  /// "guardado", y ni la app ni el servidor le hacían caso. Ahora los tres
+  /// leen el mismo ajuste (`wallet.min_withdrawal`).
+  double get _kMinWithdrawal => AppConfigService.instance.config.minWithdrawal;
 
   late AnimationController _balanceController;
   late AnimationController _cardsController;

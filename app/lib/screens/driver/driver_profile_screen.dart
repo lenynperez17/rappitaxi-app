@@ -14,6 +14,7 @@ import 'earnings_withdrawal_screen.dart';
 
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
+import '../../services/app_config_service.dart';
 class DriverProfileScreen extends StatefulWidget {
   const DriverProfileScreen({super.key});
 
@@ -1972,7 +1973,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               ),
             ),
             SizedBox(height: 16),
-            _buildInfoItem(Icons.location_on, 'Av. Principal 123, Lima'),
+            // Ronda 279: la dirección era "Av. Principal 123, Lima", un dato de
+            // relleno que el conductor podía tomarse en serio y presentarse
+            // allí con su DNI a cobrar. Ahora sale la del panel, y si no hay
+            // ninguna configurada no se enseña una inventada.
+            _buildInfoItem(
+              Icons.location_on,
+              AppConfigService.instance.config.companyAddress.isNotEmpty
+                  ? AppConfigService.instance.config.companyAddress
+                  : 'Consulta la dirección con soporte',
+            ),
             _buildInfoItem(Icons.access_time, 'Lunes a Viernes: 9:00 AM - 6:00 PM'),
             _buildInfoItem(Icons.access_time, 'Sábados: 9:00 AM - 1:00 PM'),
             _buildInfoItem(Icons.badge, 'Presenta tu DNI al retirar'),
@@ -3476,7 +3486,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Error al actualizar foto: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'No se pudo actualizar tu foto.')),
             backgroundColor: ModernTheme.error,
             duration: const Duration(seconds: 3),
           ),
@@ -3572,7 +3582,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Error al actualizar foto: ${e.toString()}'),
+            content: Text(userFriendlyError(e, fallback: 'No se pudo actualizar tu foto.')),
             backgroundColor: ModernTheme.error,
             duration: const Duration(seconds: 3),
           ),

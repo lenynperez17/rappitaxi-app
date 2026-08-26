@@ -186,9 +186,10 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
         _buildHourRow('Lunes a Viernes', '8:00 AM - 10:00 PM'), _buildHourRow('Sabados', '9:00 AM - 8:00 PM'), _buildHourRow('Domingos', '10:00 AM - 6:00 PM'),
         SizedBox(height: 8), Text('El chat en vivo esta disponible 24/7', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context))),
       ])),
-      SizedBox(height: 24),
-      Text('Siguenos en redes sociales', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.getTextPrimary(context))), SizedBox(height: 12),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_buildSocialButton('Facebook', Icons.facebook, Colors.blue), _buildSocialButton('Twitter', Icons.alternate_email, Colors.lightBlue), _buildSocialButton('Instagram', Icons.camera_alt, Colors.purple), _buildSocialButton('LinkedIn', Icons.work, Colors.indigo)]),
+      // Ronda 279: aquí había cuatro botones de redes sociales que no abrían
+      // ninguna red — solo mostraban "Abriendo Facebook..." y se quedaban ahí.
+      // Se retiran hasta que existan las cuentas y sus enlaces; un botón que
+      // no cumple lo que dice es peor que no tener el botón.
     ]));
   }
 

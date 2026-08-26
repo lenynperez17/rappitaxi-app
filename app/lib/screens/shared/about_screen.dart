@@ -1,7 +1,9 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
+import '../../services/app_config_service.dart';
 
 class AboutScreen extends StatefulWidget {
   final String? userType; // 'passenger', 'driver', 'admin'
@@ -86,7 +88,12 @@ class _AboutScreenState extends State<AboutScreen>
                   _buildLegalSection(),
                   _buildContactSection(),
                   _buildTechnicalSection(),
-                  _buildSocialMediaSection(),
+                  // Ronda 279: se retira "Síguenos". Los cuatro botones no
+                  // abrían ninguna red —solo mostraban "Abriendo Facebook..."—
+                  // y el usuario que decía debajo era "@RappiTeamPE", con la
+                  // marca equivocada. Cuando haya cuentas reales se vuelve a
+                  // poner con sus enlaces; hasta entonces prometía algo que no
+                  // existe.
                   SizedBox(height: 32),
                 ],
               ),
@@ -212,35 +219,60 @@ class _AboutScreenState extends State<AboutScreen>
         _buildActionTile('Política de Privacidad', 'Conoce como protegemos tus datos', Icons.privacy_tip, _showPrivacyPolicy),
         _buildActionTile('Politica de Cookies', 'Informacion sobre el uso de cookies', Icons.cookie, _showCookiePolicy),
         _buildActionTile('Licencias de Software', 'Licencias de terceros', Icons.code, _showLicenses),
-        _buildInfoTile('Registro Comercial', 'RUC: 20XXXXXXXXX', Icons.business),
+        // Ronda 279: decía literalmente "RUC: 20XXXXXXXXX", con las equis a la
+        // vista del usuario. El RUC real está en el panel desde siempre.
+        if (AppConfigService.instance.config.companyRuc.isNotEmpty)
+          _buildInfoTile(
+            'Registro Comercial',
+            'RUC: ${AppConfigService.instance.config.companyRuc}',
+            Icons.business,
+          ),
       ],
     );
   }
 
+  /// Ronda 279: esta sección mostraba datos inventados y botones que mentían.
+  ///
+  /// Había un "Teléfono de Emergencia: +51 1 123-4567" —un número de relleno—
+  /// cuyo botón solo enseñaba el mensaje "Iniciando llamada de emergencia..."
+  /// y no llamaba a nadie. Igual "Ventas Corporativas" con un correo que no
+  /// existe y "Oficina Central: Av. Principal 123" de marcador de posición.
+  ///
+  /// Se quedan solo los datos reales, y los que vienen del panel se leen del
+  /// panel. Para la emergencia de verdad la app ya tiene su botón SOS, que sí
+  /// avisa a los contactos y al administrador; enviar a la gente a un número
+  /// falso en una urgencia es lo peor que podía hacer esta pantalla.
   Widget _buildContactSection() {
+    final config = AppConfigService.instance.config;
     return _buildSection(
       'Contacto y Soporte',
       Icons.contact_support,
       Colors.orange,
       [
-        _buildActionTile('Soporte al Cliente', 'facturacion.rapiteam@gmail.com', Icons.email, _contactSupport),
-        _buildActionTile('Ventas Corporativas', 'ventas@rapiteam.com', Icons.business_center, _contactSales),
-        _buildActionTile('Telefono de Emergencia', '+51 1 123-4567', Icons.phone, _callEmergency),
-        _buildActionTile('Oficina Central', 'Av. Principal 123, Lima, Peru', Icons.location_on, _showOfficeLocation),
-        _buildInfoTile('Horario de Atencion', 'Lunes a Domingo: 24 horas', Icons.schedule),
+        _buildActionTile(
+          'Soporte al Cliente',
+          config.supportEmail,
+          Icons.email,
+          _contactSupport,
+        ),
+        if (config.companyAddress.isNotEmpty)
+          _buildInfoTile('Dirección', config.companyAddress, Icons.location_on),
+        _buildInfoTile('Horario de Atención', 'Lunes a Domingo: 24 horas', Icons.schedule),
       ],
     );
   }
 
+  /// Ronda 279: esta sección le contaba al pasajero la versión del framework y
+  /// que la base de datos era "Firestore / PostgreSQL". Ni le sirve de nada ni
+  /// era ya cierto: de Firebase solo queda el envío de notificaciones. Se deja
+  /// lo único que tiene sentido para quien usa la app —con quién se paga— y el
+  /// historial de versiones.
   Widget _buildTechnicalSection() {
     return _buildSection(
-      'Informacion Tecnica',
+      'Información Técnica',
       Icons.settings,
       Colors.indigo,
       [
-        _buildInfoTile('Framework', 'Flutter 3.19.0', Icons.code),
-        _buildInfoTile('Backend', 'Firebase / Node.js', Icons.cloud),
-        _buildInfoTile('Base de Datos', 'Firestore / PostgreSQL', Icons.storage),
         _buildInfoTile('Mapas', 'Google Maps Platform', Icons.map),
         _buildInfoTile('Pagos', 'MercadoPago', Icons.payment),
         _buildActionTile('Historial de Cambios', 'Ver historial de versiones', Icons.history, _showChangelog),
@@ -379,20 +411,26 @@ class _AboutScreenState extends State<AboutScreen>
     );
   }
 
-  void _contactSupport() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo cliente de correo...'), backgroundColor: AppColors.info));
-  }
-
-  void _contactSales() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Contactando equipo de ventas...'), backgroundColor: AppColors.info));
-  }
-
-  void _callEmergency() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Iniciando llamada de emergencia...'), backgroundColor: AppColors.warning));
-  }
-
-  void _showOfficeLocation() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo ubicacion en mapas...'), backgroundColor: AppColors.info));
+  /// Ronda 279: antes solo decía "Abriendo cliente de correo..." y no abría
+  /// nada. Ahora abre el correo de verdad, con el asunto puesto, y si el
+  /// teléfono no tiene aplicación de correo lo dice en vez de fingir.
+  Future<void> _contactSupport() async {
+    final email = AppConfigService.instance.config.supportEmail;
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+      queryParameters: {'subject': 'Soporte Rapi Team'},
+    );
+    final abierto = await launchUrl(uri, mode: LaunchMode.externalApplication)
+        .catchError((_) => false);
+    if (!abierto && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Escríbenos a $email'),
+          backgroundColor: AppColors.info,
+        ),
+      );
+    }
   }
 
   void _showChangelog() {
