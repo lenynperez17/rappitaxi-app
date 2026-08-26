@@ -19,14 +19,29 @@ class NavigationHelper {
     }
   }
 
-  // Navegar a seguimiento de viaje
-  static void navigateToTripTracking() {
+  /// Navegar al seguimiento de un viaje.
+  ///
+  /// Ronda 279: esto llamaba a `pushNamed('/shared/trip-tracking')` SIN
+  /// argumentos, así que `TripTrackingScreen` recibía un id vacío y pintaba su
+  /// pantalla de error. Lo disparaba el aviso "Tu conductor llegó".
+  ///
+  /// Sin [rideId] ya no se abre el seguimiento: se lleva al pasajero a su home,
+  /// donde el viaje activo sí aparece. Una pantalla útil vale más que una
+  /// pantalla de error.
+  static void navigateToTripTracking({String? rideId}) {
     try {
       final context = navigatorKey.currentContext;
-      if (context != null) {
-        Navigator.of(context).pushNamed('/shared/trip-tracking');
-        AppLogger.info('Navegando a seguimiento de viaje');
+      if (context == null) return;
+      if (rideId == null || rideId.isEmpty) {
+        AppLogger.warning('Seguimiento sin id de viaje: se abre el home del pasajero');
+        Navigator.of(context).pushNamed('/passenger/home');
+        return;
       }
+      Navigator.of(context).pushNamed(
+        '/shared/trip-tracking',
+        arguments: {'rideId': rideId},
+      );
+      AppLogger.info('Navegando a seguimiento del viaje $rideId');
     } catch (e) {
       AppLogger.error('Error navegando a seguimiento de viaje', e);
     }

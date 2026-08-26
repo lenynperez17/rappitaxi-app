@@ -511,6 +511,19 @@ class NotificationService {
     }
   }
 
+  /// El id del viaje que trae una notificación.
+  ///
+  /// El backend lo envía plano (`{type, rideId}`) o anidado
+  /// (`{type, data:{rideId}}`) según el camino, así que se aceptan los dos.
+  /// Devuelve cadena vacía si no viene: quien la use debe comprobarlo.
+  static String _rideIdDe(Map<String, dynamic> data) {
+    final nested = data['data'];
+    final raw = nested is Map
+        ? (nested['rideId'] ?? nested['tripId'] ?? data['rideId'] ?? '')
+        : (data['rideId'] ?? data['tripId'] ?? '');
+    return raw.toString();
+  }
+
   /// Manejar click en notificación y emitir evento
   void _handleNotificationClick(Map<String, dynamic> data) {
     final type = data['type'] ?? '';
@@ -520,10 +533,7 @@ class NotificationService {
     
     switch (type) {
       case 'ride':
-        // Backend puede enviar payload plano `{type:"ride", rideId:"..."}` o
-        // anidado `{type:"ride", data:{rideId:"..."}}`. Aceptar ambos sin crash.
-        final nested = data['data'];
-        final rideId = (nested is Map ? (nested['rideId'] ?? '') : (data['rideId'] ?? '')).toString();
+        final rideId = _rideIdDe(data);
         payload = 'ride:$rideId';
         debugPrint('Navegar a viaje: $rideId');
         break;
@@ -543,11 +553,13 @@ class NotificationService {
         payload = 'price_negotiation';
         debugPrint('Nueva negociación de precio');
         break;
+      // Ronda 279: estos dos perdían el id del viaje por el camino. El backend
+      // lo manda (`data: { rideId }` en `rides/[id]/arrived`), pero aquí se
+      // descartaba y el destino acababa abriendo el seguimiento SIN id: el
+      // pasajero tocaba "Tu conductor llegó" y le salía una pantalla de error.
       case 'driver_found':
-        payload = 'driver_found';
-        break;
       case 'driver_arrived':
-        payload = 'driver_arrived';
+        payload = '$type:${_rideIdDe(data)}';
         break;
       case 'trip_completed':
         payload = 'trip_completed';

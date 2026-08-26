@@ -58,13 +58,21 @@ class LocalNotificationService {
 
   // Manejar navegación basada en el payload de la notificación
   void _handleNotificationNavigation(String payload) {
+    // Ronda 279: los avisos de viaje llegan como `driver_arrived:<id>` desde
+    // que el id dejó de perderse en `notification_service`. Sin el id, el
+    // seguimiento se abría vacío y el pasajero veía una pantalla de error al
+    // tocar "Tu conductor llegó".
+    if (payload.startsWith('driver_found:') || payload.startsWith('driver_arrived:')) {
+      final rideId = payload.substring(payload.indexOf(':') + 1);
+      NavigationHelper.navigateToTripTracking(rideId: rideId);
+      return;
+    }
+
     switch (payload) {
       case 'ride_request':
         NavigationHelper.navigateToRideRequest();
         break;
       case 'driver_found':
-        NavigationHelper.navigateToTripTracking();
-        break;
       case 'driver_arrived':
         NavigationHelper.navigateToTripTracking();
         break;

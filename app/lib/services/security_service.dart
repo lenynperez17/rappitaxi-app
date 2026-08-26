@@ -317,7 +317,10 @@ class SecurityService {
   /// Obtener User Agent
   Future<String> _getUserAgent() async {
     // En producción, obtener User Agent real
-    return 'RappiTeam Mobile App';
+    // Ronda 279: decía "RappiTeam". No lo ve el usuario, pero viaja en las
+    // cabeceras y aparece en los registros del servidor con el nombre de otra
+    // empresa.
+    return 'Rapi Team Mobile App';
   }
 
   /// Obtener ID del dispositivo

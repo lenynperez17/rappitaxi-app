@@ -1467,7 +1467,11 @@ ID de viaje: ${trip.id}
       // Mostrar preview y permitir compartir/imprimir
       await Printing.layoutPdf(
         onLayout: (format) async => pdf.save(),
-        name: 'Recibo_RappiTeam_${trip.id}.pdf',
+        // Ronda 279: este nombre de archivo es lo que el pasajero ve al
+        // guardar o compartir su recibo, y seguía diciendo "RappiTeam". Es el
+        // mismo fallo que la ronda 274 arregló en las otras pantallas; a éste
+        // no se llegó porque está en el generador del PDF, no en la interfaz.
+        name: 'Recibo_RapiTeam_${trip.id}.pdf',
       );
 
       AppLogger.info('✅ Recibo PDF generado exitosamente');

@@ -67,10 +67,19 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
     } else if (payload == 'ride_request') {
       // Nueva solicitud de viaje para conductores
       _navigateToDriverHome();
-    } else if (payload == 'driver_found') {
-      // Conductor encontrado para pasajeros
-      _navigateToPassengerHome();
-    } else if (payload == 'driver_arrived') {
+    } else if (payload == 'driver_found' || payload.startsWith('driver_found:')) {
+      // Ronda 279: si el aviso trae el id del viaje, se abre el seguimiento de
+      // ESE viaje en vez de dejar al pasajero en el home buscándolo.
+      final rideId = payload.startsWith('driver_found:')
+          ? payload.substring('driver_found:'.length)
+          : '';
+      if (rideId.isNotEmpty) {
+        Navigator.pushNamed(context, '/shared/trip-tracking',
+            arguments: {'rideId': rideId});
+      } else {
+        _navigateToPassengerHome();
+      }
+    } else if (payload == 'driver_arrived' || payload.startsWith('driver_arrived:')) {
       // Conductor llegó
       _showDriverArrivedDialog();
     } else if (payload == 'trip_completed') {

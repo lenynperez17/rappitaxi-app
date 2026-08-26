@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../services/app_config_service.dart';
 import 'offer_price_screen.dart';
 
 /// Service definition with display data and price multiplier.
@@ -103,11 +104,30 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
     return _services.firstWhere((s) => s.type == type).multiplier;
   }
 
+  /// El precio más bajo que el pasajero puede ofrecer.
+  ///
+  /// La mitad de la tarifa sugerida, pero nunca por debajo de la tarifa mínima
+  /// que el administrador configuró (`rides.min_fare`) ni, a falta de ella, de
+  /// S/ 3. El tope superior sigue siendo la propia sugerencia: en un viaje muy
+  /// barato el mínimo no puede acabar siendo mayor que lo sugerido.
+  double _sueloDePrecio(double serviceSuggested) {
+    final minimoDelPanel = AppConfigService.instance.config.minFare;
+    final suelo = minimoDelPanel > 3.0 ? minimoDelPanel : 3.0;
+    return (serviceSuggested * 0.5)
+        .ceilToDouble()
+        .clamp(suelo.clamp(0.0, serviceSuggested), serviceSuggested);
+  }
+
   void _openOfferPriceScreen() {
     final suggested = widget.suggestedPrice ?? widget.offeredPrice;
     final mult = _multiplierFor(widget.selectedServiceType);
     final serviceSuggested = suggested * mult;
-    final minPrice = (serviceSuggested * 0.5).ceilToDouble().clamp(3.0, serviceSuggested);
+    // Ronda 279: el suelo de la app no puede quedar por debajo de la tarifa
+    // mínima que el dueño fijó en el panel. Antes eran S/ 3 fijos: con la
+    // mínima en S/ 5, el pasajero podía bajar el precio a S/ 4 y era el
+    // servidor quien lo rechazaba después, con un mensaje que contradecía lo
+    // que la propia pantalla acababa de ofrecerle.
+    final minPrice = _sueloDePrecio(serviceSuggested);
     final maxPrice = (serviceSuggested * 3.0).floorToDouble();
 
     Navigator.push(
@@ -421,7 +441,12 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
     final suggested = widget.suggestedPrice ?? widget.offeredPrice;
     final mult = _multiplierFor(widget.selectedServiceType);
     final serviceSuggested = suggested * mult;
-    final minPrice = (serviceSuggested * 0.5).ceilToDouble().clamp(3.0, serviceSuggested);
+    // Ronda 279: el suelo de la app no puede quedar por debajo de la tarifa
+    // mínima que el dueño fijó en el panel. Antes eran S/ 3 fijos: con la
+    // mínima en S/ 5, el pasajero podía bajar el precio a S/ 4 y era el
+    // servidor quien lo rechazaba después, con un mensaje que contradecía lo
+    // que la propia pantalla acababa de ofrecerle.
+    final minPrice = _sueloDePrecio(serviceSuggested);
     final maxPrice = (serviceSuggested * 3.0).floorToDouble();
 
     return DraggableScrollableSheet(
