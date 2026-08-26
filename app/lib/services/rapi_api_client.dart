@@ -399,6 +399,15 @@ class RapiApiClient {
   Future<Map<String, dynamic>> createRechargeCheckout(double amount) async =>
       (await _authedPost('/api/wallet/recharge/checkout', body: {'amount': amount}))!;
 
+  /// Ronda 280: le pide al servidor que compruebe una recarga contra
+  /// MercadoPago, en vez de esperar a que llegue el aviso automático.
+  ///
+  /// El servidor no se fía de nosotros: le pregunta a MercadoPago con su propio
+  /// token. Esto solo dice QUÉ recarga mirar. Se puede llamar las veces que
+  /// haga falta — acreditar es idempotente.
+  Future<Map<String, dynamic>> verifyRecharge(String rechargeId) async =>
+      (await _authedPost('/api/wallet/recharge/$rechargeId/verify', body: const {}))!;
+
   Future<Map<String, dynamic>> validateVale({required String code, double? rideAmount}) async =>
       (await _authedPost('/api/vales/validate', body: {
         'code': code,

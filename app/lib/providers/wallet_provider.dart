@@ -869,8 +869,30 @@ class WalletProvider extends ChangeNotifier {
       if (!completer.isCompleted) completer.complete(resultStatus);
       final finalStatus = await completer.future;
 
+      // Ronda 280: se pide al servidor que compruebe la recarga con
+      // MercadoPago, en vez de dar por hecho que el webhook ya la acreditó.
+      //
+      // El webhook llevaba meses rechazando todos los avisos por falta de la
+      // clave de firma, y aunque eso ya está arreglado, seguir dependiendo de
+      // un solo mensaje es frágil: si se pierde, el usuario paga y su saldo no
+      // sube. Ahora su propia app pregunta al volver, y el servidor le
+      // pregunta a MercadoPago. También se hace en 'pending': el pago puede
+      // haberse confirmado entre medias.
+      if (rechargeId.isNotEmpty &&
+          (finalStatus == 'approved' || finalStatus == 'pending')) {
+        try {
+          final verificado = await _api.verifyRecharge(rechargeId);
+          debugPrint('💳 Verificación de la recarga: ${verificado['outcome']}');
+        } catch (e) {
+          // No es motivo para dar el pago por fallido: puede haberse acreditado
+          // igualmente por el webhook. Solo se registra.
+          AppLogger.warning(
+              userFriendlyError(e, fallback: 'No se pudo verificar la recarga'));
+        }
+      }
+
       if (finalStatus == 'approved') {
-        // 4) Pago aprobado: refrescar balance (el webhook ya acreditó server-side).
+        // 4) Pago aprobado: refrescar balance (ya acreditado server-side).
         debugPrint('💳 Pago aprobado, refrescando balance...');
         final credited = await rechargeServiceCredits(
           amount: amount,

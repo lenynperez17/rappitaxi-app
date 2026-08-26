@@ -60,6 +60,17 @@ class _MercadoPagoCheckoutProWidgetState
               return NavigationDecision.prevent;
             }
 
+            // Ronda 280: el backend le dice a MercadoPago que devuelva al
+            // usuario a `<api>/mp/return?status=…&ref=…`
+            // (`wallet/recharge/checkout/route.ts`, back_urls), pero aquí solo
+            // se miraba `rapiteam://`. Resultado: tras pagar, la vista web se
+            // quedaba cargando una página del servidor —que además no existía,
+            // devolvía 404— y el pago nunca se daba por terminado en la app.
+            if (url.contains('/mp/return')) {
+              _handleDeepLink(url);
+              return NavigationDecision.prevent;
+            }
+
             return NavigationDecision.navigate;
           },
           onWebResourceError: (WebResourceError error) {
@@ -78,8 +89,19 @@ class _MercadoPagoCheckoutProWidgetState
     final path = uri.host; // e.g. "payment"
     final segments = uri.pathSegments; // e.g. ["success"]
 
+    // Ronda 280: la URL de retorno del backend trae `?status=success|failure|
+    // pending`. Se lee del parámetro cuando está, y solo si no está se cae al
+    // "¿contiene la palabra?" de antes — que se equivocaba, por ejemplo, con
+    // cualquier URL que llevara "pending" en otro sitio.
+    final statusParam = uri.queryParameters['status'];
     String status = 'unknown';
-    if (url.contains('success')) {
+    if (statusParam == 'success' || statusParam == 'approved') {
+      status = 'approved';
+    } else if (statusParam == 'failure' || statusParam == 'rejected') {
+      status = 'rejected';
+    } else if (statusParam == 'pending') {
+      status = 'pending';
+    } else if (url.contains('success')) {
       status = 'approved';
     } else if (url.contains('failure')) {
       status = 'rejected';
