@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/error_messages.dart';
+import '../../services/app_config_service.dart';
 
 class SupportScreen extends StatefulWidget {
   const SupportScreen({super.key});
@@ -22,6 +23,7 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
   bool _isLoading = true;
   String _supportPhone = '';
   String _supportWhatsApp = '';
+  // Valor de arranque; se reemplaza con el del panel en `_loadSupportData`.
   String _supportEmail = 'facturacion.rapiteam@gmail.com';
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _subjectController = TextEditingController();
@@ -43,15 +45,17 @@ class _SupportScreenState extends State<SupportScreen> with TickerProviderStateM
   void dispose() { _fadeController.dispose(); _slideController.dispose(); _subjectController.dispose(); _descriptionController.dispose(); super.dispose(); }
 
   void _loadSupportData() async {
-    // TODO(node-migration): reemplazar con endpoints /api/config/support,
-    // /api/support/tickets y /api/support/faqs cuando existan.
-    // Por ahora usamos defaults y una lista vacia de tickets.
+    // Ronda 279: el correo de soporte lo edita el dueño desde el panel
+    // (`company.support_email`) y llega por `/api/config/app`. Antes estaba
+    // escrito aquí: cambiarlo en el panel no cambiaba nada en la app.
+    //
+    // Los tickets y las FAQ siguen pendientes de endpoints propios.
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.currentUser == null) { setState(() => _isLoading = false); return; }
       _supportPhone = '';
       _supportWhatsApp = '';
-      _supportEmail = 'facturacion.rapiteam@gmail.com';
+      _supportEmail = AppConfigService.instance.config.supportEmail;
       if (!mounted) return;
       setState(() {
         _tickets = <SupportTicket>[];

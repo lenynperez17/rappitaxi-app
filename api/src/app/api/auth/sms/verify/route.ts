@@ -16,6 +16,7 @@ import { TwilioVerifyService } from '@/services/TwilioVerifyService'
 import { createSession } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { ipRateLimit } from '@/lib/rate-limit'
+import { settingBool } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 
@@ -120,6 +121,25 @@ export async function POST(req: NextRequest) {
   let isNewUser = false
 
   if (!user) {
+    // Ronda 279: `registration.passenger_enabled` llevaba desde el principio en
+    // el panel sin que ningún código lo consultara. El administrador podía
+    // "cerrar el registro" y seguían entrando cuentas nuevas.
+    //
+    // Solo afecta a las cuentas NUEVAS: cerrar el alta nunca puede dejar fuera
+    // a quien ya está dentro, así que este bloque está dentro del `if (!user)`.
+    // Y las cuentas de conductor no nacen aquí —se crean como pasajero y luego
+    // se promueven—, por lo que el interruptor de conductores se aplica en el
+    // ascenso, no en el alta.
+    if (!(await settingBool('registration.passenger_enabled', true))) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'registration_closed',
+          message: 'El registro de nuevos usuarios está cerrado temporalmente.',
+        },
+        { status: 403 },
+      )
+    }
     isNewUser = true
     const newId = randomUUID()
     user = await maybeOne<UserRow>(

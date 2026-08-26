@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, getClientIp } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
 import { getRequiredDocTypes } from '@/lib/document-types'
+import { settingBool } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,19 @@ export async function POST(req: NextRequest) {
 
   if (user.user_type === 'driver' || user.user_type === 'dual') {
     return NextResponse.json({ success: true, message: 'Ya eres conductor', userType: user.user_type })
+  }
+
+  // Ronda 279: `registration.driver_enabled` era otro ajuste decorativo. Las
+  // cuentas de conductor no nacen en el alta —se crean como pasajero y se
+  // promueven aquí—, así que éste es el sitio donde el interruptor significa
+  // algo. Va después de la comprobación de "ya eres conductor" para que
+  // cerrar el alta no afecte a quien ya lo es.
+  if (!(await settingBool('registration.driver_enabled', true))) {
+    return NextResponse.json({
+      success: false,
+      error: 'driver_registration_closed',
+      message: 'El registro de nuevos conductores está cerrado temporalmente.',
+    }, { status: 403 })
   }
 
   // Ronda 70 SECURITY: exigir teléfono verificado antes de upgrade a driver.

@@ -12,10 +12,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne } from '@/lib/db'
 import { keyedRateLimit } from '@/lib/rate-limit'
+import { settingNumber } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 
-const MIN_AMOUNT = 5
+// Ronda 279: `wallet.min_recharge` existía en el panel y no lo miraba nadie.
+// Este número pasa a ser el valor por defecto si el ajuste falta.
+const DEFAULT_MIN_AMOUNT = 5
+
+// El tope se queda en código: es una barrera antifraude, no una palanca
+// comercial.
 const MAX_AMOUNT = 500
 
 const APP_URL = process.env.APP_PUBLIC_URL ?? 'https://rapi-team-api.nynelmkt.cloud'
@@ -50,6 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   const amountRaw = Number(body.amount)
+  const MIN_AMOUNT = await settingNumber('wallet.min_recharge', DEFAULT_MIN_AMOUNT)
   if (!Number.isFinite(amountRaw) || amountRaw < MIN_AMOUNT || amountRaw > MAX_AMOUNT) {
     return NextResponse.json({
       success: false,

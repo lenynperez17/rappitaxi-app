@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
 import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
+import { settingBool, settingNumber } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 
@@ -205,8 +206,25 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
+  // Ronda 279: `rides.min_fare` llevaba desde siempre en el panel sin que nadie
+  // lo leyera. El pasajero podía proponer S/ 1 por un viaje y el sistema lo
+  // aceptaba. Por defecto 0 = sin mínimo, el comportamiento anterior.
+  const minFare = await settingNumber('rides.min_fare', 0)
+  if (rawProposed !== null && rawProposed > 0 && minFare > 0 && rawProposed < minFare) {
+    return NextResponse.json(
+      { success: false, error: 'fare_too_low',
+        message: `La tarifa mínima es S/ ${minFare.toFixed(2)}.` },
+      { status: 400 },
+    )
+  }
+
   const proposedFare = rawProposed !== null && rawProposed > 0 ? rawProposed : null
-  const negotiable = body.negotiable === true
+
+  // Ronda 279: `rides.negotiable` tampoco lo miraba nadie. Si el dueño apaga la
+  // negociación desde el panel, el viaje se crea sin ella aunque la app —una
+  // versión antigua, por ejemplo— la pida.
+  const negotiationAllowed = await settingBool('rides.negotiable', true)
+  const negotiable = body.negotiable === true && negotiationAllowed
   // Caps sanos para prevenir envenenamiento de analytics con valores absurdos
   // (distance 9e15, duration 1e9). Taxi urbano Perú: <500km, <8h.
   const MAX_DISTANCE_M = 500_000  // 500 km
@@ -214,6 +232,19 @@ export async function POST(req: NextRequest) {
   const distanceMeters = typeof body.distanceMeters === 'number' && body.distanceMeters >= 0 && body.distanceMeters <= MAX_DISTANCE_M
     ? Math.round(body.distanceMeters)
     : null
+
+  // Ronda 279: `rides.max_distance_km` también estaba de adorno. El cap de
+  // arriba (500 km) es la barrera antibasura; éste es la regla de negocio, y
+  // la pone el dueño. Se rechaza solo si la app envió una distancia y supera
+  // el límite: sin distancia no inventamos un motivo para negar el viaje.
+  const maxDistanceKm = await settingNumber('rides.max_distance_km', 0)
+  if (maxDistanceKm > 0 && distanceMeters !== null && distanceMeters > maxDistanceKm * 1000) {
+    return NextResponse.json(
+      { success: false, error: 'distance_too_long',
+        message: `La distancia máxima por viaje es ${maxDistanceKm} km.` },
+      { status: 400 },
+    )
+  }
   const durationSeconds = typeof body.durationSeconds === 'number' && body.durationSeconds >= 0 && body.durationSeconds <= MAX_DURATION_S
     ? Math.round(body.durationSeconds)
     : null

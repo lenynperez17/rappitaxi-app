@@ -13,6 +13,7 @@ import { query, maybeOne } from '@/lib/db'
 import { createSession } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { getClientIp } from '@/lib/auth-middleware'
+import { settingBool } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 
@@ -109,6 +110,18 @@ export async function POST(req: NextRequest) {
   let isNewUser = false
 
   if (!user) {
+    // Ronda 279: mismo interruptor que en el alta por SMS. Si el registro está
+    // cerrado, tampoco puede entrar gente nueva por Google.
+    if (!(await settingBool('registration.passenger_enabled', true))) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'registration_closed',
+          message: 'El registro de nuevos usuarios está cerrado temporalmente.',
+        },
+        { status: 403 },
+      )
+    }
     isNewUser = true
     const newId = randomUUID()
     user = await maybeOne<UserRow>(

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, tx } from '@/lib/db'
+import { settingNumber } from '@/lib/app-settings'
 import type { PoolClient } from 'pg'
 
 export const runtime = 'nodejs'
@@ -59,9 +60,19 @@ export async function GET(req: NextRequest) {
   })
 }
 
-const MIN_WITHDRAWAL = 20      // S/ mínimo
-const MAX_WITHDRAWAL = 10000   // S/ tope por operación (evita mistap + fraude)
-const WITHDRAWAL_FEE = 2       // S/ fee fijo
+// Ronda 279: el mínimo y el cargo los edita el dueño desde el panel
+// (`wallet.min_withdrawal`, `wallet.withdrawal_fee`). Estaban escritos aquí
+// como constantes y, para colmo, coincidían con lo que el panel mostraba: el
+// administrador cambiaba el valor, veía "guardado", y el servidor seguía
+// cobrando lo de siempre. Los números de abajo pasan a ser solo el valor por
+// defecto si el ajuste falta.
+const DEFAULT_MIN_WITHDRAWAL = 20
+const DEFAULT_WITHDRAWAL_FEE = 2
+
+// El tope sigue en código a propósito: no es una palanca de negocio sino una
+// barrera contra el dedo gordo y el fraude, y no debe poder subirla quien
+// tenga acceso al panel.
+const MAX_WITHDRAWAL = 10000
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req)
@@ -78,15 +89,27 @@ export async function POST(req: NextRequest) {
   // balance < NaN = false → validación bypasseada, ledger contaminado
   // permanentemente: balance = SUM(NaN, ...) = NaN para siempre.
   // Además chequeamos tope máximo y 2 decimales.
+  const minWithdrawal = await settingNumber('wallet.min_withdrawal', DEFAULT_MIN_WITHDRAWAL)
+  const withdrawalFee = await settingNumber('wallet.withdrawal_fee', DEFAULT_WITHDRAWAL_FEE)
+
   if (
     !bankAccountId ||
     !Number.isFinite(amount) ||
-    amount < MIN_WITHDRAWAL ||
+    amount < minWithdrawal ||
     amount > MAX_WITHDRAWAL ||
     Math.round(amount * 100) !== amount * 100
   ) {
     return NextResponse.json({ success: false, error: 'invalid_input',
-      message: `Monto entre S/ ${MIN_WITHDRAWAL} y S/ ${MAX_WITHDRAWAL}, máximo 2 decimales` }, { status: 400 })
+      message: `Monto entre S/ ${minWithdrawal} y S/ ${MAX_WITHDRAWAL}, máximo 2 decimales` }, { status: 400 })
+  }
+
+  // El cargo no puede comerse el retiro entero: con un cargo mal configurado
+  // el conductor pediría S/ 20 y recibiría 0 —o menos—, y la fila quedaría con
+  // net_amount negativo.
+  if (withdrawalFee >= amount) {
+    return NextResponse.json({ success: false, error: 'fee_exceeds_amount',
+      message: `El cargo por retiro (S/ ${withdrawalFee.toFixed(2)}) es mayor o igual al monto solicitado.` },
+      { status: 400 })
   }
 
   // Idempotency: la app móvil envía este header para que un tap-tap accidental
@@ -152,7 +175,7 @@ export async function POST(req: NextRequest) {
         throw { code: 'insufficient_balance', status: 400, balance }
       }
 
-      const fee = WITHDRAWAL_FEE
+      const fee = withdrawalFee
       const netAmount = amount - fee
 
       // Insertar withdrawal

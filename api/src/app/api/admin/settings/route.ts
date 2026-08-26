@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { query, tx } from '@/lib/db'
+import { invalidateSettingsCache } from '@/lib/app-settings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -139,5 +140,9 @@ export async function PATCH(req: NextRequest) {
     console.error('[admin/settings PATCH] error:', err)
     return NextResponse.json({ success: false, error: 'update_failed' }, { status: 500 })
   }
+  // Ronda 279: los ajustes ya se leen de verdad, y con una caché de treinta
+  // segundos. Al guardar la vaciamos para que el administrador vea el efecto
+  // de inmediato en vez de preguntarse si se guardó.
+  invalidateSettingsCache()
   return NextResponse.json({ success: true, updated: entries.length })
 }
