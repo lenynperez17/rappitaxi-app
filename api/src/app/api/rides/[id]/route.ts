@@ -33,6 +33,7 @@ interface RideDetailRow {
   final_fare: string | null
   payment_method: string | null
   vehicle_type: string | null
+  service_type: string | null
   passenger_rating: string | null
   driver_rating: string | null
   cancelled_by: string | null
@@ -93,6 +94,9 @@ function serializeRideDetail(r: RideDetailRow) {
     finalFare: r.final_fare !== null ? Number(r.final_fare) : null,
     paymentMethod: r.payment_method,
     vehicleType: r.vehicle_type,
+    // Ronda 280: el servicio que pidió el pasajero. El conductor cobraba
+    // la tarifa VIP sin enterarse de que le habían pedido VIP.
+    serviceType: r.service_type,
     passengerRating: r.passenger_rating !== null ? Number(r.passenger_rating) : null,
     driverRating: r.driver_rating !== null ? Number(r.driver_rating) : null,
     cancelledBy: r.cancelled_by,

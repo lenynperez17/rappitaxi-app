@@ -400,7 +400,16 @@ export async function POST(req: NextRequest) {
     )
     const targetDrivers = body.driverId
       ? [body.driverId]
-      : await findNearbyOnlineDrivers(body.pickupLat, body.pickupLng, 5, canonicalVehicleType)
+      // Ronda 280: `findNearbyOnlineDrivers` pasó a recibir una LISTA de tipos
+      // de vehículo aceptables, porque un servicio puede admitir varios (Express
+      // lo atienden `car` y `taxi`). Aquí el viaje lo crea un administrador
+      // indicando un tipo concreto, así que se envuelve en una lista de uno.
+      : await findNearbyOnlineDrivers(
+          body.pickupLat,
+          body.pickupLng,
+          5,
+          canonicalVehicleType ? [canonicalVehicleType] : null,
+        )
     if (targetDrivers.length > 0) {
       notified = await notifyRideOffer(targetDrivers, {
         rideId: created.id,

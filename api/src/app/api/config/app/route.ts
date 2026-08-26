@@ -32,6 +32,7 @@
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getEnabledDocumentTypes } from '@/lib/document-types'
+import { getEnabledServiceTypes } from '@/lib/service-types'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -88,6 +89,16 @@ export async function GET() {
     console.error('[config/app] no se pudo leer el catálogo de documentos:', err)
   }
 
+  // Ronda 280: los servicios (Express, Ejecutivo, VIP, Minivan) con su
+  // multiplicador. Vacío significa "el servidor no me lo dijo": la app usa su
+  // lista de siempre en ese caso, para no quedarse sin poder pedir un viaje.
+  let services: Awaited<ReturnType<typeof getEnabledServiceTypes>> = []
+  try {
+    services = await getEnabledServiceTypes()
+  } catch (err) {
+    console.error('[config/app] no se pudo leer el catálogo de servicios:', err)
+  }
+
   const config = {
     maintenanceMode: asBool(s.get('maintenance_mode'), false),
     registration: {
@@ -120,6 +131,13 @@ export async function GET() {
       description: d.description,
       required: d.required,
       sortOrder: d.sortOrder,
+    })),
+    services: services.map((s) => ({
+      code: s.code,
+      label: s.label,
+      description: s.description,
+      priceMultiplier: s.priceMultiplier,
+      sortOrder: s.sortOrder,
     })),
   }
 

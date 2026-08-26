@@ -21,19 +21,40 @@ interface RideOfferData {
   passengerName: string | null
   passengerPhone: string | null
   vehicleType: string | null
+  /** Ronda 280: el servicio que pidió el pasajero (express, vip, minivan…). */
+  serviceLabel?: string | null
   paymentMethod: string | null
 }
 
 /**
- * Encuentra drivers online (heartbeat < 5 min) dentro de `radiusKm` del pickup.
- * Retorna sus IDs.
+ * Encuentra conductores en línea (heartbeat < 5 min) a menos de `radiusKm` del
+ * punto de recogida.
+ *
+ * RONDA 280 — POR QUÉ CAMBIÓ EL FILTRO DE VEHÍCULO
+ * ------------------------------------------------
+ * Antes comparaba contra `driver_presence.vehicle_type`, y ese campo estaba
+ * **NULL para todos los conductores**: la app manda el heartbeat sin él
+ * (`modern_driver_home.dart`). Con NULL, la condición
+ * `(dp.vehicle_type IS NULL OR ...)` se cumplía siempre y el filtro no filtraba
+ * nada. Todos recibían todo.
+ *
+ * Ahora se mira `driver_vehicles`, que es donde el conductor SÍ registró su
+ * vehículo al darse de alta. La diferencia importa: funciona de inmediato para
+ * los conductores que ya están, **sin que actualicen la app**. Si dependiera
+ * del heartbeat, solo funcionaría para quien instale la versión nueva.
+ *
+ * `allowedVehicleTypes` en `null` significa "no filtres" — y quien llama lo
+ * pone en null cuando el servicio no restringe. Un conductor **sin vehículo
+ * activo registrado** también pasa: cortarle el trabajo por un dato que quizá
+ * nunca rellenó sería quitárselo sin avisar.
  */
 export async function findNearbyOnlineDrivers(
   pickupLat: number,
   pickupLng: number,
   radiusKm: number,
-  vehicleType?: string | null,
+  allowedVehicleTypes?: string[] | null,
 ): Promise<string[]> {
+  const filtra = Array.isArray(allowedVehicleTypes) && allowedVehicleTypes.length > 0
   const rows = await query<{ driver_id: string }>(
     `SELECT dp.driver_id
        FROM driver_presence dp
@@ -51,10 +72,23 @@ export async function findNearbyOnlineDrivers(
             ))
           )
         ) < $3
-        ${vehicleType ? `AND (dp.vehicle_type IS NULL OR dp.vehicle_type = $4)` : ''}
+        ${filtra ? `AND (
+             NOT EXISTS (
+               SELECT 1 FROM driver_vehicles dv
+                WHERE dv.driver_id = dp.driver_id AND dv.is_active = true
+             )
+             OR EXISTS (
+               SELECT 1 FROM driver_vehicles dv
+                WHERE dv.driver_id = dp.driver_id
+                  AND dv.is_active = true
+                  AND dv.vehicle_type = ANY($4::text[])
+             )
+           )` : ''}
       ORDER BY dp.last_heartbeat DESC
       LIMIT 50`,
-    vehicleType ? [pickupLat, pickupLng, radiusKm, vehicleType] : [pickupLat, pickupLng, radiusKm],
+    filtra
+      ? [pickupLat, pickupLng, radiusKm, allowedVehicleTypes]
+      : [pickupLat, pickupLng, radiusKm],
   )
   return rows.map((r) => r.driver_id)
 }
@@ -92,6 +126,9 @@ export async function notifyRideOffer(
       phone: ride.passengerPhone,
     },
     vehicleType: ride.vehicleType,
+    // Ronda 280: el conductor cobraba la tarifa VIP sin enterarse de que le
+    // habían pedido VIP. Ahora el servicio viaja con la solicitud.
+    serviceLabel: ride.serviceLabel ?? null,
     paymentMethod: ride.paymentMethod,
     createdAt: new Date().toISOString(),
   }

@@ -18,6 +18,7 @@ import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
 import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
 import { settingBool, settingNumber } from '@/lib/app-settings'
+import { getEnabledServiceTypes, isServiceTypeEnabled, vehicleTypesForService } from '@/lib/service-types'
 
 export const runtime = 'nodejs'
 
@@ -45,6 +46,7 @@ interface RideRow {
   final_fare: string | null
   payment_method: string | null
   vehicle_type: string | null
+  service_type: string | null
   passenger_rating: string | null
   driver_rating: string | null
   cancelled_by: string | null
@@ -78,6 +80,9 @@ function serializeRide(r: RideRow) {
     finalFare: r.final_fare !== null ? Number(r.final_fare) : null,
     paymentMethod: r.payment_method,
     vehicleType: r.vehicle_type,
+    // Ronda 280: el servicio que pidió el pasajero. El conductor cobraba
+    // la tarifa VIP sin enterarse de que le habían pedido VIP.
+    serviceType: r.service_type,
     passengerRating: r.passenger_rating !== null ? Number(r.passenger_rating) : null,
     driverRating: r.driver_rating !== null ? Number(r.driver_rating) : null,
     cancelledBy: r.cancelled_by,
@@ -134,6 +139,9 @@ export async function POST(req: NextRequest) {
     pickup?: PointInput
     destination?: PointInput
     vehicleType?: string
+    // Ronda 280: el servicio que eligió el pasajero (express, ejecutivo, vip,
+    // minivan). Hasta ahora se quedaba en el teléfono y nadie más se enteraba.
+    serviceType?: string
     paymentMethod?: string
     proposedFare?: number
     negotiable?: boolean
@@ -287,6 +295,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Ronda 280: el servicio se acepta solo si existe y está activo. Un código
+  // desconocido —o uno desactivado desde el panel— se guarda como null y el
+  // viaje se ofrece a todos, que es el comportamiento de siempre. No se
+  // rechaza el viaje: dejar sin servicio a un pasajero por un desajuste de
+  // versiones sería peor que ofrecérselo a un conductor de más.
+  const rawServiceType = typeof body.serviceType === 'string' ? body.serviceType.trim() : ''
+  const serviceType = rawServiceType && (await isServiceTypeEnabled(rawServiceType))
+    ? rawServiceType
+    : null
+  if (rawServiceType && !serviceType) {
+    console.warn('[rides] servicio desconocido o desactivado:', rawServiceType)
+  }
+
   const metadata: Record<string, unknown> = { negotiable }
   if (proposedFare !== null) metadata.proposedFare = proposedFare
 
@@ -297,19 +318,19 @@ export async function POST(req: NextRequest) {
           pickup_address, pickup_lat, pickup_lng,
           destination_address, destination_lat, destination_lng,
           distance_meters, duration_seconds,
-          estimated_fare, payment_method, vehicle_type, metadata)
+          estimated_fare, payment_method, vehicle_type, service_type, metadata)
        VALUES ($1, 'requested',
                $2, $3, $4,
                $5, $6, $7,
                $8, $9,
-               $10, $11, $12, $13)
+               $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         auth.userId,
         pickup.address ?? null, pickup.lat, pickup.lng,
         destination.address ?? null, destination.lat, destination.lng,
         distanceMeters, durationSeconds,
-        proposedFare, paymentMethod, vehicleType,
+        proposedFare, paymentMethod, vehicleType, serviceType,
         JSON.stringify(metadata),
       ],
     )
@@ -330,15 +351,28 @@ export async function POST(req: NextRequest) {
     // notifyRideOffer inserta notifications + envía push FCM real. Fire &
     // forget: si FCM falla no rompe la respuesta al pasajero.
     try {
-      const nearby = await findNearbyOnlineDrivers(pickup.lat!, pickup.lng!, 5, vehicleType)
+      // Ronda 280: a quién se le ofrece lo decide el SERVICIO que pidió el
+      // pasajero, no el `vehicleType` que la app manda fijo en 'car'. Si el
+      // servicio no restringe vehículos —o no llegó ninguno—, se avisa a todos,
+      // igual que antes.
+      const vehiculosPermitidos = await vehicleTypesForService(serviceType)
+      const nearby = await findNearbyOnlineDrivers(
+        pickup.lat!, pickup.lng!, 5, vehiculosPermitidos,
+      )
       if (nearby.length > 0) {
         // Nombre del passenger para el push (opcional).
         const paxName = await maybeOne<{ name: string | null }>(
           `SELECT COALESCE(display_name, full_name) AS name FROM users WHERE id = $1`,
           [auth.userId],
         )
+        // Ronda 280: se manda la etiqueta legible del servicio, no el código.
+        const servicios = await getEnabledServiceTypes().catch(() => [])
+        const etiquetaServicio =
+          servicios.find((s) => s.code === serviceType)?.label ?? null
+
         void notifyRideOffer(nearby, {
           rideId: ride.id,
+          serviceLabel: etiquetaServicio,
           pickupAddress: ride.pickup_address,
           destinationAddress: ride.destination_address,
           pickupLat: Number(ride.pickup_lat ?? 0),
