@@ -1,6 +1,8 @@
 Mejoras de esta versión:
 
-- Corregida la pantalla en negro que aparecía al cancelar un viaje y volver atrás.
-- El botón atrás vuelve a funcionar en la pantalla principal del pasajero.
-- Los avisos de "procesando" de la billetera y de las recargas ya no cierran la pantalla por error si algo falla.
+- Los documentos que se te piden como conductor ahora se configuran desde el panel: aparecen o desaparecen sin necesidad de actualizar la app.
+- Antecedentes penales y revisión técnica ya se guardan por separado; antes uno reemplazaba al otro al subirlos.
+- Corregido el aviso "Tu conductor llegó": al tocarlo abre el seguimiento del viaje correcto en vez de una pantalla de error.
+- El nombre del recibo en PDF decía "RappiTeam"; ahora dice Rapi Team.
+- El precio mínimo que puedes ofrecer coincide con la tarifa mínima real, sin rechazos posteriores.
 - Correcciones menores de estabilidad.
