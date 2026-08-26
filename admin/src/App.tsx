@@ -31,6 +31,7 @@ import { CreditNotesPage } from './pages/recharges/CreditNotesPage'
 import { VerificationsPage } from './pages/verifications/VerificationsPage'
 import { DriverVerificationDetailPage } from './pages/verifications/DriverVerificationDetailPage'
 import { DocumentTypesPage } from './pages/verifications/DocumentTypesPage'
+import { ServiceTypesPage } from './pages/settings/ServiceTypesPage'
 import { CancellationsPage } from './pages/cancellations/CancellationsPage'
 
 const queryClient = new QueryClient({
@@ -111,6 +112,9 @@ function AppRoutes() {
           }
         />
         <Route path="settings" element={<SettingsPage />} />
+        {/* Ronda 281: los servicios van aparte de Configuración porque
+            SettingsPage solo sabe pintar valores sueltos. */}
+        <Route path="settings/servicios" element={<ServiceTypesPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
       {/* Ronda 108: catch-all top-level para URLs fuera del árbol protegido.

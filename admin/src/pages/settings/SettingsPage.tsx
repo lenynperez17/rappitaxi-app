@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Loader2, Save, CheckCircle2, AlertCircle, Car } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
 
 interface Setting {
@@ -148,14 +149,25 @@ export function SettingsPage() {
               la base de datos no le dice nada a quien administra el negocio. */}
           <p className="text-sm text-gray-500 mt-1">Parámetros que afectan a toda la plataforma</p>
         </div>
-        <button
-          onClick={save}
-          disabled={!dirty || saving}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex-shrink-0 whitespace-nowrap"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Guardar cambios
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Ronda 281: los servicios (Express, VIP, Minivan…) no caben en esta
+              pantalla, que solo pinta valores sueltos. Tienen la suya, y desde
+              aquí es donde la gente la va a buscar. */}
+          <Link
+            to="/settings/servicios"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium rounded-lg whitespace-nowrap"
+          >
+            <Car className="w-4 h-4" /> Servicios y tarifas
+          </Link>
+          <button
+            onClick={save}
+            disabled={!dirty || saving}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#E31E24] hover:bg-[#B5181D] text-white text-sm font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Guardar cambios
+          </button>
+        </div>
       </div>
 
       {flash && (

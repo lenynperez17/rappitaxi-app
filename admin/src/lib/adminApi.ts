@@ -126,6 +126,23 @@ export interface PlacePrediction {
   lng?: number
 }
 
+/** Ronda 281: un servicio del catálogo (Express, Ejecutivo, VIP, Minivan). */
+export interface AdminServiceType {
+  code: string
+  label: string
+  description: string
+  /** Multiplicador sobre la tarifa sugerida. 1.0 = tarifa base. */
+  priceMultiplier: number
+  /** Vehículos que pueden atenderlo. Vacío = cualquiera. */
+  vehicleTypes: string[]
+  enabled: boolean
+  sortOrder: number
+  /** Cuántos viajes se han pedido de este servicio. */
+  ridesCount: number
+  /** Conductores activos con un vehículo capaz de atenderlo. */
+  driversAvailable: number
+}
+
 /** Ronda 279: una fila del catálogo de documentos del conductor. */
 export interface AdminDocumentType {
   code: string
@@ -622,6 +639,32 @@ class AdminApi {
     return this.rawFetch('/api/admin/document-types', {
       method: 'PATCH',
       body: { updates, ...(allowZeroRequired ? { allowZeroRequired: true } : {}) },
+    })
+  }
+
+  /**
+   * Ronda 281: los servicios que se le ofrecen al pasajero.
+   *
+   * La ronda 280 creó el catálogo y enseñó a la app a leerlo, pero se quedó sin
+   * el interruptor en el panel: Minivan existía, desactivada, y no había forma
+   * de encenderla sin entrar a la base de datos.
+   */
+  async listServiceTypes(): Promise<{ serviceTypes: AdminServiceType[] }> {
+    return this.rawFetch('/api/admin/service-types', { method: 'GET' })
+  }
+
+  /**
+   * `allowZeroEnabled` solo se manda cuando el administrador ya confirmó que
+   * quiere quedarse sin ningún servicio activo; sin él, el servidor responde
+   * 409 y no toca nada.
+   */
+  async updateServiceTypes(
+    updates: { code: string; enabled?: boolean; priceMultiplier?: number }[],
+    allowZeroEnabled = false,
+  ): Promise<{ updated: number }> {
+    return this.rawFetch('/api/admin/service-types', {
+      method: 'PATCH',
+      body: { updates, ...(allowZeroEnabled ? { allowZeroEnabled: true } : {}) },
     })
   }
 
