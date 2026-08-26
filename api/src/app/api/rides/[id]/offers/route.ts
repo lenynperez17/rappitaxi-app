@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne, tx, isUniqueViolation } from '@/lib/db'
+import { checkDriverBalance, insufficientBalanceMessage } from '@/lib/driver-balance-guard'
 
 export const runtime = 'nodejs'
 
@@ -132,18 +133,20 @@ export async function POST(
   // tipo inDriver OFERTA su tarifa y el pasajero elige. Esa vía no miraba el
   // saldo, así que un conductor endeudado seguía consiguiendo viajes y
   // hundiéndose más. Se cierra aquí también.
-  const offerBalanceRow = await maybeOne<{ balance: string }>(
-    'SELECT rapi_team_user_balance($1)::text AS balance',
-    [auth.userId],
-  )
-  const offerBalance = Number(offerBalanceRow?.balance ?? 0)
-  if (!Number.isFinite(offerBalance) || offerBalance < 0) {
+  // Ronda 279: mismo umbral configurable que en aceptar directo. Si ofertar no
+  // exigiera lo mismo, el mínimo no serviría de nada: bastaría con ofertar.
+  const offerBalance = await checkDriverBalance(auth.userId)
+  if (!offerBalance.ok) {
     return NextResponse.json(
       {
         success: false,
         error: 'insufficient_credits',
-        balance: offerBalance,
-        message: 'Tu saldo es negativo. Recarga tus créditos para ofertar viajes.',
+        balance: offerBalance.balance,
+        minimum: offerBalance.minimum,
+        message: insufficientBalanceMessage(offerBalance).replace(
+          'aceptar viajes',
+          'ofertar viajes',
+        ),
       },
       { status: 402 },
     )

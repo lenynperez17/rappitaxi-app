@@ -36,6 +36,7 @@ const LABELS: Record<string, string> = {
   'rides.commission_percent': 'Comisión por viaje',
   'rides.max_distance_km': 'Distancia máxima por viaje',
   'rides.min_fare': 'Tarifa mínima',
+  'rides.min_balance_to_accept': 'Saldo mínimo para aceptar viajes',
   'rides.negotiable': 'Negociación de precio',
   'wallet.min_recharge': 'Recarga mínima',
   'wallet.min_withdrawal': 'Retiro mínimo',

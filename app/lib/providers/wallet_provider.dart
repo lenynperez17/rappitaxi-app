@@ -7,6 +7,7 @@ import '../services/payment_service.dart';
 import '../widgets/mercadopago_checkout_pro_widget.dart';
 import '../core/constants/credit_constants.dart';
 import '../utils/error_messages.dart';
+import '../services/app_config_service.dart';
 
 // Helper: parse ISO8601 date strings desde la respuesta del backend Node.
 // Acepta tanto Strings como null (defaults a DateTime.now()).
@@ -674,11 +675,10 @@ class WalletProvider extends ChangeNotifier {
       final serviceFee = (config['serviceFee'] as num).toDouble();
       final minCredits = (config['minServiceCredits'] as num).toDouble();
 
-      // Ronda 245: misma guarda que ya tenía checkCreditStatus() y que acá
-      // faltaba. Si el modelo es solo-comisión (fee 0 y mínimo 0), no hay
-      // nada que validar: no se puede bloquear a un conductor por "saldo
-      // insuficiente" cuando el requisito es cero.
-      if (serviceFee <= 0 && minCredits <= 0) return true;
+      // Ronda 279: el atajo `if (serviceFee <= 0 && minCredits <= 0) return
+      // true` que había aquí devolvía "tiene suficiente" incluso con el saldo
+      // en negativo, que es justo el caso que el servidor rechaza. Ahora la
+      // regla es una sola y está en `_cumpleMinimo`.
 
       // Si wallet aún no cargó, refrescar directamente del backend.
       double credits = serviceCredits;
@@ -692,7 +692,7 @@ class WalletProvider extends ChangeNotifier {
         }
       }
 
-      final hasEnough = credits >= serviceFee && credits >= minCredits;
+      final hasEnough = _cumpleMinimo(credits, serviceFee, minCredits);
       if (!hasEnough) {
         AppLogger.warning(
           'Créditos insuficientes: S/ $credits (necesita >= S/ $serviceFee y >= S/ $minCredits)',
@@ -706,8 +706,28 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
+  /// Ronda 279: ¿tiene [credits] saldo suficiente para tomar trabajo?
+  ///
+  /// Una sola regla, y la misma que aplica el servidor
+  /// (`api/src/lib/driver-balance-guard.ts`). Antes había dos versiones de
+  /// esto en este mismo archivo y las dos empezaban por `serviceFee <= 0 →
+  /// true`: con el modelo actual —sin tarifa fija, solo comisión— ese atajo
+  /// daba SIEMPRE "tiene suficiente", incluso con el saldo en negativo. Por
+  /// eso la app dejaba intentar y era el servidor quien rebotaba.
+  static bool _cumpleMinimo(double credits, double serviceFee, double minCredits) {
+    final requerido = serviceFee > minCredits ? serviceFee : minCredits;
+    // Sin requisito configurado se conserva la regla del servidor: se rechaza
+    // la deuda, se acepta el cero.
+    if (requerido <= 0) return credits >= 0;
+    return credits >= requerido;
+  }
+
   /// Obtener configuración de créditos.
-  /// El backend Node aún no expone /api/settings/credits — devolvemos defaults.
+  ///
+  /// Ronda 279: el mínimo lo pone el dueño desde el panel y llega por
+  /// `/api/config/app`. Aquí ya no se decide nada: se lee. El comentario que
+  /// había —"el backend Node aún no expone /api/settings/credits"— describía
+  /// justamente el hueco que esa ronda cerró.
   Future<Map<String, dynamic>> getCreditConfig() async {
     // Ronda 245 BUG BLOQUEANTE: acá estaba hardcodeado `serviceFee: 1.0`
     // mientras CreditConstants.defaultServiceFee vale 0.0 ("sin tarifa fija
@@ -719,7 +739,9 @@ class WalletProvider extends ChangeNotifier {
     // efectivo, su saldo se volvía negativo y quedaba bloqueado para siempre.
     return {
       'serviceFee': CreditConstants.defaultServiceFee,
-      'minServiceCredits': CreditConstants.minServiceCredits,
+      // Si la configuración no llegó, `minBalanceToAccept` vale 0 — el
+      // comportamiento de siempre.
+      'minServiceCredits': AppConfigService.instance.config.minBalanceToAccept,
       'creditPackages': const [],
     };
   }
@@ -945,11 +967,9 @@ class WalletProvider extends ChangeNotifier {
       final serviceFee = (config['serviceFee'] as num).toDouble();
       final minCredits = (config['minServiceCredits'] as num).toDouble();
 
-      final hasEnough = serviceFee <= 0
-          ? true
-          : (currentCredits >= serviceFee && currentCredits >= minCredits);
+      final hasEnough = _cumpleMinimo(currentCredits, serviceFee, minCredits);
       final servicesAvailable = (serviceFee <= 0)
-          ? 999
+          ? (hasEnough ? 999 : 0)
           : (hasEnough ? (currentCredits / serviceFee).floor() : 0);
 
       return {

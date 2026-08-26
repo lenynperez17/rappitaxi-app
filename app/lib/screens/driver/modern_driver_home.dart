@@ -158,7 +158,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   double _serviceCredits = 0.0;
   double _serviceFee = 0.0;
   double _minServiceCredits = 0.0;
-  bool _hasEnoughCredits = true; // No minimum balance required — only 12% commission on completed trips
+  // Ronda 279: arranca en `true` a propósito —"aún no lo hemos comprobado"—
+  // para no acusar de saldo insuficiente a un conductor mientras carga. El
+  // valor real llega de `_checkCredits()`, y el mínimo lo pone el dueño desde
+  // el panel. El comentario anterior decía "no minimum balance required", y
+  // era cierto: no había ninguno, ni siquiera contra la deuda.
+  bool _hasEnoughCredits = true;
 
   /// Ronda 269: ¿ha subido el conductor algún documento?
   ///
@@ -417,7 +422,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       AppLogger.error(userFriendlyError(e, fallback: 'Error checking credits'));
       if (_isDisposed) return;
       setState(() {
-        _hasEnoughCredits = true; // Don't block driver on error — commission model doesn't require upfront credits
+        // Ante un fallo de red no bloqueamos al conductor: el servidor tiene
+        // la última palabra al aceptar, y dejarlo sin trabajar por no poder
+        // consultar su saldo sería peor.
+        _hasEnoughCredits = true;
         _isCheckingCredits = false;
       });
     }
@@ -438,7 +446,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     if (newCredits != _serviceCredits) {
       setState(() {
         _serviceCredits = newCredits;
-        _hasEnoughCredits = newCredits >= _serviceFee && newCredits >= _minServiceCredits;
+        // Ronda 279: misma regla que el servidor. Con requisito cero se
+        // rechaza la deuda y se acepta el cero; con requisito, se exige.
+        final requerido =
+            _serviceFee > _minServiceCredits ? _serviceFee : _minServiceCredits;
+        _hasEnoughCredits =
+            requerido <= 0 ? newCredits >= 0 : newCredits >= requerido;
       });
     }
   }
@@ -2486,7 +2499,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Créditos insuficientes. Toca para recargar.',
+                              // Ronda 279: decir cuánto falta y cuánto hay. Un
+                              // "créditos insuficientes" a secas no le dice al
+                              // conductor cuánto tiene que recargar.
+                              _minServiceCredits > 0
+                                  ? 'Necesitas S/ ${_minServiceCredits.toStringAsFixed(2)} '
+                                      'para aceptar viajes. Tienes S/ ${_serviceCredits.toStringAsFixed(2)}. '
+                                      'Toca para recargar.'
+                                  : 'Tu saldo es negativo (S/ ${_serviceCredits.toStringAsFixed(2)}). '
+                                      'Toca para recargar.',
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)),
                             ),
                           ),

@@ -74,6 +74,10 @@ export async function PATCH(req: NextRequest) {
     'rides.max_distance_km',
     'rides.min_fare',
     'rides.negotiable',
+    // Ronda 279: saldo mínimo para aceptar u ofertar viajes. Se creó en 0 —el
+    // comportamiento de siempre— para que subirlo sea una decisión del dueño y
+    // no un efecto colateral del despliegue.
+    'rides.min_balance_to_accept',
     // Los de abajo se conservan por si se crean más adelante desde admin.
     'rides.surge_cap',
     'rides.max_search_radius_km',

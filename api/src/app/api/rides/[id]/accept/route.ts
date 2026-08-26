@@ -11,6 +11,7 @@ import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query, tx } from '@/lib/db'
 import { isUuid } from '@/lib/uuid'
 import { sendPush } from '@/lib/send-push'
+import { checkDriverBalance, insufficientBalanceMessage } from '@/lib/driver-balance-guard'
 
 export const runtime = 'nodejs'
 
@@ -60,22 +61,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // recargó S/ 10 y se le cobraron S/ 15.92 en comisiones de dos viajes.
   // Una deuda que la app no tiene forma de cobrar.
   //
-  // Se exige saldo no negativo para aceptar. El balance ya excluye las filas
-  // 'commission' (registro contable de la plataforma), así que refleja lo que
-  // el conductor realmente tiene.
-  const balanceRow = await maybeOne<{ balance: string }>(
-    'SELECT rapi_team_user_balance($1)::text AS balance',
-    [auth.userId],
-  )
-  const driverBalance = Number(balanceRow?.balance ?? 0)
-  if (!Number.isFinite(driverBalance) || driverBalance < 0) {
+  // Ronda 279: el mínimo ya no está escrito aquí. Aquella comprobación solo
+  // rechazaba el saldo NEGATIVO, así que con S/ 0 exactos se aceptaba —que es
+  // justo lo que el dueño vio pasar. Ahora el umbral lo pone él desde el
+  // panel (`rides.min_balance_to_accept`), y se despliega en 0 para que el
+  // comportamiento no cambie hasta que él lo decida.
+  const balanceCheck = await checkDriverBalance(auth.userId)
+  if (!balanceCheck.ok) {
     return NextResponse.json(
       {
         success: false,
         error: 'insufficient_credits',
-        balance: driverBalance,
-        message:
-          'Tu saldo es negativo. Recarga tus créditos para volver a aceptar viajes.',
+        balance: balanceCheck.balance,
+        minimum: balanceCheck.minimum,
+        message: insufficientBalanceMessage(balanceCheck),
       },
       { status: 402 },
     )

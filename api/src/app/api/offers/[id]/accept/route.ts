@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { tx } from '@/lib/db'
 import { sendPush } from '@/lib/send-push'
+import { checkDriverBalance } from '@/lib/driver-balance-guard'
 
 export const runtime = 'nodejs'
 
@@ -97,6 +98,22 @@ export async function POST(
       const busy = busyRes.rows[0]?.active_ride_id
       if (busy && busy !== offer.ride_id) {
         throw { code: 'driver_busy', status: 409, activeRideId: busy }
+      }
+
+      // Ronda 279: el tercer camino por el que un conductor llega a un viaje,
+      // y el único que no miraba el saldo. La comprobación estaba al ofertar
+      // (ronda 257), pero entre ofertar y que el pasajero acepte pueden pasar
+      // minutos: si en ese rato el conductor completó otro viaje y la comisión
+      // lo dejó bajo el mínimo, aceptarle la oferta lo metía en un viaje que
+      // ya no debería poder tomar.
+      const offerBalance = await checkDriverBalance(offer.driver_id)
+      if (!offerBalance.ok) {
+        throw {
+          code: 'driver_insufficient_credits',
+          status: 409,
+          balance: offerBalance.balance,
+          minimum: offerBalance.minimum,
+        }
       }
 
       // Aceptar esta oferta
@@ -237,13 +254,22 @@ export async function POST(
       rejectedOffers: result.rejectedCount,
     })
   } catch (err) {
-    const e = err as { code?: string; status?: number; currentStatus?: string }
+    const e = err as {
+      code?: string; status?: number; currentStatus?: string
+      balance?: number; minimum?: number
+    }
     if (typeof e?.code === 'string' && typeof e?.status === 'number') {
       return NextResponse.json(
         {
           success: false,
           error: e.code,
           ...(e.currentStatus ? { currentStatus: e.currentStatus } : {}),
+          // Ronda 279: el pasajero merece saber por qué no se pudo, sin que le
+          // contemos el saldo ajeno. "Ese conductor no está disponible" es
+          // verdad y no filtra la cuenta de nadie.
+          ...(e.code === 'driver_insufficient_credits'
+            ? { message: 'Ese conductor ya no está disponible. Elige otra oferta.' }
+            : {}),
         },
         { status: e.status },
       )
