@@ -53,8 +53,55 @@ class DocumentTypeConfig {
       };
 }
 
+/// Ronda 280: un servicio del catálogo (Express, Ejecutivo, VIP, Minivan).
+///
+/// Lo mantiene el administrador desde el panel. Antes esto era un `enum` en la
+/// pantalla del pasajero, así que añadir uno exigía publicar en las tiendas.
 @immutable
-class AppConfig {
+class ServiceTypeConfig {
+  final String code;
+  final String label;
+  final String description;
+
+  /// Multiplicador sobre la tarifa sugerida. 1.0 = tarifa base.
+  final double priceMultiplier;
+  final int sortOrder;
+
+  const ServiceTypeConfig({
+    required this.code,
+    required this.label,
+    this.description = '',
+    this.priceMultiplier = 1.0,
+    this.sortOrder = 100,
+  });
+
+  factory ServiceTypeConfig.fromJson(Map<String, dynamic> json) => ServiceTypeConfig(
+        code: (json['code'] ?? '').toString(),
+        label: (json['label'] ?? '').toString(),
+        description: (json['description'] ?? '').toString(),
+        priceMultiplier: json['priceMultiplier'] is num
+            ? (json['priceMultiplier'] as num).toDouble()
+            : 1.0,
+        sortOrder: json['sortOrder'] is num ? (json['sortOrder'] as num).toInt() : 100,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'label': label,
+        'description': description,
+        'priceMultiplier': priceMultiplier,
+        'sortOrder': sortOrder,
+      };
+}
+
+/// Ronda 280: se llama `RemoteAppConfig` y no `AppConfig` porque ya existe un
+/// `AppConfig` en `core/config/app_config.dart` —el de las claves de Google
+/// Maps leídas del `.env`— y compartir nombre hacía que cualquier archivo que
+/// necesitara los dos no compilara. Son cosas distintas: aquélla es
+/// configuración local de compilación, ésta es la que el dueño edita en el
+/// panel y llega por la red.
+@immutable
+class RemoteAppConfig {
   final bool maintenanceMode;
   final bool driverRegistrationEnabled;
   final bool passengerRegistrationEnabled;
@@ -81,7 +128,12 @@ class AppConfig {
   /// siempre, no dejar de pedir documentos.
   final List<DocumentTypeConfig> documents;
 
-  const AppConfig({
+  /// Los servicios que se le ofrecen al pasajero, en orden. Vacío significa
+  /// "el servidor no me lo dijo": quien lo use debe caer en su lista de
+  /// siempre, no dejar al pasajero sin poder elegir.
+  final List<ServiceTypeConfig> services;
+
+  const RemoteAppConfig({
     this.maintenanceMode = false,
     this.driverRegistrationEnabled = true,
     this.passengerRegistrationEnabled = true,
@@ -97,10 +149,11 @@ class AppConfig {
     this.companyAddress = '',
     this.supportEmail = 'facturacion.rapiteam@gmail.com',
     this.documents = const [],
+    this.services = const [],
   });
 
   /// Los valores de fábrica: exactamente el comportamiento previo a la ronda 279.
-  static const AppConfig defaults = AppConfig();
+  static const RemoteAppConfig defaults = RemoteAppConfig();
 
   static bool _bool(dynamic v, bool fallback) => v is bool ? v : fallback;
 
@@ -113,14 +166,14 @@ class AppConfig {
   static String _str(dynamic v, String fallback) =>
       (v is String && v.trim().isNotEmpty) ? v : fallback;
 
-  factory AppConfig.fromJson(Map<String, dynamic> json) {
+  factory RemoteAppConfig.fromJson(Map<String, dynamic> json) {
     final registration = (json['registration'] as Map?)?.cast<String, dynamic>() ?? const {};
     final rides = (json['rides'] as Map?)?.cast<String, dynamic>() ?? const {};
     final wallet = (json['wallet'] as Map?)?.cast<String, dynamic>() ?? const {};
     final company = (json['company'] as Map?)?.cast<String, dynamic>() ?? const {};
-    const d = AppConfig.defaults;
+    const d = RemoteAppConfig.defaults;
 
-    return AppConfig(
+    return RemoteAppConfig(
       maintenanceMode: _bool(json['maintenanceMode'], d.maintenanceMode),
       driverRegistrationEnabled:
           _bool(registration['driverEnabled'], d.driverRegistrationEnabled),
@@ -141,6 +194,13 @@ class AppConfig {
           ? (json['documents'] as List)
               .whereType<Map>()
               .map((e) => DocumentTypeConfig.fromJson(e.cast<String, dynamic>()))
+              .where((e) => e.code.isNotEmpty && e.label.isNotEmpty)
+              .toList()
+          : const [],
+      services: (json['services'] is List)
+          ? (json['services'] as List)
+              .whereType<Map>()
+              .map((e) => ServiceTypeConfig.fromJson(e.cast<String, dynamic>()))
               .where((e) => e.code.isNotEmpty && e.label.isNotEmpty)
               .toList()
           : const [],
@@ -171,6 +231,7 @@ class AppConfig {
           'supportEmail': supportEmail,
         },
         'documents': documents.map((d) => d.toJson()).toList(),
+        'services': services.map((s) => s.toJson()).toList(),
       };
 }
 
@@ -190,8 +251,8 @@ class AppConfigService extends ChangeNotifier {
   /// servidor tarda, se arranca con lo cacheado y se sigue.
   static const Duration _kTimeout = Duration(seconds: 6);
 
-  AppConfig _config = AppConfig.defaults;
-  AppConfig get config => _config;
+  RemoteAppConfig _config = RemoteAppConfig.defaults;
+  RemoteAppConfig get config => _config;
 
   bool _loaded = false;
   bool get isLoaded => _loaded;
@@ -199,7 +260,7 @@ class AppConfigService extends ChangeNotifier {
   /// Carga la configuración: primero lo cacheado (instantáneo), luego la red.
   ///
   /// Nunca lanza. Un fallo aquí no puede impedir que la app abra.
-  Future<AppConfig> load() async {
+  Future<RemoteAppConfig> load() async {
     await _loadFromCache();
     await refresh();
     return _config;
@@ -212,7 +273,7 @@ class AppConfigService extends ChangeNotifier {
       if (raw == null) return;
       final decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic>) {
-        _config = AppConfig.fromJson(decoded);
+        _config = RemoteAppConfig.fromJson(decoded);
         _loaded = true;
         notifyListeners();
       }
@@ -235,7 +296,7 @@ class AppConfigService extends ChangeNotifier {
       if (body is! Map<String, dynamic> || body['config'] is! Map) return false;
 
       final json = (body['config'] as Map).cast<String, dynamic>();
-      _config = AppConfig.fromJson(json);
+      _config = RemoteAppConfig.fromJson(json);
       _loaded = true;
       notifyListeners();
 

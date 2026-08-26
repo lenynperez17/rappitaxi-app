@@ -639,6 +639,10 @@ class RapiApiClient {
     required Map<String, dynamic> destination,
     required String vehicleType,
     required String paymentMethod,
+    /// Ronda 280: el servicio elegido (express, ejecutivo, vip, minivan). El
+    /// servidor lo usa para decidir a qué conductores ofrecer el viaje y para
+    /// que la solicitud le diga al conductor qué le están pidiendo.
+    String? serviceType,
     double? proposedFare,
     bool negotiable = false,
     String? notes,
@@ -647,6 +651,7 @@ class RapiApiClient {
         'pickup': pickup,
         'destination': destination,
         'vehicleType': vehicleType,
+        if (serviceType != null) 'serviceType': serviceType,
         'paymentMethod': paymentMethod,
         if (proposedFare != null) 'proposedFare': proposedFare,
         'negotiable': negotiable,

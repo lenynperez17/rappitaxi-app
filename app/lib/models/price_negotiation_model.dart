@@ -21,6 +21,11 @@ class PriceNegotiation {
   final PaymentMethod paymentMethod;
   final String? notes;
 
+  /// Ronda 280: el servicio que pidió el pasajero, ya en texto legible
+  /// ("Express", "VIP", "Minivan"). Hasta ahora el conductor no lo veía: podía
+  /// estar cobrando una tarifa VIP sin saber que le habían pedido VIP.
+  final String? serviceLabel;
+
   // ✅ SISTEMA DE PROMOCIONES
   final String? appliedPromotionId;
   final String? appliedPromotionCode;
@@ -52,6 +57,7 @@ class PriceNegotiation {
     this.selectedDriverId,
     required this.paymentMethod,
     this.notes,
+    this.serviceLabel,
     // Campos de promoción
     this.appliedPromotionId,
     this.appliedPromotionCode,
@@ -109,6 +115,9 @@ class PriceNegotiation {
       selectedDriverId: map['selectedDriverId'],
       paymentMethod: _paymentMethodFromString(map['paymentMethod'] ?? 'cash'),
       notes: map['notes'],
+      // Ronda 280: el backend lo manda como `serviceLabel` en el aviso al
+      // conductor y como `serviceType` en el viaje. Se aceptan los dos.
+      serviceLabel: (map['serviceLabel'] ?? map['serviceType'])?.toString(),
       // Campos de promoción
       appliedPromotionId: map['appliedPromotionId'],
       appliedPromotionCode: map['appliedPromotionCode'],
@@ -237,6 +246,7 @@ class PriceNegotiation {
       selectedDriverId: acceptedDriverId ?? selectedDriverId ?? this.selectedDriverId,
       paymentMethod: paymentMethod,
       notes: notes,
+      serviceLabel: serviceLabel,
     );
   }
 

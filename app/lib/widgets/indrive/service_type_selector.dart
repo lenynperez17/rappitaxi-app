@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
-import '../../screens/passenger/modern_passenger_home.dart';
 
 /// Horizontal scroll selector for service types (inDrive style).
 /// Shows vehicle images prominently with labels below.
 class ServiceTypeSelector extends StatelessWidget {
-  final ServiceType selectedType;
-  final ValueChanged<ServiceType> onTypeSelected;
+  // Ronda 280: el servicio es un `String` con el código del catálogo
+  // (`ride_service_types`), no un enum. Un enum no puede crecer sin publicar
+  // una versión nueva, y añadir Minivan desde el panel exige que sí pueda.
+  final String selectedType;
+  final ValueChanged<String> onTypeSelected;
 
   const ServiceTypeSelector({
     super.key,
@@ -16,9 +18,10 @@ class ServiceTypeSelector extends StatelessWidget {
   });
 
   static const _services = [
-    _ServiceDef(ServiceType.express, Icons.local_taxi, 'Express', 'assets/images/vehicles/sedan.png'),
-    _ServiceDef(ServiceType.ejecutivo, Icons.directions_car, 'Ejecutivo', 'assets/images/vehicles/sedan.png'),
-    _ServiceDef(ServiceType.vip, Icons.star, 'VIP', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef('express', Icons.local_taxi, 'Express', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef('ejecutivo', Icons.directions_car, 'Ejecutivo', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef('vip', Icons.star, 'VIP', 'assets/images/vehicles/sedan.png'),
+    _ServiceDef('minivan', Icons.airport_shuttle, 'Minivan', 'assets/images/vehicles/sedan.png'),
   ];
 
   @override
@@ -46,7 +49,7 @@ class ServiceTypeSelector extends StatelessWidget {
 }
 
 class _ServiceDef {
-  final ServiceType type;
+  final String type;
   final IconData icon;
   final String label;
   final String assetPath;
@@ -55,7 +58,7 @@ class _ServiceDef {
 }
 
 class _ServiceChip extends StatelessWidget {
-  final ServiceType type;
+  final String type;
   final IconData icon;
   final String label;
   final String assetPath;

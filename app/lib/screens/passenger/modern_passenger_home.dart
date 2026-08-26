@@ -40,13 +40,17 @@ import 'passenger_negotiations_screen.dart'; // Pantalla de negociaciones
 import '../shared/map_picker_screen.dart'; // Map picker for selecting locations
 import '../../utils/error_messages.dart';
 import '../../utils/safe_navigation.dart';
+import '../../services/app_config_service.dart';
 
 // Enum para tipos de servicio disponibles (Estilo inDrive)
-enum ServiceType {
-  express,        // Express - standard ride (base rate)
-  ejecutivo,      // Ejecutivo - premium sedan (+15%)
-  vip,            // VIP - luxury ride (+30%)
-}
+// Ronda 280: aquí vivía `enum ServiceType { express, ejecutivo, vip }`, y era
+// la raíz del problema. Un enum en el código no puede crecer sin publicar una
+// versión nueva, así que añadir Minivan obligaba a pasar por las dos tiendas —
+// y, peor, cualquier servicio que el panel añadiera caía en el `orElse` y el
+// pasajero acababa pidiendo un Express creyendo que pedía otra cosa.
+//
+// El servicio es ahora un `String` con el código del catálogo
+// (`ride_service_types`), que llega por `/api/config/app`.
 
 // ELIMINADO: TripModality - inDrive NO tiene viajes programados ni rideshare urbanos
 
@@ -136,7 +140,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
   double _offeredPrice = 0.0; // Calculated from route distance
   bool _locationPermissionGranted = false; // Para habilitar myLocation en Maps
   bool _isManualPriceEntry = false; // true cuando el usuario quiere digitar el precio manualmente
-  ServiceType _selectedServiceType = ServiceType.express; // Tipo de servicio seleccionado (default: Express)
+  // Ronda 280: el servicio seleccionado se guarda como TEXTO, no como enum.
+  // El enum solo conocía express/ejecutivo/vip, así que en cuanto el
+  // administrador añadía uno nuevo desde el panel —Minivan— elegirlo caía en el
+  // `orElse` y el pasajero acababa pidiendo un Express sin enterarse.
+  String _selectedServiceType = 'express';
   String _selectedPaymentMethod = 'Efectivo'; // Método de pago seleccionado (default: Efectivo)
   bool _isSelectingLocation = false; // true cuando el usuario está ingresando/seleccionando direcciones
   bool _isSearchingDriver = false; // true cuando se está buscando conductor
@@ -1450,6 +1458,11 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
           offeredPrice: _offeredPrice,
           paymentMethod: paymentMethodEnum,
           notes: null,
+          // Ronda 280: el servicio elegido viaja con el viaje. Hasta ahora se
+          // quedaba en esta pantalla y solo servía para calcular el precio
+          // sugerido; ni el servidor ni el conductor se enteraban de si le
+          // habían pedido Express o VIP.
+          serviceType: _selectedServiceType,
           knownUserId: user.id,
           knownUserName: user.fullName,
           knownUserPhone: user.phone,
@@ -1937,7 +1950,7 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                                       offeredPrice: _offeredPrice,
                                       selectedPaymentMethod: _selectedPaymentMethod,
                                       isSearchingDriver: _isSearchingDriver,
-                                      selectedServiceType: _selectedServiceType.name,
+                                      selectedServiceType: _selectedServiceType,
                                       pickupAddress: _pickupController.text,
                                       destinationAddress: _destinationController.text,
                                       onBack: _cancelPriceNegotiation,
@@ -1953,19 +1966,20 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
                                       },
                                       onServiceTypeChanged: (type) {
                                         setState(() {
-                                          _selectedServiceType = ServiceType.values.firstWhere(
-                                            (e) => e.name == type,
-                                            orElse: () => ServiceType.express,
-                                          );
-                                          const multipliers = {
-                                            'express': 1.0,
-                                            'ejecutivo': 1.15,
-                                            'vip': 1.3,
-                                            'mototaxi': 0.7,
-                                            'entregas': 0.8,
-                                            'ciudadACiudad': 1.8,
-                                          };
-                                          final mult = multipliers[type] ?? 1.0;
+                                          _selectedServiceType = type;
+                                          // Ronda 280: el multiplicador sale del
+                                          // catálogo del panel. La tabla que
+                                          // había aquí escrita a mano se
+                                          // quedaría vieja en cuanto el dueño
+                                          // cambiara un precio, y además listaba
+                                          // servicios que no existen
+                                          // ('mototaxi', 'entregas').
+                                          final mult = AppConfigService
+                                                  .instance.config.services
+                                                  .where((s) => s.code == type)
+                                                  .map((s) => s.priceMultiplier)
+                                                  .firstOrNull ??
+                                              1.0;
                                           final base = _suggestedPrice ?? _offeredPrice;
                                           _offeredPrice = (base * mult).roundToDouble();
                                           _priceController.text = _offeredPrice.toStringAsFixed(2);
@@ -2762,12 +2776,31 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     );
   }
 
+  /// Ronda 280: los servicios salen del catálogo del panel. Estaban escritos
+  /// aquí, así que añadir Minivan habría exigido publicar una versión nueva.
+  /// El icono sí se decide en la app: es decoración, no viaja en el catálogo.
+  IconData _iconoDeServicio(String code) {
+    switch (code) {
+      case 'express': return Icons.local_taxi;
+      case 'ejecutivo': return Icons.directions_car;
+      case 'vip': return Icons.star;
+      case 'minivan': return Icons.airport_shuttle;
+      default: return Icons.local_taxi;
+    }
+  }
+
   Widget _buildInDriveServiceSelector() {
-    const services = <(ServiceType, String, String, IconData)>[
-      (ServiceType.express, 'Express', 'assets/images/vehicles/sedan.png', Icons.local_taxi),
-      (ServiceType.ejecutivo, 'Ejecutivo', 'assets/images/vehicles/sedan.png', Icons.directions_car),
-      (ServiceType.vip, 'VIP', 'assets/images/vehicles/sedan.png', Icons.star),
-    ];
+    final catalogo = AppConfigService.instance.config.services;
+    final services = catalogo.isNotEmpty
+        ? [
+            for (final s in catalogo)
+              (s.code, s.label, 'assets/images/vehicles/sedan.png', _iconoDeServicio(s.code)),
+          ]
+        : const <(String, String, String, IconData)>[
+            ('express', 'Express', 'assets/images/vehicles/sedan.png', Icons.local_taxi),
+            ('ejecutivo', 'Ejecutivo', 'assets/images/vehicles/sedan.png', Icons.directions_car),
+            ('vip', 'VIP', 'assets/images/vehicles/sedan.png', Icons.star),
+          ];
 
     return SizedBox(
       height: 100,
@@ -4047,14 +4080,12 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     );
   }
 
-  void _showServiceDetailsIfNeeded(ServiceType type) {
-    switch (type) {
-      case ServiceType.express:
-      case ServiceType.ejecutivo:
-      case ServiceType.vip:
-        break;
-    }
-  }
+  /// Ronda 280: quedó vacía. Era un `switch` sobre el enum de servicios que no
+  /// hacía nada en ninguna rama —los tres casos caían en `break`— y que ahora,
+  /// con los servicios llegando del panel, tampoco tendría sentido enumerar.
+  /// Se conserva el punto de enganche por si algún servicio necesita explicar
+  /// algo al elegirlo (Minivan y su capacidad, por ejemplo).
+  void _showServiceDetailsIfNeeded(String type) {}
 
   void _showXLDetailsModal() {
     showResponsiveBottomSheet(
@@ -4931,11 +4962,14 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
     String serviceName;
     double? serviceMinPrice;
 
-    switch (_selectedServiceType) {
-      case ServiceType.express: serviceMultiplier = 1.0; serviceName = 'Express'; break;
-      case ServiceType.ejecutivo: serviceMultiplier = 1.15; serviceName = 'Ejecutivo'; break;
-      case ServiceType.vip: serviceMultiplier = 1.3; serviceName = 'VIP'; break;
-    }
+    // Ronda 280: multiplicador y nombre vienen del catálogo del panel. El
+    // `switch` que había aquí solo conocía tres servicios y habría cobrado
+    // tarifa base por una Minivan.
+    final servicio = AppConfigService.instance.config.services
+        .where((s) => s.code == _selectedServiceType)
+        .firstOrNull;
+    serviceMultiplier = servicio?.priceMultiplier ?? 1.0;
+    serviceName = servicio?.label ?? 'Express';
 
     final double basePrice = baseFare + (distanceKm * ratePerKm);
     double totalPrice = basePrice * serviceMultiplier;

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/constants/app_colors.dart';
-import '../../screens/passenger/modern_passenger_home.dart';
 import 'service_type_selector.dart';
 
 /// Main home bottom section widget (inDrive style).
 /// Contains address fields, service selector, favorites, and recent places.
 class HomeBottomSection extends StatelessWidget {
   final Widget addressFieldsWidget;
-  final ServiceType selectedServiceType;
-  final ValueChanged<ServiceType> onServiceTypeChanged;
+  // Ronda 280: código del catálogo en vez de enum. Ver ServiceTypeSelector.
+  final String selectedServiceType;
+  final ValueChanged<String> onServiceTypeChanged;
   final bool isSelectingLocation;
   final bool showContinueButton;
   final bool isKeyboardOpen;

@@ -511,6 +511,10 @@ class PriceNegotiationProvider extends ChangeNotifier {
     String? knownUserName,
     String? knownUserPhone,
     String? knownUserPhoto,
+    /// Ronda 280: el servicio elegido (express, ejecutivo, vip, minivan).
+    /// Antes se quedaba en la pantalla del pasajero y solo afectaba al precio
+    /// sugerido; el servidor nunca se enteraba y el conductor tampoco.
+    String? serviceType,
   }) async {
     try {
       String? userId = knownUserId ?? await _getCurrentUserId();
@@ -565,6 +569,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
           if (destination.reference != null) 'reference': destination.reference,
         },
         vehicleType: 'car',
+        serviceType: serviceType,
         paymentMethod: paymentMethod.name,
         proposedFare: offeredPrice,
         negotiable: true,

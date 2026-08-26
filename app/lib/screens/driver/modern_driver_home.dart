@@ -3258,6 +3258,13 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                             Row(children: [
                               Text(widget.formatPrice(widget.request.offeredPrice),
                                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
+                              // Ronda 280: el servicio que pidió el pasajero.
+                              // Antes el conductor cobraba una tarifa VIP sin
+                              // saber que le habían pedido VIP.
+                              if ((widget.request.serviceLabel ?? '').isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                _EtiquetaServicio(texto: widget.request.serviceLabel!),
+                              ],
                               if (widget.isFairPrice) ...[
                                 const SizedBox(width: 8),
                                 Text('Precio justo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.rappiOrange)),
@@ -3475,6 +3482,10 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
                         Row(children: [
                           Text(widget.formatPrice(request.offeredPrice),
                               style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
+                          if ((request.serviceLabel ?? '').isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            _EtiquetaServicio(texto: request.serviceLabel!),
+                          ],
                           if (isFairPrice) ...[
                             const SizedBox(width: 8),
                             Text('Precio justo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.rappiOrange)),
@@ -3940,6 +3951,36 @@ class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
             ),
             const Icon(Icons.chevron_right, color: Colors.red),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ronda 280: la etiqueta del servicio en la tarjeta de solicitud.
+///
+/// El pasajero elige Express, Ejecutivo, VIP o Minivan, y eso cambia la tarifa
+/// —hasta un 40% más—, pero el conductor no lo veía por ninguna parte: aceptaba
+/// un viaje más caro sin saber por qué lo era.
+class _EtiquetaServicio extends StatelessWidget {
+  final String texto;
+
+  const _EtiquetaServicio({required this.texto});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.rappiOrange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.rappiOrange,
         ),
       ),
     );

@@ -24,7 +24,32 @@ class _ServiceDef {
   });
 }
 
-const _services = [
+/// Ronda 280: los servicios que se le ofrecen al pasajero.
+///
+/// Los decide el administrador desde el panel y llegan por `/api/config/app`.
+/// Antes estaban escritos aquí, así que añadir uno —Minivan, por ejemplo—
+/// obligaba a publicar una versión nueva en las dos tiendas.
+///
+/// La lista de abajo se conserva como red de seguridad para cuando el servidor
+/// no conteste: sin ella, un fallo de red dejaría al pasajero sin poder elegir
+/// servicio y por tanto sin poder pedir un viaje.
+List<_ServiceDef> _serviciosDisponibles() {
+  final catalogo = AppConfigService.instance.config.services;
+  if (catalogo.isEmpty) return _serviciosFijos;
+  return [
+    for (final s in catalogo)
+      _ServiceDef(
+        type: s.code,
+        title: s.label,
+        subtitle: s.description,
+        passengers: s.code == 'minivan' ? 6 : 4,
+        assetPath: 'assets/images/vehicles/sedan.png',
+        multiplier: s.priceMultiplier,
+      ),
+  ];
+}
+
+const _serviciosFijos = [
   _ServiceDef(
     type: 'express',
     title: 'Express',
@@ -101,7 +126,16 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
   String _rideComment = '';
 
   double _multiplierFor(String type) {
-    return _services.firstWhere((s) => s.type == type).multiplier;
+    // `orElse` importa: el servicio guardado puede haber sido desactivado desde
+    // el panel entre que el pasajero lo eligió y este momento. Sin él,
+    // `firstWhere` lanzaría y la pantalla se rompería en vez de cobrar la
+    // tarifa base.
+    return _serviciosDisponibles()
+        .firstWhere(
+          (s) => s.type == type,
+          orElse: () => _serviciosFijos.first,
+        )
+        .multiplier;
   }
 
   /// El precio más bajo que el pasajero puede ofrecer.
@@ -587,7 +621,7 @@ class _PriceSettingSheetState extends State<PriceSettingSheet> {
   }) {
     final widgets = <Widget>[];
 
-    for (final service in _services) {
+    for (final service in _serviciosDisponibles()) {
       final isSelected = service.type == widget.selectedServiceType;
 
       widgets.add(
