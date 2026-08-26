@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -169,14 +170,15 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
       File? selectedFile; bool isPdf = false;
       if (fileType == 'camera' || fileType == 'gallery') {
         final source = fileType == 'camera' ? ImageSource.camera : ImageSource.gallery;
-        PermissionStatus permissionStatus;
-        if (source == ImageSource.camera) { permissionStatus = await Permission.camera.request(); }
-        else { if (await Permission.photos.isGranted || await Permission.photos.isLimited) { permissionStatus = PermissionStatus.granted; } else { permissionStatus = await Permission.photos.request(); if (permissionStatus.isDenied) { permissionStatus = await Permission.storage.request(); } } }
-        if (!permissionStatus.isGranted && !permissionStatus.isLimited) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Se necesitan permisos de camara/galeria'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating, action: SnackBarAction(label: 'Configuración', textColor: Colors.white, onPressed: () => openAppSettings())));
-          return;
-        }
+        // Ronda 280: aquí había el mismo pre-chequeo de permisos que hizo que
+        // Apple nos rechazara en `profile_screen` — "the app failed to open the
+        // camera". Si `request()` no devolvía `granted`, la app se negaba sin
+        // llegar a abrir nada.
+        //
+        // `image_picker` pide el permiso por su cuenta en iOS y Android, que es
+        // como lo hacen `documents_screen` y las pantallas de alta de conductor.
+        // Si de verdad está denegado, se sabrá por la excepción, no por una
+        // suposición previa.
         final picker = ImagePicker(); final image = await picker.pickImage(source: source, maxWidth: 1920, maxHeight: 1920, imageQuality: 85);
         if (image != null) { selectedFile = File(image.path); isPdf = false; }
       } else if (fileType == 'pdf') {
@@ -205,7 +207,20 @@ class _UpgradeToDriverScreenState extends State<UpgradeToDriverScreen> with Sing
     } catch (e) {
       debugPrint(userFriendlyError(e, fallback: 'Error seleccionando documento'));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al seleccionar documento')), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating));
+      // Ronda 280: si el fallo fue de permisos, ofrecemos ir a Ajustes — pero
+      // solo cuando el selector lo confirma, no antes de intentarlo.
+      final esPermiso = e is PlatformException &&
+          (e.code == 'camera_access_denied' || e.code == 'photo_access_denied');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(esPermiso
+            ? 'Se necesitan permisos de cámara o galería'
+            : userFriendlyError(e, fallback: 'Error al seleccionar documento')),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        action: esPermiso
+            ? SnackBarAction(label: 'Configuración', textColor: Colors.white, onPressed: () => openAppSettings())
+            : null,
+      ));
     }
   }
 

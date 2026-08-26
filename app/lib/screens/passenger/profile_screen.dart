@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'dart:convert'; // ✅ Para exportar datos en JSON
@@ -376,31 +377,23 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (source == null) return;
 
-      // Solo pedir permiso de CÁMARA si se usa la cámara
-      // Para GALERÍA: Android 13+ usa Photo Picker que NO requiere permisos
-      // Photo Picker es una actividad del sistema que maneja los permisos internamente
-      if (source == ImageSource.camera) {
-        final permissionStatus = await Permission.camera.request();
-        if (!permissionStatus.isGranted) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.permissionsNeeded),
-              backgroundColor: ModernTheme.error,
-              behavior: SnackBarBehavior.floating,
-              action: SnackBarAction(
-                label: AppLocalizations.of(context)!.openSettings,
-                textColor: Theme.of(context).colorScheme.onPrimary,
-                onPressed: () => openAppSettings(),
-              ),
-            ),
-          );
-          return;
-        }
-      }
-      // NOTA: Para galería NO pedimos permisos - image_picker usa Photo Picker en Android 13+
-
-      // Seleccionar imagen
+      // Ronda 280 — POR ESTO NOS RECHAZÓ APPLE.
+      //
+      // Aquí había una comprobación previa con `Permission.camera.request()`
+      // que, si no devolvía `granted`, enseñaba "Se necesitan permisos para
+      // acceder a la cámara/galería" y se iba sin intentar nada. El revisor de
+      // Apple tocó el icono de cámara de su foto de perfil, recibió ese mensaje
+      // y la cámara nunca se abrió: rechazo por *Guideline 2.1(a) — App
+      // Completeness*, "the app failed to open the camera", con captura de esta
+      // misma pantalla adjunta.
+      //
+      // La comprobación sobraba. `image_picker` pide el permiso él mismo en las
+      // dos plataformas, y así es como lo hacen ya `documents_screen` y las
+      // pantallas de alta de conductor — que funcionan. Este pre-chequeo solo
+      // añadía una forma de decir que no antes de preguntar.
+      //
+      // Si el permiso está denegado de verdad, lo sabremos por la excepción que
+      // lance el selector, y entonces sí ofrecemos ir a Ajustes.
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
@@ -496,11 +489,31 @@ class _ProfileScreenState extends State<ProfileScreen>
     } catch (e) {
       debugPrint(userFriendlyError(e, fallback: 'Error seleccionando imagen'));
       if (!mounted) return;
+
+      // Ronda 280: solo AHORA sabemos si el permiso está realmente denegado —
+      // porque lo dice el selector después de intentarlo, no porque lo
+      // hayamos supuesto antes. `image_picker` usa el código
+      // 'camera_access_denied' / 'photo_access_denied' en iOS.
+      final esPermiso = e is PlatformException &&
+          (e.code == 'camera_access_denied' || e.code == 'photo_access_denied');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${AppLocalizations.of(context)!.errorSelectingImage}: $e'),
+          content: Text(
+            esPermiso
+                ? AppLocalizations.of(context)!.permissionsNeeded
+                : userFriendlyError(e,
+                    fallback: AppLocalizations.of(context)!.errorSelectingImage),
+          ),
           backgroundColor: ModernTheme.error,
           behavior: SnackBarBehavior.floating,
+          action: esPermiso
+              ? SnackBarAction(
+                  label: AppLocalizations.of(context)!.openSettings,
+                  textColor: Theme.of(context).colorScheme.onPrimary,
+                  onPressed: () => openAppSettings(),
+                )
+              : null,
         ),
       );
     }
