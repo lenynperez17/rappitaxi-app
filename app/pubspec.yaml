@@ -1,6 +1,6 @@
 name: rappi_team
-description: Rappi Team - Aplicación de transporte
-version: 1.3.8+192
+description: Rapi Team - Aplicación de transporte
+version: 1.4.0+193
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
