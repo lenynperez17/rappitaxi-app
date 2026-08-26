@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
+import '../../utils/logger.dart';
 import '../../services/app_config_service.dart';
 
 class AboutScreen extends StatefulWidget {
@@ -20,9 +22,14 @@ class _AboutScreenState extends State<AboutScreen>
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
 
+  /// Ronda 280: la versión real de la app. Esta pantalla decía "Version 1.0.0
+  /// (Build 100)" escrito a mano mientras la app iba por la 1.3.8+192.
+  String _version = '';
+
   @override
   void initState() {
     super.initState();
+    _cargarVersion();
 
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 800),
@@ -45,6 +52,17 @@ class _AboutScreenState extends State<AboutScreen>
 
     _fadeController.forward();
     _slideController.forward();
+  }
+
+  Future<void> _cargarVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _version = 'Versión ${info.version} (${info.buildNumber})');
+    } catch (e) {
+      // Sin versión es mejor que con una versión falsa: la etiqueta no se pinta.
+      AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo leer la versión'));
+    }
   }
 
   @override
@@ -89,12 +107,11 @@ class _AboutScreenState extends State<AboutScreen>
                   _buildLegalSection(),
                   _buildContactSection(),
                   _buildTechnicalSection(),
-                  // Ronda 279: se retira "Síguenos". Los cuatro botones no
-                  // abrían ninguna red —solo mostraban "Abriendo Facebook..."—
-                  // y el usuario que decía debajo era "@RappiTeamPE", con la
-                  // marca equivocada. Cuando haya cuentas reales se vuelve a
-                  // poner con sus enlaces; hasta entonces prometía algo que no
-                  // existe.
+                  // Ronda 279 la retiró porque los cuatro botones no abrían
+                  // ninguna red. Ronda 280 la devuelve: los enlaces los pone el
+                  // dueño desde el panel y solo se pinta lo que esté
+                  // configurado. Si no hay ninguno, la sección no aparece.
+                  _buildSocialMediaSection(),
                   SizedBox(height: 32),
                 ],
               ),
@@ -158,20 +175,21 @@ class _AboutScreenState extends State<AboutScreen>
                   ),
                 ),
                 SizedBox(height: 16),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.rappiOrange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    'Version 1.0.0 (Build 100)',
-                    style: TextStyle(
-                      color: AppColors.rappiOrange,
-                      fontWeight: FontWeight.w600,
+                if (_version.isNotEmpty)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _version,
+                      style: TextStyle(
+                        color: AppColors.rappiOrange,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -281,12 +299,97 @@ class _AboutScreenState extends State<AboutScreen>
     );
   }
 
-  // Ronda 279: aquí vivía la sección "Síguenos", con cuatro botones que no
-  // abrían ninguna red —solo mostraban "Abriendo Facebook..."— bajo el usuario
-  // "@RappiTeamPE", con la marca equivocada. Se retiró entera, código incluido:
-  // dejarlo muerto invita a que alguien lo vuelva a enchufar sin enterarse de
-  // que nunca funcionó. Cuando existan cuentas reales se rehace con sus
-  // enlaces de verdad.
+  /// Ronda 280: "Síguenos", con los enlaces que el dueño puso en el panel.
+  ///
+  /// La ronda 279 quitó esta sección porque sus cuatro botones solo enseñaban
+  /// "Abriendo Facebook..." y no abrían nada, bajo un usuario con la marca
+  /// equivocada. Vuelve con la diferencia que importa: **solo se pinta lo que
+  /// está configurado**. Sin enlaces no hay sección — un botón que no cumple lo
+  /// que dice es peor que no tener el botón.
+  Widget _buildSocialMediaSection() {
+    final c = AppConfigService.instance.config;
+    final redes = <(String, IconData, Color, String)>[
+      if (c.facebookUrl.isNotEmpty) ('Facebook', Icons.facebook, Colors.blue, c.facebookUrl),
+      if (c.instagramUrl.isNotEmpty) ('Instagram', Icons.camera_alt, Colors.purple, c.instagramUrl),
+      if (c.tiktokUrl.isNotEmpty) ('TikTok', Icons.music_note, Colors.black87, c.tiktokUrl),
+      if (c.xUrl.isNotEmpty) ('X', Icons.alternate_email, Colors.blueGrey, c.xUrl),
+      if (c.whatsapp.isNotEmpty)
+        ('WhatsApp', Icons.chat, Colors.green, _enlaceWhatsApp(c.whatsapp)),
+    ];
+    if (redes.isEmpty) return const SizedBox.shrink();
+
+    return _buildSection(
+      'Síguenos',
+      Icons.share,
+      Colors.pink,
+      [
+        Wrap(
+          alignment: WrapAlignment.spaceEvenly,
+          spacing: 8,
+          runSpacing: 12,
+          children: [
+            for (final (nombre, icono, color, url) in redes)
+              _buildSocialButton(nombre, icono, color, () => _abrirEnlace(url)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// El WhatsApp se guarda como teléfono (+51927853550) y se abre con wa.me,
+  /// que no admite el signo ni espacios.
+  String _enlaceWhatsApp(String telefono) {
+    final soloDigitos = telefono.replaceAll(RegExp(r'[^0-9]'), '');
+    return 'https://wa.me/$soloDigitos';
+  }
+
+  Future<void> _abrirEnlace(String url) async {
+    try {
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir $url'), backgroundColor: AppColors.info),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e, fallback: 'No se pudo abrir el enlace.')),
+          backgroundColor: AppColors.info,
+        ),
+      );
+    }
+  }
+
+  Widget _buildSocialButton(String name, IconData icon, Color color, VoidCallback onTap) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          name,
+          style: TextStyle(
+            fontSize: 12,
+            color: AppColors.getTextSecondary(context),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildSection(String title, IconData icon, Color color, List<Widget> children) {
     return Column(

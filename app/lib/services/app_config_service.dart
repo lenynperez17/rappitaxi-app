@@ -123,6 +123,15 @@ class RemoteAppConfig {
   final String companyAddress;
   final String supportEmail;
 
+  /// Ronda 280: redes sociales, configurables desde el panel. Cadena vacía
+  /// significa "no configurada" y la app no pinta ese botón. Antes había cuatro
+  /// botones fijos que no abrían nada (ver ronda 279).
+  final String facebookUrl;
+  final String instagramUrl;
+  final String tiktokUrl;
+  final String xUrl;
+  final String whatsapp;
+
   /// Los documentos que hay que pedirle al conductor, en orden. Vacío significa
   /// "el servidor no me lo dijo": quien lo consuma debe usar su lista de
   /// siempre, no dejar de pedir documentos.
@@ -148,6 +157,11 @@ class RemoteAppConfig {
     this.companyRuc = '',
     this.companyAddress = '',
     this.supportEmail = 'facturacion.rapiteam@gmail.com',
+    this.facebookUrl = '',
+    this.instagramUrl = '',
+    this.tiktokUrl = '',
+    this.xUrl = '',
+    this.whatsapp = '',
     this.documents = const [],
     this.services = const [],
   });
@@ -190,6 +204,11 @@ class RemoteAppConfig {
       companyRuc: _str(company['ruc'], d.companyRuc),
       companyAddress: _str(company['address'], d.companyAddress),
       supportEmail: _str(company['supportEmail'], d.supportEmail),
+      facebookUrl: _str(company['facebookUrl'], ''),
+      instagramUrl: _str(company['instagramUrl'], ''),
+      tiktokUrl: _str(company['tiktokUrl'], ''),
+      xUrl: _str(company['xUrl'], ''),
+      whatsapp: _str(company['whatsapp'], ''),
       documents: (json['documents'] is List)
           ? (json['documents'] as List)
               .whereType<Map>()
@@ -229,6 +248,11 @@ class RemoteAppConfig {
           'ruc': companyRuc,
           'address': companyAddress,
           'supportEmail': supportEmail,
+          'facebookUrl': facebookUrl,
+          'instagramUrl': instagramUrl,
+          'tiktokUrl': tiktokUrl,
+          'xUrl': xUrl,
+          'whatsapp': whatsapp,
         },
         'documents': documents.map((d) => d.toJson()).toList(),
         'services': services.map((s) => s.toJson()).toList(),

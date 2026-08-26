@@ -69,6 +69,13 @@ export async function PATCH(req: NextRequest) {
     'company.ruc',
     'company.address',
     'company.support_email',
+    // Ronda 280: las redes sociales, para que el dueño las ponga sin que haya
+    // que publicar una versión nueva de la app. Vacías = no se muestran.
+    'company.facebook_url',
+    'company.instagram_url',
+    'company.tiktok_url',
+    'company.x_url',
+    'company.whatsapp',
     'maintenance_mode',
     'registration.driver_enabled',
     'registration.passenger_enabled',

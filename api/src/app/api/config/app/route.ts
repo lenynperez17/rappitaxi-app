@@ -124,6 +124,13 @@ export async function GET() {
       ruc: asString(s.get('company.ruc'), ''),
       address: asString(s.get('company.address'), ''),
       supportEmail: asString(s.get('company.support_email'), 'facturacion.rapiteam@gmail.com'),
+      // Ronda 280: redes sociales. Cadena vacía = no configurada, y la app no
+      // pinta el botón. Nada de botones que prometen y no cumplen.
+      facebookUrl: asString(s.get('company.facebook_url'), ''),
+      instagramUrl: asString(s.get('company.instagram_url'), ''),
+      tiktokUrl: asString(s.get('company.tiktok_url'), ''),
+      xUrl: asString(s.get('company.x_url'), ''),
+      whatsapp: asString(s.get('company.whatsapp'), ''),
     },
     documents: documents.map((d) => ({
       code: d.code,
