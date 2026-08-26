@@ -55,6 +55,14 @@ Upload metadata
 
 
 
+### ios rejection_reason
+
+```sh
+[bundle exec] fastlane ios rejection_reason
+```
+
+
+
 ### ios version_blockers
 
 ```sh

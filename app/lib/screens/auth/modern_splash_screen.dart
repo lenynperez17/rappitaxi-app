@@ -11,6 +11,7 @@ import '../../utils/map_marker_utils.dart';
 import '../../providers/auth_provider.dart';
 import '../../dev_tour_orchestrator.dart';
 import '../../services/rapi_api_client.dart';
+import '../../services/app_config_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/error_messages.dart';
 import '../../core/utils/home_route_resolver.dart';
@@ -219,9 +220,12 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
     try {
       final authProvider = context.read<AuthProvider>();
 
-      // TODO(node-migration): reemplazar con endpoint /api/settings/app-config
-      // cuando exista. Por ahora asumimos que el sistema NO está en mantenimiento.
-      const bool isMaintenanceMode = false;
+      // Ronda 279: aquí estaba el TODO que pedía este endpoint. El modo
+      // mantenimiento del panel ya no es decorativo: `/api/config/app` lo
+      // trae, y si el servidor no contesta se queda en `false` —abrir la app
+      // siempre gana frente a bloquearla por un fallo de red.
+      final appConfig = await AppConfigService.instance.load();
+      final bool isMaintenanceMode = appConfig.maintenanceMode;
 
       // Verificar si hay usuario autenticado
       if (authProvider.isAuthenticated && authProvider.currentUser != null) {

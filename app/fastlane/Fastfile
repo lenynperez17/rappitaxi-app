@@ -98,6 +98,55 @@ platform :ios do
     end
   end
 
+  # Ronda 279: qué dijo Apple al rechazar.
+  #
+  # `review_status` sabe decir REJECTED, pero no por qué, y el motivo había que
+  # ir a leerlo a mano al Centro de Resolución de la web. Volver a enviar sin
+  # saber qué falló es la forma más rápida de coleccionar rechazos.
+  #
+  # OJO CON LA AUTENTICACIÓN. El Centro de Resolución NO está en la API pública
+  # de App Store Connect: `v1/resolutionCenterThreads` sobre
+  # `api.appstoreconnect.apple.com` responde "resource does not exist". Vive en
+  # la API interna del portal, que solo acepta sesión de Apple ID (cookie), no
+  # la clave .p8. Por eso esta lane entra con usuario, no con clave: hay que
+  # exportar `FASTLANE_USER` con el Apple ID y responder al doble factor la
+  # primera vez (la sesión queda guardada en ~/.fastlane/spaceship).
+  lane :rejection_reason do
+    apple_id = ENV['FASTLANE_USER'] || ENV['APPLE_ID']
+    UI.user_error!(
+      "Falta el Apple ID. El Centro de Resolución no se puede leer con la clave\n" \
+      'de API: exporta FASTLANE_USER=tu@apple.id y vuelve a ejecutar.',
+    ) if apple_id.to_s.empty?
+
+    Spaceship::Tunes.login(apple_id)
+    Spaceship::ConnectAPI.login(apple_id, use_portal: false, use_tunes: true)
+    app = Spaceship::ConnectAPI::App.find('com.rapiteam.app')
+
+    threads = Spaceship::ConnectAPI::ResolutionCenterThread.all(
+      filter: { app: app.id }, includes: 'resolutionCenterMessages'
+    )
+    if threads.empty?
+      UI.success('No hay hilos en el Centro de Resolución.')
+      next
+    end
+
+    threads.each do |t|
+      UI.important("── #{t.thread_type} — #{t.state} — abierto #{t.created_date}")
+      messages = (t.resolution_center_messages || [])
+      messages = t.fetch_messages if messages.empty?
+      messages.each do |m|
+        UI.message("   [#{m.created_date}] #{m.message_body}")
+      end
+      begin
+        t.fetch_rejection_reasons.each do |r|
+          UI.error("   motivo: #{r.raw_data}")
+        end
+      rescue StandardError => e
+        UI.verbose("   (sin motivos estructurados: #{e.message})")
+      end
+    end
+  end
+
   # Ronda 269: por qué Apple rechaza mandar una versión a revisión.
   #
   # Al enviar el 1.3.3 la API contestó solo "This resource cannot be reviewed,

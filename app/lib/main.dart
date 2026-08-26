@@ -68,6 +68,7 @@ import 'screens/driver/transactions_history_screen.dart';
 import 'screens/driver/earnings_details_screen.dart';
 import 'screens/driver/earnings_withdrawal_screen.dart';
 import 'providers/vale_provider.dart';
+import 'services/app_config_service.dart';
 import 'screens/driver/documents_screen.dart';
 import 'screens/driver/driver_profile_screen.dart';
 import 'screens/driver/driver_negotiations_screen.dart';
@@ -237,6 +238,11 @@ class RappiTeamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()), // ✅ FIX: Provider para créditos de servicio
         ChangeNotifierProvider(create: (_) => DocumentProvider()), // ✅ FIX: Provider para documentos de conductor
         ChangeNotifierProvider(create: (_) => ValeProvider()),
+        // Ronda 279: la configuración que el administrador edita en el panel.
+        // Es `.value` sobre el singleton porque el splash la carga antes de
+        // que exista este árbol de widgets, y el resto de la app tiene que ver
+        // la misma instancia, no una recién creada y vacía.
+        ChangeNotifierProvider<AppConfigService>.value(value: AppConfigService.instance),
       ],
       // ✅ HANDLER DE NOTIFICACIONES - Procesa clicks en notificaciones
       child: NotificationHandlerWidget(
