@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use, unused_field, unused_element, avoid_print, unreachable_switch_default, avoid_web_libraries_in_flutter, library_private_types_in_public_api
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/constants/app_colors.dart';
 import '../../utils/error_messages.dart';
 import '../../services/app_config_service.dart';
@@ -280,35 +281,12 @@ class _AboutScreenState extends State<AboutScreen>
     );
   }
 
-  Widget _buildSocialMediaSection() {
-    return _buildSection(
-      'Siguenos',
-      Icons.share,
-      Colors.pink,
-      [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildSocialButton('Facebook', Icons.facebook, Colors.blue, _openFacebook),
-            _buildSocialButton('Twitter', Icons.connect_without_contact, Colors.lightBlue, _openTwitter),
-            _buildSocialButton('Instagram', Icons.camera_alt, Colors.purple, _openInstagram),
-            _buildSocialButton('LinkedIn', Icons.work, Colors.blueAccent, _openLinkedIn),
-          ],
-        ),
-        SizedBox(height: 16),
-        Center(
-          child: Text(
-            '@RappiTeamPE',
-            style: TextStyle(
-              color: AppColors.getTextSecondary(context),
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // Ronda 279: aquí vivía la sección "Síguenos", con cuatro botones que no
+  // abrían ninguna red —solo mostraban "Abriendo Facebook..."— bajo el usuario
+  // "@RappiTeamPE", con la marca equivocada. Se retiró entera, código incluido:
+  // dejarlo muerto invita a que alguien lo vuelva a enchufar sin enterarse de
+  // que nunca funcionó. Cuando existan cuentas reales se rehace con sus
+  // enlaces de verdad.
 
   Widget _buildSection(String title, IconData icon, Color color, List<Widget> children) {
     return Column(
@@ -365,25 +343,26 @@ class _AboutScreenState extends State<AboutScreen>
     );
   }
 
-  Widget _buildSocialButton(String name, IconData icon, Color color, VoidCallback onTap) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle, border: Border.all(color: color.withValues(alpha: 0.3))),
-            child: Icon(icon, color: color, size: 24),
-          ),
+  /// Ronda 279: el botón de compartir de la barra superior solo enseñaba
+  /// "Compartiendo Rapi Team..." y no compartía nada. `share_plus` ya está en
+  /// el proyecto —lo usa el detalle del viaje para enviar el recibo—, así que
+  /// ahora abre de verdad la hoja de compartir del sistema.
+  Future<void> _shareApp() async {
+    try {
+      await Share.share(
+        'Pide tu taxi con Rapi Team y propón tú el precio.\n'
+        'Descárgala en tu tienda de aplicaciones.',
+        subject: 'Rapi Team',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(userFriendlyError(e, fallback: 'No se pudo compartir.')),
+          backgroundColor: AppColors.info,
         ),
-        SizedBox(height: 8),
-        Text(name, style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)),
-      ],
-    );
-  }
-
-  void _shareApp() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Compartiendo Rapi Team...'), backgroundColor: AppColors.info));
+      );
+    }
   }
 
   void _showTermsAndConditions() {
@@ -473,10 +452,8 @@ class _AboutScreenState extends State<AboutScreen>
     );
   }
 
-  void _openFacebook() { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo Facebook...'), backgroundColor: AppColors.info)); }
-  void _openTwitter() { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo Twitter...'), backgroundColor: AppColors.info)); }
-  void _openInstagram() { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo Instagram...'), backgroundColor: AppColors.info)); }
-  void _openLinkedIn() { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Abriendo LinkedIn...'), backgroundColor: AppColors.info)); }
+  // Ronda 279: los cuatro `_openRed()` que había aquí solo enseñaban
+  // "Abriendo Facebook..." y no abrían nada. Eliminados con su sección.
 
   Widget _buildLegalDocumentScreen(String title, String content) {
     final now = DateTime.now();
