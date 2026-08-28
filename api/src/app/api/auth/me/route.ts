@@ -56,7 +56,8 @@ async function resolveDriverStatus(
   userId: string,
   user: { user_type: string; is_verified: boolean },
 ): Promise<string | null> {
-  if (user.user_type !== 'driver' && user.user_type !== 'dual') return null
+  // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+  if (user.user_type !== 'dual') return null
   if (user.is_verified) return 'approved'
   const docs = await maybeOne<{ total: string }>(
     'SELECT count(*)::text AS total FROM driver_documents WHERE driver_id = $1',

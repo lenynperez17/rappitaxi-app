@@ -4599,8 +4599,8 @@ class _ModernPassengerHomeScreenState extends State<ModernPassengerHomeScreen>
         // availableRoles no venga del backend. Sin este fallback, un user
         // dual quedaba viendo "Empieza a ganar dinero" en vez de "Cambiar
         // a conductor" porque /api/auth/me no devuelve availableRoles.
+        // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
         final hasDriverRole = user?.userType == 'dual' ||
-            user?.userType == 'driver' ||
             (user?.availableRoles?.contains('driver') ?? false);
 
         return Container(

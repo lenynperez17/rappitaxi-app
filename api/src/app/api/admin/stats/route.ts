@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const s = await one<{
     total_users: string; total_passengers: string; total_drivers: string;
-    total_dual: string; total_admins: string; total_active: string; total_suspended: string;
+    total_admins: string; total_active: string; total_suspended: string;
     total_trips: string; trips_today: string; trips_completed: string; trips_cancelled: string;
     total_recharges: string; recharges_today: string; recharges_month: string;
     total_emergencies: string; active_emergencies: string;
@@ -21,8 +21,11 @@ export async function GET(req: NextRequest) {
     SELECT
       (SELECT COUNT(*)::text FROM users WHERE deleted_at IS NULL) AS total_users,
       (SELECT COUNT(*)::text FROM users WHERE user_type = 'passenger' AND deleted_at IS NULL) AS total_passengers,
-      (SELECT COUNT(*)::text FROM users WHERE user_type = 'driver' AND deleted_at IS NULL) AS total_drivers,
-      (SELECT COUNT(*)::text FROM users WHERE user_type = 'dual' AND deleted_at IS NULL) AS total_dual,
+      -- Ronda 282: 'driver' ya no existe (migración 027) — quien conduce es
+      -- 'dual'. Este conteo se quedaba en 1 mientras la tarjeta del dashboard,
+      -- que sumaba los dos tipos, mostraba 6: dos cifras contradictorias con
+      -- etiquetas casi iguales en la misma pantalla. Ahora hay una sola.
+      (SELECT COUNT(*)::text FROM users WHERE user_type = 'dual' AND deleted_at IS NULL) AS total_drivers,
       (SELECT COUNT(*)::text FROM users WHERE (user_type = 'admin' OR is_admin = true) AND deleted_at IS NULL) AS total_admins,
       (SELECT COUNT(*)::text FROM users WHERE is_active = true AND suspended_at IS NULL AND deleted_at IS NULL) AS total_active,
       (SELECT COUNT(*)::text FROM users WHERE suspended_at IS NOT NULL AND deleted_at IS NULL) AS total_suspended,
@@ -44,7 +47,6 @@ export async function GET(req: NextRequest) {
         total: Number(s.total_users),
         passengers: Number(s.total_passengers),
         drivers: Number(s.total_drivers),
-        dual: Number(s.total_dual),
         admins: Number(s.total_admins),
         active: Number(s.total_active),
         suspended: Number(s.total_suspended),

@@ -114,7 +114,8 @@ class DocumentProvider extends ChangeNotifier {
       // (backend NO devuelve driverStatus — es campo legacy Firebase).
       final isVerified = profile['isVerified'] == true;
       final userType = (profile['userType'] ?? profile['user_type'] ?? '').toString();
-      final driverStatus = (isVerified && (userType == 'dual' || userType == 'driver'))
+      // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+      final driverStatus = (isVerified && userType == 'dual')
           ? 'approved'
           : 'pending_approval';
 

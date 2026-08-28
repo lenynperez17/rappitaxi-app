@@ -234,7 +234,12 @@ class LocationTrackingService {
         longitude: position.longitude,
         heading: position.heading,
         accuracy: position.accuracy,
-        speed: position.speed,
+        // Ronda 282: geolocator entrega la velocidad en metros por segundo, y
+        // el endpoint la guarda tal cual en `speed_kmh`. Se enviaba sin
+        // convertir, así que todo lo registrado salía 3,6 veces más lento: un
+        // coche a 60 km/h quedaba anotado como 16,7. Negativo significa
+        // "desconocida" en geolocator, y entonces no se manda nada.
+        speed: position.speed >= 0 ? position.speed * 3.6 : null,
         activeRideId: _currentRideId,
       );
       if (kDebugMode) {

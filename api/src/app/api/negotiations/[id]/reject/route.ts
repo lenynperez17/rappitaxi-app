@@ -77,7 +77,8 @@ export async function POST(
         // "rechazada" por decisión que A no tomó (griefing entre drivers).
         // Ahora: el driver retira su oferta y la negociation queda viva
         // para otros drivers. Si el driver no tenía offer previa, 403.
-        if (caller.user_type !== 'driver' && caller.user_type !== 'dual') {
+        // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+        if (caller.user_type !== 'dual') {
           throw { code: 'not_a_driver', status: 403 }
         }
         const offerRes = await client.query<{ id: string }>(

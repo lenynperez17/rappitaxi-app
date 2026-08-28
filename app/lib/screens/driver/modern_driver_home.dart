@@ -118,6 +118,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   Timer? _locationUpdateTimer;
   LatLng? _currentLocation;
   double _currentHeading = 0.0;
+  // Ronda 282: últimos datos de calidad del GPS, para que el latido los lleve
+  // también cuando lo dispara el temporizador y no el stream de posiciones.
+  double? _lastAccuracy;
+  double? _lastSpeedKmh;
+  DateTime? _lastFixAt;
   DateTime? _lastProgrammaticCameraMove;
   bool _isCameraAnimating = false;
   StreamSubscription<Position>? _positionStreamSubscription;
@@ -269,7 +274,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // Listener for admin verification approval — solo si el driver aún
       // no está aprobado (isVerified=false o userType!=dual/driver).
       final alreadyApproved = currentUser.isVerified &&
-          (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+          currentUser.userType == 'dual'; // Ronda 282: ver la migración 027.
       if (!alreadyApproved && currentUser.driverStatus != 'approved') {
         _startVerificationListener(currentUser.id);
       }
@@ -1029,6 +1034,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           _currentHeading = position.heading;
         }
 
+        // Ronda 282: se guardan para el latido. `position` solo existe aquí,
+        // pero también late el temporizador de 30s con la última posición
+        // conocida, y desde ahí no hay ningún `Position` que consultar.
+        // La velocidad de geolocator viene en m/s: a km/h, que es lo que
+        // documenta y almacena el endpoint. Negativa = desconocida.
+        _lastAccuracy = position.accuracy;
+        _lastSpeedKmh = position.speed >= 0 ? position.speed * 3.6 : null;
+        _lastFixAt = DateTime.now();
+
         // Snap to road (Rapi Team)
         final snappedLocation = await RoadSnappingService.instance.snapToRoad(newLocation);
 
@@ -1100,10 +1114,25 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     try {
       if (_driverId == null) return;
 
+      // Ronda 282: esta pantalla mandaba solo lat/lng/heading, y como es la
+      // fuente principal de latidos de un conductor esperando, `accuracy` y
+      // `speed` quedaban en NULL en la base de datos. Sin precisión el
+      // servidor no puede descartar una lectura de GPS mala aunque quiera.
+      //
+      // La velocidad solo se manda si el dato es reciente: con
+      // `distanceFilter: 5`, que el stream lleve un minuto callado significa
+      // que el conductor no se ha movido ni cinco metros. Reenviar entonces la
+      // última velocidad conocida anotaría a un coche parado circulando.
+      final fix = _lastFixAt;
+      final fresca = fix != null &&
+          DateTime.now().difference(fix) < const Duration(seconds: 60);
+
       await _api.heartbeat(
         latitude: location.latitude,
         longitude: location.longitude,
         heading: _currentHeading,
+        accuracy: _lastAccuracy,
+        speed: fresca ? _lastSpeedKmh : 0,
       );
     } catch (e) {
       AppLogger.warning(userFriendlyError(e, fallback: 'Error enviando heartbeat al backend'));
@@ -2057,7 +2086,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     final isApproved = currentUser != null &&
         currentUser.isVerified &&
-        (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+        currentUser.userType == 'dual'; // Ronda 282: ver la migración 027.
     if (!_isOnline && currentUser != null && !isApproved && currentUser.driverStatus != 'approved') {
       messenger.showSnackBar(
         SnackBar(
@@ -2348,7 +2377,7 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     // O si driverStatus=='approved' (legacy).
     final isDriverApproved = currentUser != null &&
         currentUser.isVerified &&
-        (currentUser.userType == 'dual' || currentUser.userType == 'driver');
+        currentUser.userType == 'dual'; // Ronda 282: ver la migración 027.
     if (currentUser != null && !isDriverApproved && currentUser.driverStatus != 'approved') {
       // Ronda 269: al entrar aquí se comprueba si de verdad hay documentos
       // subidos, para no afirmar que están "enviados" cuando no lo están.
@@ -2549,8 +2578,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       // legacy tenía su propia noción de verificación que
                       // podía quedar desincronizada.
                       final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+                      // Ronda 282: quien conduce es 'dual'. Ver migración 027.
                       if (authUser != null && authUser.isVerified &&
-                          (authUser.userType == 'dual' || authUser.userType == 'driver')) {
+                          authUser.userType == 'dual') {
                         return const SizedBox.shrink();
                       }
                       final status = docProvider.verificationStatus;

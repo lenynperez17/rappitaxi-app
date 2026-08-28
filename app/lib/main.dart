@@ -121,6 +121,54 @@ import 'screens/driver/active_trip_screen.dart'; // Pantalla de viaje activo par
 import 'screens/passenger/trip_completed_screen.dart'; // Pantalla de viaje completado para pasajero
 import 'screens/shared/maintenance_screen.dart'; // ✅ NUEVO: Pantalla de mantenimiento del sistema
 
+/// Ronda 282 — la cuenta entró desde otro dispositivo y este quedó fuera.
+///
+/// El servidor cierra la sesión anterior al entrar desde otro teléfono, porque
+/// dos dispositivos con la misma cuenta se pisaban la posición y el marcador
+/// del conductor saltaba de un lado a otro en el mapa del panel.
+///
+/// Aquí solo queda contarlo y llevar al login. Importa el orden: primero se
+/// corta el stream SSE —si no, sigue reintentando contra una sesión que ya no
+/// existe— y después se navega.
+///
+/// Se usa `pushNamedAndRemoveUntil` y no `pop`: vaciar la pila con `pop` desde
+/// la última ruta es justamente lo que dejaba la pantalla en negro (ronda 279).
+void _avisarSesionEnOtroDispositivo() {
+  AppLogger.warning('Sesión cerrada: la cuenta entró en otro dispositivo');
+
+  try {
+    unawaited(RapiSseClient.instance.stop());
+  } catch (e) {
+    AppLogger.error('No se pudo detener el stream SSE tras la expulsión', e);
+  }
+
+  // Puede no haber árbol de widgets todavía: si la expulsión se descubre al
+  // restaurar la sesión durante el arranque, no hay navigator al que pedirle
+  // nada. No pasa nada — sin sesión, la app abre en el login igualmente.
+  final context = NavigationHelper.navigatorKey.currentContext;
+  if (context == null) return;
+
+  Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Sesión cerrada'),
+      content: const Text(
+        'Tu cuenta se abrió en otro dispositivo. Por seguridad, solo puede '
+        'estar activa en uno a la vez.\n\n'
+        'Si no fuiste tú, vuelve a entrar y avisa a soporte.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Entendido'),
+        ),
+      ],
+    ),
+  );
+}
+
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -176,6 +224,12 @@ void main() {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     }
     AppLogger.info('Firebase Core listo');
+
+    // Ronda 282: qué hacer cuando el servidor cierra esta sesión porque la
+    // cuenta entró desde otro teléfono. Se engancha ANTES de restaurar la
+    // sesión, porque restaurar ya puede disparar un refresco que sea
+    // rechazado.
+    RapiApiClient.onSessionEvicted = _avisarSesionEnOtroDispositivo;
 
     // Restaurar sesión del backend Node si hay tokens guardados
     await RapiApiClient.instance.restore();

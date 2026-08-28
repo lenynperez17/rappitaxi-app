@@ -127,8 +127,9 @@ export async function POST(req: NextRequest) {
       credentialDbId: auth.credentialDbId,
     };
 
-    // Crear sesión completa (access + refresh + row en `sessions`)
-    const session = await createSession(user.id, deviceInfo);
+    // Crear sesión completa (access + refresh + row en `sessions`).
+    // La llave de acceso solo se usa desde la app, de ahí el 'mobile'.
+    const session = await createSession(user.id, { ...deviceInfo, client: 'mobile' });
 
     return NextResponse.json(
       {

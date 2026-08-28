@@ -8,28 +8,36 @@ import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { DateTime } from '../../components/DateTime'
 
-type UserTypeFilter = 'all' | 'passenger' | 'driver' | 'dual' | 'admin'
+/**
+ * Ronda 282: se acabó el tipo 'driver'.
+ *
+ * Toda cuenta nace como pasajero y se promueve a conductor desde ahí, así que
+ * quien conduce es 'dual' — puede aceptar viajes y también pedirlos. El tipo
+ * 'driver' era una reliquia con una sola cuenta, y tenerlo en el desplegable
+ * permitía seguir creando cuentas que ninguna de las dos cosas.
+ *
+ * "Dual" tampoco se le enseña ya a nadie: es jerga interna. Quien administra
+ * ve "Conductor", que es lo que esa persona es.
+ */
+type UserTypeFilter = 'all' | 'passenger' | 'dual' | 'admin'
 type StatusFilter = 'all' | 'active' | 'suspended' | 'deleted'
 
 const USER_TYPE_OPTIONS: Array<{ value: UserTypeFilter; label: string }> = [
   { value: 'all', label: 'Todos' },
   { value: 'passenger', label: 'Pasajeros' },
-  { value: 'driver', label: 'Conductores' },
-  { value: 'dual', label: 'Dual' },
+  { value: 'dual', label: 'Conductores' },
   { value: 'admin', label: 'Administradores' },
 ]
 
 const TYPE_BADGES: Record<string, string> = {
   passenger: 'bg-blue-100 text-blue-700',
-  driver: 'bg-orange-100 text-orange-700',
-  dual: 'bg-purple-100 text-purple-700',
+  dual: 'bg-orange-100 text-orange-700',
   admin: 'bg-red-100 text-red-700',
 }
 
 const TYPE_LABEL: Record<string, string> = {
   passenger: 'Pasajero',
-  driver: 'Conductor',
-  dual: 'Dual',
+  dual: 'Conductor',
   admin: 'Admin',
 }
 
@@ -126,11 +134,10 @@ export function UsersPage() {
   }, [flash])
 
   const counters = useMemo(() => {
-    const c = { passenger: 0, driver: 0, dual: 0, admin: 0 }
+    const c = { passenger: 0, dual: 0, admin: 0 }
     for (const u of users) {
       if (u.isAdmin || u.userType === 'admin') c.admin += 1
       else if (u.userType === 'passenger') c.passenger += 1
-      else if (u.userType === 'driver') c.driver += 1
       else if (u.userType === 'dual') c.dual += 1
     }
     return c
@@ -200,8 +207,8 @@ export function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Usuarios</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Total: <strong>{total}</strong> · {counters.passenger} pasajeros · {counters.driver} conductores ·{' '}
-            {counters.dual} dual · {counters.admin} admins
+            Total: <strong>{total}</strong> · {counters.passenger} pasajeros ·{' '}
+            {counters.dual} conductores · {counters.admin} admins
           </p>
         </div>
         <button
@@ -547,7 +554,7 @@ function ResetPasswordModal({
 function CreateUserModal({
   onClose, onCreated,
 }: { onClose: () => void; onCreated: () => void }) {
-  const [userType, setUserType] = useState<'passenger' | 'driver' | 'dual' | 'admin'>('passenger')
+  const [userType, setUserType] = useState<'passenger' | 'dual' | 'admin'>('passenger')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -606,7 +613,10 @@ function CreateUserModal({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de usuario</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['passenger', 'driver', 'dual', 'admin'] as const).map((t) => (
+              {/* Ronda 282: sin 'driver'. La restricción de la base de datos
+                  ya lo rechaza (migración 027), así que dejarlo aquí solo
+                  servía para que el guardado fallara. */}
+              {(['passenger', 'dual', 'admin'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -715,7 +725,7 @@ function CreateUserModal({
 function EditUserModal({
   user, onClose, onUpdated,
 }: { user: AdminUser; onClose: () => void; onUpdated: () => void }) {
-  const [userType, setUserType] = useState<'passenger' | 'driver' | 'dual' | 'admin'>(user.userType)
+  const [userType, setUserType] = useState<'passenger' | 'dual' | 'admin'>(user.userType)
   const [fullName, setFullName] = useState(user.fullName ?? '')
   const [email, setEmail] = useState(user.email ?? '')
   const [phone, setPhone] = useState(user.phone ?? '')
@@ -778,7 +788,10 @@ function EditUserModal({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de usuario</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['passenger', 'driver', 'dual', 'admin'] as const).map((t) => (
+              {/* Ronda 282: sin 'driver'. La restricción de la base de datos
+                  ya lo rechaza (migración 027), así que dejarlo aquí solo
+                  servía para que el guardado fallara. */}
+              {(['passenger', 'dual', 'admin'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"

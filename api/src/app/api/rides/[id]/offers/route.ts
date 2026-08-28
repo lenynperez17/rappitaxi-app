@@ -208,7 +208,8 @@ export async function POST(
       )
       const user = userRes.rows[0]
       if (!user) throw { code: 'user_not_found', status: 404 }
-      if (user.user_type !== 'driver' && user.user_type !== 'dual') {
+      // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+      if (user.user_type !== 'dual') {
         throw { code: 'not_a_driver', status: 403 }
       }
       if (!user.is_verified) {

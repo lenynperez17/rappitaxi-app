@@ -110,7 +110,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'invalid_credentials' }, { status: 401 })
   }
 
-  const session = await createSession(user.id, deviceInfoFromHeaders(req.headers))
+  // 'panel' es el único origen exento del cierre de sesiones (ronda 282): la
+  // misma persona administra desde el navegador y conduce desde el teléfono.
+  const session = await createSession(user.id, {
+    ...deviceInfoFromHeaders(req.headers),
+    client: 'panel',
+  })
 
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)

@@ -238,9 +238,11 @@ class UserModel {
     );
   }
 
-  /// Verificar si es conductor (puro o dual en modo conductor)
-  bool get isDriver =>
-      userType == 'driver' || (userType == 'dual' && currentMode == 'driver');
+  /// Verificar si está conduciendo ahora mismo.
+  ///
+  /// Ronda 282: ya no existe el tipo 'driver' — toda cuenta que conduce es
+  /// 'dual', porque nace como pasajero y se promueve. Ver la migración 027.
+  bool get isDriver => userType == 'dual' && currentMode == 'driver';
 
   /// Verificar si es pasajero (puro o dual en modo pasajero)
   bool get isPassenger =>
@@ -264,8 +266,18 @@ class UserModel {
   bool get canSwitchToPassenger =>
       isDualAccount && availableRoles?.contains('passenger') == true;
 
-  /// Obtener modo actual (con fallback a userType para backward compatibility)
-  String get activeMode => currentMode ?? userType;
+  /// Modo actual. Sin modo guardado se deduce del tipo de cuenta.
+  ///
+  /// Ronda 282: el respaldo era `userType` a secas, y para una cuenta 'dual'
+  /// sin modo devolvía la cadena 'dual' — que no es un modo. El resultado es
+  /// que `isInDriverMode` e `isInPassengerMode` daban AMBOS falso: ni una cosa
+  /// ni la otra. Pasaba desapercibido mientras casi todos los conductores eran
+  /// del tipo 'driver', pero ahora todos son 'dual'.
+  ///
+  /// Un dual sin modo entra como pasajero, que es lo que ya hacía
+  /// `HomeRouteResolver` al mandarlo al home de pasajero. Ahora coinciden.
+  String get activeMode =>
+      currentMode ?? (userType == 'dual' ? 'passenger' : userType);
 
   /// Verificar si está en modo conductor actualmente
   bool get isInDriverMode => activeMode == 'driver';

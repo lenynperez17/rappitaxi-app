@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { query, maybeOne } from '@/lib/db'
 import { TwilioVerifyService } from '@/services/TwilioVerifyService'
-import { createSession } from '@/lib/sessions'
+import { createSession, type DeviceInfo } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { ipRateLimit } from '@/lib/rate-limit'
 import { settingBool } from '@/lib/app-settings'
@@ -155,8 +155,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Session JWT propia — sin Firebase
-  const session = await createSession(user!.id, (body.deviceInfo as Record<string, unknown>) ?? {})
+  // Session JWT propia — sin Firebase.
+  // Ver la nota en `auth/google/idtoken`: el origen lo estampa el servidor.
+  const session = await createSession(user!.id, {
+    ...((body.deviceInfo as DeviceInfo | undefined) ?? {}),
+    client: 'mobile',
+  })
 
   // Auditoría.
   // Ronda 128 BUG: X-Forwarded-For puede venir vacío ("") o con texto no-IP

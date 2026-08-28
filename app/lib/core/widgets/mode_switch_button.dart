@@ -136,8 +136,9 @@ class ModeSwitchButton extends StatelessWidget {
     // "Pasajero" siempre aunque el user fuera dual+verified. Ahora chequea
     // isVerified+userType (mismo criterio de Ronda 231).
     final userType = (user.userType as String?) ?? 'passenger';
-    final isDriverApproved = (user.isVerified as bool? ?? false) &&
-        (userType == 'driver' || userType == 'dual');
+    // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+    final isDriverApproved =
+        (user.isVerified as bool? ?? false) && userType == 'dual';
     if (activeMode == 'driver' && !isDriverApproved) {
       return 'passenger';
     }
@@ -192,8 +193,9 @@ class ModeSwitchButton extends StatelessWidget {
   /// dejaba ambos destinos en effectiveRoles → popup innecesario.
   void _handleTap(BuildContext context, AuthProvider authProvider, dynamic user) {
     final userType = (user.userType as String?) ?? 'passenger';
-    final isDriverApproved = (user.isVerified as bool? ?? false) &&
-        (userType == 'driver' || userType == 'dual');
+    // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+    final isDriverApproved =
+        (user.isVerified as bool? ?? false) && userType == 'dual';
     final availableRoles = (user.availableRoles as List<dynamic>?)?.cast<String>() ?? const <String>[];
 
     // Preferencia: fromMode del widget > currentMode del user > effective

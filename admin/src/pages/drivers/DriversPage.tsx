@@ -114,7 +114,10 @@ export function DriversPage() {
                 <tr>
                   <th className="text-left px-4 py-3">Conductor</th>
                   <th className="text-left px-4 py-3">Contacto</th>
-                  <th className="text-left px-4 py-3">Tipo</th>
+                  {/* Ronda 282: se quitó la columna "Tipo". Distinguía
+                      'driver' de 'dual', y ya solo existe 'dual' — repetía la
+                      misma palabra en todas las filas de una pantalla que, por
+                      definición, solo lista conductores. Ver la migración 027. */}
                   <th className="text-center px-4 py-3">Viajes</th>
                   <th className="text-center px-4 py-3">Rating</th>
                   <th className="text-left px-4 py-3">Estado</th>
@@ -152,13 +155,6 @@ export function DriversPage() {
                           <Phone className="w-3 h-3 text-gray-400" /> {d.phone}
                         </div>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        d.userType === 'dual' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'
-                      }`}>
-                        {d.userType === 'dual' ? 'Dual' : 'Conductor'}
-                      </span>
                     </td>
                     <td className="px-4 py-3 text-center text-gray-700 font-medium">{d.totalTrips}</td>
                     <td className="px-4 py-3 text-center">

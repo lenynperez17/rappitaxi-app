@@ -52,8 +52,9 @@ class HomeRouteResolver {
 
     // Modo conductor. El alta debe estar aprobada: si no, el conductor entraría
     // a una pantalla desde la que no puede aceptar viajes.
-    final isApproved =
-        user.isVerified && (user.userType == 'driver' || user.userType == 'dual');
+    // Ronda 282: quien conduce es 'dual' — toda cuenta nace como pasajero y se
+    // promueve desde ahí, así que el tipo 'driver' ya no existe.
+    final isApproved = user.isVerified && user.userType == 'dual';
     if (isApproved) return driverHome;
 
     // Sin aprobar. Desde la ronda 269 el backend sí envía `driverStatus`
@@ -78,8 +79,13 @@ class HomeRouteResolver {
     final driverStatus = userJson['driverStatus'] as String?;
 
     if (userType == 'admin') return adminDashboard;
+    // `currentMode` es un MODO ('driver' / 'passenger'); `userType` es un TIPO
+    // de cuenta. Desde la ronda 282 ningún tipo vale 'driver', así que sin modo
+    // guardado se entra siempre como pasajero — que es exactamente el
+    // comportamiento buscado: toda cuenta es pasajera y se pasa a conductor con
+    // el interruptor de modo.
     if ((currentMode ?? userType) != 'driver') return passengerHome;
-    if (isVerified && (userType == 'driver' || userType == 'dual')) return driverHome;
+    if (isVerified && userType == 'dual') return driverHome;
     if (driverStatus == 'pending_approval') return passengerHome;
     return upgradeToDriver;
   }
@@ -93,8 +99,7 @@ class HomeRouteResolver {
   static bool needsModeSync(UserModel? user) {
     if (user == null) return false;
     if (user.currentMode != 'driver') return false;
-    final isApproved =
-        user.isVerified && (user.userType == 'driver' || user.userType == 'dual');
+    final isApproved = user.isVerified && user.userType == 'dual';
     return !isApproved;
   }
 }

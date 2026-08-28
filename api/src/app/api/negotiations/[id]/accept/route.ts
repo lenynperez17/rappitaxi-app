@@ -92,7 +92,10 @@ export async function POST(
         // El caller DEBE ser driver o dual, y opcionalmente haber postulado
         // (tener un ride_offer activo) — así evitamos IDOR de cualquier user
         // reclamando el viaje.
-        if (caller.user_type !== 'driver' && caller.user_type !== 'dual') {
+        // Ronda 282: ya no existe el tipo 'driver' — quien conduce es 'dual',
+        // porque toda cuenta nace como pasajero y luego se promueve. Ver la
+        // migración 027.
+        if (caller.user_type !== 'dual') {
           throw { code: 'not_a_driver', status: 403 }
         }
         // Requerir un ride_offer del caller para este viaje (postulación previa)

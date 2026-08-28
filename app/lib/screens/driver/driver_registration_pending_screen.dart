@@ -122,7 +122,8 @@ class _DriverRegistrationPendingScreenState extends State<DriverRegistrationPend
           newData?['user']?['userType']?.toString() ??
           newData?['userType']?.toString();
       AppLogger.info('pending refresh: userType=$userType');
-      if (userType == 'dual' || userType == 'driver') {
+      // Ronda 282: el ascenso a conductor escribe 'dual'. Ver la migración 027.
+      if (userType == 'dual') {
         AppLogger.info('Auto-promoted a $userType — refrescando authProvider y saliendo a driver home');
         if (!mounted) return;
         // Ronda 228: refrescar AuthProvider ANTES de navegar. Sin esto el

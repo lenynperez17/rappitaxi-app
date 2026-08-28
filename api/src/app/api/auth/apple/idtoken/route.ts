@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { query, maybeOne } from '@/lib/db'
-import { createSession } from '@/lib/sessions'
+import { createSession, type DeviceInfo } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { getClientIp } from '@/lib/auth-middleware'
 import { settingBool } from '@/lib/app-settings'
@@ -147,7 +147,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'account_suspended' }, { status: 403 })
   }
 
-  const session = await createSession(user!.id, (body.deviceInfo as Record<string, unknown>) ?? {})
+  // Ver la nota en `auth/google/idtoken`: el origen lo estampa el servidor.
+  const session = await createSession(user!.id, {
+    ...((body.deviceInfo as DeviceInfo | undefined) ?? {}),
+    client: 'mobile',
+  })
 
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)

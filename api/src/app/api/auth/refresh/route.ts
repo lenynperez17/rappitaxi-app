@@ -59,6 +59,19 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       )
     }
+    // Ronda 282: sigue siendo un 401 —hay que volver a entrar— pero con un
+    // motivo propio, para que la app diga qué pasó en vez de un genérico
+    // "sesión expirada" que aquí sería mentira.
+    if (code === 'session_evicted') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'session_evicted',
+          message: 'Tu cuenta se abrió en otro dispositivo.',
+        },
+        { status: 401 },
+      )
+    }
     if (
       code === 'reuse_detected' ||
       code === 'invalid_refresh' ||

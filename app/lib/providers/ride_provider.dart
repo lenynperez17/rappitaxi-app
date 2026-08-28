@@ -134,7 +134,10 @@ class RideProvider with ChangeNotifier {
             normalized['location'] = {'lat': lat, 'lng': lng};
           }
         }
-        normalized['userType'] ??= 'driver';
+        // Ronda 282: era 'driver', un tipo de cuenta que ya no existe (ver la
+        // migración 027). Son los conductores cercanos que devuelve el backend,
+        // así que el tipo correcto es 'dual'.
+        normalized['userType'] ??= 'dual';
         return UserModel.fromJson(normalized);
       }).toList();
 

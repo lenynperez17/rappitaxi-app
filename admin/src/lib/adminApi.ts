@@ -24,7 +24,8 @@ export interface AdminUser {
   displayName: string | null
   email: string | null
   phone: string | null
-  userType: 'passenger' | 'driver' | 'dual' | 'admin'
+  // Ronda 282: sin 'driver' — quien conduce es 'dual'. Ver la migración 027.
+  userType: 'passenger' | 'dual' | 'admin'
   isAdmin: boolean
   isActive: boolean
   isVerified: boolean
@@ -158,7 +159,7 @@ export interface AdminDocumentType {
 }
 
 export interface AdminStats {
-  users: { total: number; passengers: number; drivers: number; dual: number; admins: number; active: number; suspended: number }
+  users: { total: number; passengers: number; drivers: number; admins: number; active: number; suspended: number }
   trips: { total: number; today: number; completed: number; cancelled: number }
   recharges: { total: number; today: number; month: number }
   emergencies: { total: number; active: number }
@@ -210,7 +211,8 @@ class AdminApi {
   }
 
   async createUser(input: {
-    userType: 'passenger' | 'driver' | 'dual' | 'admin'
+    // Ronda 282: sin 'driver' — quien conduce es 'dual'. Ver la migración 027.
+  userType: 'passenger' | 'dual' | 'admin'
     fullName?: string
     email?: string
     phone?: string

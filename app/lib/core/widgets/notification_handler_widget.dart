@@ -193,8 +193,11 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
   void _navigateToTripHistory() {
     if (!mounted) return;
 
-    final userType = _getUserType();
-    final routeName = userType == 'driver'
+    // `_getUserType` devuelve el MODO activo, no el tipo de cuenta. El nombre
+    // engañaba: comparar un tipo con 'driver' ya no encuentra a nadie desde la
+    // ronda 282, y este sitio sí funciona porque compara un modo.
+    final modoActivo = _getUserType();
+    final routeName = modoActivo == 'driver'
       ? '/driver/order-history'
       : '/passenger/trip-history';
     Navigator.pushNamed(context, routeName);
@@ -249,8 +252,9 @@ class _NotificationHandlerWidgetState extends State<NotificationHandlerWidget> {
   void _handlePriceNegotiation() {
     if (!mounted) return;
     
-    final userType = _getUserType();
-    if (userType == 'driver') {
+    // Igual que arriba: es el modo activo, no el tipo de cuenta.
+    final modoActivo = _getUserType();
+    if (modoActivo == 'driver') {
       Navigator.pushNamed(context, '/driver/negotiations');
     } else {
       Navigator.pushNamed(context, '/passenger/negotiations');

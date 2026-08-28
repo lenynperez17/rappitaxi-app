@@ -46,8 +46,12 @@ export function DashboardPage() {
         <StatCard icon={Users} label="Usuarios" value={stats.users.total.toString()}
           sub={`${stats.users.active} activos · ${stats.users.suspended} suspendidos`}
           iconClass="bg-blue-100 text-blue-600" />
-        <StatCard icon={Car} label="Conductores" value={(stats.users.drivers + stats.users.dual).toString()}
-          sub={`${stats.users.drivers} solo · ${stats.users.dual} duales`}
+        {/* Ronda 282: la cifra sumaba dos tipos de usuario, 'driver' y 'dual',
+            y el subtítulo los desglosaba. Ya no hay dos: toda cuenta que
+            conduce es 'dual' porque nace como pasajero y luego se promueve.
+            Ver la migración 027. */}
+        <StatCard icon={Car} label="Conductores" value={stats.users.drivers.toString()}
+          sub="También pueden pedir viajes como pasajeros"
           iconClass="bg-orange-100 text-orange-600" />
         <StatCard icon={Route} label="Viajes hoy" value={stats.trips.today.toString()}
           sub={`${stats.trips.completed} ${stats.trips.completed === 1 ? 'completado' : 'completados'} en total`}
@@ -65,7 +69,6 @@ export function DashboardPage() {
           <dl className="space-y-2 text-sm">
             <Row label="Total pasajeros" value={stats.users.passengers} />
             <Row label="Total conductores" value={stats.users.drivers} />
-            <Row label="Usuarios duales" value={stats.users.dual} />
             <Row label="Administradores" value={stats.users.admins} />
             <Row label="Viajes totales" value={stats.trips.total} />
             <Row label="Viajes cancelados" value={stats.trips.cancelled} />

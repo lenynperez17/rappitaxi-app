@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { OAuth2Client, TokenPayload } from 'google-auth-library'
 import { query, maybeOne } from '@/lib/db'
-import { createSession } from '@/lib/sessions'
+import { createSession, type DeviceInfo } from '@/lib/sessions'
 import { ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS } from '@/lib/jwt'
 import { getClientIp } from '@/lib/auth-middleware'
 import { settingBool } from '@/lib/app-settings'
@@ -158,7 +158,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'account_suspended' }, { status: 403 })
   }
 
-  const session = await createSession(user!.id, (body.deviceInfo as Record<string, unknown>) ?? {})
+  // `client` lo pone el servidor, nunca el cuerpo del request: si el cliente
+  // pudiera declararse 'panel' esquivaría el cierre de la sesión anterior y
+  // volveríamos a tener dos teléfonos con la misma cuenta (ronda 282).
+  const session = await createSession(user!.id, {
+    ...((body.deviceInfo as DeviceInfo | undefined) ?? {}),
+    client: 'mobile',
+  })
 
   await query(
     `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)

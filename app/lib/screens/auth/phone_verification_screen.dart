@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'dart:async';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/home_route_resolver.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/animated/modern_animated_widgets.dart';
 
@@ -202,15 +203,17 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen>
       
       // Ronda 202: NO hardcodear /passenger/home. Un driver o admin verificando
       // su teléfono aterrizaba en home de pasajero. Ramificar por rol.
+      //
+      // Ronda 282: y se ramifica llamando a `HomeRouteResolver`, no con una
+      // condición propia. La ronda 269 unificó esta misma decisión en tres
+      // pantallas porque las tres discrepaban; ésta era una cuarta copia que se
+      // quedó fuera, y encima peor: mandaba al home de conductor a quien
+      // todavía no tiene el alta aprobada, o sea a una pantalla desde la que no
+      // puede aceptar ni un viaje.
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
-      final home = user?.userType == 'admin'
-          ? '/admin/dashboard'
-          : (user?.userType == 'driver' || user?.currentMode == 'driver')
-              ? '/driver/home'
-              : '/passenger/home';
       Navigator.pushNamedAndRemoveUntil(
         context,
-        home,
+        HomeRouteResolver.resolve(user),
         (route) => false,
       );
     } else {

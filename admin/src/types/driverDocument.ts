@@ -137,7 +137,8 @@ export interface DriverForVerification {
   email?: string
   phone?: string
   phoneNumber?: string
-  userType: 'driver' | 'dual'
+  // Ronda 282: sin 'driver' — quien conduce es 'dual'. Ver la migración 027.
+  userType: 'dual'
   driverStatus?: DriverApprovalStatus
   documentVerified?: boolean
   createdAt?: Timestamp

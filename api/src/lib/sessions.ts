@@ -34,7 +34,7 @@
 
 import { randomBytes } from 'node:crypto';
 
-import { pool, query, maybeOne } from '@/lib/db';
+import { pool, query, maybeOne, tx } from '@/lib/db';
 import {
   signAccessToken,
   hashRefreshToken,
@@ -56,6 +56,13 @@ export interface DeviceInfo {
   ip?: string | null;
   /** Fingerprint enviado por el cliente (header opcional 'x-fingerprint'). */
   fingerprint?: string | null;
+  /**
+   * Ronda 282: de dónde viene la sesión. Lo estampa cada endpoint de login,
+   * no las cabeceras — el User-Agent no es un discriminante fiable.
+   *
+   * Solo sirve para una cosa: separar el panel de la app. Ver `createSession`.
+   */
+  client?: 'mobile' | 'panel' | null;
 }
 
 export interface IssuedSession {
@@ -144,12 +151,47 @@ export function peekJti(refreshToken: string): string | null {
 // --------------------------------------------------------------------------
 
 /**
+ * `auth_events.ip_address` es de tipo INET: PostgreSQL rechaza la cadena vacía
+ * y textos heredados de proxies antiguos como "unknown". Ver la nota de la
+ * ronda 128 en `auth/sms/verify` — allí un 500 por esto dejaba al cliente sin
+ * token con el OTP ya quemado.
+ */
+function isPlausibleIp(ip: string | null | undefined): boolean {
+  return !!ip && ip.length <= 45 && /^[0-9a-fA-F:.]+$/.test(ip);
+}
+
+/**
  * Crea una nueva sesión para `userId` y emite (access, refresh).
  *
  * La llaman los endpoints de login (Google OAuth callback, Passkeys verify,
  * phone OTP verify) después de validar la identidad del usuario.
  *
  * Si `userId` no existe en `users`, lanza error (FK ON DELETE CASCADE).
+ *
+ * UNA SOLA SESIÓN POR CUENTA EN LA APP (Ronda 282)
+ * ------------------------------------------------
+ * Entrar desde la app cierra las demás sesiones de app de esa cuenta.
+ *
+ * No es una idea de diseño abstracta: se descubrió con un conductor cuyo
+ * marcador saltaba 13 km cada 10 segundos en el mapa del panel. Eran dos
+ * dispositivos con la misma cuenta escribiendo la misma fila de
+ * `driver_presence`, y ganaba el último en escribir. Ni el panel ni nadie
+ * podía notarlo: la fila se ve perfectamente normal en cada instante.
+ *
+ * No hace falta tocar `driver_presence` para arreglarlo. `auth-middleware.ts`
+ * ya rechaza cualquier token cuya sesión esté revocada, así que al revocar
+ * aquí, el dispositivo viejo recibe 401 en su siguiente latido —menos de diez
+ * segundos— y deja de escribir solo.
+ *
+ * POR QUÉ EL PANEL QUEDA FUERA
+ * ----------------------------
+ * El panel se administra desde el navegador y la app desde el teléfono, y son
+ * la misma cuenta. Sin esta separación, entrar a la app te echaría del panel a
+ * media gestión y al revés. Se compara contra `'panel'` y no a favor de
+ * `'mobile'` a propósito: las sesiones que ya existían no tienen el campo, y
+ * con `IS DISTINCT FROM` también se cierran. Si se comparara a favor de
+ * `'mobile'`, los teléfonos ya instalados seguirían pisándose hasta que
+ * volvieran a entrar, que es justo lo que se quiere cortar.
  */
 export async function createSession(
   userId: string,
@@ -163,20 +205,61 @@ export async function createSession(
   const refreshToken = await signRefreshJwt(userId, sessionId);
   const accessToken = await signAccessToken(userId, sessionId);
   const refreshExpiresAt = new Date(Date.now() + REFRESH_TTL_SECONDS * 1000);
+  const esPanel = deviceInfo?.client === 'panel';
 
-  await query(
-    `INSERT INTO sessions
-       (id, user_id, refresh_token_hash, expires_at, device_info,
-        created_at, last_used_at, revoked_at, replaced_by_session_id)
-     VALUES ($1, $2, $3, $4, $5::jsonb, now(), now(), NULL, NULL)`,
-    [
-      sessionId,
-      userId,
-      hashRefreshToken(refreshToken),
-      refreshExpiresAt.toISOString(),
-      JSON.stringify(deviceInfo ?? {}),
-    ],
-  );
+  // Alta y expulsión van juntas: si se insertara la nueva sin revocar las
+  // viejas quedarían dos sesiones vivas, que es el fallo que esto arregla.
+  await tx(async (client) => {
+    await client.query(
+      `INSERT INTO sessions
+         (id, user_id, refresh_token_hash, expires_at, device_info,
+          created_at, last_used_at, revoked_at, replaced_by_session_id)
+       VALUES ($1, $2, $3, $4, $5::jsonb, now(), now(), NULL, NULL)`,
+      [
+        sessionId,
+        userId,
+        hashRefreshToken(refreshToken),
+        refreshExpiresAt.toISOString(),
+        JSON.stringify(deviceInfo ?? {}),
+      ],
+    );
+
+    if (esPanel) return;
+
+    // `replaced_by_session_id` deja el rastro de quién la cerró, igual que en
+    // la rotación de refresh tokens. `revoked_reason` es lo que impide que
+    // `refreshSession` confunda esto con un token robado — ver la migración
+    // 026 y el bloque de sesión revocada más abajo.
+    const evicted = await client.query<{ id: string }>(
+      `UPDATE sessions
+          SET revoked_at = now(), replaced_by_session_id = $2,
+              revoked_reason = 'evicted'
+        WHERE user_id = $1
+          AND id <> $2
+          AND revoked_at IS NULL
+          AND device_info->>'client' IS DISTINCT FROM 'panel'
+        RETURNING id`,
+      [userId, sessionId],
+    );
+
+    if (evicted.rowCount) {
+      // Queda registrado para poder responder a un "me sacó de la app sin
+      // motivo" — y para ver cuentas compartidas entre dos teléfonos.
+      await client.query(
+        `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
+         VALUES ($1, 'session_evicted', 'sessions', $2, $3, $4)`,
+        [
+          userId,
+          isPlausibleIp(deviceInfo?.ip) ? deviceInfo!.ip : null,
+          deviceInfo?.ua ?? null,
+          JSON.stringify({
+            newSessionId: sessionId,
+            evictedSessionIds: evicted.rows.map((r) => r.id),
+          }),
+        ],
+      );
+    }
+  });
 
   return {
     sessionId,
@@ -191,7 +274,12 @@ export async function createSession(
 // refreshSession (rotation)
 // --------------------------------------------------------------------------
 
-export type InvalidRefreshCode = 'invalid_refresh' | 'reuse_detected' | 'account_suspended';
+export type InvalidRefreshCode =
+  | 'invalid_refresh'
+  | 'reuse_detected'
+  | 'account_suspended'
+  /** Ronda 282: la cuenta entró desde otro dispositivo y cerró esta sesión. */
+  | 'session_evicted';
 
 export class InvalidRefreshError extends Error {
   code: InvalidRefreshCode;
@@ -243,17 +331,23 @@ export async function refreshSession(
     // Ronda 38 HIGH: JOIN users para chequear is_active. Sin esto, un user
     // suspendido después del login podía seguir rotando tokens indefinidamente
     // cada 30 días — solo el ban al access token no bastaba para expulsarlo.
+    // Ronda 282: se arrastra `device_info` para no perder el origen de la
+    // sesión (`client`) al rotar. Sin esto, la sesión del panel dejaba de estar
+    // marcada como 'panel' en su primer refresco —una hora— y a partir de ahí
+    // cualquier login desde la app la cerraba.
     const found = await client.query<{
       id: string;
       user_id: string;
       expires_at: string;
       revoked_at: string | null;
       replaced_by_session_id: string | null;
+      revoked_reason: string | null;
+      device_info: DeviceInfo | null;
       is_active: boolean;
       deleted_at: string | null;
     }>(
       `SELECT s.id, s.user_id, s.expires_at, s.revoked_at, s.replaced_by_session_id,
-              u.is_active, u.deleted_at
+              s.revoked_reason, s.device_info, u.is_active, u.deleted_at
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.refresh_token_hash = $1
@@ -281,6 +375,21 @@ export async function refreshSession(
     // Ventana idempotente: 30s desde el revoke Y el revoke fue por rotación
     // (replaced_by_session_id set). Si ambas condiciones, es retry benigno.
     if (row.revoked_at) {
+      // Ronda 282, y va ANTES que todo lo demás: esta sesión se cerró porque
+      // la cuenta entró desde otro dispositivo. No es un robo por mucho que
+      // tarde en llegar — el teléfono expulsado puede pasar horas en un
+      // bolsillo antes de despertar y refrescar. Sin este caso, al vencer la
+      // ventana benigna de 30s se revocaban TODAS las sesiones del usuario,
+      // incluida la del teléfono nuevo: entrar en un sitio echaba de los dos.
+      if (row.revoked_reason === 'evicted') {
+        await client.query('COMMIT');
+        committed = true;
+        throw new InvalidRefreshError(
+          'session_evicted',
+          `session ${row.id} evicted by a newer login`,
+        );
+      }
+
       const revokedAgeMs = Date.now() - new Date(row.revoked_at).getTime();
       // Ronda 204 SECURITY: NO revocar todas las sesiones ante un /refresh
       // que llega justo después de un /logout manual (revoke sin
@@ -336,7 +445,12 @@ export async function refreshSession(
         row.user_id,
         hashRefreshToken(newRefresh),
         newRefreshExpiresAt.toISOString(),
-        JSON.stringify(deviceInfo ?? {}),
+        // El origen viaja con la estirpe de la sesión, no con el request que
+        // la rota: quien refresca es el mismo cliente que entró.
+        JSON.stringify({
+          ...(deviceInfo ?? {}),
+          client: row.device_info?.client ?? null,
+        }),
       ],
     );
 

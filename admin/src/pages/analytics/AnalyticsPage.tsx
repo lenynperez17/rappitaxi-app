@@ -47,7 +47,9 @@ export function AnalyticsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Metric icon={Users} label="Total usuarios" value={stats?.users.total ?? 0} color="blue" />
-        <Metric icon={Car} label="Conductores + duales" value={(stats?.users.drivers ?? 0) + (stats?.users.dual ?? 0)} color="orange" />
+        {/* Ronda 282: era "Conductores + duales", sumando dos tipos de cuenta.
+            Ya solo existe uno: quien conduce es 'dual'. Ver la migración 027. */}
+        <Metric icon={Car} label="Conductores" value={stats?.users.drivers ?? 0} color="orange" />
         <Metric icon={Route} label="Viajes completados" value={stats?.trips.completed ?? 0} color="green" />
         <Metric icon={CreditCard} label="Recargas mes" value={formatPEN(stats?.recharges.month ?? 0)} color="purple" />
       </div>
@@ -67,10 +69,12 @@ export function AnalyticsPage() {
         <h3 className="font-semibold text-gray-900 flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-blue-600" /> Distribución de usuarios
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+        {/* Ronda 282: tres tarjetas en vez de cuatro. "Dual (ambos)" era jerga
+            interna, y ahora describiría exactamente a los mismos que
+            "Conductores". */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <Card title="Pasajeros" value={stats?.users.passengers ?? 0} />
           <Card title="Conductores" value={stats?.users.drivers ?? 0} />
-          <Card title="Dual (ambos)" value={stats?.users.dual ?? 0} />
           <Card title="Administradores" value={stats?.users.admins ?? 0} />
         </div>
         <p className="text-xs text-gray-500 pt-2 border-t">

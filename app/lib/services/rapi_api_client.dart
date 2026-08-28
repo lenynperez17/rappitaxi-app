@@ -105,6 +105,18 @@ class RapiApiClient {
   /// True si tenemos refresh vigente (aún si el access expiró).
   bool get isSignedIn => _refreshCache != null;
 
+  /// Ronda 282: aviso de que el servidor cerró esta sesión porque la cuenta
+  /// entró desde otro dispositivo.
+  ///
+  /// Es un callback y no una navegación directa a propósito: este archivo
+  /// habla HTTP y no debe saber de pantallas. Lo engancha `main.dart`, que sí
+  /// tiene el navigator.
+  ///
+  /// Sin esto, al conductor expulsado se le limpia la sesión por dentro y la
+  /// app se queda muda: los latidos fallan, deja de recibir viajes y no hay
+  /// nada en pantalla que lo explique hasta que la reinicia.
+  static void Function()? onSessionEvicted;
+
   Future<void> _persistSession({
     required String accessToken,
     required String refreshToken,
@@ -118,6 +130,20 @@ class RapiApiClient {
       _secureStorage.write(key: _kRefreshToken, value: refreshToken),
       _secureStorage.write(key: _kAccessExpiresAt, value: _accessExpiresAtCache!.toIso8601String()),
     ]);
+  }
+
+  /// ¿El servidor cerró esta sesión por un login en otro dispositivo?
+  ///
+  /// El cuerpo se parsea a prueba de todo: un 502 del proxy llega como HTML y
+  /// un `jsonDecode` sin protección tumbaría el refresco entero por intentar
+  /// leer un motivo que ahí no existe.
+  bool _esSesionExpulsada(String body) {
+    try {
+      final data = jsonDecode(body);
+      return data is Map && data['error'] == 'session_evicted';
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _clearSession() async {
@@ -329,7 +355,17 @@ class RapiApiClient {
         body: jsonEncode({'refreshToken': _refreshCache}),
       );
       if (r.statusCode != 200) {
+        // Ronda 282: distinguir "te echaron" de "expiró". Las dos acaban en el
+        // login, pero solo una tiene una explicación que dar.
+        final expulsada = _esSesionExpulsada(r.body);
         await _clearSession();
+        if (expulsada) {
+          try {
+            onSessionEvicted?.call();
+          } catch (e, st) {
+            AppLogger.error('[refresh] aviso de expulsión falló', e, st);
+          }
+        }
         completer.complete(false);
         return false;
       }

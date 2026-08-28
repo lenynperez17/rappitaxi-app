@@ -115,7 +115,8 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     )
   }
-  if (user.user_type !== 'driver' && user.user_type !== 'dual') {
+  // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+  if (user.user_type !== 'dual') {
     return NextResponse.json(
       { success: false, error: 'forbidden', message: 'Solo drivers pueden reportar presencia' },
       { status: 403 },

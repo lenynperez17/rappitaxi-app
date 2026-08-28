@@ -88,7 +88,8 @@ export async function GET(req: NextRequest) {
     'SELECT user_type FROM users WHERE id = $1',
     [auth.userId],
   )
-  if (!driver || (driver.user_type !== 'driver' && driver.user_type !== 'dual')) {
+  // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+  if (!driver || driver.user_type !== 'dual') {
     return NextResponse.json(
       { success: false, error: 'forbidden', message: 'Solo un conductor puede ver viajes disponibles' },
       { status: 403 },

@@ -38,7 +38,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!driver) {
     return NextResponse.json({ success: false, error: 'user_not_found' }, { status: 401 })
   }
-  if (driver.user_type !== 'driver' && driver.user_type !== 'dual') {
+  // Ronda 282: quien conduce es 'dual'. Ver la migración 027.
+  if (driver.user_type !== 'dual') {
     return NextResponse.json(
       { success: false, error: 'forbidden', message: 'Solo un conductor puede aceptar' },
       { status: 403 },
