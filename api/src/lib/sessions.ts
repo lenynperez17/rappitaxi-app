@@ -209,6 +209,14 @@ export async function createSession(
 
   // Alta y expulsión van juntas: si se insertara la nueva sin revocar las
   // viejas quedarían dos sesiones vivas, que es el fallo que esto arregla.
+  //
+  // Lo que NO entra aquí es la auditoría. Dentro de la transacción, un fallo
+  // al escribir `auth_events` abortaría el login entero —en PostgreSQL una
+  // sentencia fallida invalida la transacción completa— y nadie podría entrar
+  // a la app por no poder anotar una línea de registro. Va después, y su
+  // fallo no le cuesta la sesión a nadie.
+  let expulsadas: string[] = [];
+
   await tx(async (client) => {
     await client.query(
       `INSERT INTO sessions
@@ -242,24 +250,29 @@ export async function createSession(
       [userId, sessionId],
     );
 
-    if (evicted.rowCount) {
-      // Queda registrado para poder responder a un "me sacó de la app sin
-      // motivo" — y para ver cuentas compartidas entre dos teléfonos.
-      await client.query(
+    expulsadas = evicted.rows.map((r) => r.id);
+  });
+
+  // Queda registrado para poder responder a un "me sacó de la app sin motivo"
+  // — y para ver cuentas compartidas entre dos teléfonos.
+  if (expulsadas.length > 0) {
+    try {
+      await query(
         `INSERT INTO auth_events (user_id, event_type, provider, ip_address, user_agent, metadata)
          VALUES ($1, 'session_evicted', 'sessions', $2, $3, $4)`,
         [
           userId,
           isPlausibleIp(deviceInfo?.ip) ? deviceInfo!.ip : null,
           deviceInfo?.ua ?? null,
-          JSON.stringify({
-            newSessionId: sessionId,
-            evictedSessionIds: evicted.rows.map((r) => r.id),
-          }),
+          JSON.stringify({ newSessionId: sessionId, evictedSessionIds: expulsadas }),
         ],
       );
+    } catch (err) {
+      // La sesión ya está creada y las viejas cerradas. Perder la línea de
+      // auditoría es molesto; negarle la entrada a alguien por eso, no.
+      console.error('[sessions] no se pudo auditar la expulsión:', err);
     }
-  });
+  }
 
   return {
     sessionId,

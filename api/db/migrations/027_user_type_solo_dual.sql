@@ -28,7 +28,19 @@ BEGIN;
 UPDATE users SET user_type = 'dual', updated_at = now()
  WHERE user_type = 'driver';
 
--- 2. Que no puedan volver a aparecer. Sin esto, el desplegable del panel
+-- 2. Que la migración no se le note a esa persona.
+--
+--    La app decide dónde aterrizas con `currentMode ?? userType`. Con el tipo
+--    'driver' y sin modo guardado, entraba directamente al panel de conductor.
+--    Ahora su tipo es 'dual' y sin modo guardado entraría al de pasajero: la
+--    app le cambiaría de sitio de un día para otro sin que él haya tocado
+--    nada. Se le fija el modo que ya tenía de hecho.
+UPDATE users SET current_mode = 'driver', updated_at = now()
+ WHERE user_type = 'dual' AND current_mode IS NULL
+   AND is_verified = true
+   AND id = '1a248012-33ff-4278-be49-22fe6b0fcfc9';
+
+-- 3. Que no puedan volver a aparecer. Sin esto, el desplegable del panel
 --    seguiría pudiendo crear cuentas 'driver' y volveríamos al punto de
 --    partida.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_type_valid;
