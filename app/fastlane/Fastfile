@@ -51,6 +51,29 @@ platform :ios do
   end
 
   lane :build_manual do
+    # Ronda 282: comprobar la versión ANTES de firmar.
+    #
+    # Esta lane compila el workspace de Xcode directamente y NO ejecuta
+    # `flutter build`. El número de versión sale de
+    # `ios/Flutter/Generated.xcconfig`, que solo se regenera cuando una
+    # compilación de Flutter termina bien. Si la anterior falló, aquí se firma
+    # un IPA con el número ANTERIOR sin que nada lo avise, y el fallo aparece
+    # veinte minutos después en App Store Connect como "The version number has
+    # been previously used" — un mensaje que no apunta a la causa y manda a
+    # buscar por el lado equivocado.
+    pubspec = File.read('pubspec.yaml')[/^version:\s*(\S+)/, 1]
+    nombre_esperado, numero_esperado = pubspec.split('+')
+    xcconfig = File.read('ios/Flutter/Generated.xcconfig')
+    nombre = xcconfig[/^FLUTTER_BUILD_NAME=(.+)$/, 1]
+    numero = xcconfig[/^FLUTTER_BUILD_NUMBER=(.+)$/, 1]
+    if nombre != nombre_esperado || numero != numero_esperado
+      UI.user_error!(
+        "Generated.xcconfig dice #{nombre}+#{numero} pero pubspec.yaml dice #{pubspec}. " \
+        'Ejecuta `flutter build ios --release --no-codesign` para regenerarlo y vuelve a intentarlo.'
+      )
+    end
+    UI.success("Versión verificada antes de firmar: #{pubspec}")
+
     build_app(
       workspace: 'ios/Runner.xcworkspace',
       scheme: 'Runner',
@@ -78,7 +101,12 @@ platform :ios do
       key_id: api_key[:key_id], issuer_id: api_key[:issuer_id], key: api_key[:key]
     )
     app = Spaceship::ConnectAPI::App.find('com.rapiteam.app')
-    app.get_app_store_versions.first(3).each do |v|
+    # Ronda 282: eran las 3 últimas y se quedaban cortas. Apple rechaza subir
+    # un binario con un `versionString` ya usado alguna vez —aunque esa versión
+    # nunca se publicara— con "The version number has been previously used".
+    # Para saber qué número es libre hay que ver más historial, no solo el
+    # último trozo.
+    app.get_app_store_versions.first(10).each do |v|
       build = (v.build rescue nil)
       UI.important("#{v.version_string} — #{v.app_store_state} — build #{build&.version || 'sin build'}")
     end
