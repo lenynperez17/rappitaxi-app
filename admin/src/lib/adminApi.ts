@@ -73,6 +73,8 @@ export interface AdminCancellation {
 
 export interface AdminDriver {
   id: string; fullName: string | null; email: string | null; phone: string | null
+  /** Ronda 283: número comprobado por SMS. No es `isVerified`, que son los documentos. */
+  phoneVerified: boolean
   userType: string; isActive: boolean; isVerified: boolean
   profilePhotoUrl: string | null; suspendedAt: string | null
   createdAt: string; totalTrips: number; avgRating: number | null

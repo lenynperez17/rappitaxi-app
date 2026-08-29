@@ -318,9 +318,30 @@ export function UsersPage() {
                         </div>
                       )}
                       {u.phone && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <Phone className="w-3 h-3 text-gray-400" />
-                          {u.phone}
+                        <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                          <Phone className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span>{u.phone}</span>
+                          {/* Ronda 283: si el número está verificado por SMS.
+                              Va pegado al teléfono a propósito: en este panel
+                              "Verificado" ya significa otra cosa —los
+                              documentos del conductor— y una etiqueta suelta
+                              en su propia columna se confundiría con aquella.
+                              Aquí no hay duda de a qué se refiere. */}
+                          {u.phoneVerified ? (
+                            <span
+                              title="Número verificado: esta persona recibió un código por SMS en este teléfono y lo introdujo."
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-medium"
+                            >
+                              <CheckCircle2 className="w-3 h-3" /> SMS
+                            </span>
+                          ) : (
+                            <span
+                              title="Número sin verificar: nadie ha comprobado que este teléfono sea suyo. Es lo normal en cuentas creadas con Google o Apple, donde el número se escribe a mano."
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium"
+                            >
+                              <AlertCircle className="w-3 h-3" /> sin verificar
+                            </span>
+                          )}
                         </div>
                       )}
                       {!u.email && !u.phone && <span className="text-xs text-gray-400">—</span>}

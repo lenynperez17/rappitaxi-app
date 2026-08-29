@@ -151,8 +151,28 @@ export function DriversPage() {
                         </div>
                       )}
                       {d.phone && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <Phone className="w-3 h-3 text-gray-400" /> {d.phone}
+                        <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                          <Phone className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span>{d.phone}</span>
+                          {/* Ronda 283: verificación del NÚMERO, pegada al
+                              número. La columna "Estado" de esta misma tabla
+                              ya dice "Verificado" refiriéndose a los
+                              documentos; separarlas evita leer una por otra. */}
+                          {d.phoneVerified ? (
+                            <span
+                              title="Número verificado: este conductor recibió un código por SMS en este teléfono y lo introdujo."
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-medium"
+                            >
+                              <CheckCircle2 className="w-3 h-3" /> SMS
+                            </span>
+                          ) : (
+                            <span
+                              title="Número sin verificar: nadie ha comprobado que este teléfono sea suyo. Es lo normal en cuentas creadas con Google o Apple, donde el número se escribe a mano."
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium"
+                            >
+                              <AlertCircle className="w-3 h-3" /> sin verificar
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

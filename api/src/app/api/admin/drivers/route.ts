@@ -13,6 +13,8 @@ interface DriverRow {
   full_name: string | null
   email: string | null
   phone: string | null
+  /** Ronda 283: el número comprobado por SMS. Distinto de `is_verified`. */
+  phone_verified: boolean
   user_type: string
   is_active: boolean
   is_verified: boolean
@@ -72,7 +74,11 @@ export async function GET(req: NextRequest) {
 
   const pagedParams = [...params, pageSize, offset]
   const rows = await query<DriverRow>(
-    `SELECT u.id, u.full_name, u.email, u.phone, u.user_type, u.is_active,
+    // Ronda 283: `phone_verified` — si esa persona recibió un código por SMS
+    // en su teléfono y lo introdujo. No confundir con `is_verified`, que es la
+    // aprobación de los documentos del conductor.
+    `SELECT u.id, u.full_name, u.email, u.phone, u.phone_verified, u.user_type,
+            u.is_active,
             u.is_verified, u.profile_photo_url, u.suspended_at, u.created_at,
             u.created_from,
             (SELECT COUNT(*)::text FROM rides r WHERE r.driver_id = u.id AND r.status = 'completed') AS total_trips,
@@ -91,6 +97,7 @@ export async function GET(req: NextRequest) {
       fullName: d.full_name,
       email: d.email,
       phone: d.phone,
+      phoneVerified: d.phone_verified,
       userType: d.user_type,
       isActive: d.is_active,
       isVerified: d.is_verified,
