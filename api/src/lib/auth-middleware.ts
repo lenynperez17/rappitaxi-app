@@ -10,7 +10,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAccessToken } from './jwt'
 import { maybeOne } from './db'
 
-export type AuthOk = { ok: true; userId: string; response?: never }
+export type AuthOk = {
+  ok: true
+  userId: string
+  /**
+   * Ronda 282: la sesión concreta del token (claim `sid`).
+   *
+   * Casi ningún endpoint lo necesita —basta con saber quién llama—, pero el
+   * ticket del stream SSE sí: la conexión sobrevive al request que la abre, y
+   * sin saber de qué sesión nació solo puede preguntar "¿le queda alguna
+   * sesión viva a este usuario?". Eso deja abierto el stream de un dispositivo
+   * expulsado, porque el que lo expulsó cuenta como sesión viva.
+   *
+   * Es `null` en los tokens antiguos que no llevaban el claim.
+   */
+  sessionId: string | null
+  response?: never
+}
 export type AuthFail = { ok: false; response: NextResponse; userId?: never }
 export type AuthResult = AuthOk | AuthFail
 
@@ -92,7 +108,11 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult> {
     }
   }
 
-  return { ok: true, userId: payload.sub }
+  return {
+    ok: true,
+    userId: payload.sub,
+    sessionId: typeof payload.sid === 'string' ? payload.sid : null,
+  }
 }
 
 /**

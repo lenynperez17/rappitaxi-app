@@ -20,10 +20,14 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response
 
   const row = await maybeOne<{ ticket: string; expires_at: Date }>(
-    `INSERT INTO sse_tickets (user_id, ip_address, user_agent)
-     VALUES ($1, $2::inet, $3)
+    // Ronda 282: se guarda la sesión de origen. El stream la usa para cerrarse
+    // cuando esa sesión concreta muere — antes solo podía comprobar que al
+    // usuario le quedara alguna viva, y tras expulsar a un dispositivo la del
+    // dispositivo nuevo hacía pasar esa comprobación. Ver la migración 028.
+    `INSERT INTO sse_tickets (user_id, ip_address, user_agent, session_id)
+     VALUES ($1, $2::inet, $3, $4)
      RETURNING ticket, expires_at`,
-    [auth.userId, getClientIp(req) || null, req.headers.get('user-agent')],
+    [auth.userId, getClientIp(req) || null, req.headers.get('user-agent'), auth.sessionId],
   )
 
   if (!row) {

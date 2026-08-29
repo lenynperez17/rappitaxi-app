@@ -170,13 +170,13 @@ export async function GET(req: NextRequest) {
   }
   // Consumir atómicamente: UPDATE ... WHERE ticket=$1 AND consumed_at IS NULL
   //   AND expires_at > now() RETURNING user_id
-  const consumed = await maybeOne<{ user_id: string }>(
+  const consumed = await maybeOne<{ user_id: string; session_id: string | null }>(
     `UPDATE sse_tickets
         SET consumed_at = now()
       WHERE ticket = $1
         AND consumed_at IS NULL
         AND expires_at > now()
-      RETURNING user_id`,
+      RETURNING user_id, session_id`,
     [ticket],
   )
   if (!consumed) {
@@ -186,6 +186,9 @@ export async function GET(req: NextRequest) {
     )
   }
   const userId: string = consumed.user_id
+  // Ronda 282: la sesión que abrió este stream. `null` en tickets emitidos
+  // antes de la migración 028 — para esos se mantiene la comprobación vieja.
+  const streamSessionId: string | null = consumed.session_id
 
   // 2) Cursores iniciales — al abrir el stream solo interesa lo *nuevo*
   // (no queremos volver a empujar el historial en cada reconexión).
@@ -266,12 +269,27 @@ export async function GET(req: NextRequest) {
           // recibiendo notifs, rides, driver GPS, chat en vivo horas después
           // de que la víctima haya hecho POST /account/logout (que llama
           // revokeAllUserSessions). El chequeo cierra streams huérfanos.
-          const alive = await maybeOne<{ id: string }>(
-            `SELECT id FROM sessions
-              WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
-              LIMIT 1`,
-            [userId],
-          )
+          //
+          // Ronda 282: si sabemos de qué sesión nació el stream, se pregunta
+          // por ESA. Preguntar si al usuario le queda alguna viva no basta
+          // desde que entrar en otro teléfono cierra la sesión del anterior:
+          // el teléfono expulsado seguía con el stream abierto, porque el que
+          // lo expulsó contaba como sesión viva. No podía actuar —los
+          // endpoints le devuelven 401— pero seguía recibiendo notificaciones,
+          // viajes, la posición del conductor y el chat.
+          const alive = streamSessionId
+            ? await maybeOne<{ id: string }>(
+                `SELECT id FROM sessions
+                  WHERE id = $1 AND revoked_at IS NULL AND expires_at > now()
+                  LIMIT 1`,
+                [streamSessionId],
+              )
+            : await maybeOne<{ id: string }>(
+                `SELECT id FROM sessions
+                  WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+                  LIMIT 1`,
+                [userId],
+              )
           if (!alive) {
             send(sseEvent('session_revoked', { at: new Date().toISOString() }))
             cleanup()
