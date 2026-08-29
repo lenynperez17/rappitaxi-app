@@ -273,6 +273,48 @@ class AdminApi {
   }
 
   /**
+   * Ronda 283: asignarle un conductor a un viaje que ya existe.
+   *
+   * Antes solo se podía elegir conductor al CREAR el viaje. Si alguien pedía un
+   * coche y nadie lo aceptaba, no había forma de decir «que vaya Juan»: el
+   * viaje esperaba hasta caducar.
+   *
+   * El viaje queda aceptado a nombre de ese conductor y se le avisa por push.
+   * Las comprobaciones —que sea conductor de verdad, verificado y activo— las
+   * hace el servidor, no aquí.
+   */
+  async assignTrip(rideId: string, driverId: string): Promise<{ success: boolean }> {
+    return this.rawFetch(`/api/admin/trips/${rideId}/assign`, {
+      method: 'POST',
+      body: { driverId },
+    })
+  }
+
+  /**
+   * Ronda 283: la ruta real por calles entre dos puntos.
+   *
+   * Mismo endpoint que usa la app móvil (Google Directions con respaldo en
+   * OSRM). El mapa del panel dibujaba líneas rectas que cruzaban por encima de
+   * las manzanas y parecían una ruta.
+   */
+  async getDirections(
+    origin: { lat: number; lng: number },
+    dest: { lat: number; lng: number },
+  ): Promise<{
+    success: boolean
+    polyline?: string
+    distanceText?: string
+    durationText?: string
+  }> {
+    const qp = new URLSearchParams({
+      originLat: String(origin.lat), originLng: String(origin.lng),
+      destLat: String(dest.lat), destLng: String(dest.lng),
+      mode: 'driving',
+    })
+    return this.rawFetch(`/api/maps/directions?${qp.toString()}`, { method: 'GET' })
+  }
+
+  /**
    * Ronda 283: cerrar un viaje desde el panel.
    *
    * Usa el mismo endpoint que la app —`/api/rides/{id}/cancel`—, que ya

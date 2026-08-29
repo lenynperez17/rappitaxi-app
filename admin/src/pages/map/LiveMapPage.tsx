@@ -16,6 +16,7 @@ import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
 import { VectorBasemap } from '../../components/map/VectorBasemap'
 import { DateTime } from '../../components/DateTime'
 import { FloatingLayer } from '../../components/FloatingLayer'
+import { decodePolyline, type LatLngTuple } from '../../utils/polyline'
 
 /**
  * Mapa en vivo del despacho.
@@ -143,6 +144,32 @@ export function LiveMapPage() {
   const timerRef = useRef<number | null>(null)
   const fitRef = useRef<(() => void) | null>(null)
 
+  /**
+   * Ronda 283: la ruta REAL del viaje seleccionado.
+   *
+   * Antes se pintaba una línea recta del conductor al recojo —sólida y gruesa,
+   * o sea con toda la pinta de ser una ruta— que cruzaba por encima de las
+   * manzanas. Y se pintaba para TODOS los viajes activos a la vez, así que con
+   * unos cuantos en marcha el mapa era una maraña de rectas.
+   *
+   * Ahora se pide la ruta de verdad, y solo del viaje que estás mirando. Eso
+   * arregla las dos cosas al mismo tiempo, y además es lo único sostenible:
+   * pedir rutas para todos los viajes en cada refresco de 10 s serían decenas
+   * de peticiones por minuto al servicio de rutas.
+   */
+  const [ruta, setRuta] = useState<{
+    tripId: string
+    haciaRecojo: LatLngTuple[] | null
+    haciaDestino: LatLngTuple[] | null
+    resumen: string | null
+    aproximada: boolean
+  } | null>(null)
+  const rutaSeq = useRef(0)
+
+  /** Ronda 283: viaje sobre el que se está actuando, y el que va a asignarse. */
+  const [ocupado, setOcupado] = useState<string | null>(null)
+  const [asignando, setAsignando] = useState<LiveData['activeTrips'][number] | null>(null)
+
   const load = useCallback(async (): Promise<{ auth401?: boolean }> => {
     try {
       setError(null)
@@ -158,6 +185,52 @@ export function LiveMapPage() {
       setLoading(false)
     }
   }, [])
+
+  /**
+   * Ronda 283 — cerrar un viaje desde el mapa.
+   *
+   * Se confirma antes: esto no es limpieza interna, es dar un viaje por
+   * terminado, y le llega al pasajero y al conductor.
+   */
+  const cerrarViaje = useCallback(async (t: LiveData['activeTrips'][number]) => {
+    const quien = t.passenger?.fullName ?? 'este pasajero'
+    if (!window.confirm(
+      `¿Cerrar el viaje de ${quien}?\n\nQuedará como cancelado y dejará de estar activo `
+      + 'tanto para el pasajero como para el conductor.',
+    )) return
+    setOcupado(t.id)
+    try {
+      await adminApi.cancelTrip(t.id, 'Cerrado por el administrador desde el mapa.')
+      setFlash({ kind: 'ok', msg: 'Viaje cerrado.' })
+      setSelectedTripId(null)
+      await load()
+    } catch (err) {
+      setFlash({
+        kind: 'err',
+        msg: err instanceof AdminApiError ? err.message : 'No se pudo cerrar el viaje',
+      })
+    } finally {
+      setOcupado(null)
+    }
+  }, [load])
+
+  /** Asignar el conductor elegido. La validación de fondo la hace el servidor. */
+  const asignarConductor = useCallback(async (tripId: string, driverId: string) => {
+    setOcupado(tripId)
+    try {
+      await adminApi.assignTrip(tripId, driverId)
+      setFlash({ kind: 'ok', msg: 'Conductor asignado. Le llegó el aviso a su teléfono.' })
+      setAsignando(null)
+      await load()
+    } catch (err) {
+      setFlash({
+        kind: 'err',
+        msg: err instanceof AdminApiError ? err.message : 'No se pudo asignar el conductor',
+      })
+    } finally {
+      setOcupado(null)
+    }
+  }, [load])
 
   useEffect(() => {
     void load()
@@ -201,6 +274,87 @@ export function LiveMapPage() {
     () => (data?.activeTrips ?? []).filter((t) => hasCoords(t.pickupLat, t.pickupLng)),
     [data],
   )
+
+  const selectedTrip = useMemo(
+    () => mappableTrips.find((t) => t.id === selectedTripId) ?? null,
+    [mappableTrips, selectedTripId],
+  )
+
+  /**
+   * Pide la ruta del viaje seleccionado.
+   *
+   * Depende del ID y de las coordenadas, NO del objeto del viaje: si dependiera
+   * del objeto, cada refresco de 10 s trae uno nuevo y volvería a pedir la
+   * ruta entera aunque no haya cambiado nada. Solo se vuelve a pedir si el
+   * conductor se ha movido de verdad, y para eso basta con sus coordenadas.
+   */
+  const rutaKey = selectedTrip
+    ? [
+        selectedTrip.id,
+        selectedTrip.driver?.latitude ?? '', selectedTrip.driver?.longitude ?? '',
+        selectedTrip.pickupLat ?? '', selectedTrip.pickupLng ?? '',
+        selectedTrip.destinationLat ?? '', selectedTrip.destinationLng ?? '',
+      ].join('|')
+    : null
+
+  useEffect(() => {
+    if (!selectedTrip || !rutaKey) { setRuta(null); return }
+
+    const seq = ++rutaSeq.current
+    const t = selectedTrip
+    let cancelado = false
+
+    void (async () => {
+      const pedir = async (
+        a: { lat: number; lng: number } | null,
+        b: { lat: number; lng: number } | null,
+      ): Promise<{ puntos: LatLngTuple[] | null; texto: string | null }> => {
+        if (!a || !b) return { puntos: null, texto: null }
+        try {
+          const r = await adminApi.getDirections(a, b)
+          if (!r.success || !r.polyline) return { puntos: null, texto: null }
+          return {
+            puntos: decodePolyline(r.polyline),
+            texto: r.distanceText && r.durationText
+              ? `${r.distanceText} · ${r.durationText}`
+              : null,
+          }
+        } catch {
+          // Sin ruta se dibuja la recta, pero avisando de que lo es.
+          return { puntos: null, texto: null }
+        }
+      }
+
+      const conductor = hasCoords(t.driver?.latitude ?? null, t.driver?.longitude ?? null)
+        ? { lat: t.driver!.latitude!, lng: t.driver!.longitude! }
+        : null
+      const recojo = { lat: t.pickupLat!, lng: t.pickupLng! }
+      const destino = hasCoords(t.destinationLat, t.destinationLng)
+        ? { lat: t.destinationLat!, lng: t.destinationLng! }
+        : null
+
+      const [aRecojo, aDestino] = await Promise.all([
+        pedir(conductor, recojo),
+        pedir(recojo, destino),
+      ])
+
+      // Descarta la respuesta vieja que llega después de otra selección.
+      if (cancelado || seq !== rutaSeq.current) return
+
+      setRuta({
+        tripId: t.id,
+        haciaRecojo: aRecojo.puntos,
+        haciaDestino: aDestino.puntos,
+        resumen: aDestino.texto,
+        // Si el viaje tiene destino y no se pudo trazar, lo que se ve es una
+        // recta: hay que decirlo en vez de dejar que parezca un recorrido.
+        aproximada: (!!destino && !aDestino.puntos) || (!!conductor && !aRecojo.puntos),
+      })
+    })()
+
+    return () => { cancelado = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rutaKey])
 
   // Puntos para el encuadre inicial: solo de las capas encendidas, para no
   // alejar el mapa por culpa de algo que ni siquiera se está viendo.
@@ -346,35 +500,57 @@ export function LiveMapPage() {
           <AutoFit points={fitPoints} onReady={(fit) => { fitRef.current = fit }} />
           <FlyTo target={focus} />
 
-          {/* Recorridos de los viajes activos.
-              Trazo continuo: conductor → recojo, la parte que de verdad se está
-              cubriendo ahora mismo. Trazo punteado: recojo → destino, que es
-              una RECTA, no una ruta por calles — el backend no guarda la ruta
-              real, así que se dibuja de forma que no pueda confundirse con una. */}
-          {layers.trips && mappableTrips.map((t) => {
-            const legs = []
-            const driverLat = t.driver?.latitude
-            const driverLng = t.driver?.longitude
-            if (hasCoords(driverLat ?? null, driverLng ?? null)) {
-              legs.push(
+          {/* Ronda 283 — el recorrido, solo del viaje seleccionado.
+              Antes se pintaban rectas para TODOS los viajes a la vez: una
+              maraña en cuanto hay unos cuantos, y encima la del conductor al
+              recojo iba sólida y gruesa, con toda la pinta de ser una ruta
+              cuando cruzaba por encima de las manzanas.
+              Ahora se pide la ruta de verdad al seleccionar uno. Trazo sólido:
+              lo que el conductor está recorriendo ahora. Trazo punteado: lo que
+              queda por recorrer hasta el destino. */}
+          {layers.trips && selectedTrip && ruta?.tripId === selectedTrip.id && (
+            <>
+              {ruta.haciaRecojo && (
                 <Polyline
-                  key={`${t.id}-leg`}
-                  positions={[[driverLat!, driverLng!], [t.pickupLat!, t.pickupLng!]]}
-                  pathOptions={{ color: MAP_COLORS.busy, weight: 4, opacity: 0.9 }}
-                />,
-              )
-            }
-            if (hasCoords(t.destinationLat, t.destinationLng)) {
-              legs.push(
+                  positions={ruta.haciaRecojo}
+                  pathOptions={{ color: MAP_COLORS.busy, weight: 5, opacity: 0.9 }}
+                />
+              )}
+              {ruta.haciaDestino && (
                 <Polyline
-                  key={`${t.id}-dest`}
-                  positions={[[t.pickupLat!, t.pickupLng!], [t.destinationLat!, t.destinationLng!]]}
-                  pathOptions={{ color: MAP_COLORS.destination, weight: 2.5, opacity: 0.55, dashArray: '6 8' }}
-                />,
-              )
-            }
-            return legs
-          })}
+                  positions={ruta.haciaDestino}
+                  pathOptions={{ color: MAP_COLORS.destination, weight: 4, opacity: 0.75 }}
+                />
+              )}
+              {/* Si el servicio de rutas no respondió se dibuja la recta, pero
+                  punteada y fina: que se vea que es una aproximación y no el
+                  camino que va a hacer nadie. */}
+              {!ruta.haciaDestino && hasCoords(selectedTrip.destinationLat, selectedTrip.destinationLng) && (
+                <Polyline
+                  positions={[
+                    [selectedTrip.pickupLat!, selectedTrip.pickupLng!],
+                    [selectedTrip.destinationLat!, selectedTrip.destinationLng!],
+                  ]}
+                  pathOptions={{
+                    color: MAP_COLORS.destination, weight: 2, opacity: 0.45, dashArray: '4 10',
+                  }}
+                />
+              )}
+              {!ruta.haciaRecojo && hasCoords(
+                selectedTrip.driver?.latitude ?? null, selectedTrip.driver?.longitude ?? null,
+              ) && (
+                <Polyline
+                  positions={[
+                    [selectedTrip.driver!.latitude!, selectedTrip.driver!.longitude!],
+                    [selectedTrip.pickupLat!, selectedTrip.pickupLng!],
+                  ]}
+                  pathOptions={{
+                    color: MAP_COLORS.busy, weight: 2, opacity: 0.45, dashArray: '4 10',
+                  }}
+                />
+              )}
+            </>
+          )}
 
           {/* Recojos y destinos */}
           {layers.trips && mappableTrips.map((t) => (
@@ -461,13 +637,33 @@ export function LiveMapPage() {
               </div>
             )}
             {!loading && tab === 'trips' && (
-              <ActiveTripsList data={data} selectedId={selectedTripId} onFocus={focusOn} onSelect={setSelectedTripId} />
+              <ActiveTripsList
+                data={data}
+                selectedId={selectedTripId}
+                onFocus={focusOn}
+                onSelect={setSelectedTripId}
+                onCancel={(t) => void cerrarViaje(t)}
+                onAssign={(t) => setAsignando(t)}
+                ocupado={ocupado}
+                resumenRuta={ruta?.tripId === selectedTripId ? ruta.resumen : null}
+              />
             )}
             {!loading && tab === 'online' && <DriversList data={data} kind="online" onFocus={focusOn} />}
             {!loading && tab === 'offline' && <DriversList data={data} kind="offline" onFocus={focusOn} />}
           </div>
         </div>
       </aside>
+
+      {asignando && (
+        <AssignDriverOverlay
+          trip={asignando}
+          onlineDrivers={data?.onlineDrivers ?? []}
+          offlineDrivers={data?.offlineDrivers ?? []}
+          ocupado={ocupado !== null}
+          onClose={() => setAsignando(null)}
+          onPick={(driverId) => void asignarConductor(asignando.id, driverId)}
+        />
+      )}
 
       {creating && (
         <CreateTripOverlay
@@ -492,6 +688,127 @@ export function LiveMapPage() {
 // ---------------------------------------------------------------------------
 // Piezas de la interfaz
 // ---------------------------------------------------------------------------
+
+/**
+ * Ronda 283 — elegir a quién se le manda el viaje.
+ *
+ * Los conectados van primero y separados de los demás porque son los únicos
+ * que se van a enterar ahora mismo: al desconectado le llegará el push cuando
+ * abra la app, que puede ser dentro de horas. Se le puede asignar igualmente
+ * —a veces se sabe que está a punto de conectarse— pero viéndolo, no por
+ * descuido.
+ */
+function AssignDriverOverlay({ trip, onlineDrivers, offlineDrivers, ocupado, onClose, onPick }: {
+  trip: LiveData['activeTrips'][number]
+  onlineDrivers: LiveData['onlineDrivers']
+  offlineDrivers: LiveData['offlineDrivers']
+  ocupado: boolean
+  onClose: () => void
+  onPick: (driverId: string) => void
+}) {
+  // Un conductor que ya está en un viaje no debería recibir otro.
+  const libres = onlineDrivers.filter((d) => !d.activeRideId)
+  const ocupados = onlineDrivers.filter((d) => d.activeRideId)
+
+  const Fila = ({ id, nombre, telefono, nota, tono }: {
+    id: string; nombre: string | null; telefono: string | null
+    nota: string; tono: 'verde' | 'ambar' | 'gris'
+  }) => (
+    <button
+      type="button"
+      disabled={ocupado}
+      onClick={() => onPick(id)}
+      className="w-full p-3 flex items-center gap-3 text-left hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+        tono === 'verde' ? 'bg-green-500' : tono === 'ambar' ? 'bg-amber-500' : 'bg-gray-300'
+      }`} />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-gray-900 truncate">{nombre ?? '(sin nombre)'}</div>
+        <div className="text-xs text-gray-500 truncate">{telefono ?? nota}</div>
+      </div>
+      <span className="text-xs text-gray-400 flex-shrink-0">{nota}</span>
+    </button>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-gray-900">Asignar conductor</h2>
+            <p className="text-xs text-gray-500 mt-0.5 truncate">
+              Recoge en {trip.pickupAddress ?? 'el punto indicado'}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded flex-shrink-0">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {libres.length === 0 && ocupados.length === 0 && offlineDrivers.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-500">
+              No hay conductores registrados.
+            </div>
+          ) : (
+            <>
+              <Seccion titulo="En línea y libres" vacio="Ninguno libre ahora mismo">
+                {libres.map((d) => (
+                  <Fila key={d.driverId} id={d.driverId} nombre={d.fullName}
+                    telefono={d.phone} nota="disponible" tono="verde" />
+                ))}
+              </Seccion>
+              {ocupados.length > 0 && (
+                <Seccion titulo="En línea, pero en un viaje">
+                  {ocupados.map((d) => (
+                    <Fila key={d.driverId} id={d.driverId} nombre={d.fullName}
+                      telefono={d.phone} nota="ocupado" tono="ambar" />
+                  ))}
+                </Seccion>
+              )}
+              {offlineDrivers.length > 0 && (
+                <Seccion titulo="Desconectados">
+                  {offlineDrivers.map((d) => (
+                    <Fila key={d.driverId} id={d.driverId} nombre={d.fullName}
+                      telefono={d.phone} nota="sin conexión" tono="gris" />
+                  ))}
+                </Seccion>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-200">
+          <p className="text-xs text-gray-500">
+            Al asignarlo, el viaje queda aceptado a su nombre y le llega un aviso al teléfono.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Seccion({ titulo, vacio, children }: {
+  titulo: string
+  vacio?: string
+  children: React.ReactNode
+}) {
+  const hayHijos = Array.isArray(children) ? children.length > 0 : !!children
+  return (
+    <div>
+      <div className="px-4 py-2 bg-gray-50 text-xs font-medium text-gray-500 uppercase sticky top-0">
+        {titulo}
+      </div>
+      {hayHijos
+        ? <div className="divide-y divide-gray-100">{children}</div>
+        : vacio && <p className="px-4 py-3 text-xs text-gray-400">{vacio}</p>}
+    </div>
+  )
+}
 
 function TabButton({ active, onClick, tone, icon, label, count }: {
   active: boolean
@@ -583,11 +900,24 @@ function DriverPopup({ driver, state }: { driver: LiveDriver; state: 'free' | 'b
 // Listas laterales
 // ---------------------------------------------------------------------------
 
-function ActiveTripsList({ data, selectedId, onFocus, onSelect }: {
+/**
+ * Ronda 283: estados en los que se le puede poner conductor a un viaje. Mismos
+ * que acepta el servidor en `admin/trips/[id]/assign`; si divergieran, el panel
+ * ofrecería un botón que siempre falla.
+ */
+const ASIGNABLES = new Set(['requested', 'searching', 'no_drivers'])
+
+function ActiveTripsList({ data, selectedId, onFocus, onSelect, onCancel, onAssign, ocupado, resumenRuta }: {
   data: LiveData | null
   selectedId: string | null
   onFocus: (lat: number, lng: number, key: string, layer: 'trips') => void
   onSelect: (id: string) => void
+  onCancel: (trip: LiveData['activeTrips'][number]) => void
+  onAssign: (trip: LiveData['activeTrips'][number]) => void
+  /** Id del viaje sobre el que se está actuando, para no permitir dos clics. */
+  ocupado: string | null
+  /** "12,3 km · 25 min" del viaje seleccionado, cuando ya se calculó. */
+  resumenRuta: string | null
 }) {
   const trips = data?.activeTrips ?? []
   return (
@@ -602,15 +932,26 @@ function ActiveTripsList({ data, selectedId, onFocus, onSelect }: {
         <div className="divide-y divide-gray-100">
           {trips.map((t) => {
             const locatable = hasCoords(t.pickupLat, t.pickupLng)
+            const seleccionado = selectedId === t.id
             return (
-              <button
+              /* Ronda 283: era un <button> envolviéndolo todo, y dentro no se
+                 pueden meter los botones de acción — anidar botones no es HTML
+                 válido y el clic de dentro dispararía también el de fuera. */
+              <div
                 key={t.id}
-                type="button"
-                disabled={!locatable}
+                role="button"
+                tabIndex={0}
                 onClick={() => { onSelect(t.id); if (locatable) onFocus(t.pickupLat!, t.pickupLng!, t.id, 'trips') }}
-                className={`w-full text-left p-3 space-y-2 transition-colors ${
-                  selectedId === t.id ? 'bg-blue-50' : 'hover:bg-gray-50'
-                } ${locatable ? '' : 'cursor-default'}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onSelect(t.id)
+                    if (locatable) onFocus(t.pickupLat!, t.pickupLng!, t.id, 'trips')
+                  }
+                }}
+                className={`w-full text-left p-3 space-y-2 transition-colors cursor-pointer ${
+                  seleccionado ? 'bg-blue-50' : 'hover:bg-gray-50'
+                }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TRIP_STATUS_BADGE[t.status] ?? 'bg-gray-100 text-gray-700'}`}>
@@ -643,7 +984,48 @@ function ActiveTripsList({ data, selectedId, onFocus, onSelect }: {
                     <span className="font-semibold text-gray-900 flex-shrink-0">{formatPEN(t.estimatedFare)}</span>
                   )}
                 </div>
-              </button>
+
+                {/* Ronda 283: distancia y duración REALES por calles. Antes no
+                    se veían por ninguna parte: la única referencia era una
+                    línea recta, que además engaña sobre lo que se va a tardar. */}
+                {seleccionado && resumenRuta && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500 pt-0.5">
+                    <Route className="w-3 h-3 flex-shrink-0" />
+                    <span>{resumenRuta}</span>
+                  </div>
+                )}
+
+                {/* Acciones, solo en el viaje seleccionado: en todas las filas
+                    a la vez serían un muro de botones. */}
+                {seleccionado && (
+                  <div
+                    className="flex items-center gap-2 pt-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {!t.driver && ASIGNABLES.has(t.status) && (
+                      <button
+                        type="button"
+                        onClick={() => onAssign(t)}
+                        disabled={ocupado !== null}
+                        className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-[#E31E24] hover:bg-[#B5181D] text-white text-xs font-medium disabled:opacity-40"
+                      >
+                        <Car className="w-3 h-3" /> Asignar conductor
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onCancel(t)}
+                      disabled={ocupado !== null}
+                      className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 text-xs font-medium disabled:opacity-40"
+                    >
+                      {ocupado === t.id
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : <X className="w-3 h-3" />}
+                      Cerrar viaje
+                    </button>
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
