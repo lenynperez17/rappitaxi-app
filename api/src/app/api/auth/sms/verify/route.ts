@@ -32,6 +32,8 @@ interface UserRow {
   user_type: string
   profile_complete: boolean
   is_active: boolean
+  /** Ronda 282: para poder negarle este camino a las cuentas administradoras. */
+  is_admin: boolean
 }
 
 export async function POST(req: NextRequest) {
@@ -110,7 +112,7 @@ export async function POST(req: NextRequest) {
   // Además ordenamos por phone_verified DESC + created_at ASC para lookup
   // determinista si por alguna razón hay múltiples filas.
   let user = await maybeOne<UserRow>(
-    `SELECT id, full_name, email, phone, user_type, profile_complete, is_active
+    `SELECT id, full_name, email, phone, user_type, profile_complete, is_active, is_admin
        FROM users
        WHERE (phone = $1 OR phone_number = $1)
          AND phone_verified = true
@@ -118,6 +120,27 @@ export async function POST(req: NextRequest) {
        LIMIT 1`,
     [phoneNumber],
   )
+
+  // Ronda 282 — un código fijo nunca abre una cuenta administradora.
+  //
+  // El código de los teléfonos de prueba lo genera un endpoint que no pide
+  // autenticación, así que cualquiera puede provocarlo y luego usarlo aquí. Si
+  // el número apunta a una cuenta admin, eso son dos peticiones para conseguir
+  // un token que `requireAdmin` acepta —y con él, `/api/admin/*` entero.
+  //
+  // Ya se quitó ese número de la lista, pero la lista es una constante que
+  // alguien puede volver a tocar, y `is_test_phone` también se puede activar
+  // desde la base de datos. Esta comprobación mira a quién se le está abriendo
+  // la puerta, que es lo que de verdad importa.
+  if (isTestPhone && user && (user.is_admin || user.user_type === 'admin')) {
+    console.warn(
+      `[auth/sms/verify] BLOQUEADO: intento de entrar como administrador (${user.id}) con código de teléfono de prueba`,
+    )
+    return NextResponse.json(
+      { success: false, error: 'code_incorrect' },
+      { status: 400 },
+    )
+  }
   let isNewUser = false
 
   if (!user) {

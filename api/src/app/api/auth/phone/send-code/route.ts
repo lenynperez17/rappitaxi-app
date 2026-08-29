@@ -20,8 +20,12 @@ export const runtime = 'nodejs'
 
 const SEND_COOLDOWN_MS = 15 * 60 * 1000
 
+/**
+ * Ronda 282: se elimina +51999000100 — era el teléfono del usuario
+ * `Administrador`, y este endpoint no pide autenticación. Ver la explicación
+ * completa en `auth/sms/send/route.ts`.
+ */
 const TEST_PHONE_NUMBERS: Record<string, string> = {
-  '+51999000100': '1234',
   '+51999000101': '1234',
 }
 function testPhonesEnabled() {

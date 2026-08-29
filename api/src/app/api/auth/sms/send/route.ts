@@ -14,9 +14,26 @@ export const runtime = 'nodejs'
 
 const SEND_COOLDOWN_MS = 15 * 60 * 1000
 
-// Test phones (App Store / Play Store review)
+/**
+ * Teléfonos con código fijo, para que quien revisa la app en App Store y en
+ * Play pueda entrar sin recibir un SMS.
+ *
+ * RONDA 282 — SE ELIMINA +51999000100.
+ *
+ * Ese número era el del usuario `Administrador`, con `phone_verified = true`.
+ * Como este endpoint no pide autenticación y escribe el código fijo en la base
+ * de datos, cualquiera podía hacer dos peticiones —una aquí y otra a
+ * `/api/auth/sms/verify` con el código 1234— y salir con un token de esa
+ * cuenta. `requireAdmin` solo comprueba que el usuario del token sea admin, no
+ * cómo se creó la sesión, así que ese token abría entero `/api/admin/*`:
+ * usuarios, viajes, finanzas y recargas.
+ *
+ * Queda solo el número del revisor, que es una cuenta de conductor normal sin
+ * ningún privilegio. Aun así, más abajo en `verify` hay una segunda barrera
+ * que rechaza este camino para cualquier cuenta administradora, por si algún
+ * día se vuelve a añadir un número aquí sin reparar en a quién pertenece.
+ */
 const TEST_PHONE_NUMBERS: Record<string, string> = {
-  '+51999000100': '1234',
   '+51999000101': '1234',
 }
 function testPhonesEnabled() {
