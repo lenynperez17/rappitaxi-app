@@ -1152,15 +1152,22 @@ function GuestPassengerForm({ initial, onPick }: {
 }
 
 function UserTypeBadge({ type }: { type: string }) {
+  /**
+   * Ronda 283: aquí se está buscando a un PASAJERO, así que todo el que sale
+   * en la lista puede serlo — decir "Pasajero" o "Conductor y pasajero" no
+   * distingue nada. Lo único que aporta la etiqueta en este contexto es avisar
+   * de que esa persona además conduce, por si se le está creando un viaje a
+   * quien no toca. Se quita también 'driver', que ya no existe (migración 027).
+   */
   const styles: Record<string, string> = {
-    passenger: 'bg-blue-100 text-blue-700',
-    driver: 'bg-orange-100 text-orange-700',
-    dual: 'bg-purple-100 text-purple-700',
+    dual: 'bg-orange-100 text-orange-700',
     admin: 'bg-red-100 text-red-700',
   }
   const labels: Record<string, string> = {
-    passenger: 'Pasajero', driver: 'Conductor', dual: 'Dual', admin: 'Admin',
+    dual: 'También conductor', admin: 'Admin',
   }
+  // Para un pasajero normal no se pinta nada: es lo que se espera encontrar.
+  if (!labels[type]) return null
   return (
     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${styles[type] ?? 'bg-gray-100 text-gray-600'}`}>
       {labels[type] ?? type}

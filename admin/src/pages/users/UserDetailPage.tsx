@@ -6,13 +6,21 @@ import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { formatDateTime } from '../../utils/timeFormat'
 import { DateTime } from '../../components/DateTime'
 
+/**
+ * Ronda 283: mismos colores que en la lista de usuarios, para que la misma
+ * persona no cambie de color según la pantalla. Sin 'driver', que ya no existe.
+ */
 const TYPE_BADGES: Record<string, string> = {
   passenger: 'bg-blue-100 text-blue-700',
-  driver: 'bg-orange-100 text-orange-700',
-  dual: 'bg-purple-100 text-purple-700',
+  dual: 'bg-orange-100 text-orange-700',
   admin: 'bg-red-100 text-red-700',
 }
-const TYPE_LABEL: Record<string, string> = { passenger: 'Pasajero', driver: 'Conductor', dual: 'Dual', admin: 'Admin' }
+/** Ronda 283: sin "Dual" (jerga) ni "driver" (ya no existe). Ver `UsersPage`. */
+const TYPE_LABEL: Record<string, string> = {
+  passenger: 'Pasajero',
+  dual: 'Conductor y pasajero',
+  admin: 'Admin',
+}
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>()

@@ -52,9 +52,17 @@ const TYPE_BADGES: Record<string, string> = {
   admin: 'bg-red-100 text-red-700',
 }
 
+/**
+ * Ronda 283: "Conductor" a secas se leía como "solo conductor".
+ *
+ * No existe esa figura: quien conduce llegó ahí ascendiendo desde pasajero y
+ * conserva las dos capacidades. Poner solo "Conductor" hacía pensar que esa
+ * persona ya no podía pedir viajes, que es justo lo contrario de lo que pasa.
+ * La etiqueta dice ahora las dos cosas, que es lo que esa persona es.
+ */
 const TYPE_LABEL: Record<string, string> = {
   passenger: 'Pasajero',
-  dual: 'Conductor',
+  dual: 'Conductor y pasajero',
   admin: 'Admin',
 }
 
@@ -707,8 +715,9 @@ function CreateUserModal({
               ))}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              {userType === 'dual' && '“Dual” puede actuar como pasajero y conductor.'}
-              {userType === 'admin' && '“Admin” tiene acceso completo al panel.'}
+              {userType === 'passenger' && 'Solo pide viajes. Es como nace toda cuenta.'}
+              {userType === 'dual' && 'Puede conducir y también pedir viajes. Es lo que se aplica al aprobar el alta de un conductor.'}
+              {userType === 'admin' && 'Acceso completo al panel.'}
             </p>
           </div>
 
