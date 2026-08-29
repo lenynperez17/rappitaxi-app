@@ -61,9 +61,12 @@ platform :ios do
     # veinte minutos después en App Store Connect como "The version number has
     # been previously used" — un mensaje que no apunta a la causa y manda a
     # buscar por el lado equivocado.
-    pubspec = File.read('pubspec.yaml')[/^version:\s*(\S+)/, 1]
+    # Las rutas llevan `../` porque la lane se ejecuta desde la carpeta
+    # `fastlane/`. Las de `build_app` no lo llevan porque esa acción las
+    # resuelve ella misma contra la raíz del proyecto; `File.read` no.
+    pubspec = File.read('../pubspec.yaml')[/^version:\s*(\S+)/, 1]
     nombre_esperado, numero_esperado = pubspec.split('+')
-    xcconfig = File.read('ios/Flutter/Generated.xcconfig')
+    xcconfig = File.read('../ios/Flutter/Generated.xcconfig')
     nombre = xcconfig[/^FLUTTER_BUILD_NAME=(.+)$/, 1]
     numero = xcconfig[/^FLUTTER_BUILD_NUMBER=(.+)$/, 1]
     if nombre != nombre_esperado || numero != numero_esperado
