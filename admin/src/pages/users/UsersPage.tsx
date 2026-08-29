@@ -5,6 +5,7 @@ import {
   ShieldCheck, User as UserIcon, X, AlertCircle, Loader2, KeyRound,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
+import { FloatingLayer } from '../../components/FloatingLayer'
 import { Avatar, pickPhotoUrl } from '../../components/Avatar'
 import { DateTime } from '../../components/DateTime'
 
@@ -81,7 +82,18 @@ export function UsersPage() {
   const [page, setPage] = useState(1)
   const [showCreate, setShowCreate] = useState(false)
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  /**
+   * Ronda 283: se guarda también el botón que abrió el menú, no solo el id.
+   *
+   * El menú ya no se pinta dentro de la fila —ahí lo recortaba el `overflow`
+   * de la tabla y en las últimas filas salía cortado— sino en una capa aparte
+   * que necesita saber junto a qué botón colocarse. Ver `FloatingLayer`.
+   */
+  const [openMenu, setOpenMenu] = useState<{ id: string; el: HTMLElement } | null>(null)
+  /** Cerrarlo desde las acciones, que solo necesitan eso. */
+  const setOpenMenuId = (id: string | null) => {
+    if (id === null) setOpenMenu(null)
+  }
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
   // Ronda 189: ref-set síncrono contra doble-delete por user.
   const deletingRef = useRef<Set<string>>(new Set())
@@ -406,16 +418,26 @@ export function UsersPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          setOpenMenuId(openMenuId === u.id ? null : u.id)
+                          const boton = e.currentTarget
+                          setOpenMenu((prev) =>
+                            prev?.id === u.id ? null : { id: u.id, el: boton })
                         }}
                         className="p-1 hover:bg-gray-100 rounded"
                       >
                         <MoreVertical className="w-4 h-4 text-gray-500" />
                       </button>
-                      {openMenuId === u.id && (
+                      {/* Ronda 283: en una capa fuera de la tabla. Dentro, el
+                          `overflow` del contenedor lo recortaba y en las
+                          últimas filas el menú salía cortado. */}
+                      {openMenu?.id === u.id && (
+                        <FloatingLayer
+                          anchor={openMenu.el}
+                          align="right"
+                          onClose={() => setOpenMenu(null)}
+                        >
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className="absolute right-4 top-10 z-10 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+                          className="bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
                         >
                           <button
                             onClick={() => { setEditUser(u); setOpenMenuId(null) }}
@@ -456,6 +478,7 @@ export function UsersPage() {
                             </button>
                           )}
                         </div>
+                        </FloatingLayer>
                       )}
                     </td>
                   </tr>

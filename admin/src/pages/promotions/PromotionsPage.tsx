@@ -80,7 +80,12 @@ export function PromotionsPage() {
             No hay vales aún. Crea uno para empezar.
           </div>
         ) : (
-          <table className="w-full">
+          /* Ronda 283: siete columnas sin sitio donde deslizar. En una tablet
+             o un móvil se apretaban unas contra otras hasta solaparse, o
+             empujaban la página entera a moverse en horizontal. Es el mismo
+             envoltorio que usan el resto de tablas del panel. */
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px]">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
               <tr>
                 <th className="text-left px-4 py-3">Código</th>
@@ -116,6 +121,7 @@ export function PromotionsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

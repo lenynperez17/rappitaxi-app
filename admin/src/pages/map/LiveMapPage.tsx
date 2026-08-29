@@ -15,6 +15,7 @@ import { driverIcon, pickupIcon, destinationIcon, MAP_COLORS } from '../../compo
 import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
 import { VectorBasemap } from '../../components/map/VectorBasemap'
 import { DateTime } from '../../components/DateTime'
+import { FloatingLayer } from '../../components/FloatingLayer'
 
 /**
  * Mapa en vivo del despacho.
@@ -1192,6 +1193,16 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
   // que usa `VerificationsPage` para su buscador.
   const requestSeq = useRef(0)
   const mapRef = useRef<LeafletMap | null>(null)
+  /**
+   * Ronda 283: el campo de búsqueda, para colgar de él la lista de resultados
+   * desde fuera del panel lateral. Ver `FloatingLayer`.
+   *
+   * Se guarda en estado y no solo en un ref porque un ref no provoca
+   * repintado: al montar vale `null`, y si la lista se pintara mirando el ref
+   * no habría nada a lo que anclarse todavía.
+   */
+  const [buscadorEl, setBuscadorEl] = useState<HTMLDivElement | null>(null)
+  const buscadorRef = useCallback((el: HTMLDivElement | null) => setBuscadorEl(el), [])
 
   useEffect(() => {
     // El endpoint devuelve lista vacía con menos de 2 caracteres; no gastamos
@@ -1307,7 +1318,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
 
       {/* Ronda 281: buscador de direcciones. Mismo aspecto que el de pasajero
           de esta misma pantalla, para que no parezcan dos buscadores. */}
-      <div className="relative">
+      <div className="relative" ref={buscadorRef}>
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={q}
@@ -1332,8 +1343,17 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
             )}
           </div>
         )}
+        {/* Ronda 283: en una capa fuera del panel lateral. Ese panel es un
+            `overflow-y-auto`, así que la lista se cortaba por abajo justo
+            cuando había resultados que leer. `matchWidth` la deja del mismo
+            ancho que el campo, como si siguiera colgando de él. */}
         {results.length > 0 && (
-          <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+          <FloatingLayer
+            anchor={buscadorEl}
+            matchWidth
+            onClose={() => setResults([])}
+          >
+          <ul className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
             {results.map((p, i) => (
               <li key={`${p.placeId ?? 'sin-id'}-${i}`}>
                 <button
@@ -1349,6 +1369,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
               </li>
             ))}
           </ul>
+          </FloatingLayer>
         )}
       </div>
       {searchError && (
