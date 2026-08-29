@@ -11,36 +11,25 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 
-import { verifyAccessToken } from '@/lib/jwt';
+import { requireAuth } from '@/lib/auth-middleware';
 import { generateRegistration } from '@/lib/passkeys';
 import { maybeOne } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function extractBearer(req: NextRequest): string | null {
-  const h = req.headers.get('authorization');
-  if (!h || !h.startsWith('Bearer ')) return null;
-  const t = h.slice(7).trim();
-  return t.length > 0 ? t : null;
-}
+// Ronda 282: `extractBearer` se elimina — lo hace `requireAuth`.
 
 export async function POST(req: NextRequest) {
-  // 1) Validar Bearer JWT
-  const bearer = extractBearer(req);
-  if (!bearer) {
-    return NextResponse.json(
-      { success: false, error: 'unauthenticated' },
-      { status: 401 }
-    );
-  }
-  const claims = await verifyAccessToken(bearer);
-  if (!claims) {
-    return NextResponse.json(
-      { success: false, error: 'invalid_token' },
-      { status: 401 }
-    );
-  }
+  // 1) Validar la sesión, no solo el token.
+  //
+  // Ronda 282: ver la nota extensa en `register/finish`. `verifyAccessToken`
+  // comprueba la firma pero no si la sesión sigue viva, así que un dispositivo
+  // ya expulsado o deslogueado podía usar la hora que le queda de token para
+  // dejarse una llave de acceso permanente en la cuenta.
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
+  const claims = { sub: auth.userId };
 
   // 2) Recuperar datos del usuario (email + display_name) — sin requerir password.
   // Ronda 166: filtrar deleted_at + is_active. Sin esto, JWT vigente de un

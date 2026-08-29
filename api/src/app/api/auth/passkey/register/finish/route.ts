@@ -17,7 +17,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 
-import { verifyAccessToken } from '@/lib/jwt';
+import { requireAuth } from '@/lib/auth-middleware';
 import { verifyRegistration, PasskeyError } from '@/lib/passkeys';
 import { maybeOne } from '@/lib/db';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
@@ -25,12 +25,7 @@ import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function extractBearer(req: NextRequest): string | null {
-  const h = req.headers.get('authorization');
-  if (!h || !h.startsWith('Bearer ')) return null;
-  const t = h.slice(7).trim();
-  return t.length > 0 ? t : null;
-}
+// Ronda 282: `extractBearer` se elimina — lo hace `requireAuth`.
 
 interface ReqBody {
   response?: RegistrationResponseJSON;
@@ -40,20 +35,22 @@ interface ReqBody {
 
 export async function POST(req: NextRequest) {
   // 1) Auth
-  const bearer = extractBearer(req);
-  if (!bearer) {
-    return NextResponse.json(
-      { success: false, error: 'unauthenticated' },
-      { status: 401 }
-    );
-  }
-  const claims = await verifyAccessToken(bearer);
-  if (!claims) {
-    return NextResponse.json(
-      { success: false, error: 'invalid_token' },
-      { status: 401 }
-    );
-  }
+  //
+  // Ronda 282: se pasa de `verifyAccessToken` a `requireAuth`.
+  //
+  // `verifyAccessToken` solo comprueba la firma del token; NO mira si la
+  // sesión sigue viva. Esa consulta está en `auth-middleware`. La diferencia
+  // importa aquí más que en ningún sitio: registrar una llave de acceso deja
+  // una credencial PERMANENTE en la cuenta.
+  //
+  // Un dispositivo cuya sesión se cerró —por logout, por reuso de token
+  // detectado, o por la expulsión al entrar desde otro teléfono— conserva su
+  // token de acceso hasta una hora. Con este endpoint podía usar esa hora para
+  // plantarse una llave y volver a entrar cuando quisiera, dejando sin efecto
+  // el cierre de sesión.
+  const auth = await requireAuth(req);
+  if (!auth.ok) return auth.response;
+  const claims = { sub: auth.userId };
 
   // Ronda 51 Bug#1: chequear estado del user (mismo patrón que
   // authenticate/finish B#9). Sin este gate, un user suspendido puede
