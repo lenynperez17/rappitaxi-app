@@ -10,7 +10,19 @@ export function VerificationsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<'unverified' | 'verified' | 'all'>('unverified')
+  /**
+   * Ronda 283: abre mostrando TODOS.
+   *
+   * Abría en "Pendientes", y como no había ninguno la pantalla se veía vacía
+   * con un "No hay conductores en esta categoría" que se lee como una avería
+   * —de hecho así se reportó—. Y aunque hubiera pendientes, entrar sin poder
+   * ver a los ya aprobados obliga a cambiar el filtro para responder a la
+   * pregunta más normal: quién está verificado y quién no.
+   *
+   * Con "Todos" siempre hay algo en pantalla, y el resumen de abajo dice de un
+   * vistazo cuántos hay de cada clase.
+   */
+  const [status, setStatus] = useState<'unverified' | 'verified' | 'all'>('all')
   const [error, setError] = useState<string | null>(null)
 
   // Ronda 113: request id (mismo patrón Rondas 111/112).
@@ -45,7 +57,11 @@ export function VerificationsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Verificaciones</h1>
-          <p className="text-sm text-gray-500 mt-1">Conductores pendientes de verificación</p>
+          {/* Ronda 283: el subtítulo decía "Conductores pendientes de
+              verificación" y la pantalla ya no lista solo los pendientes. */}
+          <p className="text-sm text-gray-500 mt-1">
+            Quién tiene el alta aprobada y quién sigue esperando
+          </p>
         </div>
         {/* Ronda 279: acceso al catálogo de documentos. */}
         <Link
@@ -71,11 +87,38 @@ export function VerificationsPage() {
         </div>
         <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          <option value="all">Todos{status === 'all' ? ` (${total})` : ''}</option>
           <option value="unverified">Pendientes{status === 'unverified' ? ` (${total})` : ''}</option>
           <option value="verified">Verificados{status === 'verified' ? ` (${total})` : ''}</option>
-          <option value="all">Todos{status === 'all' ? ` (${total})` : ''}</option>
         </select>
       </div>
+
+      {/* Ronda 283: el reparto de un vistazo. Antes el número de pendientes
+          solo se veía si estabas mirando ese filtro, así que para saber si
+          tenías trabajo esperando había que ir a buscarlo. */}
+      {status === 'all' && !loading && drivers.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-6 text-sm">
+          <div>
+            <div className="text-gray-500">Aprobados</div>
+            <div className="text-xl font-semibold text-green-700 tabular-nums">
+              {drivers.filter((d) => d.isVerified).length}
+            </div>
+          </div>
+          <div>
+            <div className="text-gray-500">Pendientes</div>
+            <div className={`text-xl font-semibold tabular-nums ${
+              drivers.some((d) => !d.isVerified) ? 'text-amber-700' : 'text-gray-400'
+            }`}>
+              {drivers.filter((d) => !d.isVerified).length}
+            </div>
+          </div>
+          {total > drivers.length && (
+            <p className="text-xs text-gray-400 self-end">
+              Reparto de los {drivers.length} que se ven, de {total} en total.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
@@ -83,9 +126,33 @@ export function VerificationsPage() {
             <Loader2 className="w-4 h-4 animate-spin" /> Cargando...
           </div>
         ) : drivers.length === 0 ? (
+          /* Ronda 283: decía "No hay conductores en esta categoría", que con el
+             filtro de pendientes vacío se leía como que la pantalla estaba
+             rota. Ahora dice qué pasa y ofrece la salida. */
           <div className="p-12 text-center text-gray-500">
             <ShieldCheck className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-            No hay conductores en esta categoría
+            {search ? (
+              <p>Ningún conductor coincide con «{search}».</p>
+            ) : status === 'unverified' ? (
+              <>
+                <p className="font-medium text-gray-700">No hay nadie esperando aprobación.</p>
+                <p className="text-sm mt-1">
+                  Todos los conductores registrados ya tienen el alta aprobada.{' '}
+                  <button onClick={() => setStatus('all')} className="text-orange-600 hover:underline">
+                    Ver todos
+                  </button>
+                </p>
+              </>
+            ) : status === 'verified' ? (
+              <>
+                <p className="font-medium text-gray-700">Todavía no has aprobado a ningún conductor.</p>
+                <button onClick={() => setStatus('all')} className="text-sm mt-1 text-orange-600 hover:underline">
+                  Ver todos
+                </button>
+              </>
+            ) : (
+              <p>Aún no hay conductores registrados.</p>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">
