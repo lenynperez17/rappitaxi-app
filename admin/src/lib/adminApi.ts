@@ -273,6 +273,25 @@ class AdminApi {
   }
 
   /**
+   * Ronda 283: cerrar un viaje desde el panel.
+   *
+   * Usa el mismo endpoint que la app —`/api/rides/{id}/cancel`—, que ya
+   * contempla al administrador y es el único sitio donde vive la lógica de
+   * penalizaciones y devoluciones. Duplicarla en un endpoint de admin aparte
+   * era la forma segura de que las dos acabaran discrepando.
+   *
+   * Antes no había manera de cerrar un viaje colgado desde el panel: la tabla
+   * de Viajes era solo lectura, así que una solicitud que nadie aceptó se
+   * quedaba ahí para siempre.
+   */
+  async cancelTrip(rideId: string, reason: string): Promise<{ success: boolean }> {
+    return this.rawFetch(`/api/rides/${rideId}/cancel`, {
+      method: 'POST',
+      body: { reason, reasonCode: 'other' },
+    })
+  }
+
+  /**
    * Ronda 271: el pasajero puede ser alguien ya registrado (`passengerId`) o un
    * cliente que llamó por teléfono y no tiene la app (`guestPassenger`). En el
    * segundo caso el backend busca su ficha por teléfono y la crea sólo si no

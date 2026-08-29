@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
 import { keyedRateLimit } from '@/lib/rate-limit'
+import { expireStaleRides } from '@/lib/expire-stale-rides'
 
 export const runtime = 'nodejs'
 
@@ -95,6 +96,13 @@ export async function GET(req: NextRequest) {
       { status: 403 },
     )
   }
+
+  // Ronda 283: aprovechar que los conductores consultan esto constantemente
+  // para cerrar los viajes que nadie aceptó. Así la caducidad ocurre en
+  // segundos aunque no haya ningún panel abierto, y de paso esta lista no le
+  // ofrece a un conductor una solicitud de hace horas que el pasajero dio por
+  // perdida hace rato. Ver `lib/expire-stale-rides`.
+  await expireStaleRides()
 
   const params: unknown[] = [lat, lng, radiusKm, auth.userId, limit]
   let vehicleFilter = ''

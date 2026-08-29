@@ -4,12 +4,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { one } from '@/lib/db'
+import { expireStaleRides } from '@/lib/expire-stale-rides'
 
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
+
+  // Ronda 283: cerrar los viajes que se quedaron colgados ANTES de contar.
+  // Si no, el propio panel mostraría como "en curso" viajes que este barrido
+  // acaba de dar por muertos, y el número parpadearía entre una carga y la
+  // siguiente. La función se auto-limita a una pasada por minuto y nunca
+  // lanza, así que no puede tumbar el panel.
+  await expireStaleRides()
 
   const s = await one<{
     total_users: string; total_passengers: string; total_drivers: string;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, AlertCircle, Route, Search, MapPin, MapPinned } from 'lucide-react'
+import { Loader2, AlertCircle, Route, Search, MapPin, MapPinned, XCircle, CheckCircle2 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminTrip } from '../../lib/adminApi'
 import { formatPEN } from '../../utils/currency'
 import { DateTime } from '../../components/DateTime'
@@ -22,6 +22,15 @@ const STATUS_BADGES: Record<string, string> = {
   no_drivers: 'bg-gray-100 text-gray-700',
 }
 
+/**
+ * Ronda 283: estados en los que un viaje sigue vivo y, por tanto, se puede
+ * cerrar a mano. El resto —completado, cancelado, sin conductores— ya terminó
+ * y el backend rechazaría la cancelación.
+ */
+const ESTADOS_ABIERTOS = new Set([
+  'requested', 'searching', 'accepted', 'on_way', 'arrived', 'in_progress',
+])
+
 export function TripsPage() {
   const [trips, setTrips] = useState<AdminTrip[]>([])
   const [total, setTotal] = useState(0)
@@ -29,6 +38,9 @@ export function TripsPage() {
   const [status, setStatus] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Ronda 283: qué viaje se está cerrando, para no permitir dos clics.
+  const [cerrando, setCerrando] = useState<string | null>(null)
+  const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
   // Ronda 112: request id para descartar respuestas caducas (mismo patrón
   // que DriversPage Ronda 111). Antes: mount inicial disparaba 2 loads
@@ -52,6 +64,43 @@ export function TripsPage() {
       setTrips([])
     } finally { if (seq === requestSeq.current) setLoading(false) }
   }
+
+  /**
+   * Cierra un viaje que se quedó a medias.
+   *
+   * Se confirma antes porque esto le llega al pasajero y al conductor: no es
+   * una operación de limpieza interna, es dar un viaje por terminado.
+   */
+  const cerrarViaje = async (trip: AdminTrip) => {
+    const quien = trip.passengerName ?? trip.passengerPhone ?? 'este pasajero'
+    const ok = window.confirm(
+      `¿Cerrar el viaje de ${quien}?\n\n` +
+      `Estado actual: ${STATUS_LABEL[trip.status] ?? trip.status}\n\n` +
+      'Quedará como cancelado y tanto el pasajero como el conductor dejarán de verlo activo.',
+    )
+    if (!ok || cerrando) return
+
+    setCerrando(trip.id)
+    setFlash(null)
+    try {
+      await adminApi.cancelTrip(trip.id, 'Cerrado por el administrador desde el panel.')
+      setFlash({ kind: 'ok', msg: 'Viaje cerrado.' })
+      await load()
+    } catch (err) {
+      setFlash({
+        kind: 'err',
+        msg: err instanceof AdminApiError ? err.message : 'No se pudo cerrar el viaje',
+      })
+    } finally {
+      setCerrando(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!flash) return
+    const t = setTimeout(() => setFlash(null), 4000)
+    return () => clearTimeout(t)
+  }, [flash])
 
   // Ronda 214: un solo useEffect en vez de dos (evita doble fetch en mount).
   useEffect(() => {
@@ -82,6 +131,17 @@ export function TripsPage() {
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle className="w-4 h-4" /> {error}
+        </div>
+      )}
+
+      {flash && (
+        <div className={`p-3 rounded-lg border text-sm flex items-center gap-2 ${
+          flash.kind === 'ok'
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
+          {flash.kind === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {flash.msg}
         </div>
       )}
 
@@ -123,6 +183,10 @@ export function TripsPage() {
                   <th className="text-right px-4 py-3">Tarifa</th>
                   <th className="text-left px-4 py-3">Estado</th>
                   <th className="text-left px-4 py-3">Creado</th>
+                  {/* Ronda 283: hasta ahora la tabla era solo de lectura, así
+                      que un viaje colgado no se podía cerrar desde ningún
+                      sitio. */}
+                  <th className="text-right px-4 py-3">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -158,6 +222,22 @@ export function TripsPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       <DateTime value={t.createdAt} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {ESTADOS_ABIERTOS.has(t.status) ? (
+                        <button
+                          onClick={() => void cerrarViaje(t)}
+                          disabled={cerrando !== null}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-red-200 text-red-700 text-xs font-medium hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                          {cerrando === t.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <XCircle className="w-3 h-3" />}
+                          Cerrar
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
