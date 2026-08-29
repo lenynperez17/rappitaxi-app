@@ -22,6 +22,22 @@ import { DateTime } from '../../components/DateTime'
 type UserTypeFilter = 'all' | 'passenger' | 'dual' | 'admin'
 type StatusFilter = 'all' | 'active' | 'suspended' | 'deleted'
 
+/**
+ * Ronda 283: valores admitidos en la URL. Se comprueban en vez de confiar en
+ * lo que venga: `?status=loquesea` dejaría la pantalla pidiendo un filtro que
+ * el backend rechaza, y se vería como si no cargara.
+ */
+const TIPOS_VALIDOS: readonly UserTypeFilter[] = ['all', 'passenger', 'dual', 'admin']
+const ESTADOS_VALIDOS: readonly StatusFilter[] = ['all', 'active', 'suspended', 'deleted']
+
+function leerFiltro<T extends string>(
+  valor: string | null,
+  validos: readonly T[],
+  porDefecto: T,
+): T {
+  return valor && (validos as readonly string[]).includes(valor) ? (valor as T) : porDefecto
+}
+
 const USER_TYPE_OPTIONS: Array<{ value: UserTypeFilter; label: string }> = [
   { value: 'all', label: 'Todos' },
   { value: 'passenger', label: 'Pasajeros' },
@@ -45,9 +61,23 @@ export function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<UserTypeFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  /**
+   * Ronda 283: los filtros arrancan desde la URL.
+   *
+   * El Inicio enlaza aquí con un filtro puesto —"Usuarios suspendidos" o
+   * "Pasajeros"— y antes esos parámetros se ignoraban: se caía en la lista
+   * general. Con "suspendidos" era peor que inútil, porque esta pantalla abre
+   * por defecto en `active` y el usuario suspendido que ibas a ver era
+   * justamente el que quedaba fuera.
+   */
+  const [typeFilter, setTypeFilter] = useState<UserTypeFilter>(
+    () => leerFiltro(searchParams.get('type'), TIPOS_VALIDOS, 'all'),
+  )
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    () => leerFiltro(searchParams.get('status'), ESTADOS_VALIDOS, 'active'),
+  )
   const [page, setPage] = useState(1)
   const [showCreate, setShowCreate] = useState(false)
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
@@ -56,7 +86,6 @@ export function UsersPage() {
   // Ronda 189: ref-set síncrono contra doble-delete por user.
   const deletingRef = useRef<Set<string>>(new Set())
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
 
   // Deep-link: /users?edit=<userId> abre el modal de edición. Se usa desde
   // DriversPage → "Editar" para reutilizar el mismo UI de edición sin

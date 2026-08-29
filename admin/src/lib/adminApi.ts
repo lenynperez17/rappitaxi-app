@@ -164,7 +164,11 @@ export interface AdminStats {
   users: { total: number; passengers: number; drivers: number; admins: number; active: number; suspended: number }
   trips: { total: number; today: number; completed: number; cancelled: number }
   recharges: { total: number; today: number; month: number }
-  emergencies: { total: number; active: number }
+  emergencies: { total: number; active: number; oldestDays: number }
+  /** Ronda 283: el estado del servicio ahora mismo, no los totales de siempre. */
+  ahora: { driversOnline: number; ridesActive: number; oldestActiveRideMinutes: number }
+  /** Cosas concretas esperando que alguien haga algo con ellas. */
+  pendientes: { cancellations: number; verifications: number }
 }
 
 class AdminApi {
