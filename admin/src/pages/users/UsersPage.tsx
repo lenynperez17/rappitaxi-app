@@ -555,7 +555,9 @@ function ResetPasswordModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[500] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+      {/* Ronda 283: mismo motivo que en el resto de modales — que pueda
+          desplazarse si la ventana es baja. */}
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="p-5 border-b flex items-center justify-between">
           <h3 className="text-lg font-semibold">Resetear contraseña</h3>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">

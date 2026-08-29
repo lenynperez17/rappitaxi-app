@@ -193,7 +193,11 @@ function CreateValeModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md p-6">
+      {/* Ronda 283: sin `max-h` ni desplazamiento, en una pantalla baja este
+          formulario —que tiene código, descripción, tipo y valor de descuento,
+          límites y fechas— se salía por abajo y el botón de guardar quedaba
+          inalcanzable, porque el fondo es `fixed` y no desplaza la página. */}
+      <div className="bg-white rounded-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Nuevo vale</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">

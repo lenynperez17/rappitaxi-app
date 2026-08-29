@@ -1204,7 +1204,26 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
   const [buscadorEl, setBuscadorEl] = useState<HTMLDivElement | null>(null)
   const buscadorRef = useCallback((el: HTMLDivElement | null) => setBuscadorEl(el), [])
 
+  /**
+   * Ronda 283: marca que el texto lo acaba de poner el propio programa al
+   * elegir una sugerencia, no la persona escribiendo.
+   *
+   * Sin esto, elegir una dirección no cerraba la lista: `handlePickPrediction`
+   * la vacía, pero acto seguido escribe la dirección elegida en el campo, y
+   * ese cambio vuelve a disparar la búsqueda, que la rellena otra vez con las
+   * mismas sugerencias. Quedaba tapando el mapa después de haber elegido.
+   *
+   * Es un ref y no un estado a propósito: cambiarlo no debe repintar nada, y
+   * el efecto tiene que verlo ya puesto en la misma vuelta.
+   */
+  const textoPuestoPorNosotros = useRef(false)
+
   useEffect(() => {
+    // Elegir una sugerencia no es escribir: no se vuelve a buscar.
+    if (textoPuestoPorNosotros.current) {
+      textoPuestoPorNosotros.current = false
+      return
+    }
     // El endpoint devuelve lista vacía con menos de 2 caracteres; no gastamos
     // la petición.
     if (q.trim().length < 2) { setResults([]); setSearchError(null); return }
@@ -1280,6 +1299,13 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
    */
   const handlePickPrediction = async (p: PlacePrediction) => {
     setResults([])
+    // Antes de escribir en el campo: si no, el efecto de búsqueda lo tomaría
+    // por tecleo y volvería a abrir la lista que se acaba de cerrar.
+    //
+    // Solo se marca si el texto cambia de verdad: con el mismo valor React no
+    // repinta, el efecto no llega a correr y la marca se quedaría puesta,
+    // comiéndose la siguiente búsqueda que sí escribiera la persona.
+    if (p.description !== q) textoPuestoPorNosotros.current = true
     setQ(p.description)
     setBusy(true)
     setSearchError(null)

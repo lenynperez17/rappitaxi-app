@@ -67,9 +67,16 @@ export function UserDetailPage() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-start gap-4">
           <Avatar name={user.fullName ?? user.email ?? undefined} src={pickPhotoUrl(user.profilePhotoUrl)} size="xl" />
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">{user.fullName ?? '(sin nombre)'}</h1>
-            <p className="text-sm text-gray-500 mt-1"><code className="bg-gray-100 px-1 rounded">{user.id}</code></p>
+          {/* Ronda 283: `min-w-0`. Un hijo de un flex no encoge por debajo del
+              ancho de su contenido salvo que se le diga, así que un ID largo
+              ensanchaba la tarjeta y desbordaba en pantallas estrechas. El ID
+              se parte en varias líneas en vez de recortarse: recortado no se
+              podría copiar, que es para lo único que está ahí. */}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 break-words">{user.fullName ?? '(sin nombre)'}</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              <code className="bg-gray-100 px-1 rounded break-all">{user.id}</code>
+            </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_BADGES[user.userType] ?? 'bg-gray-100 text-gray-700'}`}>
                 {user.userType === 'admin' && <ShieldCheck className="w-3 h-3" />}
@@ -136,11 +143,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Info({ icon: Icon, label, value, verified }: { icon: React.ElementType; label: string; value: string; verified?: boolean }) {
   return (
     <div className="flex items-center gap-3 text-sm">
-      <Icon className="w-4 h-4 text-gray-400" />
-      <div className="flex-1">
+      <Icon className="w-4 h-4 text-gray-400 shrink-0" />
+      {/* Ronda 283: ver la nota de la cabecera — sin `min-w-0` un correo largo
+          desbordaba la ficha en lugar de recortarse. */}
+      <div className="flex-1 min-w-0">
         <div className="text-xs text-gray-500">{label}</div>
         <div className="font-medium text-gray-900 flex items-center gap-1">
-          {value}
+          <span className="truncate" title={value}>{value}</span>
           {verified === true && <CheckCircle2 className="w-3 h-3 text-green-500" />}
           {verified === false && <XCircle className="w-3 h-3 text-gray-300" />}
         </div>
