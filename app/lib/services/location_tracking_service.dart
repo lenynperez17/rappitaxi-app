@@ -83,7 +83,10 @@ class LocationTrackingService {
   /// Solicita permisos de ubicación (foreground + background en iOS).
   Future<bool> requestLocationPermissions() async {
     try {
-      if (kIsWeb) return _requestWebLocationPermission();
+      // Con await: si el permiso web falla, el error lo captura el catch de
+      // este try. Sin await el Future escapa del bloque (lint
+      // unawaited_return_in_try_block, nuevo en Flutter 3.47).
+      if (kIsWeb) return await _requestWebLocationPermission();
 
       LocationPermission permission = await Geolocator.checkPermission();
 
@@ -192,8 +195,7 @@ class LocationTrackingService {
   /// - Emite en el stream local
   /// - Envía al socket opcional
   /// - Envía heartbeat al backend Node
-  void _handleLocationUpdate(Position position,
-      {bool forceHeartbeat = false}) {
+  void _handleLocationUpdate(Position position, {bool forceHeartbeat = false}) {
     final lastPos = _lastPosition;
     if (!forceHeartbeat && lastPos != null) {
       final distance = Geolocator.distanceBetween(

@@ -46,32 +46,51 @@ import '../../utils/safe_navigation.dart';
 // Top-level payment method helpers (used by multiple State classes in this file)
 PaymentMethod _parsePaymentMethod(String method) {
   switch (method.toLowerCase()) {
-    case 'cash': case 'efectivo': return PaymentMethod.cash;
-    case 'yape': return PaymentMethod.yape;
-    case 'plin': return PaymentMethod.plin;
-    case 'card': case 'tarjeta': return PaymentMethod.card;
-    case 'wallet': case 'billetera': return PaymentMethod.wallet;
-    default: return PaymentMethod.cash;
+    case 'cash':
+    case 'efectivo':
+      return PaymentMethod.cash;
+    case 'yape':
+      return PaymentMethod.yape;
+    case 'plin':
+      return PaymentMethod.plin;
+    case 'card':
+    case 'tarjeta':
+      return PaymentMethod.card;
+    case 'wallet':
+    case 'billetera':
+      return PaymentMethod.wallet;
+    default:
+      return PaymentMethod.cash;
   }
 }
 
 String _paymentMethodLabel(PaymentMethod method) {
   switch (method) {
-    case PaymentMethod.cash: return 'Efectivo';
-    case PaymentMethod.yape: return 'Yape';
-    case PaymentMethod.plin: return 'Plin';
-    case PaymentMethod.card: return 'Tarjeta';
-    case PaymentMethod.wallet: return 'Billetera';
+    case PaymentMethod.cash:
+      return 'Efectivo';
+    case PaymentMethod.yape:
+      return 'Yape';
+    case PaymentMethod.plin:
+      return 'Plin';
+    case PaymentMethod.card:
+      return 'Tarjeta';
+    case PaymentMethod.wallet:
+      return 'Billetera';
   }
 }
 
 Color _paymentMethodColor(PaymentMethod method) {
   switch (method) {
-    case PaymentMethod.cash: return const Color(0xFF4CAF50);
-    case PaymentMethod.yape: return const Color(0xFF6B21A8);
-    case PaymentMethod.plin: return const Color(0xFF00BFA5);
-    case PaymentMethod.card: return const Color(0xFF1565C0);
-    case PaymentMethod.wallet: return AppColors.rappiOrange;
+    case PaymentMethod.cash:
+      return const Color(0xFF4CAF50);
+    case PaymentMethod.yape:
+      return const Color(0xFF6B21A8);
+    case PaymentMethod.plin:
+      return const Color(0xFF00BFA5);
+    case PaymentMethod.card:
+      return const Color(0xFF1565C0);
+    case PaymentMethod.wallet:
+      return AppColors.rappiOrange;
   }
 }
 
@@ -86,12 +105,17 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     with TickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   GoogleMapController? _mapController;
-  final Completer<GoogleMapController> _mapCompleter = Completer<GoogleMapController>();
+  final Completer<GoogleMapController> _mapCompleter =
+      Completer<GoogleMapController>();
   final Set<Marker> _markers = {};
   // Backend Node/SSE (reemplaza Firebase)
   final RapiApiClient _api = RapiApiClient.instance;
   final RapiSseClient _sse = RapiSseClient.instance;
   String? _driverId;
+
+  /// Ronda 284: último viaje asignado del que ya se avisó, para no repetir el
+  /// sonido y el salto de pantalla en cada tick del stream.
+  String? _avisadoAsignado;
 
   // Animation controllers
   late AnimationController _pulseController;
@@ -245,7 +269,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _loadRealRequests();
       }
     }).catchError((e, stackTrace) {
-      debugPrint(userFriendlyError(e, fallback: 'Error initializing driver home'));
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error initializing driver home'));
     });
   }
 
@@ -269,7 +294,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
 
       _driverId = currentUser.id;
-      AppLogger.info('Driver initialized: ${currentUser.fullName} (${currentUser.id})');
+      AppLogger.info(
+          'Driver initialized: ${currentUser.fullName} (${currentUser.id})');
 
       // Listener for admin verification approval — solo si el driver aún
       // no está aprobado (isVerified=false o userType!=dual/driver).
@@ -290,8 +316,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             .timeout(const Duration(seconds: 5));
         final rides = _extractRides(response);
         final activeRide = rides.firstWhere(
-          (r) => const {'accepted', 'arrived', 'on_way', 'driver_arriving', 'in_progress'}
-              .contains(r['status'] as String? ?? ''),
+          (r) => const {
+            'accepted',
+            'arrived',
+            'on_way',
+            'driver_arriving',
+            'in_progress'
+          }.contains(r['status'] as String? ?? ''),
           orElse: () => const <String, dynamic>{},
         );
         if (activeRide.isNotEmpty && mounted) {
@@ -331,7 +362,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // Load initial stats
       await _loadTodayStats();
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error initializing driver'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error initializing driver'));
     }
   }
 
@@ -360,15 +392,22 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final now = DateTime.now();
       final thirtyMinutesAgo = now.subtract(const Duration(minutes: 30));
 
-      AppLogger.info(userFriendlyError(_driverId, fallback: 'Searching zombie rides for driver'));
+      AppLogger.info(userFriendlyError(_driverId,
+          fallback: 'Searching zombie rides for driver'));
 
       final response = await _api.listRides(role: 'driver', pageSize: 50);
       final rides = _extractRides(response);
       final activeStates = const {
-        'accepted', 'arriving', 'arrived',
-        'driver_arriving', 'waiting_verification', 'in_progress',
+        'accepted',
+        'arriving',
+        'arrived',
+        'driver_arriving',
+        'waiting_verification',
+        'in_progress',
       };
-      final activeRides = rides.where((r) => activeStates.contains(r['status'] as String? ?? '')).toList();
+      final activeRides = rides
+          .where((r) => activeStates.contains(r['status'] as String? ?? ''))
+          .toList();
       AppLogger.info('Found ${activeRides.length} active rides for driver');
 
       int cleanedCount = 0;
@@ -389,16 +428,19 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             );
             cleanedCount++;
           } catch (e) {
-            AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo cancelar zombie ride $rideId'));
+            AppLogger.warning(userFriendlyError(e,
+                fallback: 'No se pudo cancelar zombie ride $rideId'));
           }
         }
       }
 
       if (cleanedCount > 0) {
-        AppLogger.info(userFriendlyError(cleanedCount, fallback: 'Total zombie rides cleaned'));
+        AppLogger.info(userFriendlyError(cleanedCount,
+            fallback: 'Total zombie rides cleaned'));
       }
     } catch (e) {
-      AppLogger.warning(userFriendlyError(e, fallback: 'Error cleaning zombie rides'));
+      AppLogger.warning(
+          userFriendlyError(e, fallback: 'Error cleaning zombie rides'));
     }
   }
 
@@ -409,7 +451,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     setState(() => _isCheckingCredits = true);
 
     try {
-      final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+      final walletProvider =
+          Provider.of<WalletProvider>(context, listen: false);
       final creditStatus = await walletProvider.checkCreditStatus();
 
       if (_isDisposed) return;
@@ -422,7 +465,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _isCheckingCredits = false;
       });
 
-      AppLogger.info('Driver credits: S/ $_serviceCredits (Min: S/ $_minServiceCredits, Cost/service: S/ $_serviceFee)');
+      AppLogger.info(
+          'Driver credits: S/ $_serviceCredits (Min: S/ $_minServiceCredits, Cost/service: S/ $_serviceFee)');
     } catch (e) {
       AppLogger.error(userFriendlyError(e, fallback: 'Error checking credits'));
       if (_isDisposed) return;
@@ -471,7 +515,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   /// y consultamos el status del conductor vía `api.me()`.
   void _startVerificationListener(String uid) {
     _verificationPollingTimer?.cancel();
-    _verificationPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+    _verificationPollingTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_isDisposed || !mounted) return;
       try {
         final me = await _api.me();
@@ -482,12 +527,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           _verificationPollingTimer?.cancel();
           _verificationPollingTimer = null;
           if (!mounted) return;
-          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          final authProvider =
+              Provider.of<AuthProvider>(context, listen: false);
           await authProvider.reloadUserData();
           if (mounted) setState(() {});
         }
       } catch (e) {
-        AppLogger.warning(userFriendlyError(e, fallback: 'Error consultando verificación'));
+        AppLogger.warning(
+            userFriendlyError(e, fallback: 'Error consultando verificación'));
       }
     });
   }
@@ -506,7 +553,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           .listRides(role: 'driver', pageSize: 10)
           .timeout(const Duration(seconds: 5));
       final rides = _extractRides(response);
-      final activeStates = const {'accepted', 'arrived', 'on_way', 'driver_arriving', 'waiting_verification', 'in_progress'};
+      final activeStates = const {
+        'accepted',
+        'arrived',
+        'on_way',
+        'driver_arriving',
+        'waiting_verification',
+        'in_progress'
+      };
       final activeRide = rides.firstWhere(
         (r) => activeStates.contains(r['status'] as String? ?? ''),
         orElse: () => const <String, dynamic>{},
@@ -527,9 +581,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     // Validate ride status before navigating - skip completed/cancelled rides
     final status = tripData['status'] as String?;
-    final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
+    final terminalStatuses = [
+      'completed',
+      'cancelled',
+      'cancelled_by_passenger',
+      'cancelled_by_driver'
+    ];
     if (status == null || terminalStatuses.contains(status)) {
-      AppLogger.info(userFriendlyError(status, fallback: 'Skipping navigation to ride $tripId with terminal status'));
+      AppLogger.info(userFriendlyError(status,
+          fallback:
+              'Skipping navigation to ride $tripId with terminal status'));
       return;
     }
 
@@ -548,7 +609,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     }
   }
 
-  void _showOldTripDialog(String tripId, Map<String, dynamic> tripData, int minutesAgo) {
+  void _showOldTripDialog(
+      String tripId, Map<String, dynamic> tripData, int minutesAgo) {
     if (!mounted) return;
 
     // Ronda 269: este diálogo salía con "Pasajero desconocido" y "Origen no
@@ -563,14 +625,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     //
     // Se aceptan las variantes por si alguna respuesta antigua las trae, pero la
     // primera de cada lista es la que el backend manda hoy.
-    final passengerName = tripData['passengerName']
-        ?? tripData['passenger']?['fullName']
-        ?? 'Pasajero desconocido';
-    final origin = tripData['pickupAddress']
-        ?? tripData['originAddress']
-        ?? tripData['pickup']?['address']
-        ?? tripData['origin']?['address']
-        ?? 'Origen no disponible';
+    final passengerName = tripData['passengerName'] ??
+        tripData['passenger']?['fullName'] ??
+        'Pasajero desconocido';
+    final origin = tripData['pickupAddress'] ??
+        tripData['originAddress'] ??
+        tripData['pickup']?['address'] ??
+        tripData['origin']?['address'] ??
+        'Origen no disponible';
 
     showDialog(
       context: context,
@@ -581,14 +643,17 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
             SizedBox(width: 12),
-            Expanded(child: Text('Viaje pendiente', style: TextStyle(fontSize: 18))),
+            Expanded(
+                child: Text('Viaje pendiente', style: TextStyle(fontSize: 18))),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Se encontró un viaje iniciado hace $minutesAgo minutos que no fue completado.', style: TextStyle(fontSize: 15)),
+            Text(
+                'Se encontró un viaje iniciado hace $minutesAgo minutos que no fue completado.',
+                style: TextStyle(fontSize: 15)),
             SizedBox(height: 16),
             Container(
               padding: EdgeInsets.all(12),
@@ -602,19 +667,28 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   Row(children: [
                     Icon(Icons.person, size: 18, color: Colors.grey.shade700),
                     SizedBox(width: 8),
-                    Expanded(child: Text(passengerName, style: TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                    Expanded(
+                        child: Text(passengerName,
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis)),
                   ]),
                   SizedBox(height: 8),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Icon(Icons.location_on, size: 18, color: Colors.green),
                     SizedBox(width: 8),
-                    Expanded(child: Text(origin, style: TextStyle(fontSize: 13, color: Colors.grey.shade700), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                    Expanded(
+                        child: Text(origin,
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.grey.shade700),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis)),
                   ]),
                 ],
               ),
             ),
             SizedBox(height: 16),
-            Text('¿Qué deseas hacer?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+            Text('¿Qué deseas hacer?',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
           ],
         ),
         actions: [
@@ -632,9 +706,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.rappiOrange,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text('Continuar viaje', style: TextStyle(color: Colors.white)),
+            child:
+                Text('Continuar viaje', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -664,7 +740,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           ]),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
 
@@ -673,12 +750,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       cargador.close();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(userFriendlyError(e, fallback: 'Error al cancelar')), backgroundColor: Colors.red),
+        SnackBar(
+            content: Text(userFriendlyError(e, fallback: 'Error al cancelar')),
+            backgroundColor: Colors.red),
       );
     }
   }
 
-  void _doNavigateToActiveTrip(String tripId, Map<String, dynamic> tripData) async {
+  void _doNavigateToActiveTrip(
+      String tripId, Map<String, dynamic> tripData) async {
     if (!mounted) return;
 
     // Double-check ride still exists and is active before navigating
@@ -689,9 +769,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final Map<String, dynamic> rideData =
           (response['ride'] as Map<String, dynamic>?) ?? response;
       final currentStatus = rideData['status'] as String?;
-      final terminalStatuses = ['completed', 'cancelled', 'cancelled_by_passenger', 'cancelled_by_driver'];
+      final terminalStatuses = [
+        'completed',
+        'cancelled',
+        'cancelled_by_passenger',
+        'cancelled_by_driver'
+      ];
       if (currentStatus == null || terminalStatuses.contains(currentStatus)) {
-        AppLogger.info('Ride $tripId has terminal status ($currentStatus), skipping navigation');
+        AppLogger.info(
+            'Ride $tripId has terminal status ($currentStatus), skipping navigation');
         _checkForActiveRidesOnce();
         return;
       }
@@ -701,9 +787,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _checkForActiveRidesOnce();
         return;
       }
-      AppLogger.warning(userFriendlyError(e, fallback: 'Error checking ride $tripId existence'));
+      AppLogger.warning(userFriendlyError(e,
+          fallback: 'Error checking ride $tripId existence'));
     } catch (e) {
-      AppLogger.warning(userFriendlyError(e, fallback: 'Error checking ride $tripId existence'));
+      AppLogger.warning(userFriendlyError(e,
+          fallback: 'Error checking ride $tripId existence'));
       // If we can't check, proceed with navigation - the active_trip_screen will handle it
     }
 
@@ -742,7 +830,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           children: [
             ListTile(
               leading: Icon(Icons.person, color: AppColors.rappiOrange),
-              title: Text('Mi Perfil', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Mi Perfil',
+                  style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/driver/profile');
@@ -750,7 +839,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
             ListTile(
               leading: Icon(Icons.analytics, color: AppColors.rappiOrange),
-              title: Text('Métricas', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Métricas',
+                  style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/driver/metrics');
@@ -758,7 +848,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
             ListTile(
               leading: Icon(Icons.history, color: AppColors.rappiOrange),
-              title: Text('Historial', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Historial',
+                  style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/driver/transactions-history');
@@ -766,13 +857,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
             ListTile(
               leading: Icon(Icons.logout, color: AppColors.error),
-              title: Text('Cerrar Sesión', style: TextStyle(color: AppColors.getTextPrimary(context))),
+              title: Text('Cerrar Sesión',
+                  style: TextStyle(color: AppColors.getTextPrimary(context))),
               onTap: () async {
                 // capture-before-pop: el context del drawer se desmonta al
                 // cerrar el sheet, así que capturamos las referencias ANTES
                 // del pop para evitar el bug "Verificando..." colgado.
                 final rootNav = Navigator.of(context, rootNavigator: true);
-                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                final authProvider =
+                    Provider.of<AuthProvider>(context, listen: false);
                 Navigator.pop(context); // cierra el drawer
                 // AuthProvider.logout() internamente hace api.logout() y limpia SSE.
                 try {
@@ -850,7 +943,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final acceptedDriverId = data['driverId'] as String?;
 
       // Check for counter-offers directed at this driver
-      final counterOffers = data['passengerCounterOffers'] as List<dynamic>? ?? [];
+      final counterOffers =
+          data['passengerCounterOffers'] as List<dynamic>? ?? [];
       for (final offer in counterOffers) {
         final offerMap = offer as Map<String, dynamic>;
         final offerDriverId = offerMap['driverId'] as String?;
@@ -860,7 +954,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final offerKey = '${tripId}_$offerTimestamp';
           if (!_processedCounterOffers.contains(offerKey)) {
             _processedCounterOffers.add(offerKey);
-            final counterPrice = (offerMap['counterPrice'] as num?)?.toDouble() ?? 0.0;
+            final counterPrice =
+                (offerMap['counterPrice'] as num?)?.toDouble() ?? 0.0;
             _showCounterOfferDialog(tripId, data, counterPrice);
           }
         }
@@ -881,7 +976,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final rawOffers = data['driverOffers'];
       if (status == 'requested' && _driverId != null && rawOffers is List) {
         final driverOffers = rawOffers;
-        final myOfferStillExists = driverOffers.any((o) => (o as Map<String, dynamic>)['driverId'] == _driverId);
+        final myOfferStillExists = driverOffers
+            .any((o) => (o as Map<String, dynamic>)['driverId'] == _driverId);
         if (!myOfferStillExists && _offeringOverlayText != null) {
           _myOfferSubscription?.cancel();
           _myOfferSubscription = null;
@@ -895,7 +991,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           });
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('El pasajero rechazó tu oferta'), backgroundColor: Colors.orange),
+              SnackBar(
+                  content: Text('El pasajero rechazó tu oferta'),
+                  backgroundColor: Colors.orange),
             );
           }
           return;
@@ -990,13 +1088,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       }
 
       final initialPosition = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
       if (!mounted || _isDisposed) return;
 
       setState(() {
-        _currentLocation = LatLng(initialPosition.latitude, initialPosition.longitude);
+        _currentLocation =
+            LatLng(initialPosition.latitude, initialPosition.longitude);
         _updateMapMarkers();
       });
 
@@ -1024,13 +1124,19 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final dLat = newLocation.latitude - _currentLocation!.latitude;
           final dLng = newLocation.longitude - _currentLocation!.longitude;
           if (dLat.abs() > 0.00001 || dLng.abs() > 0.00001) {
-            final y = math.sin(dLng * math.pi / 180) * math.cos(newLocation.latitude * math.pi / 180);
-            final x = math.cos(_currentLocation!.latitude * math.pi / 180) * math.sin(newLocation.latitude * math.pi / 180) -
-                math.sin(_currentLocation!.latitude * math.pi / 180) * math.cos(newLocation.latitude * math.pi / 180) * math.cos(dLng * math.pi / 180);
+            final y = math.sin(dLng * math.pi / 180) *
+                math.cos(newLocation.latitude * math.pi / 180);
+            final x = math.cos(_currentLocation!.latitude * math.pi / 180) *
+                    math.sin(newLocation.latitude * math.pi / 180) -
+                math.sin(_currentLocation!.latitude * math.pi / 180) *
+                    math.cos(newLocation.latitude * math.pi / 180) *
+                    math.cos(dLng * math.pi / 180);
             _currentHeading = (math.atan2(y, x) * 180 / math.pi + 360) % 360;
           }
         }
-        if (position.speed > 0.5 && position.heading >= 0 && position.heading <= 360) {
+        if (position.speed > 0.5 &&
+            position.heading >= 0 &&
+            position.heading <= 360) {
           _currentHeading = position.heading;
         }
 
@@ -1044,7 +1150,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         _lastFixAt = DateTime.now();
 
         // Snap to road (Rapi Team)
-        final snappedLocation = await RoadSnappingService.instance.snapToRoad(newLocation);
+        final snappedLocation =
+            await RoadSnappingService.instance.snapToRoad(newLocation);
 
         // Ronda 214: re-verificar mounted post-await. Sin esto, si el driver
         // navegó a otra pantalla mientras corría snapToRoad, setState crashea
@@ -1056,13 +1163,19 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         });
 
         // Follow driver with bearing rotation
-        if (_followDriverLocation && _mapController != null && !_isCameraAnimating) {
+        if (_followDriverLocation &&
+            _mapController != null &&
+            !_isCameraAnimating) {
           _isCameraAnimating = true;
           _lastProgrammaticCameraMove = DateTime.now();
           try {
             await _mapController!.animateCamera(
               CameraUpdate.newCameraPosition(
-                CameraPosition(target: snappedLocation, bearing: _currentHeading, zoom: 17, tilt: 50),
+                CameraPosition(
+                    target: snappedLocation,
+                    bearing: _currentHeading,
+                    zoom: 17,
+                    tilt: 50),
               ),
             );
           } catch (_) {
@@ -1089,14 +1202,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // NUNCA se arrancaba. Ahora late cada 30s mientras esté online.
       await _updateLocationInFirebase(_currentLocation!); // heartbeat inmediato
       _locationUpdateTimer?.cancel();
-      _locationUpdateTimer = Timer.periodic(const Duration(seconds: 30), (t) async {
+      _locationUpdateTimer =
+          Timer.periodic(const Duration(seconds: 30), (t) async {
         if (_isDisposed || !mounted || !_isOnline) return;
         final loc = _currentLocation;
         if (loc == null) return;
         await _updateLocationInFirebase(loc);
       });
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error starting GPS tracking'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error starting GPS tracking'));
     }
   }
 
@@ -1135,7 +1250,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         speed: fresca ? _lastSpeedKmh : 0,
       );
     } catch (e) {
-      AppLogger.warning(userFriendlyError(e, fallback: 'Error enviando heartbeat al backend'));
+      AppLogger.warning(userFriendlyError(e,
+          fallback: 'Error enviando heartbeat al backend'));
     }
   }
 
@@ -1157,6 +1273,47 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final Map<String, dynamic> data =
               (event['ride'] as Map<String, dynamic>?) ?? event;
           final status = data['status'] as String?;
+
+          // Ronda 284 — un viaje que YA es mío, no una oferta que puedo tomar.
+          //
+          // Cuando el administrador crea un viaje eligiendo conductor, o se lo
+          // asigna desde el mapa, el viaje nace o pasa a 'accepted' con el
+          // conductor puesto. Este manejador solo miraba 'requested' y
+          // 'searching_driver', así que ese viaje se descartaba en la primera
+          // línea: ni tarjeta, ni sonido, ni aviso. El conductor no se enteraba
+          // de que tenía un viaje salvo que abriera la app y lo buscara.
+          //
+          // Aquí no vale la lista de ofertas —no hay nada que aceptar, ya está
+          // aceptado—, así que se avisa y se lleva al viaje.
+          final rideDriverId = data['driverId'] as String?;
+          if (status == 'accepted' &&
+              rideDriverId != null &&
+              rideDriverId == _driverId) {
+            final id = (data['id'] as String?) ?? (event['rideId'] as String?);
+            if (id != null && id != _avisadoAsignado) {
+              _avisadoAsignado = id;
+              SoundService().play(AppSound.rideRequest);
+              LocalNotificationService().showRideRequestNotification(
+                passengerName: data['passengerName'] as String? ?? 'Pasajero',
+                pickupAddress:
+                    (data['pickup'] as Map?)?['address'] as String? ??
+                        data['pickupAddress'] as String? ??
+                        'Punto de recogida',
+                price: (((data['estimatedFare'] ?? data['fare']) as num?)
+                            ?.toDouble() ??
+                        0.0)
+                    .toStringAsFixed(2),
+              );
+              if (mounted) {
+                // La ruta lee `tripId`, no `rideId`: con la clave equivocada
+                // la pantalla se abre en su mensaje de error.
+                Navigator.pushNamed(context, '/driver/active-trip',
+                    arguments: {'tripId': id});
+              }
+            }
+            return;
+          }
+
           if (status != 'requested' && status != 'searching_driver') return;
 
           if (_currentLocation == null) return;
@@ -1173,15 +1330,19 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           final pickupLat = (pickupLatRaw as num).toDouble();
           final pickupLng = (pickupLngRaw as num).toDouble();
           final distanceInMeters = Geolocator.distanceBetween(
-            _currentLocation!.latitude, _currentLocation!.longitude,
-            pickupLat, pickupLng,
+            _currentLocation!.latitude,
+            _currentLocation!.longitude,
+            pickupLat,
+            pickupLng,
           );
           if (distanceInMeters > 5000) return;
 
-          final rideId = (data['id'] as String?) ?? (event['rideId'] as String?);
+          final rideId =
+              (data['id'] as String?) ?? (event['rideId'] as String?);
           if (rideId == null) return;
 
-          final destData = (data['destination'] ?? data['destinationLocation']) as Map?;
+          final destData =
+              (data['destination'] ?? data['destinationLocation']) as Map?;
           final negotiation = PriceNegotiation(
             id: rideId,
             passengerId: data['passengerId'] as String? ?? '',
@@ -1189,36 +1350,51 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             pickup: LocationPoint(
               latitude: pickupLat,
               longitude: pickupLng,
-              address: (pickupData['address'] as String?)
-                  ?? (data['pickupAddress'] as String?)
-                  ?? 'Dirección no disponible',
+              address: (pickupData['address'] as String?) ??
+                  (data['pickupAddress'] as String?) ??
+                  'Dirección no disponible',
             ),
             destination: LocationPoint(
-              latitude: ((destData?['lat'] ?? destData?['latitude']) as num?)?.toDouble() ?? 0.0,
-              longitude: ((destData?['lng'] ?? destData?['longitude']) as num?)?.toDouble() ?? 0.0,
-              address: (destData?['address'] as String?)
-                  ?? (data['destinationAddress'] as String?)
-                  ?? 'Destino no disponible',
+              latitude: ((destData?['lat'] ?? destData?['latitude']) as num?)
+                      ?.toDouble() ??
+                  0.0,
+              longitude: ((destData?['lng'] ?? destData?['longitude']) as num?)
+                      ?.toDouble() ??
+                  0.0,
+              address: (destData?['address'] as String?) ??
+                  (data['destinationAddress'] as String?) ??
+                  'Destino no disponible',
             ),
             status: NegotiationStatus.waiting,
             // Ronda 239: backend Node envía estimatedFare + distanceKm.
             // Mantenemos legacy fare/distance como fallback.
-            suggestedPrice: ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ?? 0.0,
-            offeredPrice: ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ?? 0.0,
-            distance: ((data['distanceKm']
-                    ?? (data['distanceMeters'] is num ? (data['distanceMeters'] as num) / 1000.0 : null)
-                    ?? data['distance']) as num?)?.toDouble() ?? 0.0,
+            suggestedPrice:
+                ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ??
+                    0.0,
+            offeredPrice:
+                ((data['estimatedFare'] ?? data['fare']) as num?)?.toDouble() ??
+                    0.0,
+            distance: ((data['distanceKm'] ??
+                        (data['distanceMeters'] is num
+                            ? (data['distanceMeters'] as num) / 1000.0
+                            : null) ??
+                        data['distance']) as num?)
+                    ?.toDouble() ??
+                0.0,
             estimatedTime: (data['estimatedTime'] as num?)?.toInt() ?? 0,
             passengerName: data['passengerName'] as String? ?? 'Pasajero',
             passengerPhoto: data['passengerPhoto'] as String? ?? '',
             // Ronda 255: el default 5.0 mostraba a TODO pasajero con la nota
             // máxima aunque nunca lo hubieran calificado. 0.0 = sin calificar.
-            passengerRating: (data['passengerRating'] as num?)?.toDouble() ?? 0.0,
+            passengerRating:
+                (data['passengerRating'] as num?)?.toDouble() ?? 0.0,
             driverOffers: [],
-            paymentMethod: _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
+            paymentMethod:
+                _parsePaymentMethod(data['paymentMethod'] as String? ?? 'cash'),
             notes: data['notes'] as String? ?? data['adminNotes'] as String?,
             createdAt: _parseIsoDate(data['createdAt']) ?? DateTime.now(),
-            expiresAt: _parseIsoDate(data['expiresAt']) ?? DateTime.now().add(const Duration(minutes: 5)),
+            expiresAt: _parseIsoDate(data['expiresAt']) ??
+                DateTime.now().add(const Duration(minutes: 5)),
             isManualOrder: data['isManualOrder'] == true,
             guestPassengerName: data['guestPassengerName'] as String?,
             guestPassengerPhone: data['guestPassengerPhone'] as String?,
@@ -1240,11 +1416,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           );
         },
         onError: (error) {
-          AppLogger.error(userFriendlyError(error, fallback: 'Error in rides listener'));
+          AppLogger.error(
+              userFriendlyError(error, fallback: 'Error in rides listener'));
         },
       );
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error starting rides listener'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error starting rides listener'));
     }
   }
 
@@ -1285,13 +1463,15 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           // TODO(node-migration): reemplazar con endpoint de marcado 'expired'
           // cuando el backend soporte marcar negotiations expiradas explícitamente.
         } catch (e) {
-          AppLogger.error(userFriendlyError(e, fallback: 'Error parsing request'));
+          AppLogger.error(
+              userFriendlyError(e, fallback: 'Error parsing request'));
         }
       }
 
       if (!mounted) return;
 
-      AppLogger.info('Loaded ${loadedRequests.length} active negotiations from backend');
+      AppLogger.info(
+          'Loaded ${loadedRequests.length} active negotiations from backend');
 
       setState(() {
         _availableRequests = loadedRequests;
@@ -1339,7 +1519,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         Marker(
           markerId: MarkerId(request.id),
           position: LatLng(request.pickup.latitude, request.pickup.longitude),
-          icon: _passengerWaitingIcon ?? _requestIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          icon: _passengerWaitingIcon ??
+              _requestIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           onTap: () => _selectRequest(request),
           infoWindow: InfoWindow(
             title: 'Recoger: ${request.passengerName}',
@@ -1398,7 +1580,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     try {
       // Check credits before offering (Rapi Team)
-      final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+      final walletProvider =
+          Provider.of<WalletProvider>(context, listen: false);
       final hasCredits = await walletProvider.hasEnoughCreditsForService();
 
       if (!mounted) return;
@@ -1413,9 +1596,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // fallback a _api.me() que fallaba con "Usuario no autenticado"
       // cuando la sesión estaba temporalmente inaccesible.
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final negotiationProvider = Provider.of<PriceNegotiationProvider>(context, listen: false);
+      final negotiationProvider =
+          Provider.of<PriceNegotiationProvider>(context, listen: false);
       final errorMsg = await negotiationProvider.makeDriverOffer(
-        request.id, price,
+        request.id,
+        price,
         knownUserId: authProvider.currentUser?.id,
       );
 
@@ -1446,7 +1631,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'No se pudo enviar tu oferta.')),
+          content: Text(
+              userFriendlyError(e, fallback: 'No se pudo enviar tu oferta.')),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1457,7 +1643,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   /// Se suscribe al stream global SSE de negotiations y filtra por
   /// negotiationId (que en el nuevo backend coincide con el rideId
   /// de la solicitud abierta).
-  void _listenForNegotiationResponse(String negotiationId, double offeredPrice) {
+  void _listenForNegotiationResponse(
+      String negotiationId, double offeredPrice) {
     _myOfferSubscription?.cancel();
     _pendingOfferTripId = negotiationId;
 
@@ -1478,7 +1665,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       final String? eventRideId = (event['rideId'] as String?) ??
           (event['id'] as String?) ??
           ((event['ride'] as Map<String, dynamic>?)?['id'] as String?) ??
-          ((event['negotiation'] as Map<String, dynamic>?)?['rideId'] as String?);
+          ((event['negotiation'] as Map<String, dynamic>?)?['rideId']
+              as String?);
       if (eventRideId == null || eventRideId != negotiationId) return;
 
       final Map<String, dynamic> data =
@@ -1487,7 +1675,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               event;
 
       final status = data['status'] as String?;
-      final acceptedDriverId = data['acceptedDriverId'] as String? ?? data['driverId'] as String?;
+      final acceptedDriverId =
+          data['acceptedDriverId'] as String? ?? data['driverId'] as String?;
       final rideId = (data['rideId'] as String?) ?? negotiationId;
 
       // Passenger accepted THIS driver's offer
@@ -1518,7 +1707,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
         // Consume credits for this service (Rapi Team)
         if (rideId.isNotEmpty) {
-          final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+          final walletProvider =
+              Provider.of<WalletProvider>(context, listen: false);
           await walletProvider.consumeCreditsForService(
             tripId: rideId,
             negotiationId: negotiationId,
@@ -1537,10 +1727,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           if (mounted) {
             try {
               final rideResponse = await _api.getRide(rideId);
-              final rideData = (rideResponse['ride'] as Map<String, dynamic>?) ?? rideResponse;
+              final rideData =
+                  (rideResponse['ride'] as Map<String, dynamic>?) ??
+                      rideResponse;
               _doNavigateToActiveTrip(rideId, rideData);
             } catch (e) {
-              AppLogger.warning(userFriendlyError(e, fallback: 'Error obteniendo ride $rideId'));
+              AppLogger.warning(userFriendlyError(e,
+                  fallback: 'Error obteniendo ride $rideId'));
             }
           }
         }
@@ -1558,27 +1751,34 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // anunciaba un rechazo inexistente cerrando la pantalla del conductor.
       // Solo se concluye rechazo cuando la lista viene de verdad.
       final rawOffers2 = data['driverOffers'];
-      if ((status == 'waiting' || status == 'negotiating') && rawOffers2 is List) {
-        final myOffer = rawOffers2.where((o) => o['driverId'] == _driverId).toList();
+      if ((status == 'waiting' || status == 'negotiating') &&
+          rawOffers2 is List) {
+        final myOffer =
+            rawOffers2.where((o) => o['driverId'] == _driverId).toList();
 
         if (myOffer.isEmpty && _offeringOverlayText != null) {
           _dismissOfferingOverlay('El pasajero rechazó tu oferta');
           return;
         }
 
-        if (myOffer.isNotEmpty && myOffer.first['status'] == 'rejected' && _offeringOverlayText != null) {
+        if (myOffer.isNotEmpty &&
+            myOffer.first['status'] == 'rejected' &&
+            _offeringOverlayText != null) {
           _dismissOfferingOverlay('El pasajero rechazó tu oferta');
           return;
         }
       }
 
       // If another driver was accepted
-      if (status == 'accepted' && acceptedDriverId != null && acceptedDriverId != _driverId) {
+      if (status == 'accepted' &&
+          acceptedDriverId != null &&
+          acceptedDriverId != _driverId) {
         _dismissOfferingOverlay('Otro conductor fue aceptado');
         return;
       }
     }, onError: (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error in negotiation listener'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error in negotiation listener'));
       _dismissOfferingOverlay('Error de conexión');
     });
   }
@@ -1635,7 +1835,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      final walletProvider = Provider.of<WalletProvider>(context, listen: false);
+      final walletProvider =
+          Provider.of<WalletProvider>(context, listen: false);
       final hasCredits = await walletProvider.hasEnoughCreditsForService();
       if (!hasCredits) {
         _showNeedCreditsDialog();
@@ -1678,14 +1879,18 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         try {
           await _api.cancelRide(rideId, reason: 'credit_consumption_failed');
         } catch (rollbackError) {
-          AppLogger.error(userFriendlyError(rollbackError, fallback: 'CRITICAL: Rollback failed'));
+          AppLogger.error(userFriendlyError(rollbackError,
+              fallback: 'CRITICAL: Rollback failed'));
         }
         messenger.showSnackBar(
-          const SnackBar(content: Text('Error al procesar créditos. Intenta de nuevo.'), backgroundColor: ModernTheme.error),
+          const SnackBar(
+              content: Text('Error al procesar créditos. Intenta de nuevo.'),
+              backgroundColor: ModernTheme.error),
         );
       }
     } on RapiApiException catch (e) {
-      AppLogger.error('API error accepting request: ${e.statusCode} - ${e.code}');
+      AppLogger.error(
+          'API error accepting request: ${e.statusCode} - ${e.code}');
       if (!mounted) return;
       // Ronda 256: el backend ahora responde 402 insufficient_credits cuando el
       // conductor tiene saldo negativo. Sin este caso, el conductor veía
@@ -1706,14 +1911,16 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         duration: const Duration(seconds: 5),
       ));
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error accepting request'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error accepting request'));
       if (!mounted) return;
       String errorMessage = e.toString().contains('ya acepto')
           ? 'Otro conductor ya aceptó esta solicitud'
           : e.toString().contains('no esta disponible')
               ? 'La solicitud ya no está disponible'
               : 'Error: ${e.toString().replaceAll('Exception: ', '')}';
-      messenger.showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: AppColors.error));
+      messenger.showSnackBar(SnackBar(
+          content: Text(errorMessage), backgroundColor: AppColors.error));
     }
   }
 
@@ -1730,7 +1937,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     // Use negotiation expiry time instead of a fixed 60-second timeout.
     // The listener (_listenForNegotiationResponse) handles acceptance/rejection/expiry.
     final now = DateTime.now();
-    final totalSeconds = request.expiresAt.difference(now).inSeconds.clamp(30, 600);
+    final totalSeconds =
+        request.expiresAt.difference(now).inSeconds.clamp(30, 600);
     int elapsed = 0;
 
     _offerProgressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -1790,10 +1998,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 color: ModernTheme.warning.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.account_balance_wallet, color: ModernTheme.warning, size: 28),
+              child: const Icon(Icons.account_balance_wallet,
+                  color: ModernTheme.warning, size: 28),
             ),
             const SizedBox(width: 12),
-            const Expanded(child: Text('Créditos insuficientes', style: TextStyle(fontSize: 18))),
+            const Expanded(
+                child: Text('Créditos insuficientes',
+                    style: TextStyle(fontSize: 18))),
           ],
         ),
         content: Column(
@@ -1805,19 +2016,27 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               decoration: BoxDecoration(
                 color: ModernTheme.warning.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: ModernTheme.warning.withValues(alpha: 0.3)),
+                border: Border.all(
+                    color: ModernTheme.warning.withValues(alpha: 0.3)),
               ),
               child: Row(children: [
-                const Icon(Icons.info_outline, color: ModernTheme.warning, size: 20),
+                const Icon(Icons.info_outline,
+                    color: ModernTheme.warning, size: 20),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Tu saldo actual: S/ ${_serviceCredits.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600))),
+                Expanded(
+                    child: Text(
+                        'Tu saldo actual: S/ ${_serviceCredits.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600))),
               ]),
             ),
             const SizedBox(height: 16),
-            Text('Para aceptar servicios necesitas:', style: TextStyle(color: context.secondaryText)),
+            Text('Para aceptar servicios necesitas:',
+                style: TextStyle(color: context.secondaryText)),
             const SizedBox(height: 8),
-            _buildCreditRequirement('Mínimo requerido', 'S/ ${_minServiceCredits.toStringAsFixed(2)}'),
-            _buildCreditRequirement('Costo por servicio', 'S/ ${_serviceFee.toStringAsFixed(2)}'),
+            _buildCreditRequirement('Mínimo requerido',
+                'S/ ${_minServiceCredits.toStringAsFixed(2)}'),
+            _buildCreditRequirement(
+                'Costo por servicio', 'S/ ${_serviceFee.toStringAsFixed(2)}'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1826,9 +2045,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Row(children: [
-                Icon(Icons.lightbulb_outline, color: ModernTheme.rappiOrange, size: 20),
+                Icon(Icons.lightbulb_outline,
+                    color: ModernTheme.rappiOrange, size: 20),
                 SizedBox(width: 8),
-                Expanded(child: Text('Recarga créditos para seguir aceptando viajes y ganando dinero', style: TextStyle(fontSize: 12))),
+                Expanded(
+                    child: Text(
+                        'Recarga créditos para seguir aceptando viajes y ganando dinero',
+                        style: TextStyle(fontSize: 12))),
               ]),
             ),
           ],
@@ -1836,7 +2059,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Cerrar', style: TextStyle(color: context.secondaryText)),
+            child:
+                Text('Cerrar', style: TextStyle(color: context.secondaryText)),
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.add_card, size: 18),
@@ -1844,11 +2068,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: ModernTheme.rappiOrange,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
               Navigator.pop(dialogContext);
-              Navigator.pushNamed(context, '/driver/recharge-credits').then((_) => _checkDriverCredits());
+              Navigator.pushNamed(context, '/driver/recharge-credits')
+                  .then((_) => _checkDriverCredits());
             },
           ),
         ],
@@ -1862,7 +2088,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: context.secondaryText, fontSize: 13)),
+          Text(label,
+              style: TextStyle(color: context.secondaryText, fontSize: 13)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
@@ -1880,14 +2107,17 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: AppColors.getSurface(context),
-          title: Text('Hacer contra-oferta', style: TextStyle(color: AppColors.getTextPrimary(context))),
+          title: Text('Hacer contra-oferta',
+              style: TextStyle(color: AppColors.getTextPrimary(context))),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Precio del pasajero: S/ ${request.offeredPrice.toStringAsFixed(2)}',
-                    style: TextStyle(color: AppColors.getTextSecondary(context))),
+                Text(
+                    'Precio del pasajero: S/ ${request.offeredPrice.toStringAsFixed(2)}',
+                    style:
+                        TextStyle(color: AppColors.getTextSecondary(context))),
                 SizedBox(height: 16),
                 TextField(
                   controller: priceController,
@@ -1903,9 +2133,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: Text('Cancelar')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.rappiOrange),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.rappiOrange),
               onPressed: () {
                 Navigator.pop(ctx);
                 _submitCounterOffer(request, priceController.text);
@@ -1918,11 +2150,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     );
   }
 
-  Future<void> _submitCounterOffer(PriceNegotiation request, String priceText) async {
+  Future<void> _submitCounterOffer(
+      PriceNegotiation request, String priceText) async {
     final price = double.tryParse(priceText);
     if (price == null || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Precio inválido'), backgroundColor: AppColors.error),
+        SnackBar(
+            content: Text('Precio inválido'), backgroundColor: AppColors.error),
       );
       return;
     }
@@ -1932,7 +2166,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   }
 
   // Counter-offer dialog
-  void _showCounterOfferDialog(String tripId, Map<String, dynamic> tripData, double counterPrice) {
+  void _showCounterOfferDialog(
+      String tripId, Map<String, dynamic> tripData, double counterPrice) {
     if (!mounted) return;
 
     final passengerName = tripData['passengerName'] as String? ?? 'Pasajero';
@@ -1949,42 +2184,81 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         title: Row(children: [
           Icon(Icons.local_offer, color: AppColors.rappiOrange, size: 28),
           SizedBox(width: 12),
-          Expanded(child: Text('Nueva Contraoferta!', style: TextStyle(color: AppColors.getTextPrimary(context), fontWeight: FontWeight.bold))),
+          Expanded(
+              child: Text('Nueva Contraoferta!',
+                  style: TextStyle(
+                      color: AppColors.getTextPrimary(context),
+                      fontWeight: FontWeight.bold))),
         ]),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(userFriendlyError(passengerName, fallback: 'De'), style: TextStyle(color: AppColors.getTextPrimary(context), fontWeight: FontWeight.w600, fontSize: 16)),
+              Text(userFriendlyError(passengerName, fallback: 'De'),
+                  style: TextStyle(
+                      color: AppColors.getTextPrimary(context),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16)),
               SizedBox(height: 12),
               Container(
                 padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(color: AppColors.getBackground(context), borderRadius: BorderRadius.circular(12)),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Icon(Icons.trip_origin, color: Colors.green, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: Text(origin, style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  ]),
-                  SizedBox(height: 4),
-                  Row(children: [
-                    Icon(Icons.location_on, color: Colors.red, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: Text(destination, style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  ]),
-                ]),
+                decoration: BoxDecoration(
+                    color: AppColors.getBackground(context),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.trip_origin, color: Colors.green, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                            child: Text(origin,
+                                style: TextStyle(
+                                    color: AppColors.getTextSecondary(context),
+                                    fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis)),
+                      ]),
+                      SizedBox(height: 4),
+                      Row(children: [
+                        Icon(Icons.location_on, color: Colors.red, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                            child: Text(destination,
+                                style: TextStyle(
+                                    color: AppColors.getTextSecondary(context),
+                                    fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis)),
+                      ]),
+                    ]),
               ),
               SizedBox(height: 16),
               Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                 Column(children: [
-                  Text('Tu oferta', style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 12)),
-                  Text('S/ ${originalPrice.toStringAsFixed(2)}', style: TextStyle(color: AppColors.getTextPrimary(context), fontSize: 18, fontWeight: FontWeight.bold, decoration: TextDecoration.lineThrough)),
+                  Text('Tu oferta',
+                      style: TextStyle(
+                          color: AppColors.getTextSecondary(context),
+                          fontSize: 12)),
+                  Text('S/ ${originalPrice.toStringAsFixed(2)}',
+                      style: TextStyle(
+                          color: AppColors.getTextPrimary(context),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          decoration: TextDecoration.lineThrough)),
                 ]),
                 Icon(Icons.arrow_forward, color: AppColors.rappiOrange),
                 Column(children: [
-                  Text('Contraoferta', style: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 12)),
-                  Text('S/ ${counterPrice.toStringAsFixed(2)}', style: TextStyle(color: AppColors.success, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text('Contraoferta',
+                      style: TextStyle(
+                          color: AppColors.getTextSecondary(context),
+                          fontSize: 12)),
+                  Text('S/ ${counterPrice.toStringAsFixed(2)}',
+                      style: TextStyle(
+                          color: AppColors.success,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold)),
                 ]),
               ]),
             ],
@@ -2001,20 +2275,23 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.success,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
               Navigator.pop(ctx);
               _acceptCounterOffer(tripId, tripData, counterPrice);
             },
-            child: Text('Aceptar S/ ${counterPrice.toStringAsFixed(2)}', style: TextStyle(color: Colors.white)),
+            child: Text('Aceptar S/ ${counterPrice.toStringAsFixed(2)}',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _acceptCounterOffer(String tripId, Map<String, dynamic> tripData, double counterPrice) async {
+  Future<void> _acceptCounterOffer(
+      String tripId, Map<String, dynamic> tripData, double counterPrice) async {
     try {
       // El backend infiere el conductor por JWT y el precio de la contraoferta
       // desde el flujo de negociación. `acceptRide` cierra la aceptación con
@@ -2027,15 +2304,21 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Viaje aceptado por S/ ${counterPrice.toStringAsFixed(2)}!'), backgroundColor: AppColors.success),
+        SnackBar(
+            content: Text(
+                'Viaje aceptado por S/ ${counterPrice.toStringAsFixed(2)}!'),
+            backgroundColor: AppColors.success),
       );
 
-      _doNavigateToActiveTrip(tripId, rideData.isNotEmpty ? rideData : tripData);
+      _doNavigateToActiveTrip(
+          tripId, rideData.isNotEmpty ? rideData : tripData);
     } catch (e) {
       print(userFriendlyError(e, fallback: 'Error accepting counter-offer'));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al aceptar contraoferta'), backgroundColor: AppColors.error),
+        SnackBar(
+            content: Text('Error al aceptar contraoferta'),
+            backgroundColor: AppColors.error),
       );
     }
   }
@@ -2054,7 +2337,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Contraoferta de S/ ${counterPrice.toStringAsFixed(2)} rechazada'),
+          content: Text(
+              'Contraoferta de S/ ${counterPrice.toStringAsFixed(2)} rechazada'),
           backgroundColor: ModernTheme.warning,
         ),
       );
@@ -2063,7 +2347,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'No se pudo retirar tu oferta')),
+          content: Text(
+              userFriendlyError(e, fallback: 'No se pudo retirar tu oferta')),
           backgroundColor: AppColors.error,
         ),
       );
@@ -2087,7 +2372,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final isApproved = currentUser != null &&
         currentUser.isVerified &&
         currentUser.userType == 'dual'; // Ronda 282: ver la migración 027.
-    if (!_isOnline && currentUser != null && !isApproved && currentUser.driverStatus != 'approved') {
+    if (!_isOnline &&
+        currentUser != null &&
+        !isApproved &&
+        currentUser.driverStatus != 'approved') {
       messenger.showSnackBar(
         SnackBar(
           content: Text(currentUser.driverStatus == 'pending_approval'
@@ -2107,7 +2395,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
     // Sincronizar con el backend ANTES de reflejarlo en la UI.
     try {
-      await _api.setDriverOnline(goingOnline).timeout(const Duration(seconds: 12));
+      await _api
+          .setDriverOnline(goingOnline)
+          .timeout(const Duration(seconds: 12));
       AppLogger.info('[Ronda 232] setDriverOnline($goingOnline) OK');
     } catch (e) {
       AppLogger.error('[Ronda 232] setDriverOnline($goingOnline) falló', e);
@@ -2118,8 +2408,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       // cuando el conductor tiene un viaje en curso — una razón legítima y
       // concreta. El cliente la traducía a "Revisa tu conexión", culpando a
       // la red y sin decir qué hacer. Ahora se explica el motivo real.
-      final hasActiveRide =
-          e is RapiApiException && (e.statusCode == 409 || e.code == 'has_active_ride');
+      final hasActiveRide = e is RapiApiException &&
+          (e.statusCode == 409 || e.code == 'has_active_ride');
       messenger.showSnackBar(
         SnackBar(
           content: Text(hasActiveRide
@@ -2169,9 +2459,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   /// línea" aunque el backend siguiera con is_online=true (o viceversa).
   Future<void> _syncOnlineStateFromBackend() async {
     try {
-      final resp = await _api.driverStatus().timeout(const Duration(seconds: 10));
-      final backendOnline = (resp['isOnline'] ?? resp['is_online'] ?? false) == true;
-      AppLogger.info('[Ronda 232] driverStatus backend isOnline=$backendOnline (local=$_isOnline)');
+      final resp =
+          await _api.driverStatus().timeout(const Duration(seconds: 10));
+      final backendOnline =
+          (resp['isOnline'] ?? resp['is_online'] ?? false) == true;
+      AppLogger.info(
+          '[Ronda 232] driverStatus backend isOnline=$backendOnline (local=$_isOnline)');
       if (!mounted || backendOnline == _isOnline) return;
       setState(() {
         _isOnline = backendOnline;
@@ -2200,7 +2493,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
             GestureDetector(
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const DriverProfileScreen()));
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const DriverProfileScreen()));
               },
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -2208,14 +2504,20 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   children: [
                     CircleAvatar(
                       radius: 30,
-                      backgroundColor: AppColors.rappiOrange.withValues(alpha:0.2),
-                      backgroundImage: currentUser?.profilePhotoUrl != null && currentUser!.profilePhotoUrl!.isNotEmpty
+                      backgroundColor:
+                          AppColors.rappiOrange.withValues(alpha: 0.2),
+                      backgroundImage: currentUser?.profilePhotoUrl != null &&
+                              currentUser!.profilePhotoUrl!.isNotEmpty
                           ? NetworkImage(currentUser.profilePhotoUrl!)
                           : null,
-                      child: currentUser?.profilePhotoUrl == null || currentUser!.profilePhotoUrl!.isEmpty
+                      child: currentUser?.profilePhotoUrl == null ||
+                              currentUser!.profilePhotoUrl!.isEmpty
                           ? Text(
                               (currentUser?.fullName ?? 'C')[0].toUpperCase(),
-                              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.rappiOrange),
+                              style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.rappiOrange),
                             )
                           : null,
                     ),
@@ -2226,20 +2528,29 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                         children: [
                           Text(
                             currentUser?.fullName ?? 'Conductor',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.getTextPrimary(context)),
                           ),
                           Row(children: [
-                            ...List.generate(5, (i) => Icon(Icons.star, size: 16, color: Colors.amber[700])),
+                            ...List.generate(
+                                5,
+                                (i) => Icon(Icons.star,
+                                    size: 16, color: Colors.amber[700])),
                             const SizedBox(width: 6),
                             Text(
                               '${(currentUser?.rating ?? 5.0).toStringAsFixed(2)} (${currentUser?.totalTrips ?? 0})',
-                              style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context)),
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppColors.getTextSecondary(context)),
                             ),
                           ]),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: AppColors.getTextSecondary(context)),
+                    Icon(Icons.chevron_right,
+                        color: AppColors.getTextSecondary(context)),
                   ],
                 ),
               ),
@@ -2250,8 +2561,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  _buildDrawerItem(Icons.directions_car, 'Ciudad', () => Navigator.pop(context)),
-                  _buildDrawerItem(Icons.account_balance_wallet_outlined, 'Cartera', () {
+                  _buildDrawerItem(Icons.directions_car, 'Ciudad',
+                      () => Navigator.pop(context)),
+                  _buildDrawerItem(
+                      Icons.account_balance_wallet_outlined, 'Cartera', () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/wallet');
                   }),
@@ -2263,7 +2576,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/freight');
                   }),
-                  _buildDrawerItem(Icons.notifications_outlined, 'Notificaciones', () {
+                  _buildDrawerItem(
+                      Icons.notifications_outlined, 'Notificaciones', () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/notifications');
                   }),
@@ -2271,7 +2585,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/security');
                   }),
-                  _buildDrawerItem(Icons.settings_outlined, 'Configuración', () {
+                  _buildDrawerItem(Icons.settings_outlined, 'Configuración',
+                      () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, '/driver/settings');
                   }),
@@ -2285,8 +2600,10 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   // trabajando, salir al navegador puede costarle una solicitud.
                   _buildDrawerItem(Icons.info_outline, 'Ayuda', () {
                     Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const HelpCenterScreen()));
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const HelpCenterScreen()));
                   }),
                   _buildDrawerItem(Icons.support_agent_rounded, 'Soporte', () {
                     Navigator.pop(context);
@@ -2320,7 +2637,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   // no se navega — mejor quedarse en conductor que acabar en
                   // pasajero con el servidor diciendo lo contrario.
                   onPressed: () async {
-                    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                    final authProvider =
+                        Provider.of<AuthProvider>(context, listen: false);
                     final navigator = Navigator.of(context);
                     final messenger = ScaffoldMessenger.of(context);
                     navigator.pop();
@@ -2329,7 +2647,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     if (!ok) {
                       messenger.showSnackBar(
                         const SnackBar(
-                          content: Text('No pudimos cambiar a modo pasajero. Revisa tu conexión.'),
+                          content: Text(
+                              'No pudimos cambiar a modo pasajero. Revisa tu conexión.'),
                           backgroundColor: AppColors.error,
                         ),
                       );
@@ -2341,9 +2660,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                     backgroundColor: AppColors.rappiOrange,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
                   ),
-                  child: const Text('Modo pasajero', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text('Modo pasajero',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
@@ -2356,7 +2678,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
   Widget _buildDrawerItem(IconData icon, String label, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon, color: AppColors.getTextSecondary(context), size: 24),
-      title: Text(label, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+      title: Text(label,
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.getTextPrimary(context))),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
     );
@@ -2378,7 +2704,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     final isDriverApproved = currentUser != null &&
         currentUser.isVerified &&
         currentUser.userType == 'dual'; // Ronda 282: ver la migración 027.
-    if (currentUser != null && !isDriverApproved && currentUser.driverStatus != 'approved') {
+    if (currentUser != null &&
+        !isDriverApproved &&
+        currentUser.driverStatus != 'approved') {
       // Ronda 269: al entrar aquí se comprueba si de verdad hay documentos
       // subidos, para no afirmar que están "enviados" cuando no lo están.
       if (_documentsSubmitted == null) _checkDocumentsSubmitted();
@@ -2391,8 +2719,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     // aquí con `pushNamedAndRemoveUntil(..., (route) => false)` y esta home es
     // la única que queda. Navigator vacío = pantalla negra.
     return RootBackHandler(
-      blockWith: () =>
-          hasActiveTrip ? 'No puedes salir mientras tienes un viaje activo' : null,
+      blockWith: () => hasActiveTrip
+          ? 'No puedes salir mientras tienes un viaje activo'
+          : null,
       child: Scaffold(
         key: _scaffoldKey,
         // Ronda 213: sheets inline con inputs se levantaban demasiado con
@@ -2402,325 +2731,459 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         drawer: _buildDriverDrawer(currentUser),
         body: SafeArea(
           child: _currentTabIndex == 1
-            ? _buildPerformanceTab()
-            : Stack(
-            children: [
-              Column(
-                children: [
-                  // TOP BAR: hamburger + status badge + settings
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    child: Row(
+              ? _buildPerformanceTab()
+              : Stack(
+                  children: [
+                    Column(
                       children: [
-                        GestureDetector(
-                          onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                          child: Icon(Icons.menu, size: 28, color: AppColors.getTextPrimary(context)),
-                        ),
-                        const SizedBox(width: 12),
-                        // Status badge — Ronda 232: pill del estado con
-                        // Flexible+FittedBox para que no se superponga con
-                        // el pill de créditos ni con el switch de modo en
-                        // pantallas angostas (iPhone SE / textos "Fuera de
-                        // línea" largos).
-                        // Ronda 249: antes era una píldora rellena sin ninguna
-                        // apariencia de control — en OFF se pintaba con
-                        // getTextSecondary (el color de TEXTO secundario), así
-                        // que se leía como "chip deshabilitado" y no como
-                        // "toca para conectarte". Ahora es un switch real: el
-                        // botón se mueve de izquierda a derecha, el área táctil
-                        // llega a 44px y la etiqueta dice el estado exacto
-                        // ('Libre' no comunicaba "estoy recibiendo viajes').
-                        Flexible(
-                          fit: FlexFit.loose,
-                          child: Semantics(
-                            toggled: _isOnline,
-                            label: 'Disponibilidad para recibir viajes',
-                            child: GestureDetector(
-                              onTap: () => unawaited(_toggleOnline()),
-                              child: Container(
-                                constraints: const BoxConstraints(minHeight: 44),
-                                alignment: Alignment.center,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: _isOnline
-                                        ? (hasActiveTrip ? AppColors.error : AppColors.rappiOrange)
-                                        : AppColors.getBorder(context),
-                                    borderRadius: BorderRadius.circular(30),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      // Perilla del switch a la izquierda cuando
-                                      // está apagado, a la derecha cuando está
-                                      // encendido.
-                                      if (!_isOnline) _buildOnlineKnob(context),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            _isOnline
-                                                ? (hasActiveTrip ? 'En viaje' : 'En línea')
-                                                : 'Fuera de línea',
-                                            style: TextStyle(
-                                              color: _isOnline
-                                                  ? Colors.white
-                                                  : AppColors.getTextSecondary(context),
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
+                        // TOP BAR: hamburger + status badge + settings
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () =>
+                                    _scaffoldKey.currentState?.openDrawer(),
+                                child: Icon(Icons.menu,
+                                    size: 28,
+                                    color: AppColors.getTextPrimary(context)),
+                              ),
+                              const SizedBox(width: 12),
+                              // Status badge — Ronda 232: pill del estado con
+                              // Flexible+FittedBox para que no se superponga con
+                              // el pill de créditos ni con el switch de modo en
+                              // pantallas angostas (iPhone SE / textos "Fuera de
+                              // línea" largos).
+                              // Ronda 249: antes era una píldora rellena sin ninguna
+                              // apariencia de control — en OFF se pintaba con
+                              // getTextSecondary (el color de TEXTO secundario), así
+                              // que se leía como "chip deshabilitado" y no como
+                              // "toca para conectarte". Ahora es un switch real: el
+                              // botón se mueve de izquierda a derecha, el área táctil
+                              // llega a 44px y la etiqueta dice el estado exacto
+                              // ('Libre' no comunicaba "estoy recibiendo viajes').
+                              Flexible(
+                                fit: FlexFit.loose,
+                                child: Semantics(
+                                  toggled: _isOnline,
+                                  label: 'Disponibilidad para recibir viajes',
+                                  child: GestureDetector(
+                                    onTap: () => unawaited(_toggleOnline()),
+                                    child: Container(
+                                      constraints:
+                                          const BoxConstraints(minHeight: 44),
+                                      alignment: Alignment.center,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: _isOnline
+                                              ? (hasActiveTrip
+                                                  ? AppColors.error
+                                                  : AppColors.rappiOrange)
+                                              : AppColors.getBorder(context),
+                                          borderRadius:
+                                              BorderRadius.circular(30),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Perilla del switch a la izquierda cuando
+                                            // está apagado, a la derecha cuando está
+                                            // encendido.
+                                            if (!_isOnline)
+                                              _buildOnlineKnob(context),
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8),
+                                              child: FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Text(
+                                                  _isOnline
+                                                      ? (hasActiveTrip
+                                                          ? 'En viaje'
+                                                          : 'En línea')
+                                                      : 'Fuera de línea',
+                                                  style: TextStyle(
+                                                    color: _isOnline
+                                                        ? Colors.white
+                                                        : AppColors
+                                                            .getTextSecondary(
+                                                                context),
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                          ),
+                                            if (_isOnline)
+                                              _buildOnlineKnob(context),
+                                          ],
                                         ),
                                       ),
-                                      if (_isOnline) _buildOnlineKnob(context),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              // Credits indicator
+                              if (!_isCheckingCredits)
+                                GestureDetector(
+                                  onTap: () => Navigator.pushNamed(
+                                      context, '/driver/wallet'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: _hasEnoughCredits
+                                          ? AppColors.rappiOrange
+                                              .withValues(alpha: 0.1)
+                                          : ModernTheme.warning
+                                              .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.account_balance_wallet,
+                                              size: 14,
+                                              color: _hasEnoughCredits
+                                                  ? AppColors.rappiOrange
+                                                  : ModernTheme.warning),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'S/ ${_serviceCredits.toStringAsFixed(2)}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: _hasEnoughCredits
+                                                  ? AppColors.rappiOrange
+                                                  : ModernTheme.warning,
+                                            ),
+                                          ),
+                                        ]),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              const ModeSwitchButton(
+                                  compact: true, fromMode: 'driver'),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        // Credits indicator
-                        if (!_isCheckingCredits)
-                          GestureDetector(
-                            onTap: () => Navigator.pushNamed(context, '/driver/wallet'),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: _hasEnoughCredits
-                                    ? AppColors.rappiOrange.withValues(alpha:0.1)
-                                    : ModernTheme.warning.withValues(alpha:0.1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.account_balance_wallet, size: 14,
-                                    color: _hasEnoughCredits ? AppColors.rappiOrange : ModernTheme.warning),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'S/ ${_serviceCredits.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: _hasEnoughCredits ? AppColors.rappiOrange : ModernTheme.warning,
+
+                        // Credit warning banner
+                        if (!_isCheckingCredits && !_hasEnoughCredits)
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 0),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            color: ModernTheme.warning.withValues(alpha: 0.15),
+                            child: InkWell(
+                              onTap: () => Navigator.pushNamed(
+                                      context, '/driver/recharge-credits')
+                                  .then((_) => _checkDriverCredits()),
+                              child: Row(children: [
+                                Icon(Icons.warning_amber,
+                                    color: ModernTheme.warning, size: 22),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    // Ronda 279: decir cuánto falta y cuánto hay. Un
+                                    // "créditos insuficientes" a secas no le dice al
+                                    // conductor cuánto tiene que recargar.
+                                    _minServiceCredits > 0
+                                        ? 'Necesitas S/ ${_minServiceCredits.toStringAsFixed(2)} '
+                                            'para aceptar viajes. Tienes S/ ${_serviceCredits.toStringAsFixed(2)}. '
+                                            'Toca para recargar.'
+                                        : 'Tu saldo es negativo (S/ ${_serviceCredits.toStringAsFixed(2)}). '
+                                            'Toca para recargar.',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            AppColors.getTextPrimary(context)),
                                   ),
                                 ),
+                                Icon(Icons.chevron_right,
+                                    color: ModernTheme.warning, size: 22),
                               ]),
                             ),
+                          )
+                        // Info banner when online
+                        else if (_isOnline)
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 0),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                            child: Row(children: [
+                              Icon(Icons.info_outline,
+                                  color: AppColors.getTextPrimary(context),
+                                  size: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Resuelve estos problemas para evitar perder las mejores solicitudes',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.getTextPrimary(context)),
+                                ),
+                              ),
+                              Icon(Icons.chevron_right,
+                                  color: Colors.black54, size: 22),
+                            ]),
                           ),
-                        const SizedBox(width: 8),
-                        const ModeSwitchButton(compact: true, fromMode: 'driver'),
+
+                        // Ronda 236d: banner de documentos rechazados. Aparece
+                        // aunque el user sea isVerified=true, porque un doc
+                        // opcional (selfie/vehicle_photo) rechazado no baja
+                        // is_verified pero sí requiere atención del driver.
+                        _RejectedDocsBanner(),
+
+                        // Document verification banner
+                        Consumer<DocumentProvider>(
+                          builder: (context, docProvider, _) {
+                            // Ronda 232: si el user ya está verificado a nivel de
+                            // AuthProvider (isVerified=true) ya no tiene sentido
+                            // mostrar "Documentos pendientes". El DocumentProvider
+                            // legacy tenía su propia noción de verificación que
+                            // podía quedar desincronizada.
+                            final authUser = Provider.of<AuthProvider>(context,
+                                    listen: false)
+                                .currentUser;
+                            // Ronda 282: quien conduce es 'dual'. Ver migración 027.
+                            if (authUser != null &&
+                                authUser.isVerified &&
+                                authUser.userType == 'dual') {
+                              return const SizedBox.shrink();
+                            }
+                            final status = docProvider.verificationStatus;
+                            if (status == null || status.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            final isVerified = status['isVerified'] == true;
+                            final verificationStatus =
+                                status['verificationStatus']?.toString() ??
+                                    'pending';
+                            if (isVerified ||
+                                verificationStatus == 'approved') {
+                              return const SizedBox.shrink();
+                            }
+                            Color bannerColor;
+                            String title;
+                            IconData icon;
+                            switch (verificationStatus) {
+                              case 'under_review':
+                                bannerColor = ModernTheme.info;
+                                title = 'Documentos en revisión';
+                                icon = Icons.hourglass_empty;
+                                break;
+                              case 'rejected':
+                                bannerColor = ModernTheme.error;
+                                title = 'Documentos rechazados';
+                                icon = Icons.error_outline;
+                                break;
+                              default:
+                                bannerColor = ModernTheme.warning;
+                                title = 'Documentos pendientes';
+                                icon = Icons.description_outlined;
+                            }
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              color: bannerColor.withValues(alpha: 0.12),
+                              child: InkWell(
+                                onTap: () => Navigator.pushNamed(
+                                    context, '/driver/documents'),
+                                child: Row(children: [
+                                  Icon(icon, color: bannerColor, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                      child: Text(title,
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13))),
+                                  Icon(Icons.chevron_right, color: bannerColor),
+                                ]),
+                              ),
+                            );
+                          },
+                        ),
+
+                        // Content area
+                        Expanded(
+                          child: _isOnline && _availableRequests.isNotEmpty
+                              ? Stack(children: [
+                                  ListView.separated(
+                                    padding: const EdgeInsets.only(bottom: 80),
+                                    itemCount: _availableRequests.length,
+                                    separatorBuilder: (_, __) => Divider(
+                                        height: 1,
+                                        color: AppColors.getBorder(context)),
+                                    itemBuilder: (context, index) {
+                                      return _buildRequestCard(
+                                          _availableRequests[index]);
+                                    },
+                                  ),
+                                ])
+                              : _isOnline
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.search,
+                                              size: 64,
+                                              color: AppColors.getTextSecondary(
+                                                      context)
+                                                  .withValues(alpha: 0.3)),
+                                          const SizedBox(height: 16),
+                                          Text('Buscando solicitudes...',
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  color: AppColors
+                                                      .getTextSecondary(
+                                                          context))),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                              'Las solicitudes de viaje aparecerán aquí',
+                                              style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: AppColors
+                                                          .getTextSecondary(
+                                                              context)
+                                                      .withValues(alpha: 0.6))),
+                                        ],
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.power_settings_new,
+                                              size: 80,
+                                              color: AppColors.getTextSecondary(
+                                                      context)
+                                                  .withValues(alpha: 0.3)),
+                                          const SizedBox(height: 16),
+                                          Text('Estás fuera de línea',
+                                              style: TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color:
+                                                      AppColors.getTextPrimary(
+                                                          context))),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                              'Activa tu estado para recibir solicitudes',
+                                              style: TextStyle(
+                                                  fontSize: 14,
+                                                  color: AppColors
+                                                      .getTextSecondary(
+                                                          context))),
+                                          const SizedBox(height: 24),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                unawaited(_toggleOnline()),
+                                            style: ElevatedButton.styleFrom(
+                                              // Ronda 249: el único CTA de la pantalla
+                                              // "Estás fuera de línea" era verde.
+                                              backgroundColor:
+                                                  AppColors.rappiRed,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 40,
+                                                      vertical: 14),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          30)),
+                                            ),
+                                            child: Text('Conectarse',
+                                                style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 16,
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                        ),
                       ],
                     ),
-                  ),
-
-                  // Credit warning banner
-                  if (!_isCheckingCredits && !_hasEnoughCredits)
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 0),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      color: ModernTheme.warning.withValues(alpha:0.15),
-                      child: InkWell(
-                        onTap: () => Navigator.pushNamed(context, '/driver/recharge-credits').then((_) => _checkDriverCredits()),
-                        child: Row(children: [
-                          Icon(Icons.warning_amber, color: ModernTheme.warning, size: 22),
-                          const SizedBox(width: 12),
-                          Expanded(
+                    // Offering overlay (blur + text)
+                    if (_offeringOverlayText != null) ...[
+                      Positioned.fill(
+                        bottom: _offeringRequest != null ? 280 : 0,
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                            child: Container(
+                                color: AppColors.getSurface(context)
+                                    .withValues(alpha: 0.55)),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        top: 0,
+                        bottom: _offeringRequest != null ? 320 : 0,
+                        child: IgnorePointer(
+                          child: Center(
                             child: Text(
-                              // Ronda 279: decir cuánto falta y cuánto hay. Un
-                              // "créditos insuficientes" a secas no le dice al
-                              // conductor cuánto tiene que recargar.
-                              _minServiceCredits > 0
-                                  ? 'Necesitas S/ ${_minServiceCredits.toStringAsFixed(2)} '
-                                      'para aceptar viajes. Tienes S/ ${_serviceCredits.toStringAsFixed(2)}. '
-                                      'Toca para recargar.'
-                                  : 'Tu saldo es negativo (S/ ${_serviceCredits.toStringAsFixed(2)}). '
-                                      'Toca para recargar.',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)),
+                              'Ofreciendo tu tarifa\nS/ ${_offeringPrice?.toStringAsFixed(2) ?? '0.00'}.\nEspera la respuesta del pasajero',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.getTextPrimary(context),
+                                  height: 1.3),
                             ),
                           ),
-                          Icon(Icons.chevron_right, color: ModernTheme.warning, size: 22),
-                        ]),
+                        ),
                       ),
-                    )
-                  // Info banner when online
-                  else if (_isOnline)
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 0),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      color: AppColors.rappiOrange.withValues(alpha:0.1),
-                      child: Row(children: [
-                        Icon(Icons.info_outline, color: AppColors.getTextPrimary(context), size: 22),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Resuelve estos problemas para evitar perder las mejores solicitudes',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)),
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: Colors.black54, size: 22),
-                      ]),
-                    ),
-
-                  // Ronda 236d: banner de documentos rechazados. Aparece
-                  // aunque el user sea isVerified=true, porque un doc
-                  // opcional (selfie/vehicle_photo) rechazado no baja
-                  // is_verified pero sí requiere atención del driver.
-                  _RejectedDocsBanner(),
-
-                  // Document verification banner
-                  Consumer<DocumentProvider>(
-                    builder: (context, docProvider, _) {
-                      // Ronda 232: si el user ya está verificado a nivel de
-                      // AuthProvider (isVerified=true) ya no tiene sentido
-                      // mostrar "Documentos pendientes". El DocumentProvider
-                      // legacy tenía su propia noción de verificación que
-                      // podía quedar desincronizada.
-                      final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-                      // Ronda 282: quien conduce es 'dual'. Ver migración 027.
-                      if (authUser != null && authUser.isVerified &&
-                          authUser.userType == 'dual') {
-                        return const SizedBox.shrink();
-                      }
-                      final status = docProvider.verificationStatus;
-                      if (status == null || status.isEmpty) return const SizedBox.shrink();
-                      final isVerified = status['isVerified'] == true;
-                      final verificationStatus = status['verificationStatus']?.toString() ?? 'pending';
-                      if (isVerified || verificationStatus == 'approved') return const SizedBox.shrink();
-                      Color bannerColor;
-                      String title;
-                      IconData icon;
-                      switch (verificationStatus) {
-                        case 'under_review':
-                          bannerColor = ModernTheme.info;
-                          title = 'Documentos en revisión';
-                          icon = Icons.hourglass_empty;
-                          break;
-                        case 'rejected':
-                          bannerColor = ModernTheme.error;
-                          title = 'Documentos rechazados';
-                          icon = Icons.error_outline;
-                          break;
-                        default:
-                          bannerColor = ModernTheme.warning;
-                          title = 'Documentos pendientes';
-                          icon = Icons.description_outlined;
-                      }
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        color: bannerColor.withValues(alpha:0.12),
-                        child: InkWell(
-                          onTap: () => Navigator.pushNamed(context, '/driver/documents'),
-                          child: Row(children: [
-                            Icon(icon, color: bannerColor, size: 20),
-                            const SizedBox(width: 12),
-                            Expanded(child: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                            Icon(Icons.chevron_right, color: bannerColor),
-                          ]),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Content area
-                  Expanded(
-                    child: _isOnline && _availableRequests.isNotEmpty
-                      ? Stack(children: [
-                          ListView.separated(
-                            padding: const EdgeInsets.only(bottom: 80),
-                            itemCount: _availableRequests.length,
-                            separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.getBorder(context)),
-                            itemBuilder: (context, index) {
-                              return _buildRequestCard(_availableRequests[index]);
-                            },
-                          ),
-                        ])
-                      : _isOnline
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.search, size: 64, color: AppColors.getTextSecondary(context).withValues(alpha:0.3)),
-                                const SizedBox(height: 16),
-                                Text('Buscando solicitudes...', style: TextStyle(fontSize: 18, color: AppColors.getTextSecondary(context))),
-                                const SizedBox(height: 8),
-                                Text('Las solicitudes de viaje aparecerán aquí', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context).withValues(alpha:0.6))),
-                              ],
-                            ),
-                          )
-                        : Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.power_settings_new, size: 80, color: AppColors.getTextSecondary(context).withValues(alpha:0.3)),
-                                const SizedBox(height: 16),
-                                Text('Estás fuera de línea', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
-                                const SizedBox(height: 8),
-                                Text('Activa tu estado para recibir solicitudes', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
-                                const SizedBox(height: 24),
-                                ElevatedButton(
-                                  onPressed: () => unawaited(_toggleOnline()),
-                                  style: ElevatedButton.styleFrom(
-                                    // Ronda 249: el único CTA de la pantalla
-                                    // "Estás fuera de línea" era verde.
-                                    backgroundColor: AppColors.rappiRed,
-                                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                  ),
-                                  child: Text('Conectarse', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
-                          ),
-                  ),
-                ],
+                      if (_offeringRequest != null)
+                        Positioned(
+                            left: 10,
+                            right: 10,
+                            bottom: 8,
+                            child: _buildOfferingBottomCard()),
+                    ],
+                  ],
+                ),
+        ),
+        bottomNavigationBar: _offeringOverlayText != null
+            ? null
+            : Container(
+                decoration: BoxDecoration(
+                    border: Border(
+                        top: BorderSide(
+                            color: AppColors.getBorder(context), width: 0.5))),
+                child: BottomNavigationBar(
+                  currentIndex: _currentTabIndex,
+                  onTap: (index) => setState(() {
+                    _currentTabIndex = index;
+                  }),
+                  selectedItemColor: AppColors.getTextPrimary(context),
+                  unselectedItemColor: AppColors.getTextSecondary(context),
+                  backgroundColor: AppColors.getSurface(context),
+                  elevation: 0,
+                  items: [
+                    BottomNavigationBarItem(
+                        icon: const Icon(Icons.list_alt),
+                        label: 'Solicitudes de viaje'),
+                    BottomNavigationBarItem(
+                        icon: const Icon(Icons.grid_view_rounded),
+                        label: 'Desempeño'),
+                  ],
+                ),
               ),
-              // Offering overlay (blur + text)
-              if (_offeringOverlayText != null) ...[
-                Positioned.fill(
-                  bottom: _offeringRequest != null ? 280 : 0,
-                  child: ClipRect(
-                    child: BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-                      child: Container(color: AppColors.getSurface(context).withValues(alpha:0.55)),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 16, right: 16, top: 0,
-                  bottom: _offeringRequest != null ? 320 : 0,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: Text(
-                        'Ofreciendo tu tarifa\nS/ ${_offeringPrice?.toStringAsFixed(2) ?? '0.00'}.\nEspera la respuesta del pasajero',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.3),
-                      ),
-                    ),
-                  ),
-                ),
-                if (_offeringRequest != null)
-                  Positioned(left: 10, right: 10, bottom: 8, child: _buildOfferingBottomCard()),
-              ],
-            ],
-          ),
-        ),
-        bottomNavigationBar: _offeringOverlayText != null ? null : Container(
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.getBorder(context), width: 0.5))),
-          child: BottomNavigationBar(
-            currentIndex: _currentTabIndex,
-            onTap: (index) => setState(() { _currentTabIndex = index; }),
-            selectedItemColor: AppColors.getTextPrimary(context),
-            unselectedItemColor: AppColors.getTextSecondary(context),
-            backgroundColor: AppColors.getSurface(context),
-            elevation: 0,
-            items: [
-              BottomNavigationBarItem(icon: const Icon(Icons.list_alt), label: 'Solicitudes de viaje'),
-              BottomNavigationBarItem(icon: const Icon(Icons.grid_view_rounded), label: 'Desempeño'),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -2731,7 +3194,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       decoration: BoxDecoration(
         color: AppColors.getSurface(context),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.18), blurRadius: 24, offset: const Offset(0, -4))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 24,
+              offset: const Offset(0, -4))
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2744,32 +3212,57 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                 Column(children: [
                   CircleAvatar(
                     radius: 34,
-                    backgroundImage: req.passengerPhoto.isNotEmpty ? NetworkImage(req.passengerPhoto) : null,
+                    backgroundImage: req.passengerPhoto.isNotEmpty
+                        ? NetworkImage(req.passengerPhoto)
+                        : null,
                     backgroundColor: Colors.orange,
                     child: req.passengerPhoto.isEmpty
-                        ? Text(req.passengerName.isNotEmpty ? req.passengerName[0].toUpperCase() : 'P',
-                            style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold))
+                        ? Text(
+                            req.passengerName.isNotEmpty
+                                ? req.passengerName[0].toUpperCase()
+                                : 'P',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold))
                         : null,
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: 80,
                     child: Text(
-                      req.passengerName.isNotEmpty ? req.passengerName.split(' ').first : 'Pasajero',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context)),
-                      textAlign: TextAlign.center, overflow: TextOverflow.ellipsis,
+                      req.passengerName.isNotEmpty
+                          ? req.passengerName.split(' ').first
+                          : 'Pasajero',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.getTextPrimary(context)),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(req.passengerRating.toStringAsFixed(2), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextSecondary(context))),
+                    Text(req.passengerRating.toStringAsFixed(2),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.getTextSecondary(context))),
                     const SizedBox(width: 2),
                     const Icon(Icons.star, size: 14, color: Colors.amber),
                   ]),
-                  Text('(${0})', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context))),
+                  Text('(${0})',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.getTextSecondary(context))),
                   const SizedBox(height: 3),
-                  Text('${DateTime.now().difference(req.createdAt).inSeconds} seg.',
-                      style: const TextStyle(fontSize: 12, color: AppColors.rappiOrange, fontWeight: FontWeight.w500)),
+                  Text(
+                      '${DateTime.now().difference(req.createdAt).inSeconds} seg.',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.rappiOrange,
+                          fontWeight: FontWeight.w500)),
                 ]),
                 const SizedBox(width: 14),
                 Expanded(
@@ -2780,36 +3273,81 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                       // construye como distanceMeters/1000 al parsear la
                       // solicitud). Dividirlo otra vez entre 1000 daba
                       // siempre "~0.0km", como se ve en las capturas.
-                      Text('~${req.distance.toStringAsFixed(1)}km', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
+                      Text('~${req.distance.toStringAsFixed(1)}km',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.getTextSecondary(context))),
                       Text('S/ ${_offeringPrice?.toStringAsFixed(2) ?? '0.00'}',
-                          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
+                          style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.getTextPrimary(context),
+                              height: 1.2)),
                       const SizedBox(height: 10),
                       // Origin A
                       Row(children: [
-                        Container(width: 22, height: 22, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
-                            child: const Center(child: Text('A', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
+                        Container(
+                            width: 22,
+                            height: 22,
+                            decoration: const BoxDecoration(
+                                color: Color(0xFF4CAF50),
+                                shape: BoxShape.circle),
+                            child: const Center(
+                                child: Text('A',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)))),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(req.pickup.address, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                        Expanded(
+                            child: Text(req.pickup.address,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.getTextPrimary(context)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis)),
                       ]),
                       const SizedBox(height: 8),
                       // Destination B
                       Row(children: [
-                        Container(width: 22, height: 22, decoration: const BoxDecoration(color: Color(0xFFE91E63), shape: BoxShape.circle),
-                            child: const Center(child: Text('B', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
+                        Container(
+                            width: 22,
+                            height: 22,
+                            decoration: const BoxDecoration(
+                                color: Color(0xFFE91E63),
+                                shape: BoxShape.circle),
+                            child: const Center(
+                                child: Text('B',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)))),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(req.destination.address, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                        Expanded(
+                            child: Text(req.destination.address,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.getTextPrimary(context)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis)),
                       ]),
                       const SizedBox(height: 10),
                       // Payment badge
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
                           color: _paymentMethodColor(req.paymentMethod),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           _paymentMethodLabel(req.paymentMethod),
-                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -2832,20 +3370,26 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
                   foregroundColor: Colors.red,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text('Cancelar oferta', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                child: const Text('Cancelar oferta',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ),
             ),
           ),
           // Progress bar
           ClipRRect(
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(20)),
             child: LinearProgressIndicator(
               value: _offerProgressValue,
               minHeight: 8,
               backgroundColor: Colors.grey[300],
               valueColor: AlwaysStoppedAnimation<Color>(
-                _offerProgressValue > 0.5 ? const Color(0xFF4CAF50)
-                    : _offerProgressValue > 0.25 ? const Color(0xFFFFC107) : const Color(0xFFF44336),
+                _offerProgressValue > 0.5
+                    ? const Color(0xFF4CAF50)
+                    : _offerProgressValue > 0.25
+                        ? const Color(0xFFFFC107)
+                        : const Color(0xFFF44336),
               ),
             ),
           ),
@@ -2881,127 +3425,160 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     // pulsara atrás caía en el mismo Navigator vacío.
     return RootBackHandler(
       child: Scaffold(
-      appBar: AppBar(
-        title: Text('Verificación Pendiente'),
-        actions: [ModeSwitchButton(compact: true, fromMode: 'driver')],
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.hourglass_top_rounded, size: 80, color: Colors.orange),
-              SizedBox(height: 24),
-              // Ronda 269: esta pantalla mentía a quien no había subido nada.
-              //
-              // Los tres pasos estaban escritos a mano y salían SIEMPRE iguales:
-              // "Documentos enviados ✓ / Revisión en proceso / Aprobación
-              // pendiente". Comprobado con una cuenta real que tiene CERO
-              // documentos en la base de datos: le decía que ya los había
-              // enviado y que el equipo los estaba revisando.
-              //
-              // El daño es directo: ese conductor se queda esperando una
-              // revisión que nunca va a ocurrir, no vuelve a entrar, y cuando
-              // reclama nadie entiende por qué —en el panel aparece "Sin
-              // verificar" y sin documentos que revisar—. Ahora el texto
-              // depende de si realmente subió algo.
-              Text(
-                _hasSubmittedDocuments ? 'Verificación en Proceso' : 'Faltan tus documentos',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 16),
-              Text(
-                _hasSubmittedDocuments
-                    ? 'Tu cuenta de conductor está siendo revisada por nuestro equipo. Una vez aprobada, podrás comenzar a recibir viajes.'
-                    : 'Todavía no has subido tus documentos, así que no hay nada que revisar. Súbelos y en cuanto los aprobemos podrás recibir viajes.',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 32),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(children: [
-                    Row(children: [
-                      Icon(_hasSubmittedDocuments ? Icons.check_circle : Icons.radio_button_unchecked,
-                          color: _hasSubmittedDocuments ? Colors.green : Colors.grey, size: 20),
-                      SizedBox(width: 8),
-                      Text('Documentos enviados'),
-                    ]),
-                    SizedBox(height: 8),
-                    Row(children: [
-                      Icon(_hasSubmittedDocuments ? Icons.pending : Icons.radio_button_unchecked,
-                          color: _hasSubmittedDocuments ? Colors.orange : Colors.grey, size: 20),
-                      SizedBox(width: 8),
-                      Text('Revisión en proceso'),
-                    ]),
-                    SizedBox(height: 8),
-                    Row(children: [Icon(Icons.radio_button_unchecked, color: Colors.grey, size: 20), SizedBox(width: 8), Text('Aprobación pendiente')]),
-                  ]),
+        appBar: AppBar(
+          title: Text('Verificación Pendiente'),
+          actions: [ModeSwitchButton(compact: true, fromMode: 'driver')],
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.hourglass_top_rounded,
+                    size: 80, color: Colors.orange),
+                SizedBox(height: 24),
+                // Ronda 269: esta pantalla mentía a quien no había subido nada.
+                //
+                // Los tres pasos estaban escritos a mano y salían SIEMPRE iguales:
+                // "Documentos enviados ✓ / Revisión en proceso / Aprobación
+                // pendiente". Comprobado con una cuenta real que tiene CERO
+                // documentos en la base de datos: le decía que ya los había
+                // enviado y que el equipo los estaba revisando.
+                //
+                // El daño es directo: ese conductor se queda esperando una
+                // revisión que nunca va a ocurrir, no vuelve a entrar, y cuando
+                // reclama nadie entiende por qué —en el panel aparece "Sin
+                // verificar" y sin documentos que revisar—. Ahora el texto
+                // depende de si realmente subió algo.
+                Text(
+                  _hasSubmittedDocuments
+                      ? 'Verificación en Proceso'
+                      : 'Faltan tus documentos',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/driver/documents'),
-                icon: Icon(_hasSubmittedDocuments ? Icons.folder_open : Icons.upload_file),
-                label: Text(_hasSubmittedDocuments ? 'Ver mis documentos' : 'Subir mis documentos'),
-                style: ElevatedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
-              ),
-              SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                  await authProvider.reloadUserData();
-                  if (mounted) setState(() {});
-                },
-                icon: Icon(Icons.refresh),
-                label: Text('Verificar estado'),
-                style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
-              ),
-              SizedBox(height: 12),
-              // Ronda 269: SALIDA. Sin esto el conductor quedaba ATRAPADO aquí.
-              //
-              // Esta pantalla no tiene menú lateral ni flecha de retroceso, y el
-              // botón de cambio de modo de la barra superior se oculta cuando la
-              // cuenta tiene un solo rol (`mode_switch_button.dart:46`) — que es
-              // justo el caso de un conductor puro. Comprobado en el simulador
-              // con una cuenta real: se entra desde "Modo Conductor" y ya no se
-              // puede salir; hay que forzar el cierre de la app.
-              //
-              // Y como el cambio de modo sí se guardó en el servidor, al volver
-              // a abrir aterrizaba otra vez aquí. Un conductor pendiente de
-              // aprobación se quedaba sin poder ni siquiera pedirse un viaje.
-              TextButton.icon(
-                onPressed: () async {
-                  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                  final navigator = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final ok = await authProvider.switchMode('passenger');
-                  if (!mounted) return;
-                  if (!ok) {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('No pudimos cambiar de modo. Revisa tu conexión.'),
-                        backgroundColor: AppColors.error,
-                      ),
-                    );
-                    return;
-                  }
-                  navigator.pushNamedAndRemoveUntil('/passenger/home', (_) => false);
-                },
-                icon: Icon(Icons.arrow_back),
-                label: Text('Volver al modo pasajero'),
-              ),
-              // Ronda 249: se eliminó la línea de diagnóstico
-              // "v146+ · userType=… · verified=… · docStatus=…" que la ronda
-              // 230 añadió para encontrar el bug de is_verified. Ya cumplió su
-              // función y era jerga técnica visible al conductor en producción.
-            ],
+                SizedBox(height: 16),
+                Text(
+                  _hasSubmittedDocuments
+                      ? 'Tu cuenta de conductor está siendo revisada por nuestro equipo. Una vez aprobada, podrás comenzar a recibir viajes.'
+                      : 'Todavía no has subido tus documentos, así que no hay nada que revisar. Súbelos y en cuanto los aprobemos podrás recibir viajes.',
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 32),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(children: [
+                      Row(children: [
+                        Icon(
+                            _hasSubmittedDocuments
+                                ? Icons.check_circle
+                                : Icons.radio_button_unchecked,
+                            color: _hasSubmittedDocuments
+                                ? Colors.green
+                                : Colors.grey,
+                            size: 20),
+                        SizedBox(width: 8),
+                        Text('Documentos enviados'),
+                      ]),
+                      SizedBox(height: 8),
+                      Row(children: [
+                        Icon(
+                            _hasSubmittedDocuments
+                                ? Icons.pending
+                                : Icons.radio_button_unchecked,
+                            color: _hasSubmittedDocuments
+                                ? Colors.orange
+                                : Colors.grey,
+                            size: 20),
+                        SizedBox(width: 8),
+                        Text('Revisión en proceso'),
+                      ]),
+                      SizedBox(height: 8),
+                      Row(children: [
+                        Icon(Icons.radio_button_unchecked,
+                            color: Colors.grey, size: 20),
+                        SizedBox(width: 8),
+                        Text('Aprobación pendiente')
+                      ]),
+                    ]),
+                  ),
+                ),
+                SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: () =>
+                      Navigator.pushNamed(context, '/driver/documents'),
+                  icon: Icon(_hasSubmittedDocuments
+                      ? Icons.folder_open
+                      : Icons.upload_file),
+                  label: Text(_hasSubmittedDocuments
+                      ? 'Ver mis documentos'
+                      : 'Subir mis documentos'),
+                  style: ElevatedButton.styleFrom(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
+                ),
+                SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final authProvider =
+                        Provider.of<AuthProvider>(context, listen: false);
+                    await authProvider.reloadUserData();
+                    if (mounted) setState(() {});
+                  },
+                  icon: Icon(Icons.refresh),
+                  label: Text('Verificar estado'),
+                  style: OutlinedButton.styleFrom(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 32, vertical: 16)),
+                ),
+                SizedBox(height: 12),
+                // Ronda 269: SALIDA. Sin esto el conductor quedaba ATRAPADO aquí.
+                //
+                // Esta pantalla no tiene menú lateral ni flecha de retroceso, y el
+                // botón de cambio de modo de la barra superior se oculta cuando la
+                // cuenta tiene un solo rol (`mode_switch_button.dart:46`) — que es
+                // justo el caso de un conductor puro. Comprobado en el simulador
+                // con una cuenta real: se entra desde "Modo Conductor" y ya no se
+                // puede salir; hay que forzar el cierre de la app.
+                //
+                // Y como el cambio de modo sí se guardó en el servidor, al volver
+                // a abrir aterrizaba otra vez aquí. Un conductor pendiente de
+                // aprobación se quedaba sin poder ni siquiera pedirse un viaje.
+                TextButton.icon(
+                  onPressed: () async {
+                    final authProvider =
+                        Provider.of<AuthProvider>(context, listen: false);
+                    final navigator = Navigator.of(context);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final ok = await authProvider.switchMode('passenger');
+                    if (!mounted) return;
+                    if (!ok) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'No pudimos cambiar de modo. Revisa tu conexión.'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                      return;
+                    }
+                    navigator.pushNamedAndRemoveUntil(
+                        '/passenger/home', (_) => false);
+                  },
+                  icon: Icon(Icons.arrow_back),
+                  label: Text('Volver al modo pasajero'),
+                ),
+                // Ronda 249: se eliminó la línea de diagnóstico
+                // "v146+ · userType=… · verified=… · docStatus=…" que la ronda
+                // 230 añadió para encontrar el bug de is_verified. Ya cumplió su
+                // función y era jerga técnica visible al conductor en producción.
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -3029,8 +3606,14 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
     return Column(children: [
       Icon(icon, color: AppColors.rappiOrange, size: 24),
       SizedBox(height: 4),
-      Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(context))),
-      Text(label, style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context))),
+      Text(value,
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.getTextPrimary(context))),
+      Text(label,
+          style: TextStyle(
+              fontSize: 12, color: AppColors.getTextSecondary(context))),
     ]);
   }
 
@@ -3041,7 +3624,9 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   Widget _buildRequestCard(PriceNegotiation request) {
     final isFairPrice = request.offeredPrice >= request.suggestedPrice;
-    final initial = request.passengerName.isNotEmpty ? request.passengerName[0].toUpperCase() : 'P';
+    final initial = request.passengerName.isNotEmpty
+        ? request.passengerName[0].toUpperCase()
+        : 'P';
 
     final ageMinutes = DateTime.now().difference(request.createdAt).inMinutes;
     final timeLabel = ageMinutes < 1 ? 'Ahora\nmismo' : '$ageMinutes min.';
@@ -3060,10 +3645,13 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       paymentColor: paymentColor,
       onTap: () => _selectRequest(request),
       onHide: () {
-        setState(() { _availableRequests.removeWhere((r) => r.id == request.id); });
+        setState(() {
+          _availableRequests.removeWhere((r) => r.id == request.id);
+        });
       },
       onReport: () {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queja enviada')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Queja enviada')));
       },
       onSelectOnMap: () => _selectRequest(request),
       formatPrice: _formatPrice,
@@ -3072,8 +3660,12 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
 
   Color _getAvatarColor(String initial) {
     final colors = [
-      const Color(0xFFE8A0BF), const Color(0xFFB5D8CC), const Color(0xFFF4C2C2),
-      const Color(0xFFC3B1E1), const Color(0xFFFFD700), const Color(0xFF87CEEB),
+      const Color(0xFFE8A0BF),
+      const Color(0xFFB5D8CC),
+      const Color(0xFFF4C2C2),
+      const Color(0xFFC3B1E1),
+      const Color(0xFFFFD700),
+      const Color(0xFF87CEEB),
     ];
     return colors[initial.codeUnitAt(0) % colors.length];
   }
@@ -3098,7 +3690,11 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       for (final data in rides) {
         final completedAt = _parseIsoDate(data['completedAt']);
         if (completedAt != null && completedAt.isAfter(startOfDay)) {
-          final fare = ((data['driverEarning'] ?? data['finalFare'] ?? data['estimatedFare'] ?? 0) as num).toDouble();
+          final fare = ((data['driverEarning'] ??
+                  data['finalFare'] ??
+                  data['estimatedFare'] ??
+                  0) as num)
+              .toDouble();
           totalEarnings += fare;
           tripCount++;
         }
@@ -3108,7 +3704,8 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
       int acceptedCount = tripCount;
       int totalOffered = tripCount > 0 ? tripCount + 1 : 0; // Approximate
 
-      double acceptanceRate = totalOffered > 0 ? (acceptedCount / totalOffered) * 100 : 0.0;
+      double acceptanceRate =
+          totalOffered > 0 ? (acceptedCount / totalOffered) * 100 : 0.0;
 
       if (!mounted || _isDisposed) return;
 
@@ -3209,18 +3806,46 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                 color: AppColors.error,
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.only(left: 30),
-                child: Text('Ocultar', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text('Ocultar',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
               ),
             ),
           ]),
         ),
         // Left swipe action buttons
         Positioned(
-          top: 0, bottom: 0, right: 0, width: _actionWidth,
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: _actionWidth,
           child: Row(children: [
-            _ActionButton(icon: Icons.warning_amber, label: 'Queja', color: const Color(0xFFFF9800), onTap: () { _closeActions(); widget.onReport(); }),
-            _ActionButton(icon: Icons.visibility_off, label: 'Ocultar', color: AppColors.error, onTap: () { _closeActions(); widget.onHide(); }),
-            _ActionButton(icon: Icons.location_on, label: 'Seleccionar en\nel mapa', color: const Color(0xFF2196F3), onTap: () { _closeActions(); widget.onSelectOnMap(); }),
+            _ActionButton(
+                icon: Icons.warning_amber,
+                label: 'Queja',
+                color: const Color(0xFFFF9800),
+                onTap: () {
+                  _closeActions();
+                  widget.onReport();
+                }),
+            _ActionButton(
+                icon: Icons.visibility_off,
+                label: 'Ocultar',
+                color: AppColors.error,
+                onTap: () {
+                  _closeActions();
+                  widget.onHide();
+                }),
+            _ActionButton(
+                icon: Icons.location_on,
+                label: 'Seleccionar en\nel mapa',
+                color: const Color(0xFF2196F3),
+                onTap: () {
+                  _closeActions();
+                  widget.onSelectOnMap();
+                }),
           ]),
         ),
         // Foreground card
@@ -3228,7 +3853,9 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
           onHorizontalDragUpdate: _onHorizontalDragUpdate,
           onHorizontalDragEnd: _onHorizontalDragEnd,
           child: AnimatedContainer(
-            duration: _dragOffset == 0 || _dragOffset == -_actionWidth ? const Duration(milliseconds: 200) : Duration.zero,
+            duration: _dragOffset == 0 || _dragOffset == -_actionWidth
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
             transform: Matrix4.translationValues(_dragOffset, 0, 0),
             child: Material(
               color: AppColors.getSurface(context),
@@ -3243,95 +3870,187 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
                         guestPhone: widget.request.guestPassengerPhone,
                       ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Left: Avatar + name + rating + time
-                      SizedBox(
-                        width: 80,
-                        child: Column(children: [
-                          CircleAvatar(
-                            radius: 28,
-                            backgroundColor: _getAvatarColor(widget.initial),
-                            backgroundImage: widget.request.passengerPhoto.isNotEmpty ? NetworkImage(widget.request.passengerPhoto) : null,
-                            child: widget.request.passengerPhoto.isEmpty
-                                ? Text(widget.initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22))
-                                : null,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(widget.request.passengerName.split(' ').first,
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context)),
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 2),
-                          Row(mainAxisSize: MainAxisSize.min, children: [
-                            Text(widget.request.passengerRating.toStringAsFixed(2),
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
-                          ]),
-                          Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.star, size: 14, color: Colors.amber[700]),
-                            const SizedBox(width: 2),
-                            Text('(${widget.request.passengerRating.toStringAsFixed(1)})', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
-                          ]),
-                          const SizedBox(height: 4),
-                          Text(widget.timeLabel, style: TextStyle(fontSize: 11, color: AppColors.rappiOrange, fontWeight: FontWeight.w500), textAlign: TextAlign.center),
-                        ]),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // Right: distance, price, addresses, payment
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('A ${widget.request.distance.toStringAsFixed(1)} km de ti', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
-                            Row(children: [
-                              Text(widget.formatPrice(widget.request.offeredPrice),
-                                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
-                              // Ronda 280: el servicio que pidió el pasajero.
-                              // Antes el conductor cobraba una tarifa VIP sin
-                              // saber que le habían pedido VIP.
-                              if ((widget.request.serviceLabel ?? '').isNotEmpty) ...[
-                                const SizedBox(width: 8),
-                                _EtiquetaServicio(texto: widget.request.serviceLabel!),
-                              ],
-                              if (widget.isFairPrice) ...[
-                                const SizedBox(width: 8),
-                                Text('Precio justo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.rappiOrange)),
-                              ],
+                          SizedBox(
+                            width: 80,
+                            child: Column(children: [
+                              CircleAvatar(
+                                radius: 28,
+                                backgroundColor:
+                                    _getAvatarColor(widget.initial),
+                                backgroundImage:
+                                    widget.request.passengerPhoto.isNotEmpty
+                                        ? NetworkImage(
+                                            widget.request.passengerPhoto)
+                                        : null,
+                                child: widget.request.passengerPhoto.isEmpty
+                                    ? Text(widget.initial,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 22))
+                                    : null,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                  widget.request.passengerName.split(' ').first,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.getTextPrimary(context)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 2),
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                                Text(
+                                    widget.request.passengerRating
+                                        .toStringAsFixed(2),
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color:
+                                            AppColors.getTextPrimary(context))),
+                              ]),
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.star,
+                                    size: 14, color: Colors.amber[700]),
+                                const SizedBox(width: 2),
+                                Text(
+                                    '(${widget.request.passengerRating.toStringAsFixed(1)})',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.getTextSecondary(
+                                            context))),
+                              ]),
+                              const SizedBox(height: 4),
+                              Text(widget.timeLabel,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.rappiOrange,
+                                      fontWeight: FontWeight.w500),
+                                  textAlign: TextAlign.center),
                             ]),
-                            const SizedBox(height: 6),
-                            Text(widget.request.pickup.address, style: TextStyle(fontSize: 14, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            Text(widget.request.destination.address, style: TextStyle(fontSize: 14, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                              decoration: BoxDecoration(color: widget.paymentColor, borderRadius: BorderRadius.circular(6)),
-                              child: Text(widget.paymentLabel, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                          const SizedBox(width: 8),
 
-                      // Three dots menu
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: AppColors.getTextSecondary(context), size: 22),
-                        padding: EdgeInsets.zero,
-                        onSelected: (value) {
-                          if (value == 'hide') {
-                            widget.onHide();
-                          } else if (value == 'report') {
-                            widget.onReport();
-                          } else if (value == 'map') {
-                            widget.onSelectOnMap();
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem(value: 'report', child: Row(children: [const Icon(Icons.warning_amber, color: AppColors.rappiOrange, size: 20), const SizedBox(width: 8), Text('Queja')])),
-                          PopupMenuItem(value: 'hide', child: Row(children: [const Icon(Icons.visibility_off, color: AppColors.rappiOrange, size: 20), const SizedBox(width: 8), Text('Ocultar')])),
-                          PopupMenuItem(value: 'map', child: Row(children: [const Icon(Icons.location_on, color: AppColors.rappiOrange, size: 20), const SizedBox(width: 8), Text('Seleccionar en el mapa')])),
-                        ],
-                      ),
+                          // Right: distance, price, addresses, payment
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                    'A ${widget.request.distance.toStringAsFixed(1)} km de ti',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.getTextSecondary(
+                                            context))),
+                                Row(children: [
+                                  Text(
+                                      widget.formatPrice(
+                                          widget.request.offeredPrice),
+                                      style: TextStyle(
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w900,
+                                          color:
+                                              AppColors.getTextPrimary(context),
+                                          height: 1.2)),
+                                  // Ronda 280: el servicio que pidió el pasajero.
+                                  // Antes el conductor cobraba una tarifa VIP sin
+                                  // saber que le habían pedido VIP.
+                                  if ((widget.request.serviceLabel ?? '')
+                                      .isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    _EtiquetaServicio(
+                                        texto: widget.request.serviceLabel!),
+                                  ],
+                                  if (widget.isFairPrice) ...[
+                                    const SizedBox(width: 8),
+                                    Text('Precio justo',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.rappiOrange)),
+                                  ],
+                                ]),
+                                const SizedBox(height: 6),
+                                Text(widget.request.pickup.address,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color:
+                                            AppColors.getTextPrimary(context)),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                Text(widget.request.destination.address,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color:
+                                            AppColors.getTextPrimary(context)),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 5),
+                                  decoration: BoxDecoration(
+                                      color: widget.paymentColor,
+                                      borderRadius: BorderRadius.circular(6)),
+                                  child: Text(widget.paymentLabel,
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Three dots menu
+                          PopupMenuButton<String>(
+                            icon: Icon(Icons.more_vert,
+                                color: AppColors.getTextSecondary(context),
+                                size: 22),
+                            padding: EdgeInsets.zero,
+                            onSelected: (value) {
+                              if (value == 'hide') {
+                                widget.onHide();
+                              } else if (value == 'report') {
+                                widget.onReport();
+                              } else if (value == 'map') {
+                                widget.onSelectOnMap();
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              PopupMenuItem(
+                                  value: 'report',
+                                  child: Row(children: [
+                                    const Icon(Icons.warning_amber,
+                                        color: AppColors.rappiOrange, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text('Queja')
+                                  ])),
+                              PopupMenuItem(
+                                  value: 'hide',
+                                  child: Row(children: [
+                                    const Icon(Icons.visibility_off,
+                                        color: AppColors.rappiOrange, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text('Ocultar')
+                                  ])),
+                              PopupMenuItem(
+                                  value: 'map',
+                                  child: Row(children: [
+                                    const Icon(Icons.location_on,
+                                        color: AppColors.rappiOrange, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text('Seleccionar en el mapa')
+                                  ])),
+                            ],
+                          ),
                         ], // Row children
                       ), // Row
                     ), // Padding
@@ -3347,9 +4066,15 @@ class _SwipeableRequestCardState extends State<_SwipeableRequestCard> {
 
   Color _getAvatarColor(String initial) {
     final colors = [
-      const Color(0xFFE91E63), const Color(0xFF9C27B0), const Color(0xFF673AB7),
-      const Color(0xFF3F51B5), const Color(0xFF2196F3), const Color(0xFF00BCD4),
-      const Color(0xFF009688), const Color(0xFF4CAF50), const Color(0xFFFF9800),
+      const Color(0xFFE91E63),
+      const Color(0xFF9C27B0),
+      const Color(0xFF673AB7),
+      const Color(0xFF3F51B5),
+      const Color(0xFF2196F3),
+      const Color(0xFF00BCD4),
+      const Color(0xFF009688),
+      const Color(0xFF4CAF50),
+      const Color(0xFFFF9800),
     ];
     return colors[initial.codeUnitAt(0) % colors.length];
   }
@@ -3361,7 +4086,11 @@ class _ActionButton extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const _ActionButton({required this.icon, required this.label, required this.color, required this.onTap});
+  const _ActionButton(
+      {required this.icon,
+      required this.label,
+      required this.color,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -3375,7 +4104,14 @@ class _ActionButton extends StatelessWidget {
             children: [
               Icon(icon, color: Colors.white, size: 24),
               const SizedBox(height: 4),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
@@ -3403,7 +4139,8 @@ class _RequestDetailBottomSheet extends StatefulWidget {
   });
 
   @override
-  State<_RequestDetailBottomSheet> createState() => _RequestDetailBottomSheetState();
+  State<_RequestDetailBottomSheet> createState() =>
+      _RequestDetailBottomSheetState();
 }
 
 class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
@@ -3430,7 +4167,9 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
   Widget build(BuildContext context) {
     final request = widget.request;
     final isFairPrice = request.offeredPrice >= request.suggestedPrice;
-    final initial = request.passengerName.isNotEmpty ? request.passengerName[0].toUpperCase() : 'P';
+    final initial = request.passengerName.isNotEmpty
+        ? request.passengerName[0].toUpperCase()
+        : 'P';
     final ageMinutes = DateTime.now().difference(request.createdAt).inMinutes;
     final timeLabel = ageMinutes < 1 ? 'Ahora' : '$ageMinutes min.';
     final price1 = request.offeredPrice + 2.0;
@@ -3458,192 +4197,310 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
         shrinkWrap: true,
         padding: EdgeInsets.zero,
         children: [
-            // Title
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: Center(child: Text('Solicitud de viaje',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context)))),
-            ),
+          // Title
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Center(
+                child: Text('Solicitud de viaje',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.getTextPrimary(context)))),
+          ),
 
-            // Map with real route
-            SizedBox(
-              height: 200,
-              child: _RequestMiniMap(
-                pickup: LatLng(request.pickup.latitude, request.pickup.longitude),
-                destination: LatLng(request.destination.latitude, request.destination.longitude),
-              ),
+          // Map with real route
+          SizedBox(
+            height: 200,
+            child: _RequestMiniMap(
+              pickup: LatLng(request.pickup.latitude, request.pickup.longitude),
+              destination: LatLng(
+                  request.destination.latitude, request.destination.longitude),
             ),
+          ),
 
-            // Passenger info row
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 80,
-                    child: Column(children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: widget.getAvatarColor(initial),
-                        backgroundImage: request.passengerPhoto.isNotEmpty ? NetworkImage(request.passengerPhoto) : null,
-                        child: request.passengerPhoto.isEmpty
-                            ? Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)) : null,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(request.passengerName.split(' ').first,
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context)),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.star, size: 14, color: Colors.amber[700]),
-                        const SizedBox(width: 2),
-                        Text(request.passengerRating.toStringAsFixed(1),
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
-                      ]),
-                      Text(timeLabel, style: TextStyle(fontSize: 11, color: AppColors.rappiOrange, fontWeight: FontWeight.w500)),
-                    ]),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('~${request.distance.toStringAsFixed(1)}km', style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
-                        Row(children: [
-                          Text(widget.formatPrice(request.offeredPrice),
-                              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(context), height: 1.2)),
-                          if ((request.serviceLabel ?? '').isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            _EtiquetaServicio(texto: request.serviceLabel!),
-                          ],
-                          if (isFairPrice) ...[
-                            const SizedBox(width: 8),
-                            Text('Precio justo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.rappiOrange)),
-                          ],
-                        ]),
-                        const SizedBox(height: 6),
-                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Container(width: 22, height: 22, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
-                              child: const Center(child: Text('A', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(request.pickup.address,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                        ]),
-                        const SizedBox(height: 6),
-                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Container(width: 22, height: 22, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
-                              child: const Center(child: Text('B', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(request.destination.address,
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.getTextPrimary(context)), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                        ]),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                          decoration: BoxDecoration(color: paymentColor, borderRadius: BorderRadius.circular(6)),
-                          child: Text(paymentLabel, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                        ),
-                      ],
+          // Passenger info row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 80,
+                  child: Column(children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: widget.getAvatarColor(initial),
+                      backgroundImage: request.passengerPhoto.isNotEmpty
+                          ? NetworkImage(request.passengerPhoto)
+                          : null,
+                      child: request.passengerPhoto.isEmpty
+                          ? Text(initial,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 22))
+                          : null,
                     ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Timer progress bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: request.timeRemaining.inSeconds > 0 ? (request.timeRemaining.inSeconds / 150).clamp(0.0, 1.0) : 0.0,
-                  backgroundColor: AppColors.getInputFill(context),
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.rappiOrange),
-                  minHeight: 6,
+                    const SizedBox(height: 4),
+                    Text(request.passengerName.split(' ').first,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.getTextPrimary(context)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.star, size: 14, color: Colors.amber[700]),
+                      const SizedBox(width: 2),
+                      Text(request.passengerRating.toStringAsFixed(1),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.getTextPrimary(context))),
+                    ]),
+                    Text(timeLabel,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.rappiOrange,
+                            fontWeight: FontWeight.w500)),
+                  ]),
                 ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Accept button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: widget.onAccept,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.rappiOrange,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('~${request.distance.toStringAsFixed(1)}km',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.getTextSecondary(context))),
+                      Row(children: [
+                        Text(widget.formatPrice(request.offeredPrice),
+                            style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.getTextPrimary(context),
+                                height: 1.2)),
+                        if ((request.serviceLabel ?? '').isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          _EtiquetaServicio(texto: request.serviceLabel!),
+                        ],
+                        if (isFairPrice) ...[
+                          const SizedBox(width: 8),
+                          Text('Precio justo',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.rappiOrange)),
+                        ],
+                      ]),
+                      const SizedBox(height: 6),
+                      Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                                width: 22,
+                                height: 22,
+                                decoration: const BoxDecoration(
+                                    color: Color(0xFF4CAF50),
+                                    shape: BoxShape.circle),
+                                child: const Center(
+                                    child: Text('A',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold)))),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Text(request.pickup.address,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            AppColors.getTextPrimary(context)),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis)),
+                          ]),
+                      const SizedBox(height: 6),
+                      Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                                width: 22,
+                                height: 22,
+                                decoration: const BoxDecoration(
+                                    color: Color(0xFF4CAF50),
+                                    shape: BoxShape.circle),
+                                child: const Center(
+                                    child: Text('B',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold)))),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Text(request.destination.address,
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            AppColors.getTextPrimary(context)),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis)),
+                          ]),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
+                        decoration: BoxDecoration(
+                            color: paymentColor,
+                            borderRadius: BorderRadius.circular(6)),
+                        child: Text(paymentLabel,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
                   ),
-                  child: Text('Aceptar por ${widget.formatPrice(request.offeredPrice)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
                 ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Timer progress bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: request.timeRemaining.inSeconds > 0
+                    ? (request.timeRemaining.inSeconds / 150).clamp(0.0, 1.0)
+                    : 0.0,
+                backgroundColor: AppColors.getInputFill(context),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppColors.rappiOrange),
+                minHeight: 6,
               ),
             ),
+          ),
 
-            const SizedBox(height: 16),
+          const SizedBox(height: 16),
 
-            // Offer your fare
-            Center(child: Text('Ofrece tu tarifa', style: TextStyle(fontSize: 15, color: AppColors.getTextSecondary(context)))),
-            const SizedBox(height: 10),
-
-            // Price pills + pencil
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                Expanded(child: SizedBox(height: 50, child: OutlinedButton(
-                  onPressed: () => widget.onNegotiate(initialPrice: price1),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.getTextPrimary(context),
-                    side: BorderSide(color: AppColors.getBorder(context)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  child: Text(widget.formatPrice(price1), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))))),
-                const SizedBox(width: 10),
-                Expanded(child: SizedBox(height: 50, child: OutlinedButton(
-                  onPressed: () => widget.onNegotiate(initialPrice: price2),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.getTextPrimary(context),
-                    side: BorderSide(color: AppColors.getBorder(context)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  child: Text(widget.formatPrice(price2), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))))),
-                const SizedBox(width: 10),
-                SizedBox(height: 50, width: 60, child: OutlinedButton(
-                  onPressed: () => widget.onNegotiate(),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.getTextPrimary(context),
-                    side: BorderSide(color: AppColors.getBorder(context)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: EdgeInsets.zero),
-                  child: Icon(Icons.edit, size: 22, color: AppColors.getTextSecondary(context)))),
-              ]),
+          // Accept button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: widget.onAccept,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.rappiOrange,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: Text(
+                    'Aceptar por ${widget.formatPrice(request.offeredPrice)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 17)),
+              ),
             ),
+          ),
 
-            const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-            // Skip button
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: widget.onSkip,
-                  style: ElevatedButton.styleFrom(
+          // Offer your fare
+          Center(
+              child: Text('Ofrece tu tarifa',
+                  style: TextStyle(
+                      fontSize: 15,
+                      color: AppColors.getTextSecondary(context)))),
+          const SizedBox(height: 10),
+
+          // Price pills + pencil
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              Expanded(
+                  child: SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                          onPressed: () =>
+                              widget.onNegotiate(initialPrice: price1),
+                          style: OutlinedButton.styleFrom(
+                              foregroundColor:
+                                  AppColors.getTextPrimary(context),
+                              side: BorderSide(
+                                  color: AppColors.getBorder(context)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12))),
+                          child: Text(widget.formatPrice(price1),
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600))))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                          onPressed: () =>
+                              widget.onNegotiate(initialPrice: price2),
+                          style: OutlinedButton.styleFrom(
+                              foregroundColor:
+                                  AppColors.getTextPrimary(context),
+                              side: BorderSide(
+                                  color: AppColors.getBorder(context)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12))),
+                          child: Text(widget.formatPrice(price2),
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600))))),
+              const SizedBox(width: 10),
+              SizedBox(
+                  height: 50,
+                  width: 60,
+                  child: OutlinedButton(
+                      onPressed: () => widget.onNegotiate(),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.getTextPrimary(context),
+                          side: BorderSide(color: AppColors.getBorder(context)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: EdgeInsets.zero),
+                      child: Icon(Icons.edit,
+                          size: 22,
+                          color: AppColors.getTextSecondary(context)))),
+            ]),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Skip button
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, bottomPadding + 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: widget.onSkip,
+                style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.getInputFill(context),
                     foregroundColor: AppColors.getTextPrimary(context),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                     padding: const EdgeInsets.symmetric(vertical: 16)),
-                  child: Text('Omitir', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                ),
+                child: Text('Omitir',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 16)),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -3702,8 +4559,10 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
     // sobre el origen, nunca al cierre de la app.
     final coords = [sw.latitude, sw.longitude, ne.latitude, ne.longitude];
     final valid = coords.every((v) => v.isFinite) &&
-        sw.latitude >= -90 && ne.latitude <= 90 &&
-        sw.longitude >= -180 && ne.longitude <= 180;
+        sw.latitude >= -90 &&
+        ne.latitude <= 90 &&
+        sw.longitude >= -180 &&
+        ne.longitude <= 180;
     if (!valid) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -3768,7 +4627,8 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
         Marker(
           markerId: const MarkerId('pickup'),
           position: widget.pickup,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
         Marker(
           markerId: const MarkerId('destination'),
@@ -3782,9 +4642,8 @@ class _RequestMiniMapState extends State<_RequestMiniMap> {
       polylines: {
         Polyline(
           polylineId: const PolylineId('route'),
-          points: points.isNotEmpty
-              ? points
-              : [widget.pickup, widget.destination],
+          points:
+              points.isNotEmpty ? points : [widget.pickup, widget.destination],
           color: AppColors.rappiRed,
           width: 4,
           patterns: points.isNotEmpty
@@ -3875,10 +4734,13 @@ class _ManualOrderBanner extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: const Color(0xFFE55100),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 minimumSize: const Size(0, 32),
-                textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                textStyle:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
             ),
         ],
@@ -3901,12 +4763,15 @@ class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
   StreamSubscription<RemoteMessage>? _fcmSub;
 
   static const _labels = {
-    'dni_front': 'DNI (frente)', 'dni_back': 'DNI (reverso)',
-    'license_front': 'Licencia (frente)', 'license_back': 'Licencia (reverso)',
+    'dni_front': 'DNI (frente)',
+    'dni_back': 'DNI (reverso)',
+    'license_front': 'Licencia (frente)',
+    'license_back': 'Licencia (reverso)',
     'soat': 'SOAT vigente',
     'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
     'ownership': 'Tarjeta de propiedad (reverso)',
-    'selfie': 'Selfie del conductor', 'vehicle_photo': 'Foto del vehículo',
+    'selfie': 'Selfie del conductor',
+    'vehicle_photo': 'Foto del vehículo',
   };
 
   @override
@@ -3929,18 +4794,22 @@ class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
   Future<void> _load() async {
     try {
       final resp = await RapiApiClient.instance.myDocuments();
-      final list = (resp['documents'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-      final rejected = list.where((d) => d['status']?.toString() == 'rejected').toList();
+      final list =
+          (resp['documents'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final rejected =
+          list.where((d) => d['status']?.toString() == 'rejected').toList();
       if (!mounted) return;
       setState(() => _rejected = rejected);
-    } catch (_) { /* silent */ }
+    } catch (_) {/* silent */}
   }
 
   @override
   Widget build(BuildContext context) {
     if (_rejected.isEmpty) return const SizedBox.shrink();
     final firstDoc = _rejected.first;
-    final label = _labels[firstDoc['docType']?.toString()] ?? firstDoc['docType']?.toString() ?? '';
+    final label = _labels[firstDoc['docType']?.toString()] ??
+        firstDoc['docType']?.toString() ??
+        '';
     final reason = firstDoc['rejectionReason']?.toString() ?? '';
     final more = _rejected.length > 1 ? ' (+${_rejected.length - 1} más)' : '';
 
@@ -3952,7 +4821,8 @@ class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+            const Icon(Icons.warning_amber_rounded,
+                color: Colors.red, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -3960,21 +4830,30 @@ class _RejectedDocsBannerState extends State<_RejectedDocsBanner> {
                 children: [
                   Text(
                     'Documento rechazado: $label$more',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.red),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.red),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   if (reason.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Motivo: $reason',
-                      style: TextStyle(fontSize: 12, color: Colors.red.shade900),
-                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.red.shade900),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                   const SizedBox(height: 2),
                   const Text(
                     'Toca para reemplazarlo',
-                    style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.red,
+                        fontWeight: FontWeight.w500),
                   ),
                 ],
               ),

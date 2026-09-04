@@ -13,14 +13,16 @@ import '../../utils/logger.dart';
 /// Handles navigation, driver mode switch, logout, etc.
 class PassengerDrawer extends StatelessWidget {
   /// Called when user selects a favorite destination from the drawer.
-  final void Function(String address, double lat, double lng)? onFavoriteSelected;
+  final void Function(String address, double lat, double lng)?
+      onFavoriteSelected;
 
   const PassengerDrawer({super.key, this.onFavoriteSelected});
 
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
-    final userName = authProvider.currentUser?.fullName.split(' ').first ?? 'Pasajero';
+    final userName =
+        authProvider.currentUser?.fullName.split(' ').first ?? 'Pasajero';
 
     return Drawer(
       child: Container(
@@ -52,7 +54,8 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Lugares favoritos',
                     onTap: () async {
                       Navigator.pop(context);
-                      final result = await Navigator.pushNamed(context, '/passenger/favorites');
+                      final result = await Navigator.pushNamed(
+                          context, '/passenger/favorites');
                       if (result != null && context.mounted) {
                         if (result is Map<String, dynamic>) {
                           final address = result['address'] as String?;
@@ -77,7 +80,8 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Métodos de pago',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.pushNamed(context, '/passenger/payment-methods');
+                      Navigator.pushNamed(
+                          context, '/passenger/payment-methods');
                     },
                   ),
                   _DrawerItem(
@@ -106,7 +110,8 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Acerca de',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => AboutScreen()));
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => AboutScreen()));
                     },
                   ),
                   _DrawerItem(
@@ -114,7 +119,8 @@ class PassengerDrawer extends StatelessWidget {
                     title: 'Configuración',
                     onTap: () {
                       Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen()));
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => SettingsScreen()));
                     },
                   ),
                   const Divider(),
@@ -127,17 +133,29 @@ class PassengerDrawer extends StatelessWidget {
                       // del pop porque el context del drawer se desmonta y
                       // los pushNamedAndRemoveUntil posteriores fallarían
                       // silenciosamente con context "deactivated".
-                      final rootNav = Navigator.of(context, rootNavigator: true);
-                      final auth = Provider.of<AuthProvider>(context, listen: false);
+                      final rootNav =
+                          Navigator.of(context, rootNavigator: true);
+                      final auth =
+                          Provider.of<AuthProvider>(context, listen: false);
                       Navigator.pop(context); // cierra drawer
                       await auth.logout();
-                      rootNav.pushNamedAndRemoveUntil('/login', (route) => false);
+                      rootNav.pushNamedAndRemoveUntil(
+                          '/login', (route) => false);
                     },
                   ),
                 ],
               ),
             ),
-            const _DriverModeButton(),
+            // Ronda 284: este botón va fijo abajo, fuera del ListView, y la
+            // barra de navegación de Android se le pintaba encima. Desde
+            // Android 15 (targetSdk 35) el sistema OBLIGA a dibujar de borde a
+            // borde: la app no puede pedir que le reserven ese espacio, así
+            // que hay que descontarlo aquí.
+            //
+            // `top: false` porque la cabecera ya se suma por su cuenta el
+            // hueco de la barra de estado (`rappi_app_bar.dart:120`); con un
+            // SafeArea completo se contaría dos veces y quedaría un hueco.
+            const SafeArea(top: false, child: _DriverModeButton()),
           ],
         ),
       ),
@@ -162,13 +180,18 @@ class _DrawerItem extends StatelessWidget {
   final VoidCallback onTap;
   final Color? color;
 
-  const _DrawerItem({required this.icon, required this.title, required this.onTap, this.color});
+  const _DrawerItem(
+      {required this.icon,
+      required this.title,
+      required this.onTap,
+      this.color});
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(icon, color: color ?? AppColors.rappiOrange),
-      title: Text(title, style: TextStyle(color: color ?? AppColors.getTextPrimary(context))),
+      title: Text(title,
+          style: TextStyle(color: color ?? AppColors.getTextPrimary(context))),
       onTap: onTap,
     );
   }
@@ -194,10 +217,12 @@ class _DriverModeButton extends StatelessWidget {
             color: AppColors.rappiOrange,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
-              onTap: () => _handleDriverModeTap(context, authProvider, hasDriverRole),
+              onTap: () =>
+                  _handleDriverModeTap(context, authProvider, hasDriverRole),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   children: [
                     Container(
@@ -206,7 +231,8 @@ class _DriverModeButton extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.local_taxi_rounded, color: Colors.white, size: 20),
+                      child: const Icon(Icons.local_taxi_rounded,
+                          color: Colors.white, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -215,15 +241,23 @@ class _DriverModeButton extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text('Modo Conductor',
-                            style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold)),
                           Text(
-                            hasDriverRole ? 'Cambiar a conductor' : 'Empieza a ganar dinero',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
+                            hasDriverRole
+                                ? 'Cambiar a conductor'
+                                : 'Empieza a ganar dinero',
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 12),
                           ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+                    const Icon(Icons.arrow_forward_ios,
+                        color: Colors.white, size: 16),
                   ],
                 ),
               ),
@@ -234,7 +268,8 @@ class _DriverModeButton extends StatelessWidget {
     );
   }
 
-  Future<void> _handleDriverModeTap(BuildContext context, AuthProvider authProvider, bool hasDriverRole) async {
+  Future<void> _handleDriverModeTap(BuildContext context,
+      AuthProvider authProvider, bool hasDriverRole) async {
     // Ronda 225 (141) BUG: antes hacíamos Navigator.pop(context) para cerrar
     // el drawer y luego usábamos ese MISMO context para mostrar el dialog
     // "Verificando..." → context desmontado → el dialog quedaba huérfano y
@@ -251,7 +286,10 @@ class _DriverModeButton extends StatelessWidget {
         rootNav.pushNamedAndRemoveUntil('/driver/home', (route) => false);
       } else {
         messenger.showSnackBar(
-          SnackBar(content: Text(authProvider.errorMessage ?? 'Error al cambiar modo'), backgroundColor: AppColors.error),
+          SnackBar(
+              content:
+                  Text(authProvider.errorMessage ?? 'Error al cambiar modo'),
+              backgroundColor: AppColors.error),
         );
       }
       return;
@@ -307,13 +345,15 @@ class _DriverModeButton extends StatelessWidget {
     if (rootNav.canPop()) rootNav.pop();
 
     if (pendingApplication != null) {
-      rootNav.pushNamed('/driver/register/pending', arguments: pendingApplication);
+      rootNav.pushNamed('/driver/register/pending',
+          arguments: pendingApplication);
     } else {
       rootNav.pushNamed('/driver/register');
     }
   }
 
-  Future<Map<String, dynamic>?> _checkPendingDriverApplication(String userId) async {
+  Future<Map<String, dynamic>?> _checkPendingDriverApplication(
+      String userId) async {
     // Ronda 224 (build 138) BUG CRÍTICO: este método antes era un stub que
     // SIEMPRE devolvía null → cada vez que un aplicante abría el drawer y
     // tocaba "Convertirme en conductor" era mandado al wizard desde cero,
@@ -321,7 +361,8 @@ class _DriverModeButton extends StatelessWidget {
     // La versión buena vive en modern_passenger_home; se duplica acá para
     // que el drawer también reconozca la solicitud pendiente.
     try {
-      AppLogger.info('Verificando solicitud de conductor pendiente (drawer) para $userId');
+      AppLogger.info(
+          'Verificando solicitud de conductor pendiente (drawer) para $userId');
       final api = RapiApiClient.instance;
 
       // Fast path: profile con status pending/under_review.
@@ -330,7 +371,8 @@ class _DriverModeButton extends StatelessWidget {
         final data = (profile['driver'] as Map?) ??
             (profile['profile'] as Map?) ??
             profile;
-        final status = (data['status'] ?? data['verificationStatus'])?.toString();
+        final status =
+            (data['status'] ?? data['verificationStatus'])?.toString();
         if (status == 'pending' || status == 'under_review') {
           return Map<String, dynamic>.from(data);
         }

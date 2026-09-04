@@ -155,7 +155,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       final ride = _extractRide(data);
       _applyRideSnapshot(ride);
     }).catchError((error) {
-      debugPrint(userFriendlyError(error, fallback: 'TrackingScreen: Error fetching ride'));
+      debugPrint(userFriendlyError(error,
+          fallback: 'TrackingScreen: Error fetching ride'));
     });
 
     _sse.start();
@@ -168,12 +169,14 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (rideId != widget.tripId) return;
       _applyRideSnapshot(_extractRide(event));
     }, onError: (error) {
-      debugPrint(userFriendlyError(error, fallback: 'TrackingScreen: Error listening ride updates'));
+      debugPrint(userFriendlyError(error,
+          fallback: 'TrackingScreen: Error listening ride updates'));
     });
 
     _driverLocationSub = _sse.driverLocations.listen((event) {
       if (!mounted) return;
-      final rideId = (event['rideId'] as String?) ?? (event['ride_id'] as String?);
+      final rideId =
+          (event['rideId'] as String?) ?? (event['ride_id'] as String?);
       if (rideId != null && rideId != widget.tripId) return;
       final lat = (event['latitude'] ?? event['lat']) as num?;
       final lng = (event['longitude'] ?? event['lng']) as num?;
@@ -398,7 +401,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       driverPhoto: widget.driverPhoto,
       tripId: widget.tripId,
       onSubmit: (rating, comment, tags) {
-        debugPrint(userFriendlyError(tags, fallback: 'Rating submitted: $rating stars, tags'));
+        debugPrint(userFriendlyError(tags,
+            fallback: 'Rating submitted: $rating stars, tags'));
         Navigator.of(context).popUntil((route) => route.isFirst);
       },
     );
@@ -478,7 +482,8 @@ class _TrackingScreenState extends State<TrackingScreen>
             //   - iPhone Pro (852): ~340px de padding (40%)
             //   - iPad (>1000): ~400px de padding tope
             padding: EdgeInsets.only(
-              bottom: (MediaQuery.of(context).size.height * 0.42).clamp(200.0, 400.0),
+              bottom: (MediaQuery.of(context).size.height * 0.42)
+                  .clamp(200.0, 400.0),
             ),
             onMapCreated: (controller) {
               _mapController = controller;
@@ -508,8 +513,10 @@ class _TrackingScreenState extends State<TrackingScreen>
           // viewport en iPad (>1000px de alto).
           if (_tripStatus == 'arriving' || _tripStatus == 'ontrip')
             Positioned(
-              top: (MediaQuery.of(context).size.height * 0.35).clamp(200.0, 360.0),
-              left: (MediaQuery.of(context).size.width * 0.45).clamp(120.0, 360.0),
+              top: (MediaQuery.of(context).size.height * 0.35)
+                  .clamp(200.0, 360.0),
+              left: (MediaQuery.of(context).size.width * 0.45)
+                  .clamp(120.0, 360.0),
               child: AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) {
@@ -518,8 +525,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                     height: 60 + (20 * _pulseController.value),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.rappiOrange.withValues(alpha:
-                        0.3 * (1 - _pulseController.value),
+                      color: AppColors.rappiOrange.withValues(
+                        alpha: 0.3 * (1 - _pulseController.value),
                       ),
                     ),
                   );
@@ -566,7 +573,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.rappiOrange.withValues(alpha: 0.1),
+                                  color: AppColors.rappiOrange
+                                      .withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
@@ -602,7 +610,14 @@ class _TrackingScreenState extends State<TrackingScreen>
               builder: (context, child) {
                 return Transform.translate(
                   offset: Offset(0, 300 * (1 - _bottomSheetController.value)),
-                  child: _buildDriverInfoSheet(),
+                  // Ronda 284: descontar la barra de navegación. Esta hoja va
+                  // pegada al borde inferior y sus paddings son fijos, así que
+                  // en Android —donde desde el targetSdk 35 el sistema obliga
+                  // a dibujar de borde a borde— la barra se comía la última
+                  // fila. El resto de hojas del pasajero ya lo hacían por su
+                  // cuenta (ver `home_bottom_section.dart` o
+                  // `price_setting_sheet.dart`); esta se había quedado fuera.
+                  child: SafeArea(top: false, child: _buildDriverInfoSheet()),
                 );
               },
             ),
@@ -691,11 +706,11 @@ class _TrackingScreenState extends State<TrackingScreen>
                         backgroundImage: widget.driverPhoto.isNotEmpty
                             ? NetworkImage(widget.driverPhoto)
                             : null,
-                        onBackgroundImageError: widget.driverPhoto.isNotEmpty
-                            ? (_, __) {}
-                            : null,
+                        onBackgroundImageError:
+                            widget.driverPhoto.isNotEmpty ? (_, __) {} : null,
                         child: widget.driverPhoto.isEmpty
-                            ? const Icon(Icons.person, size: 35, color: Colors.white)
+                            ? const Icon(Icons.person,
+                                size: 35, color: Colors.white)
                             : null,
                       ),
                     ),
@@ -784,7 +799,8 @@ class _TrackingScreenState extends State<TrackingScreen>
                         // Chat button
                         Container(
                           decoration: BoxDecoration(
-                            color: AppColors.rappiOrangeDark.withValues(alpha: 0.1),
+                            color: AppColors.rappiOrangeDark
+                                .withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
@@ -865,7 +881,8 @@ class _TrackingScreenState extends State<TrackingScreen>
 
                       // Connector line
                       Container(
-                        margin: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                        margin:
+                            const EdgeInsets.only(left: 4, top: 4, bottom: 4),
                         width: 2,
                         height: 20,
                         color: AppColors.getBorder(context),
@@ -1086,7 +1103,8 @@ class _TrackingScreenState extends State<TrackingScreen>
               },
             ),
             ListTile(
-              leading: const Icon(Icons.share_location, color: AppColors.warning),
+              leading:
+                  const Icon(Icons.share_location, color: AppColors.warning),
               title: const Text('Compartir ubicación con contactos'),
               onTap: () {
                 Navigator.pop(context);
@@ -1102,7 +1120,8 @@ class _TrackingScreenState extends State<TrackingScreen>
               },
             ),
             ListTile(
-              leading: Icon(Icons.cancel, color: AppColors.getTextSecondary(context)),
+              leading: Icon(Icons.cancel,
+                  color: AppColors.getTextSecondary(context)),
               title: const Text('Cancelar viaje'),
               onTap: () {
                 Navigator.pop(context);
@@ -1135,7 +1154,8 @@ class _TrackingScreenState extends State<TrackingScreen>
 
               try {
                 // Cancelar en el backend Node
-                await _api.cancelRide(widget.tripId, reason: 'passenger_cancelled');
+                await _api.cancelRide(widget.tripId,
+                    reason: 'passenger_cancelled');
 
                 // Cancelar suscripción SSE antes de navegar para evitar
                 // double-pop cuando llegue el evento de ride cancelado.
@@ -1147,11 +1167,13 @@ class _TrackingScreenState extends State<TrackingScreen>
                   Navigator.pop(context);
                 }
               } catch (e) {
-                debugPrint(userFriendlyError(e, fallback: 'Error cancelling trip'));
+                debugPrint(
+                    userFriendlyError(e, fallback: 'Error cancelling trip'));
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(userFriendlyError(e, fallback: 'Error al cancelar')),
+                      content: Text(
+                          userFriendlyError(e, fallback: 'Error al cancelar')),
                       backgroundColor: AppColors.error,
                     ),
                   );
@@ -1187,7 +1209,8 @@ class _TrackingScreenState extends State<TrackingScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al completar viaje')),
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al completar viaje')),
             backgroundColor: AppColors.error,
           ),
         );

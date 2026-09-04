@@ -1,12 +1,14 @@
 buildscript {
-    ext.kotlin_version = '2.1.20'
+    // Ronda 284: alineado con settings.gradle (ver la nota allí).
+    ext.kotlin_version = '2.2.20'
     repositories {
         google()
         mavenCentral()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.3'
+        // Ronda 284: alineado con settings.gradle (ver la nota allí).
+        classpath 'com.android.tools.build:gradle:8.11.1'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath 'com.google.gms:google-services:4.4.3'
     }
@@ -32,6 +34,46 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(':app')
+}
+
+// Ronda 284: mismo nivel de JVM en TODOS los plugins.
+//
+// Con AGP 8.11 y Kotlin 2.2.20, cada plugin decide por su cuenta a qué nivel
+// compila su Java y su Kotlin, y basta con que uno no coincida consigo mismo
+// para que el build entero se caiga con "Inconsistent JVM Target
+// Compatibility". Le pasaba a `flutter_facebook_auth`.
+//
+// En vez de parchear ese plugin —que volvería a romperse con el siguiente—,
+// se impone 17 en todos: el mismo que usa el módulo `app`.
+//
+// Sin `afterEvaluate`: el bloque de arriba hace `evaluationDependsOn(':app')`,
+// que evalúa `:app` antes de tiempo, y registrar un `afterEvaluate` sobre un
+// proyecto ya evaluado lanza "Cannot run Project.afterEvaluate when the
+// project is already evaluated". `plugins.withId` y `configureEach` son
+// perezosos y no tienen ese problema.
+subprojects { sub ->
+    // `:app` ya declara 17 en su propio build.gradle, y además viene
+    // pre-evaluado por el `evaluationDependsOn` de arriba: registrarle un
+    // `afterEvaluate` lanzaría "project is already evaluated".
+    if (sub.name != 'app') {
+        // Tiene que ser DESPUÉS de evaluar el plugin: cada uno fija sus
+        // `compileOptions` en su propio build.gradle, así que hacerlo antes
+        // —con `plugins.withId`— acababa sobrescrito. `audioplayers_android`
+        // se quedaba en Java 1.8 con Kotlin en 17.
+        sub.afterEvaluate {
+            if (sub.hasProperty('android')) {
+                sub.android.compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+            }
+        }
+    }
+    sub.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 }
 
 tasks.register("clean", Delete) {

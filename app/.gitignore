@@ -41,3 +41,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Ronda 284: caché de sesiones del compilador de Kotlin, que aparece desde
+# Kotlin 2.2. Es basura de compilación local, no forma parte del proyecto.
+/android/.kotlin/

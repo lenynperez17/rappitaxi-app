@@ -34,14 +34,20 @@ android {
     compileSdk 36
     ndkVersion "28.2.13676358"
 
+    // Ronda 284: 11 → 17. AGP 8.11 compila el Java de los plugins a 17 por
+    // defecto, así que dejar esto en 11 hacía que un plugin
+    // (`flutter_facebook_auth`) tuviera su Java y su Kotlin en niveles
+    // distintos y el build fallara con "Inconsistent JVM Target Compatibility".
+    // Se alinea todo el proyecto, aquí y en el bloque `subprojects` de
+    // `android/build.gradle`.
     compileOptions {
         coreLibraryDesugaringEnabled true
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '17'
     }
 
     sourceSets {

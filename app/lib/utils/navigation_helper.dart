@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../utils/logger.dart';
 
 class NavigationHelper {
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   // Navegar a solicitud de viaje (para conductores)
   static void navigateToRideRequest() {
@@ -33,7 +34,8 @@ class NavigationHelper {
       final context = navigatorKey.currentContext;
       if (context == null) return;
       if (rideId == null || rideId.isEmpty) {
-        AppLogger.warning('Seguimiento sin id de viaje: se abre el home del pasajero');
+        AppLogger.warning(
+            'Seguimiento sin id de viaje: se abre el home del pasajero');
         Navigator.of(context).pushNamed('/passenger/home');
         return;
       }
@@ -157,6 +159,11 @@ class NavigationHelper {
         return await showModalBottomSheet<T>(
           context: context,
           isScrollControlled: isScrollControlled,
+          // Ronda 284: sin esto la hoja se dibuja bajo la barra de navegación
+          // de Android y su última fila queda tapada. El helper compartido
+          // `core/utils/responsive_bottom_sheet.dart` ya lo hacía; esta
+          // llamada suelta se había quedado fuera.
+          useSafeArea: true,
           builder: (context) => content,
         );
       }

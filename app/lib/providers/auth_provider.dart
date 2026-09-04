@@ -118,7 +118,8 @@ class AuthProvider with ChangeNotifier {
   // secure storage; el user cache se olvidó en la migración inicial.
   static const _secureUserStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+    iOptions: IOSOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device),
   );
 
   Future<void> _loadCachedUser() async {
@@ -151,7 +152,8 @@ class AuthProvider with ChangeNotifier {
     try {
       if (_currentUser == null) return;
       final json = _currentUser!.toJson();
-      await _secureUserStorage.write(key: _kCachedUserPref, value: jsonEncode(json));
+      await _secureUserStorage.write(
+          key: _kCachedUserPref, value: jsonEncode(json));
     } catch (e) {
       AppLogger.error('saveCachedUser fallo', e);
     }
@@ -195,15 +197,22 @@ class AuthProvider with ChangeNotifier {
       email: (u['email'] ?? '') as String,
       phone: (u['phone'] ?? u['phone_number'] ?? '') as String,
       userType: (u['userType'] ?? u['user_type'] ?? 'passenger') as String,
-      profilePhotoUrl: (u['profilePhotoUrl'] ?? u['profile_photo_url'] ?? '') as String,
+      profilePhotoUrl:
+          (u['profilePhotoUrl'] ?? u['profile_photo_url'] ?? '') as String,
       isActive: (u['isActive'] ?? u['is_active'] ?? true) as bool,
       isVerified: (u['isVerified'] ?? u['is_verified'] ?? false) as bool,
-      emailVerified: (u['emailVerified'] ?? u['email_verified'] ?? false) as bool,
-      phoneVerified: (u['phoneVerified'] ?? u['phone_verified'] ?? false) as bool,
-      documentVerified: (u['documentVerified'] ?? u['document_verified'] ?? false) as bool,
-      identityDocument: (u['identityDocument'] ?? u['identity_document'])?.toString(),
-      createdAt: _parseDate(u['createdAt'] ?? u['created_at']) ?? DateTime.now(),
-      updatedAt: _parseDate(u['updatedAt'] ?? u['updated_at']) ?? DateTime.now(),
+      emailVerified:
+          (u['emailVerified'] ?? u['email_verified'] ?? false) as bool,
+      phoneVerified:
+          (u['phoneVerified'] ?? u['phone_verified'] ?? false) as bool,
+      documentVerified:
+          (u['documentVerified'] ?? u['document_verified'] ?? false) as bool,
+      identityDocument:
+          (u['identityDocument'] ?? u['identity_document'])?.toString(),
+      createdAt:
+          _parseDate(u['createdAt'] ?? u['created_at']) ?? DateTime.now(),
+      updatedAt:
+          _parseDate(u['updatedAt'] ?? u['updated_at']) ?? DateTime.now(),
       rating: (u['rating'] as num?)?.toDouble() ?? 5.0,
       totalTrips: (u['totalTrips'] as num?)?.toInt() ?? 0,
       balance: (u['balance'] as num?)?.toDouble() ?? 0.0,
@@ -571,6 +580,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> updateEmail(String email) async {
     return updateProfile(email: email);
   }
+
   @Deprecated('Nombre legacy (ya no toca Firestore). Usa updateEmail().')
   Future<bool> updateEmailInFirestore(String email) async {
     // Alias por compatibilidad — la actualización de email debe pasar por
@@ -581,6 +591,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> updatePhoneNumber(String phone) async {
     return updateProfile(phone: phone);
   }
+
   @Deprecated('Nombre legacy (ya no toca Firestore). Usa updatePhoneNumber().')
   Future<bool> updatePhoneNumberInFirestore(String phone) async {
     return updateProfile(phone: phone);
@@ -658,18 +669,21 @@ class AuthProvider with ChangeNotifier {
   // ─── Deprecados (compatibilidad hacia atrás) ───────────────────────────────
 
   Future<bool> login(String email, String password) async {
-    _errorMessage = 'Este método ya no se usa. Inicia sesión con SMS, Google o Apple.';
+    _errorMessage =
+        'Este método ya no se usa. Inicia sesión con SMS, Google o Apple.';
     notifyListeners();
     return false;
   }
 
   Future<bool> resetPassword(String email) async {
-    _errorMessage = 'Recuperación de contraseña no está disponible. Usa Google o SMS.';
+    _errorMessage =
+        'Recuperación de contraseña no está disponible. Usa Google o SMS.';
     notifyListeners();
     return false;
   }
 
-  Future<bool> changePassword(String currentPassword, String newPassword) async {
+  Future<bool> changePassword(
+      String currentPassword, String newPassword) async {
     _errorMessage = 'Cambio de contraseña no está disponible.';
     notifyListeners();
     return false;
@@ -688,7 +702,40 @@ class AuthProvider with ChangeNotifier {
 
   // ─── Utilidades ────────────────────────────────────────────────────────────
 
+  /// Ronda 284: se escucha la rotación del token, una sola vez.
+  ///
+  /// El token de FCM cambia solo —al reinstalar, al limpiar datos, o cuando
+  /// Firebase lo decide— y hasta ahora solo se enviaba al servidor durante el
+  /// login. Si cambiaba después, o si el primer intento fallaba, el servidor
+  /// se quedaba con el viejo para siempre y los avisos se enviaban a un
+  /// teléfono que ya no escuchaba.
+  ///
+  /// Se ha visto en producción: una cuenta con un token de iOS de julio
+  /// mientras la persona usaba la app en Android. Los push salían del servidor
+  /// como enviados y no llegaban a ninguna parte.
+  ///
+  /// Había un `onTokenRefresh` en `services/fcm_service.dart`, pero ese
+  /// archivo no lo importa nadie: es código muerto.
+  StreamSubscription<String>? _tokenRefreshSub;
+
+  void _listenForTokenRefresh() {
+    if (_tokenRefreshSub != null) return;
+    _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
+      (token) async {
+        if (token.isEmpty) return;
+        try {
+          await _api.registerFcmToken(token);
+          AppLogger.info('Token FCM rotado y registrado de nuevo');
+        } catch (e) {
+          AppLogger.error('No se pudo registrar el token FCM rotado', e);
+        }
+      },
+      onError: (Object e) => AppLogger.error('onTokenRefresh', e),
+    );
+  }
+
   Future<void> _registerFcmTokenSafely() async {
+    _listenForTokenRefresh();
     try {
       // Timeout defensivo: en iOS con APNS lento o Firebase con degradación,
       // getToken() puede bloquear minutos sin retornar. No queremos que el
@@ -731,5 +778,4 @@ class AuthProvider with ChangeNotifier {
         return e.message ?? 'Ocurrió un error. Intenta de nuevo.';
     }
   }
-
 }
