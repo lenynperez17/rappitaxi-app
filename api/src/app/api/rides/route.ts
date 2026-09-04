@@ -16,7 +16,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { query, maybeOne } from '@/lib/db'
-import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
+import {
+  findDriversExpanding, notifyRideOffer, ESCALON_INICIAL_KM,
+} from '@/lib/notify-drivers'
 import { settingBool, settingNumber } from '@/lib/app-settings'
 import { getEnabledServiceTypes, isServiceTypeEnabled, vehicleTypesForService } from '@/lib/service-types'
 
@@ -356,9 +358,19 @@ export async function POST(req: NextRequest) {
       // servicio no restringe vehículos —o no llegó ninguno—, se avisa a todos,
       // igual que antes.
       const vehiculosPermitidos = await vehicleTypesForService(serviceType)
-      const nearby = await findNearbyOnlineDrivers(
-        pickup.lat!, pickup.lng!, 5, vehiculosPermitidos,
+      // Ronda 284: el círculo se abre solo si no hay nadie cerca (5 → 10 → 20
+      // km → todos). Con un radio fijo de 5 km, un viaje cuyo único conductor
+      // disponible estaba a 15,7 km no llegaba a nadie y el pasajero esperaba
+      // en vano. Ver `findDriversExpanding`.
+      const { drivers: nearby, radiusKm } = await findDriversExpanding(
+        pickup.lat!, pickup.lng!, vehiculosPermitidos,
       )
+      if (nearby.length > 0 && radiusKm > ESCALON_INICIAL_KM) {
+        console.log(
+          `[rides] viaje ${ride.id}: nadie a ${ESCALON_INICIAL_KM} km, ` +
+          `ofrecido a ${nearby.length} conductor(es) ampliando a ${radiusKm} km`,
+        )
+      }
       if (nearby.length > 0) {
         // Nombre del passenger para el push (opcional).
         const paxName = await maybeOne<{ name: string | null }>(

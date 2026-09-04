@@ -97,6 +97,48 @@ export async function findNearbyOnlineDrivers(
  * Emite una oferta de viaje a los drivers indicados.
  * Best-effort: si FCM falla para uno, se continúa con los demás.
  */
+/**
+ * Ronda 284 — buscar conductores ampliando el círculo hasta encontrar a alguien.
+ *
+ * Antes se preguntaba una sola vez a 5 km y, si no había nadie, el viaje se
+ * quedaba sin ofrecer. En una ciudad como Lima eso deja fuera a un conductor a
+ * 6 km que habría ido encantado, y el pasajero se queda esperando a que nadie
+ * lo acepte. Pasó de verdad: un viaje al aeropuerto con el único conductor en
+ * línea a 15,7 km, que nunca se enteró.
+ *
+ * Se empieza cerca —lo lógico: quien está al lado llega antes— y se abre solo
+ * si no hay nadie. El último paso no lleva radio: si en toda la ciudad hay tres
+ * conductores conectados, es mejor ofrecérselo a los tres que dejar el viaje
+ * sin atender.
+ *
+ * Los escalones son de creación, no de tiempo: se resuelve en la misma
+ * petición. Una ampliación por tiempo —reofrecer cada minuto a un círculo
+ * mayor— sería mejor, pero necesita un planificador que este proyecto no
+ * tiene.
+ */
+export const ESCALON_INICIAL_KM = 5
+const ESCALONES_KM = [ESCALON_INICIAL_KM, 10, 20]
+
+/** Sin radio: cualquiera conectado. Cubre de sobra cualquier ciudad. */
+export const SIN_LIMITE_KM = 20_000
+
+export async function findDriversExpanding(
+  pickupLat: number,
+  pickupLng: number,
+  allowedVehicleTypes: string[] | null,
+): Promise<{ drivers: string[]; radiusKm: number }> {
+  for (const radio of ESCALONES_KM) {
+    const encontrados = await findNearbyOnlineDrivers(
+      pickupLat, pickupLng, radio, allowedVehicleTypes,
+    )
+    if (encontrados.length > 0) return { drivers: encontrados, radiusKm: radio }
+  }
+  const todos = await findNearbyOnlineDrivers(
+    pickupLat, pickupLng, SIN_LIMITE_KM, allowedVehicleTypes,
+  )
+  return { drivers: todos, radiusKm: SIN_LIMITE_KM }
+}
+
 export async function notifyRideOffer(
   driverIds: string[],
   ride: RideOfferData,

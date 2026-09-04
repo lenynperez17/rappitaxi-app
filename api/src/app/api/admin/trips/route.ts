@@ -7,7 +7,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-middleware'
 import { getClientIp } from '@/lib/auth-middleware'
 import { query, maybeOne, tx } from '@/lib/db'
-import { findNearbyOnlineDrivers, notifyRideOffer } from '@/lib/notify-drivers'
+import {
+  findNearbyOnlineDrivers, notifyRideOffer, SIN_LIMITE_KM,
+} from '@/lib/notify-drivers'
+import { vehicleTypesCompatibleWith } from '@/lib/service-types'
 
 export const runtime = 'nodejs'
 
@@ -404,11 +407,27 @@ export async function POST(req: NextRequest) {
       // de vehículo aceptables, porque un servicio puede admitir varios (Express
       // lo atienden `car` y `taxi`). Aquí el viaje lo crea un administrador
       // indicando un tipo concreto, así que se envuelve en una lista de uno.
+      // Ronda 284: SIN límite de distancia cuando el viaje lo crea la central.
+      //
+      // Con 5 km fijos, un viaje pedido por teléfono no le llegaba a nadie si
+      // el único conductor conectado estaba más lejos — y quien atiende la
+      // llamada lo que quiere es ofrecérselo a quien esté disponible, no a
+      // quien esté cerca. La cercanía la decide el pasajero desde la app; aquí
+      // decide una persona.
       : await findNearbyOnlineDrivers(
           body.pickupLat,
           body.pickupLng,
-          5,
-          canonicalVehicleType ? [canonicalVehicleType] : null,
+          SIN_LIMITE_KM,
+          // Ronda 284: los vehículos que admite el SERVICIO, no el único tipo
+          // que el panel escribe en el viaje.
+          //
+          // El panel guarda `vehicle_type = 'car'` por defecto, y con eso se
+          // filtraba por 'car' a secas: un conductor con `taxi` registrado
+          // quedaba fuera aunque Express admite los dos ({car,taxi}). En la
+          // práctica, la mitad de la flota no recibía ningún viaje creado
+          // desde el panel. Es la misma corrección que la ronda 280 hizo en
+          // `/api/rides` y que aquí se quedó sin aplicar.
+          await vehicleTypesCompatibleWith(canonicalVehicleType),
         )
     if (targetDrivers.length > 0) {
       notified = await notifyRideOffer(targetDrivers, {

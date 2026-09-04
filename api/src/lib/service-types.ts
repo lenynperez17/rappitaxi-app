@@ -85,6 +85,41 @@ export async function vehicleTypesForService(
   }
 }
 
+/**
+ * Ronda 284 — qué vehículos pueden atender un viaje pensado para uno dado.
+ *
+ * El panel guarda en el viaje un único `vehicle_type` (por defecto 'car') y no
+ * maneja servicios. Filtrar por ese tipo a secas dejaba fuera a media flota:
+ * un conductor con `taxi` registrado no recibía viajes creados desde el panel,
+ * aunque Express admita `{car, taxi}` indistintamente.
+ *
+ * Se devuelve la unión de los vehículos de todos los servicios activos que
+ * admiten ese tipo. Para 'car' sale `{car, taxi}` —quien puede hacer un
+ * Express— y para 'van' sale `{van}`, que es lo correcto: una minivan no la
+ * cubre un coche.
+ *
+ * `null` (avisar a todos) si el tipo no aparece en ningún servicio o si el
+ * catálogo no se puede leer: dejar un viaje sin ofrecer es peor que ofrecerlo
+ * de más.
+ */
+export async function vehicleTypesCompatibleWith(
+  vehicleType: string | null | undefined,
+): Promise<string[] | null> {
+  if (!vehicleType) return null
+  try {
+    const servicios = (await getServiceTypes()).filter(
+      (s) => s.enabled && s.vehicleTypes.includes(vehicleType),
+    )
+    if (servicios.length === 0) return null
+    const union = new Set<string>()
+    for (const s of servicios) for (const v of s.vehicleTypes) union.add(v)
+    return union.size > 0 ? [...union] : null
+  } catch (err) {
+    console.error('[service-types] no se pudo leer el catálogo:', err)
+    return null
+  }
+}
+
 /** `true` si ese servicio existe y está activo. */
 export async function isServiceTypeEnabled(code: string): Promise<boolean> {
   try {

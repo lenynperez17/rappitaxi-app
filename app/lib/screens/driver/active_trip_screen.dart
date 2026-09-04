@@ -31,12 +31,12 @@ import '../../utils/safe_navigation.dart';
 
 /// Estados del viaje desde la perspectiva del conductor
 enum DriverTripState {
-  goingToPickup,    // Yendo al punto de recogida
-  arrivedAtPickup,  // Llegó al punto de recogida
+  goingToPickup, // Yendo al punto de recogida
+  arrivedAtPickup, // Llegó al punto de recogida
   waitingVerification, // Esperando verificación mutua
-  inProgress,       // Viaje en curso
+  inProgress, // Viaje en curso
   arrivedAtDestination, // Llegó al destino
-  completed,        // Viaje completado
+  completed, // Viaje completado
 }
 
 class ActiveTripScreen extends StatefulWidget {
@@ -61,7 +61,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   final RapiSseClient _sse = RapiSseClient.instance;
 
   // Completer para Animarker
-  final Completer<GoogleMapController> _mapCompleter = Completer<GoogleMapController>();
+  final Completer<GoogleMapController> _mapCompleter =
+      Completer<GoogleMapController>();
   GoogleMapController? _mapController;
   StreamSubscription<Map<String, dynamic>>? _tripSubscription;
   StreamSubscription<Position>? _positionSubscription;
@@ -86,6 +87,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   // observar _polylines.isEmpty=true si la primera Directions call aún no
   // completó, disparando N requests duplicadas por state change.
   bool _routeInFlight = false;
+
+  /// Ronda 284: la ruta que se ve es la de reserva, pintada sin posición del
+  /// conductor. Se cambia por la del recojo en cuanto llegue el GPS.
+  bool _rutaDibujadaSinGps = false;
   bool _isFollowingDriver = true; // Toggle for camera follow
 
   // Ronda 255: medimos la altura REAL del bottom sheet para colocar encima los
@@ -128,7 +133,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   @override
   void initState() {
     super.initState();
-    debugPrint('🚗 ActiveTripScreen.initState - tripId=${widget.tripId}, hasInitialTrip=${widget.initialTrip != null}, initialLocation=${widget.initialLocation}');
+    debugPrint(
+        '🚗 ActiveTripScreen.initState - tripId=${widget.tripId}, hasInitialTrip=${widget.initialTrip != null}, initialLocation=${widget.initialLocation}');
     // Use initial location from home screen for immediate marker display
     if (widget.initialLocation != null) {
       _currentLocation = widget.initialLocation;
@@ -213,7 +219,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         final rideJson = _extractRide(response);
         if (mounted) {
           setState(() {
-            _currentTrip = TripModel.fromJson({'id': widget.tripId, ...rideJson});
+            _currentTrip =
+                TripModel.fromJson({'id': widget.tripId, ...rideJson});
             _updateTripState();
           });
         }
@@ -258,7 +265,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           status == 'cancelled_by_passenger' ||
           status == 'cancelled_by_driver' ||
           event['type'] == 'ride_deleted') {
-        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} was cancelled (status=$status)');
+        debugPrint(
+            '🚗 ActiveTripScreen: Ride ${widget.tripId} was cancelled (status=$status)');
         _handleRideGone();
         return;
       }
@@ -280,7 +288,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       // If trip just transitioned to completed and we didn't trigger it locally,
       // show the completed dialog so the driver isn't stuck
       if (!wasCompleted && _tripState == DriverTripState.completed) {
-        debugPrint('🚗 ActiveTripScreen: Ride ${widget.tripId} completed externally, showing dialog');
+        debugPrint(
+            '🚗 ActiveTripScreen: Ride ${widget.tripId} completed externally, showing dialog');
         final finalFare = _currentTrip?.estimatedFare ?? 0.0;
         _showTripCompletedDialog(finalFare);
       }
@@ -325,12 +334,12 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _tripState = DriverTripState.goingToPickup;
         break;
       case 'arrived':
-      case 'driver_arriving':  // legacy Firestore, mantener compat
+      case 'driver_arriving': // legacy Firestore, mantener compat
         _tripState = DriverTripState.arrivedAtPickup;
         break;
       case 'in_progress':
-      case 'waiting_verification':  // legacy — treat as in_progress
-      case 'arriving_destination':  // legacy
+      case 'waiting_verification': // legacy — treat as in_progress
+      case 'arriving_destination': // legacy
         _tripState = DriverTripState.inProgress;
         break;
       case 'completed':
@@ -354,7 +363,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       }
 
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high),
       );
 
       if (mounted && !_isDisposed) {
@@ -384,10 +394,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           final dLat = newLat - _currentLocation!.latitude;
           final dLng = newLng - _currentLocation!.longitude;
           if (dLat.abs() > 0.00001 || dLng.abs() > 0.00001) {
-            final y = math.sin(dLng * math.pi / 180) * math.cos(newLat * math.pi / 180);
-            final x = math.cos(_currentLocation!.latitude * math.pi / 180) * math.sin(newLat * math.pi / 180) -
-                math.sin(_currentLocation!.latitude * math.pi / 180) * math.cos(newLat * math.pi / 180) * math.cos(dLng * math.pi / 180);
-            final calculatedBearing = (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+            final y = math.sin(dLng * math.pi / 180) *
+                math.cos(newLat * math.pi / 180);
+            final x = math.cos(_currentLocation!.latitude * math.pi / 180) *
+                    math.sin(newLat * math.pi / 180) -
+                math.sin(_currentLocation!.latitude * math.pi / 180) *
+                    math.cos(newLat * math.pi / 180) *
+                    math.cos(dLng * math.pi / 180);
+            final calculatedBearing =
+                (math.atan2(y, x) * 180 / math.pi + 360) % 360;
             _currentHeading = calculatedBearing;
           }
         }
@@ -399,7 +414,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _updateLocationInFirebase();
       });
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error iniciando tracking de ubicación'));
+      debugPrint(userFriendlyError(e,
+          fallback: 'Error iniciando tracking de ubicación'));
     }
   }
 
@@ -411,18 +427,19 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       // presence del conductor. Reemplaza los dos writes previos a Firestore.
       await _api
           .heartbeat(
-            latitude: _currentLocation!.latitude,
-            longitude: _currentLocation!.longitude,
-            heading: _currentHeading,
-            activeRideId: widget.tripId,
-          )
+        latitude: _currentLocation!.latitude,
+        longitude: _currentLocation!.longitude,
+        heading: _currentHeading,
+        activeRideId: widget.tripId,
+      )
           .timeout(const Duration(seconds: 10), onTimeout: () {
         throw TimeoutException('Timeout actualizando ubicación');
       });
     } on TimeoutException {
       debugPrint('⏱️ Timeout en actualización de ubicación');
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error actualizando ubicación'));
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error actualizando ubicación'));
     }
   }
 
@@ -432,7 +449,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       return;
     }
 
-    debugPrint('🚗 _updateMapMarkers: trip=${_currentTrip!.id}, location=$_currentLocation, carIcon=${_carIcon != null}');
+    debugPrint(
+        '🚗 _updateMapMarkers: trip=${_currentTrip!.id}, location=$_currentLocation, carIcon=${_carIcon != null}');
     _markers.clear();
 
     // Marcador de ubicación actual del conductor con icono moderno
@@ -440,7 +458,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       _markers.add(Marker(
         markerId: const MarkerId('driver'),
         position: _currentLocation!,
-        icon: _carIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: _carIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         anchor: const Offset(0.5, 0.5),
         flat: true,
         rotation: _currentHeading,
@@ -459,7 +478,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           _currentTrip!.pickupLocation.latitude,
           _currentTrip!.pickupLocation.longitude,
         ),
-        icon: _pickupIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        icon: _pickupIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         zIndexInt: 1,
         infoWindow: InfoWindow(
           title: 'Punto de recogida',
@@ -475,7 +495,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _currentTrip!.destinationLocation.latitude,
         _currentTrip!.destinationLocation.longitude,
       ),
-      icon: _destinationIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      icon: _destinationIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
       infoWindow: InfoWindow(
         title: 'Destino',
         snippet: _currentTrip!.destinationAddress,
@@ -483,13 +504,20 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     ));
 
     // Draw route only once per state change (con guard concurrent).
-    if (_polylines.isEmpty && !_routeInFlight) {
+    //
+    // Ronda 284: además se vuelve a dibujar en cuanto llega la primera
+    // posición del conductor. Sin esto, la ruta de reserva que se pinta cuando
+    // todavía no hay GPS (recojo → destino) se quedaría fija, y el conductor
+    // nunca vería el camino hasta el pasajero, que es el que necesita.
+    final esperandoGps = _rutaDibujadaSinGps && _currentLocation != null;
+    if ((_polylines.isEmpty || esperandoGps) && !_routeInFlight) {
       _drawRouteAsync();
     }
 
     // Camera: during trip show full route, during pickup follow driver
     if (_mapController != null && _currentLocation != null) {
-      if (_tripState == DriverTripState.inProgress || _tripState == DriverTripState.arrivedAtDestination) {
+      if (_tripState == DriverTripState.inProgress ||
+          _tripState == DriverTripState.arrivedAtDestination) {
         // Only fit bounds once (not every GPS update)
       } else if (_isFollowingDriver) {
         _mapController!.animateCamera(
@@ -517,20 +545,46 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   }
 
   Future<void> _drawRouteInner() async {
-    final pickupLatLng = LatLng(_currentTrip!.pickupLocation.latitude, _currentTrip!.pickupLocation.longitude);
-    final destinationLatLng = LatLng(_currentTrip!.destinationLocation.latitude, _currentTrip!.destinationLocation.longitude);
+    final pickupLatLng = LatLng(_currentTrip!.pickupLocation.latitude,
+        _currentTrip!.pickupLocation.longitude);
+    final destinationLatLng = LatLng(_currentTrip!.destinationLocation.latitude,
+        _currentTrip!.destinationLocation.longitude);
 
     LatLng origin;
     LatLng destination;
 
-    if (_tripState == DriverTripState.goingToPickup ||
+    final yendoAlRecojo = _tripState == DriverTripState.goingToPickup ||
         _tripState == DriverTripState.arrivedAtPickup ||
-        _tripState == DriverTripState.waitingVerification) {
-      origin = _currentLocation ?? pickupLatLng;
+        _tripState == DriverTripState.waitingVerification;
+
+    // Ronda 284: sin posición del conductor NO se pide la ruta al recojo.
+    //
+    // Antes el origen caía en `_currentLocation ?? pickupLatLng`, así que sin
+    // señal de GPS se pedía la ruta del punto de recogida A SÍ MISMO. Eso
+    // devuelve una ruta vacía y el mapa se quedaba con los dos marcadores y
+    // ninguna línea — exactamente lo que se reportó.
+    //
+    // Pasa sobre todo desde que un viaje asignado por la central abre esta
+    // pantalla de inmediato: es justo cuando aún no hay primer punto de GPS.
+    // Mientras llega, se dibuja el trayecto del viaje (recojo → destino), que
+    // es información útil y no una línea inventada; en cuanto haya posición,
+    // el propio guard de `_polylines.isEmpty` vuelve a pedir la del recojo.
+    if (yendoAlRecojo && _currentLocation != null) {
+      origin = _currentLocation!;
       destination = pickupLatLng;
+      _rutaDibujadaSinGps = false;
     } else {
       origin = pickupLatLng;
       destination = destinationLatLng;
+      // Solo es "de reserva" si lo que faltaba era el GPS; ya en marcha, ésta
+      // es la ruta correcta y no hay que volver a cambiarla.
+      _rutaDibujadaSinGps = yendoAlRecojo;
+    }
+
+    // Un origen igual al destino no es una ruta: no se gasta la petición.
+    if (origin.latitude == destination.latitude &&
+        origin.longitude == destination.longitude) {
+      return;
     }
 
     final routePoints = await _getRoutePoints(origin, destination);
@@ -552,7 +606,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         double maxLng = routePoints.map((p) => p.longitude).reduce(math.max);
         _mapController!.animateCamera(
           CameraUpdate.newLatLngBounds(
-            LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)),
+            LatLngBounds(
+                southwest: LatLng(minLat, minLng),
+                northeast: LatLng(maxLat, maxLng)),
             60,
           ),
         );
@@ -563,7 +619,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   // Ronda 213 BUG FIX: antes llamaba Routes API v2 directo con key móvil
   // restringida → REQUEST_DENIED silencioso. Ahora va por MapsService
   // (proxy backend con cascada OSRM/Mapbox/Google, key oculta).
-  Future<List<LatLng>> _getRoutePoints(LatLng origin, LatLng destination) async {
+  Future<List<LatLng>> _getRoutePoints(
+      LatLng origin, LatLng destination) async {
     debugPrint('🚗 _getRoutePoints: from=$origin to=$destination');
     final route = await MapsService().getDirections(
       origin: origin,
@@ -583,9 +640,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     _waitingSeconds = 0;
     _waitingTimer?.cancel();
     _waitingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && !_isDisposed &&
+      if (mounted &&
+          !_isDisposed &&
           (_tripState == DriverTripState.arrivedAtPickup ||
-           _tripState == DriverTripState.waitingVerification)) {
+              _tripState == DriverTripState.waitingVerification)) {
         setState(() {
           _waitingSeconds++;
         });
@@ -621,7 +679,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Has llegado. Espera al pasajero y toca "Comenzó el viaje" cuando suba.'),
+            content: const Text(
+                'Has llegado. Espera al pasajero y toca "Comenzó el viaje" cuando suba.'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -655,7 +714,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                 color: AppColors.rappiOrange.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.verified_user, color: AppColors.rappiOrange),
+              child:
+                  const Icon(Icons.verified_user, color: AppColors.rappiOrange),
             ),
             const SizedBox(width: 12),
             const Text('Verificar Pasajero'),
@@ -690,7 +750,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.rappiOrange, width: 2),
+                    borderSide: const BorderSide(
+                        color: AppColors.rappiOrange, width: 2),
                   ),
                 ),
               ),
@@ -745,7 +806,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       });
       final tripData = _extractRide(response);
 
-      final passengerCode = tripData['passengerVerificationCode'] ?? tripData['verificationCode'];
+      final passengerCode =
+          tripData['passengerVerificationCode'] ?? tripData['verificationCode'];
 
       // ✅ FIX: Validar que el código no sea null antes de comparar
       if (passengerCode == null || passengerCode.toString().isEmpty) {
@@ -857,7 +919,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -885,9 +950,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     _waitingTimer = null;
 
     try {
-      await _api
-          .startRide(widget.tripId)
-          .timeout(const Duration(seconds: 15), onTimeout: () {
+      await _api.startRide(widget.tripId).timeout(const Duration(seconds: 15),
+          onTimeout: () {
         throw TimeoutException('Timeout iniciando viaje');
       });
 
@@ -905,7 +969,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error iniciando viaje')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error iniciando viaje')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -965,7 +1030,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error finalizando viaje')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error finalizando viaje')),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1008,60 +1074,62 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-            const SizedBox(height: 8),
-            Text(
-              'Ganancia: S/ ${finalFare.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: AppColors.rappiOrange,
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Resumen del viaje
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  _buildSummaryRow(Icons.location_on, 'Origen', _currentTrip?.pickupAddress ?? ''),
-                  const Divider(),
-                  _buildSummaryRow(Icons.flag, 'Destino', _currentTrip?.destinationAddress ?? ''),
-                  const Divider(),
-                  _buildSummaryRow(
-                    Icons.route,
-                    'Distancia',
-                    '${(_currentTrip?.estimatedDistance ?? 0).toStringAsFixed(1)} km',
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  // Mostrar diálogo de calificación
-                  _showRatingDialog();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.rappiOrange,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Calificar Pasajero',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const SizedBox(height: 8),
+              Text(
+                'Ganancia: S/ ${finalFare.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.rappiOrange,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              // Resumen del viaje
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    _buildSummaryRow(Icons.location_on, 'Origen',
+                        _currentTrip?.pickupAddress ?? ''),
+                    const Divider(),
+                    _buildSummaryRow(Icons.flag, 'Destino',
+                        _currentTrip?.destinationAddress ?? ''),
+                    const Divider(),
+                    _buildSummaryRow(
+                      Icons.route,
+                      'Distancia',
+                      '${(_currentTrip?.estimatedDistance ?? 0).toStringAsFixed(1)} km',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // Mostrar diálogo de calificación
+                    _showRatingDialog();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.rappiOrange,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Calificar Pasajero',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1083,7 +1151,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   label,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
                   ),
                 ),
                 Text(
@@ -1128,7 +1199,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             comment: comment,
           );
         } catch (e) {
-          debugPrint(userFriendlyError(e, fallback: 'Error calificando pasajero'));
+          debugPrint(
+              userFriendlyError(e, fallback: 'Error calificando pasajero'));
         }
 
         if (mounted) {
@@ -1152,7 +1224,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     if (phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Número de teléfono no disponible'), backgroundColor: AppColors.warning),
+          const SnackBar(
+              content: Text('Número de teléfono no disponible'),
+              backgroundColor: AppColors.warning),
         );
       }
       return;
@@ -1165,7 +1239,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         await launchUrl(uri);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se puede llamar desde este dispositivo'), backgroundColor: AppColors.warning),
+          const SnackBar(
+              content: Text('No se puede llamar desde este dispositivo'),
+              backgroundColor: AppColors.warning),
         );
       }
     } catch (e) {
@@ -1324,7 +1400,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                     children: [
                       _buildTopBar(),
                       if (_tripState == DriverTripState.arrivedAtPickup ||
-                          _tripState == DriverTripState.waitingVerification) ...[
+                          _tripState ==
+                              DriverTripState.waitingVerification) ...[
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                           child: _buildPassengerNotifiedBanner(),
@@ -1370,7 +1447,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                       icon: Icons.my_location,
                       onPressed: () {
                         setState(() => _isFollowingDriver = true);
-                        if (_mapController != null && _currentLocation != null) {
+                        if (_mapController != null &&
+                            _currentLocation != null) {
                           _mapController!.animateCamera(
                             CameraUpdate.newCameraPosition(CameraPosition(
                               target: _currentLocation!,
@@ -1403,7 +1481,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               Container(
                 color: Colors.black45,
                 child: Center(
-                  child: CircularProgressIndicator(color: AppColors.rappiOrange),
+                  child:
+                      CircularProgressIndicator(color: AppColors.rappiOrange),
                 ),
               ),
           ],
@@ -1440,7 +1519,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                       ),
                     ],
                   ),
-                  child: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context), size: 20),
+                  child: Icon(Icons.arrow_back,
+                      color: AppColors.getTextPrimary(context), size: 20),
                 ),
               ),
               const Spacer(),
@@ -1642,7 +1722,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     final passengerPhoto = _currentTrip?.passengerPhotoUrl ??
         _currentTrip?.vehicleInfo?['passengerPhoto'] as String?;
     final passengerRating =
-        (_currentTrip?.vehicleInfo?['passengerRating'] as num?)?.toDouble() ?? 0.0;
+        (_currentTrip?.vehicleInfo?['passengerRating'] as num?)?.toDouble() ??
+            0.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1776,7 +1857,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               const SizedBox(height: 8),
               // Payment method badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.ctaGreen.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -1947,7 +2029,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ),
       );
     } else if (_tripState == DriverTripState.arrivedAtPickup ||
-               _tripState == DriverTripState.waitingVerification) {
+        _tripState == DriverTripState.waitingVerification) {
       // State 2: waiting for passenger -> "Comenzó el viaje" (lime green)
       return SizedBox(
         width: double.infinity,
@@ -2104,7 +2186,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   static const List<Map<String, String>> _cancelReasons = [
     {'code': 'passenger_no_show', 'label': 'El pasajero no apareció'},
     {'code': 'passenger_request', 'label': 'El pasajero me pidió cancelar'},
-    {'code': 'passenger_wrong_address', 'label': 'Dirección incorrecta o inaccesible'},
+    {
+      'code': 'passenger_wrong_address',
+      'label': 'Dirección incorrecta o inaccesible'
+    },
     {'code': 'vehicle_issue', 'label': 'Problema con mi vehículo'},
     {'code': 'traffic_or_road', 'label': 'Vía bloqueada o tráfico extremo'},
     {'code': 'safety_concern', 'label': 'Motivo de seguridad'},
@@ -2124,7 +2209,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       builder: (sheetCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) => SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
-            20, 8, 20, MediaQuery.of(ctx).viewInsets.bottom + 20,
+            20,
+            8,
+            20,
+            MediaQuery.of(ctx).viewInsets.bottom + 20,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2148,13 +2236,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 20, color: Colors.amber.shade800),
+                    Icon(Icons.info_outline,
+                        size: 20, color: Colors.amber.shade800),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Cancelar un viaje aceptado tiene un descuento. '
                         'Revisaremos tu motivo y, si está justificado, te lo devolvemos.',
-                        style: TextStyle(fontSize: 12.5, color: Colors.amber.shade900),
+                        style: TextStyle(
+                            fontSize: 12.5, color: Colors.amber.shade900),
                       ),
                     ),
                   ],
@@ -2171,7 +2261,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                   children: _cancelReasons.map((r) {
                     return RadioListTile<String>(
                       value: r['code']!,
-                      title: Text(r['label']!, style: const TextStyle(fontSize: 14.5)),
+                      title: Text(r['label']!,
+                          style: const TextStyle(fontSize: 14.5)),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                       activeColor: AppColors.rappiRed,
@@ -2219,8 +2310,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                                 reasonCode: code,
                                 reason: detail.isNotEmpty
                                     ? detail
-                                    : _cancelReasons
-                                        .firstWhere((r) => r['code'] == code)['label'],
+                                    : _cancelReasons.firstWhere(
+                                        (r) => r['code'] == code)['label'],
                               );
                             },
                       style: ElevatedButton.styleFrom(
@@ -2246,10 +2337,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     try {
       final resp = await _api
           .cancelRide(
-            widget.tripId,
-            reason: reason ?? 'driver_cancelled',
-            reasonCode: reasonCode,
-          )
+        widget.tripId,
+        reason: reason ?? 'driver_cancelled',
+        reasonCode: reasonCode,
+      )
           .timeout(const Duration(seconds: 15), onTimeout: () {
         throw TimeoutException('Timeout cancelando viaje');
       });
@@ -2279,13 +2370,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             ),
           );
         }
-        Navigator.of(context).pushNamedAndRemoveUntil('/driver/home', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/driver/home', (route) => false);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error cancelando viaje')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error cancelando viaje')),
             backgroundColor: AppColors.error,
           ),
         );
