@@ -28,6 +28,21 @@
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false">
+
+        <!--
+          Ronda 284: el renderizador de mapas de Play Services todavía
+          referencia la librería Apache HTTP, que Android 9 sacó del classpath
+          por defecto. Sin esta línea la app se cierra al abrir el mapa con
+          "ClassNotFoundException: org.apache.http.ProtocolVersion", lanzado
+          desde MapsDynamite.apk — no desde nuestro código, lo que despista.
+
+          `required="false"` para que no impida instalar en dispositivos que
+          ya no la traen.
+        -->
+        <uses-library
+            android:name="org.apache.http.legacy"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
