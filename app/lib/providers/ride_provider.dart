@@ -143,7 +143,8 @@ class RideProvider with ChangeNotifier {
 
       debugPrint('🚗 Conductores encontrados: ${_nearbyDrivers.length}');
     } catch (e) {
-      _errorMessage = userFriendlyError(e, fallback: 'Error buscando conductores');
+      _errorMessage =
+          userFriendlyError(e, fallback: 'Error buscando conductores');
       debugPrint('❌ $e');
     }
 
@@ -265,6 +266,26 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      // Ronda 285: un 404 aquí significa que el viaje ya no existe, así que
+      // cancelarlo ya está hecho. Tratarlo como error dejaba al pasajero
+      // pegado a un viaje fantasma: `_currentTrip` seguía puesto, la pantalla
+      // de seguimiento seguía abierta y el botón de cancelar no iba a
+      // funcionar nunca, porque no había nada que cancelar.
+      final desaparecido = e is RapiApiException &&
+          (e.statusCode == 404 ||
+              e.code == 'not_found' ||
+              e.code == 'ride_not_found');
+      if (desaparecido) {
+        _currentTrip = null;
+        _tripStatus = TripStatus.cancelled;
+        _driverOffers.clear();
+        _autoTimeoutTimer?.cancel();
+        _autoTimeoutTimer = null;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+
       _errorMessage = userFriendlyError(e, fallback: 'Error cancelando viaje');
       debugPrint('❌ $e');
       _isLoading = false;
@@ -367,7 +388,8 @@ class RideProvider with ChangeNotifier {
       _updateTripStatus(_currentTrip!.status);
       notifyListeners();
     }).catchError((e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error refrescando viaje actual'));
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error refrescando viaje actual'));
     });
 
     // La suscripción global ya está viva desde el constructor. Nos aseguramos
@@ -393,7 +415,8 @@ class RideProvider with ChangeNotifier {
       _updateTripStatus(status);
       notifyListeners();
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error procesando ride_update SSE'));
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error procesando ride_update SSE'));
     }
   }
 
@@ -449,7 +472,10 @@ class RideProvider with ChangeNotifier {
     double deltaLngRad = (end.longitude - start.longitude) * pi / 180;
 
     double a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
-        cos(lat1Rad) * cos(lat2Rad) * sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+        cos(lat1Rad) *
+            cos(lat2Rad) *
+            sin(deltaLngRad / 2) *
+            sin(deltaLngRad / 2);
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
 
     return earthRadius * c;
@@ -636,7 +662,8 @@ class RideProvider with ChangeNotifier {
       debugPrint('✅ Ride aceptado y código del conductor generado: $tripId');
       return true;
     } catch (e) {
-      _errorMessage = userFriendlyError(e, fallback: 'Error generando código del conductor');
+      _errorMessage = userFriendlyError(e,
+          fallback: 'Error generando código del conductor');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error generando código del conductor: $e');
@@ -683,7 +710,8 @@ class RideProvider with ChangeNotifier {
       debugPrint('✅ Conductor verificó al pasajero correctamente: $tripId');
       return true;
     } catch (e) {
-      _errorMessage = userFriendlyError(e, fallback: 'Error verificando código del pasajero');
+      _errorMessage = userFriendlyError(e,
+          fallback: 'Error verificando código del pasajero');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error verificando código del pasajero: $e');
@@ -725,15 +753,15 @@ class RideProvider with ChangeNotifier {
       notifyListeners();
 
       if (tripStarted) {
-        debugPrint(
-            '✅ VERIFICACIÓN MUTUA COMPLETADA - Viaje iniciado: $tripId');
+        debugPrint('✅ VERIFICACIÓN MUTUA COMPLETADA - Viaje iniciado: $tripId');
       } else {
         debugPrint(
             '✅ Pasajero verificó al conductor - Esperando verificación del conductor: $tripId');
       }
       return true;
     } catch (e) {
-      _errorMessage = userFriendlyError(e, fallback: 'Error verificando código del conductor');
+      _errorMessage = userFriendlyError(e,
+          fallback: 'Error verificando código del conductor');
       _isLoading = false;
       notifyListeners();
       debugPrint('❌ Error verificando código del conductor: $e');
@@ -839,7 +867,8 @@ class RideProvider with ChangeNotifier {
       final rides = _extractRideList(response);
       return rides.map((r) => TripModel.fromJson(r)).toList();
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo historial de usuario'));
+      debugPrint(userFriendlyError(e,
+          fallback: 'Error obteniendo historial de usuario'));
       return [];
     }
   }
@@ -858,26 +887,24 @@ class RideProvider with ChangeNotifier {
         pageSize: 100,
       );
       final rides = _extractRideList(response);
-      List<TripModel> trips =
-          rides.map((r) => TripModel.fromJson(r)).toList();
+      List<TripModel> trips = rides.map((r) => TripModel.fromJson(r)).toList();
 
       if (startDate != null) {
         trips = trips
             .where((t) =>
-                t.completedAt != null &&
-                !t.completedAt!.isBefore(startDate))
+                t.completedAt != null && !t.completedAt!.isBefore(startDate))
             .toList();
       }
       if (endDate != null) {
         trips = trips
             .where((t) =>
-                t.completedAt != null &&
-                !t.completedAt!.isAfter(endDate))
+                t.completedAt != null && !t.completedAt!.isAfter(endDate))
             .toList();
       }
       return trips;
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error obteniendo historial del conductor'));
+      debugPrint(userFriendlyError(e,
+          fallback: 'Error obteniendo historial del conductor'));
       return [];
     }
   }
@@ -929,7 +956,8 @@ class RideProvider with ChangeNotifier {
       await searchNearbyDrivers(pickup, 5.0);
       debugPrint('🔄 Lista de conductores cercanos refrescada');
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error refrescando conductores cercanos'));
+      debugPrint(userFriendlyError(e,
+          fallback: 'Error refrescando conductores cercanos'));
     }
   }
 
@@ -972,10 +1000,13 @@ class RideProvider with ChangeNotifier {
         );
       }
 
-      debugPrint('Calificación actualizada: $rating estrellas para viaje $tripId');
+      debugPrint(
+          'Calificación actualizada: $rating estrellas para viaje $tripId');
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error actualizando calificación'));
-      _errorMessage = userFriendlyError(e, fallback: 'Error al guardar calificación');
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error actualizando calificación'));
+      _errorMessage =
+          userFriendlyError(e, fallback: 'Error al guardar calificación');
       rethrow;
     } finally {
       _isLoading = false;

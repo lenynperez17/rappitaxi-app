@@ -2374,6 +2374,37 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             .pushNamedAndRemoveUntil('/driver/home', (route) => false);
       }
     } catch (e) {
+      // Ronda 285: si el viaje ya no existe, salir en vez de encerrar.
+      //
+      // El servidor responde 404 cuando el viaje se borró o nunca llegó a
+      // existir, y la app enseñaba "Recurso no encontrado" y se quedaba en
+      // esta pantalla. Es la peor combinación posible: no hay viaje que
+      // cancelar, así que el botón NUNCA va a funcionar, y esta pantalla no
+      // tiene otra salida —el conductor se queda atrapado y solo escapa
+      // cerrando la app.
+      //
+      // Un 404 aquí es una buena noticia disfrazada: el viaje está cerrado.
+      // Se vuelve al inicio, que es donde habría acabado si la cancelación
+      // hubiera funcionado.
+      final desaparecido = e is RapiApiException &&
+          (e.statusCode == 404 ||
+              e.code == 'not_found' ||
+              e.code == 'ride_not_found');
+
+      if (mounted && desaparecido) {
+        _tripSubscription?.cancel();
+        _tripSubscription = null;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este viaje ya no está activo.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/driver/home', (route) => false);
+        return;
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
