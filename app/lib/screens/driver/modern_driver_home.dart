@@ -1546,7 +1546,25 @@ class _ModernDriverHomeScreenState extends State<ModernDriverHomeScreen>
         request: request,
         onAccept: () {
           Navigator.pop(ctx);
-          _makeOffer(request, request.offeredPrice);
+          // Ronda 285: en un pedido de la central, "Aceptar" tiene que
+          // aceptar de verdad.
+          //
+          // Aquí "Aceptar" no aceptaba: mandaba una oferta al precio
+          // publicado y se quedaba esperando a que el pasajero la
+          // confirmara desde su app (el flujo tipo InDrive). En un pedido
+          // telefónico ese pasajero no existe, así que el conductor se
+          // quedaba en la pantalla de espera hasta que fallaba, y el viaje
+          // seguía sin conductor con el cliente esperando al teléfono.
+          //
+          // `_acceptRequestLegacy` va por /api/rides/:id/accept, que asigna
+          // el viaje en el acto sin pedirle permiso a nadie. Se llamaba
+          // "legacy" por haber quedado fuera del flujo de negociación, pero
+          // para esto es exactamente lo correcto.
+          if (request.isManualOrder) {
+            _acceptRequestLegacy(request);
+          } else {
+            _makeOffer(request, request.offeredPrice);
+          }
         },
         onSkip: () {
           Navigator.pop(ctx);
@@ -4412,72 +4430,87 @@ class _RequestDetailBottomSheetState extends State<_RequestDetailBottomSheet> {
             ),
           ),
 
-          const SizedBox(height: 16),
+          // Ronda 285: un pedido telefónico no se negocia.
+          //
+          // La negociación es una conversación con el pasajero: el conductor
+          // propone precio y el pasajero acepta o rechaza DESDE SU APP. En un
+          // pedido que entra por la central no hay nadie al otro lado —el
+          // "pasajero" es una ficha que abre la operadora al coger el
+          // teléfono—, así que la contraoferta se quedaba esperando una
+          // respuesta que no iba a llegar nunca, y acababa en error.
+          //
+          // El precio ya lo acordó la operadora por teléfono. Aquí solo cabe
+          // tomarlo o dejarlo, y por eso se esconden las tarifas sugeridas y
+          // el lápiz: quitar la opción es mejor que dejarla y que falle.
+          if (!request.isManualOrder) ...[
+            const SizedBox(height: 16),
 
-          // Offer your fare
-          Center(
-              child: Text('Ofrece tu tarifa',
-                  style: TextStyle(
-                      fontSize: 15,
-                      color: AppColors.getTextSecondary(context)))),
-          const SizedBox(height: 10),
+            // Offer your fare
+            Center(
+                child: Text('Ofrece tu tarifa',
+                    style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.getTextSecondary(context)))),
+            const SizedBox(height: 10),
 
-          // Price pills + pencil
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              Expanded(
-                  child: SizedBox(
-                      height: 50,
-                      child: OutlinedButton(
-                          onPressed: () =>
-                              widget.onNegotiate(initialPrice: price1),
-                          style: OutlinedButton.styleFrom(
-                              foregroundColor:
-                                  AppColors.getTextPrimary(context),
-                              side: BorderSide(
-                                  color: AppColors.getBorder(context)),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12))),
-                          child: Text(widget.formatPrice(price1),
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600))))),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: SizedBox(
-                      height: 50,
-                      child: OutlinedButton(
-                          onPressed: () =>
-                              widget.onNegotiate(initialPrice: price2),
-                          style: OutlinedButton.styleFrom(
-                              foregroundColor:
-                                  AppColors.getTextPrimary(context),
-                              side: BorderSide(
-                                  color: AppColors.getBorder(context)),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12))),
-                          child: Text(widget.formatPrice(price2),
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600))))),
-              const SizedBox(width: 10),
-              SizedBox(
-                  height: 50,
-                  width: 60,
-                  child: OutlinedButton(
-                      onPressed: () => widget.onNegotiate(),
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.getTextPrimary(context),
-                          side: BorderSide(color: AppColors.getBorder(context)),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: EdgeInsets.zero),
-                      child: Icon(Icons.edit,
-                          size: 22,
-                          color: AppColors.getTextSecondary(context)))),
-            ]),
-          ),
+            // Price pills + pencil
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                Expanded(
+                    child: SizedBox(
+                        height: 50,
+                        child: OutlinedButton(
+                            onPressed: () =>
+                                widget.onNegotiate(initialPrice: price1),
+                            style: OutlinedButton.styleFrom(
+                                foregroundColor:
+                                    AppColors.getTextPrimary(context),
+                                side: BorderSide(
+                                    color: AppColors.getBorder(context)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12))),
+                            child: Text(widget.formatPrice(price1),
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600))))),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: SizedBox(
+                        height: 50,
+                        child: OutlinedButton(
+                            onPressed: () =>
+                                widget.onNegotiate(initialPrice: price2),
+                            style: OutlinedButton.styleFrom(
+                                foregroundColor:
+                                    AppColors.getTextPrimary(context),
+                                side: BorderSide(
+                                    color: AppColors.getBorder(context)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12))),
+                            child: Text(widget.formatPrice(price2),
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600))))),
+                const SizedBox(width: 10),
+                SizedBox(
+                    height: 50,
+                    width: 60,
+                    child: OutlinedButton(
+                        onPressed: () => widget.onNegotiate(),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.getTextPrimary(context),
+                            side:
+                                BorderSide(color: AppColors.getBorder(context)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            padding: EdgeInsets.zero),
+                        child: Icon(Icons.edit,
+                            size: 22,
+                            color: AppColors.getTextSecondary(context)))),
+              ]),
+            ),
+          ],
 
           const SizedBox(height: 12),
 

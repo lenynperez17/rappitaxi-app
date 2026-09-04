@@ -234,8 +234,13 @@ export async function POST(
       const rideRes = await client.query<{
         passenger_id: string | null
         status: string
+        es_central: boolean | null
+        estimated_fare: string | null
       }>(
-        'SELECT passenger_id, status FROM rides WHERE id = $1 FOR UPDATE',
+        `SELECT passenger_id, status,
+                (metadata->>'createdBy' = 'admin') AS es_central,
+                estimated_fare::text AS estimated_fare
+           FROM rides WHERE id = $1 FOR UPDATE`,
         [rideId],
       )
       const ride = rideRes.rows[0]
@@ -247,6 +252,98 @@ export async function POST(
       }
       if (ride.passenger_id === auth.userId) {
         throw { code: 'cannot_offer_own_ride', status: 403 }
+      }
+
+      // ---------------------------------------------------------------------
+      // Ronda 285: un pedido de la central se toma, no se negocia.
+      //
+      // Negociar es una conversación con el pasajero: el conductor propone y
+      // el pasajero acepta DESDE SU APP. En un viaje creado por la operadora
+      // no hay nadie al otro lado —el "pasajero" es una ficha que ella abre al
+      // coger el teléfono—, así que la oferta se quedaba en 'pending' para
+      // siempre. Y lo peor no era negociar: en esta app el botón "Aceptar"
+      // TAMBIÉN manda una oferta (al precio publicado), así que el conductor
+      // no podía ni siquiera coger el viaje. Se quedaba en la pantalla de
+      // "ofertando" hasta que el contador se agotaba, y el cliente esperando
+      // al teléfono a un coche que nadie podía aceptar.
+      //
+      // Se resuelve aquí, en el servidor, y no en la app, para que funcione
+      // con las versiones YA instaladas: en cuanto el viaje pasa a 'accepted'
+      // con su driver_id, el stream de eventos se lo manda al conductor y su
+      // app cierra el flujo sola ("Tu oferta fue aceptada").
+      // ---------------------------------------------------------------------
+      if (ride.es_central === true) {
+        const tarifa = ride.estimated_fare !== null ? Number(ride.estimated_fare) : null
+
+        // Si pide otro precio, no se puede: ese precio ya lo acordó la
+        // operadora con el cliente por teléfono y nadie puede aprobar un
+        // cambio. Se dice por qué, en vez de fallar sin explicación.
+        if (amount !== null && tarifa !== null && Math.abs(amount - tarifa) > 0.009) {
+          throw {
+            code: 'manual_order_not_negotiable',
+            status: 409,
+            // Corto a propósito: la app descarta cualquier mensaje de más de
+            // 120 caracteres y enseña uno genérico en su lugar
+            // (`utils/error_messages.dart`).
+            message: `Viaje de la central: el precio ya está acordado en S/ ${tarifa.toFixed(2)}. Acéptalo u omítelo.`,
+          }
+        }
+
+        // Mismo bloqueo antidoble-reserva que /rides/:id/accept: materializar
+        // la fila antes del FOR UPDATE, porque un conductor que nunca se puso
+        // en línea no la tiene y entonces el lock no bloquearía nada.
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, is_online, updated_at)
+           VALUES ($1, false, now())
+           ON CONFLICT (driver_id) DO NOTHING`,
+          [auth.userId],
+        )
+        const ocupadoRes = await client.query<{ active_ride_id: string | null }>(
+          `SELECT active_ride_id FROM driver_presence WHERE driver_id = $1 FOR UPDATE`,
+          [auth.userId],
+        )
+        const viajeActivo = ocupadoRes.rows[0]?.active_ride_id
+        if (viajeActivo && viajeActivo !== rideId) {
+          throw {
+            code: 'driver_busy',
+            status: 409,
+            message: 'Ya tienes un viaje en curso.',
+          }
+        }
+
+        await client.query(
+          `UPDATE rides
+              SET driver_id = $1, status = 'accepted', accepted_at = now()
+            WHERE id = $2`,
+          [auth.userId, rideId],
+        )
+        await client.query(
+          `INSERT INTO driver_presence (driver_id, active_ride_id, updated_at, last_heartbeat)
+           VALUES ($1, $2, now(), now())
+           ON CONFLICT (driver_id) DO UPDATE
+             SET active_ride_id = EXCLUDED.active_ride_id, updated_at = now()`,
+          [auth.userId, rideId],
+        )
+        // Que nadie más siga esperando respuesta a una oferta sobre un viaje
+        // que ya tiene conductor.
+        await client.query(
+          `UPDATE ride_offers SET status = 'expired', responded_at = now()
+            WHERE ride_id = $1 AND status = 'pending'`,
+          [rideId],
+        )
+        if (ride.passenger_id) {
+          await client.query(
+            `INSERT INTO notifications (user_id, type, title, body, data)
+             VALUES ($1, 'ride_accepted', $2, $3, $4::jsonb)`,
+            [
+              ride.passenger_id,
+              'Tu conductor está en camino',
+              'Un conductor aceptó tu viaje.',
+              JSON.stringify({ rideId, driverId: auth.userId }),
+            ],
+          )
+        }
+        return { autoAceptado: true as const }
       }
 
       // 4. UPSERT: UNIQUE(ride_id, driver_id) — si repite, UPDATE
@@ -308,6 +405,18 @@ export async function POST(
       return { offerId: offer.id, isNew: offer.is_new, createdAt: offer.created_at }
     })
 
+    // Ronda 285: el viaje de la central quedó aceptado dentro de la
+    // transacción. Se responde con éxito porque para el conductor lo es: la
+    // app enseña su pantalla de espera y, un par de segundos después, el
+    // stream le trae el `ride_update` con status 'accepted' y su driverId, que
+    // es lo que cierra el flujo y lo lleva al viaje.
+    if ('autoAceptado' in result) {
+      return NextResponse.json(
+        { success: true, autoAccepted: true, rideId, driverId: auth.userId },
+        { status: 200 },
+      )
+    }
+
     return NextResponse.json(
       {
         success: true,
@@ -325,12 +434,16 @@ export async function POST(
       { status: result.isNew ? 201 : 200 },
     )
   } catch (err) {
-    const e = err as { code?: string; status?: number; currentStatus?: string }
+    const e = err as { code?: string; status?: number; currentStatus?: string; message?: string }
     if (typeof e?.code === 'string' && typeof e?.status === 'number') {
       return NextResponse.json(
         {
           success: false,
           error: e.code,
+          // Ronda 285: dejar pasar el texto explicativo. Sin esto el conductor
+          // veía el código pelado ('manual_order_not_negotiable'), que no le
+          // dice nada; la app enseña `message` cuando viene.
+          ...(e.message ? { message: e.message } : {}),
           ...(e.currentStatus ? { currentStatus: e.currentStatus } : {}),
         },
         { status: e.status },
