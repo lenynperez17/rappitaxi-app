@@ -1,6 +1,7 @@
 Novedades de esta versión:
 
-- Tu cuenta solo puede estar abierta en un dispositivo a la vez. Al entrar desde otro teléfono, la sesión anterior se cierra y te avisa por qué. Antes, dos dispositivos con la misma cuenta se pisaban la ubicación y el conductor aparecía saltando de un punto a otro en el mapa.
-- Los conductores envían ahora la precisión y la velocidad del GPS mientras esperan viajes, así que su posición en el mapa es más fiable.
-- Corregida la velocidad que registraba la app: se guardaba en unidades equivocadas.
-- Simplificamos los tipos de cuenta: toda cuenta es de pasajero y pasa a conductor con el interruptor de modo.
+- Corregido un cierre inesperado de la app al abrir el mapa en Android.
+- El botón "Modo Conductor" del menú lateral ya no queda tapado por la barra de navegación del teléfono.
+- Lo mismo en la pantalla de seguimiento del viaje: los botones de abajo ya no quedan bajo la barra del sistema.
+- Cuando la central te asigna un viaje, ahora suena un aviso, te llega una notificación y la app te lleva directo al viaje. Antes podía no enterarte.
+- Las notificaciones vuelven a llegar aunque el teléfono cambie su identificador de avisos.

@@ -57,7 +57,16 @@ android {
     defaultConfig {
         applicationId "com.rapiteam.app"
         minSdkVersion 24
-        targetSdkVersion 35
+        // Ronda 284: 35 → 36 (Android 16). Google Play dejó de aceptar
+        // versiones nuevas con targetSdk 35 el 31 de agosto de 2026: el commit
+        // de la release se rechaza con 403 "Target SDK of artifact is too low".
+        // Por eso la 1.4.2 salió el 28 de agosto y la siguiente ya no.
+        //
+        // El cambio de comportamiento que más pesa —el dibujado de borde a
+        // borde obligatorio— ya venía impuesto desde el targetSdk 35, y los
+        // márgenes de las barras del sistema se acaban de corregir en esta
+        // misma ronda.
+        targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
