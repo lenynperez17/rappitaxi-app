@@ -33,6 +33,8 @@ interface AvailableRideRow {
   created_at: Date
   passenger_name: string | null
   passenger_photo_url: string | null
+  /** Ronda 285: lo creó un operador desde el panel, no el pasajero desde su app. */
+  from_panel: boolean | null
   distance_km: string
 }
 
@@ -122,6 +124,7 @@ export async function GET(req: NextRequest) {
             r.created_at,
             p.full_name AS passenger_name,
             p.profile_photo_url AS passenger_photo_url,
+            (r.metadata->>'createdBy' = 'admin') AS from_panel,
             haversine_km(r.pickup_lat, r.pickup_lng, $1::numeric, $2::numeric)::text AS distance_km
        FROM rides r
        LEFT JOIN users p ON p.id = r.passenger_id
@@ -129,7 +132,23 @@ export async function GET(req: NextRequest) {
         AND r.driver_id IS NULL
         AND r.pickup_lat IS NOT NULL
         AND r.pickup_lng IS NOT NULL
-        AND haversine_km(r.pickup_lat, r.pickup_lng, $1::numeric, $2::numeric) <= $3::numeric
+        -- Ronda 285: un viaje de la central se ve aunque quede lejos.
+        --
+        -- El aviso y la lista se contradecían. La ronda 284 quitó el límite de
+        -- distancia al NOTIFICAR los viajes creados desde el panel, pero esta
+        -- lista siguió recortando a los 10 km que pide la app. Resultado: al
+        -- conductor le sonaba el teléfono por un viaje que, al abrir la app,
+        -- no estaba en ninguna parte. Peor que no avisar, porque parece que la
+        -- app se traga las solicitudes.
+        --
+        -- Un viaje del panel lo pide alguien por teléfono a la central, y lo
+        -- que quiere quien atiende es que lo coja quien pueda, no quien esté
+        -- cerca. La cercanía la sigue decidiendo el radio para los viajes que
+        -- nacen en la app del pasajero, que son la mayoría.
+        AND (
+          haversine_km(r.pickup_lat, r.pickup_lng, $1::numeric, $2::numeric) <= $3::numeric
+          OR r.metadata->>'createdBy' = 'admin'
+        )
         AND NOT EXISTS (
               SELECT 1 FROM ride_offers o
                WHERE o.ride_id = r.id
@@ -137,7 +156,10 @@ export async function GET(req: NextRequest) {
                  AND o.status = 'rejected'
         )
         ${vehicleFilter}
-      ORDER BY haversine_km(r.pickup_lat, r.pickup_lng, $1::numeric, $2::numeric) ASC
+      -- Los de la central primero: pueden estar lejos, y ordenando solo por
+      -- distancia quedarían al final de la lista, que es donde no se miran.
+      ORDER BY (r.metadata->>'createdBy' = 'admin') DESC NULLS LAST,
+               haversine_km(r.pickup_lat, r.pickup_lng, $1::numeric, $2::numeric) ASC
       LIMIT $5`,
     params,
   )
@@ -165,6 +187,21 @@ export async function GET(req: NextRequest) {
       estimatedFare: r.estimated_fare !== null ? Number(r.estimated_fare) : null,
       paymentMethod: r.payment_method,
       vehicleType: r.vehicle_type,
+      // Ronda 285: la app lo pinta distinto — un viaje que entra por la
+      // central no se lo puede confundir el conductor con uno normal.
+      //
+      // Se llama `isManualOrder` porque es el nombre que la app ya usaba para
+      // esto: el modelo, el parseo y hasta el banner naranja "Pedido
+      // telefónico" existían desde hace rondas. Lo único que faltaba era que
+      // alguien mandara el dato. Estrenar un nombre nuevo habría dejado el
+      // widget muerto un poco más.
+      isManualOrder: r.from_panel === true,
+      // El nombre sí, el teléfono NO. Esta lista la ve cualquier conductor
+      // conectado ANTES de aceptar nada (ver el límite de peticiones de más
+      // arriba, puesto justo por eso), y repartir el móvil del cliente entre
+      // toda la flota por si alguno acepta es exactamente lo que ese límite
+      // intenta evitar. El teléfono llega al aceptar, que es cuando hace falta.
+      guestPassengerName: r.from_panel === true ? r.passenger_name : null,
       distanceKm: Number(r.distance_km),
       createdAt: r.created_at,
     })),

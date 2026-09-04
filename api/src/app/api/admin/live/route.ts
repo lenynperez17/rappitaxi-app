@@ -133,9 +133,23 @@ export async function GET(req: NextRequest) {
        JOIN users u ON u.id = dp.driver_id
        LEFT JOIN driver_ratings dr ON dr.rated_user_id = u.id
       WHERE dp.is_online = true
-        AND (dp.last_heartbeat IS NULL OR dp.last_heartbeat > NOW() - INTERVAL '5 minutes')
+        -- Ronda 285: "en línea" tiene que significar lo MISMO aquí que en el
+        -- reparto de viajes (findNearbyOnlineDrivers), y no lo significaba.
+        --
+        -- Este contador admitía last_heartbeat nulo y no exigía posición.
+        -- El reparto exige las dos cosas, porque a un conductor sin latido
+        -- reciente no se le puede ofrecer nada y sin coordenadas no se puede
+        -- medir la distancia. Resultado: el panel podía decir "En línea · 1"
+        -- mientras un viaje sin conductor no le llegaba a nadie, y las dos
+        -- cosas eran ciertas a la vez. Quien mira el panel concluye que el
+        -- reparto está roto cuando lo que falla es el contador.
+        --
+        -- Un conductor que nunca mandó un latido no está en línea: tiene el
+        -- interruptor puesto y la app cerrada.
+        AND dp.last_heartbeat > NOW() - INTERVAL '5 minutes'
+        AND dp.latitude IS NOT NULL AND dp.longitude IS NOT NULL
         AND u.deleted_at IS NULL
-      ORDER BY dp.last_heartbeat DESC NULLS LAST
+      ORDER BY dp.last_heartbeat DESC
       LIMIT 500`,
   )
 

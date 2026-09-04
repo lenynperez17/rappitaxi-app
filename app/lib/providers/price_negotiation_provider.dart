@@ -91,7 +91,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
       if (me != null) {
         final user = _unwrapUser(me);
         _cachedUserData = user;
-        _cachedUserId = (user['id'] ?? user['userId'] ?? user['uid'])?.toString();
+        _cachedUserId =
+            (user['id'] ?? user['userId'] ?? user['uid'])?.toString();
         return user;
       }
     } catch (e) {
@@ -106,7 +107,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
   /// @param isRoleSwitchInProgress - Si `true`, no iniciar (cambio de rol en curso).
   void startListeningToMyNegotiations({bool isRoleSwitchInProgress = false}) {
     if (isRoleSwitchInProgress) {
-      debugPrint('⚠️ Cambio de rol en progreso, no iniciar listener de pasajero');
+      debugPrint(
+          '⚠️ Cambio de rol en progreso, no iniciar listener de pasajero');
       return;
     }
 
@@ -225,7 +227,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
   /// @param isRoleSwitchInProgress - Si `true`, no iniciar (cambio de rol en curso).
   void startListeningToDriverRequests({bool isRoleSwitchInProgress = false}) {
     if (isRoleSwitchInProgress) {
-      debugPrint('⚠️ Cambio de rol en progreso, no iniciar listener de conductor');
+      debugPrint(
+          '⚠️ Cambio de rol en progreso, no iniciar listener de conductor');
       return;
     }
 
@@ -276,7 +279,11 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
       // Estados considerados "abiertos" para el flujo InDrive.
       const openStatuses = <String>{
-        'waiting', 'negotiating', 'requested', 'pending', 'accepted',
+        'waiting',
+        'negotiating',
+        'requested',
+        'pending',
+        'accepted',
       };
 
       final List<PriceNegotiation> next = [];
@@ -293,7 +300,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
         final negotiable = ride['negotiable'] == true ||
             ride['isNegotiable'] == true ||
             (rideMeta is Map &&
-                (rideMeta['negotiable'] == true || rideMeta['isNegotiable'] == true));
+                (rideMeta['negotiable'] == true ||
+                    rideMeta['isNegotiable'] == true));
 
         // Sólo negociables abiertas.
         if (!negotiable && status != 'accepted') continue;
@@ -317,8 +325,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
       // Mantener currentNegotiation sincronizado.
       if (_currentNegotiation != null) {
-        final idx =
-            _activeNegotiations.indexWhere((n) => n.id == _currentNegotiation!.id);
+        final idx = _activeNegotiations
+            .indexWhere((n) => n.id == _currentNegotiation!.id);
         if (idx >= 0) {
           _currentNegotiation = _activeNegotiations[idx];
         }
@@ -380,11 +388,15 @@ class PriceNegotiationProvider extends ChangeNotifier {
       final ride = _extractMap(response, keys: ['ride', 'data']) ?? response;
       final status = (ride['status'] ?? '').toString();
 
-      if (status == 'cancelled' || status == 'canceled' || status == 'completed') {
+      if (status == 'cancelled' ||
+          status == 'canceled' ||
+          status == 'completed') {
         debugPrint(
             '🔄 Viaje terminado ($status), removiendo negociación local: $negotiationId');
         _activeNegotiations.removeWhere((n) => n.id == negotiationId);
-        if (_currentNegotiation?.id == negotiationId) _currentNegotiation = null;
+        if (_currentNegotiation?.id == negotiationId) {
+          _currentNegotiation = null;
+        }
         notifyListeners();
         return true;
       }
@@ -473,8 +485,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
     final now = DateTime.now();
     return _activeNegotiations
         .where((n) =>
-            n.expiresAt.isAfter(now) &&
-            n.status != NegotiationStatus.cancelled)
+            n.expiresAt.isAfter(now) && n.status != NegotiationStatus.cancelled)
         .toList();
   }
 
@@ -511,6 +522,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
     String? knownUserName,
     String? knownUserPhone,
     String? knownUserPhoto,
+
     /// Ronda 280: el servicio elegido (express, ejecutivo, vip, minivan).
     /// Antes se quedaba en la pantalla del pasajero y solo afectaba al precio
     /// sugerido; el servidor nunca se enteraba y el conductor tampoco.
@@ -587,7 +599,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
         id: rideId,
         passengerId: userId,
         passengerName:
-            (userData['displayName'] ?? userData['name'] ?? 'Usuario').toString(),
+            (userData['displayName'] ?? userData['name'] ?? 'Usuario')
+                .toString(),
         passengerPhone: (userData['phone'] ?? '').toString(),
         passengerPhoto:
             (userData['photoUrl'] ?? userData['photoURL'] ?? '').toString(),
@@ -658,7 +671,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
         final negotiable = ride['negotiable'] == true ||
             ride['isNegotiable'] == true ||
             (rideMeta is Map &&
-                (rideMeta['negotiable'] == true || rideMeta['isNegotiable'] == true));
+                (rideMeta['negotiable'] == true ||
+                    rideMeta['isNegotiable'] == true));
         if (loc == null) {
           // Sin ubicación filtramos localmente por estado (listAvailableRides
           // ya lo hace en el server).
@@ -721,7 +735,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
 
       // 2) Compatibilidad: algunos endpoints anidan bajo location/position.
       if (lat == null || lng == null) {
-        final loc = _extractMap(status, keys: ['location', 'position', 'presence', 'driver']);
+        final loc = _extractMap(status,
+            keys: ['location', 'position', 'presence', 'driver']);
         if (loc != null) {
           lat ??= _toDouble(loc['lat']) ?? _toDouble(loc['latitude']);
           lng ??= _toDouble(loc['lng']) ?? _toDouble(loc['longitude']);
@@ -740,7 +755,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
   }
 
   // -------------------- Wallet check (conductor) --------------------
-  static const double minDriverBalance = 0.0; // Solo comisión 12% al completar viaje.
+  static const double minDriverBalance =
+      0.0; // Solo comisión 12% al completar viaje.
   double get minimumDriverBalance => minDriverBalance;
 
   /// Verifica si el conductor tiene saldo suficiente para operar.
@@ -749,7 +765,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
     // nada que verificar. Evita bloquear al conductor por una llamada de red.
     if (minDriverBalance <= 0) return true;
     try {
-      final balance = await _api.walletBalance().timeout(const Duration(seconds: 10));
+      final balance =
+          await _api.walletBalance().timeout(const Duration(seconds: 10));
       final credits = _toDouble(balance['serviceCredits']) ??
           _toDouble(balance['balance']) ??
           _toDouble(balance['available']) ??
@@ -763,7 +780,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
       // recarga incluido — cuando en realidad era un timeout de red. Ahora
       // fallamos ABIERTO: dejamos pasar y que el backend valide de verdad en
       // el POST de la oferta (que sí conoce el saldo real).
-      debugPrint('⚠️ No se pudo verificar saldo (se permite y valida el backend): $e');
+      debugPrint(
+          '⚠️ No se pudo verificar saldo (se permite y valida el backend): $e');
       return true;
     }
   }
@@ -777,8 +795,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
   /// depender de `_api.me()` que puede fallar temporalmente por JWT
   /// hipo, refresh en curso, red lenta, o session revocada tras
   /// login en otro device.
-  Future<String?> makeDriverOffer(
-      String negotiationId, double acceptedPrice,
+  Future<String?> makeDriverOffer(String negotiationId, double acceptedPrice,
       {String? knownUserId}) async {
     try {
       String? userId = knownUserId ?? await _getCurrentUserId();
@@ -800,8 +817,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('⚠️ No se pudo obtener perfil de conductor: $e');
       }
-      final vehicleData =
-          _extractMap(driverProfile, keys: ['vehicle']) ?? const <String, dynamic>{};
+      final vehicleData = _extractMap(driverProfile, keys: ['vehicle']) ??
+          const <String, dynamic>{};
 
       // Calcular ETA si tenemos ubicación del conductor y del ride.
       int estimatedArrival = 5;
@@ -838,18 +855,17 @@ class PriceNegotiationProvider extends ChangeNotifier {
         estimatedArrival: estimatedArrival,
         offeredAt: DateTime.now(),
         status: OfferStatus.pending,
-        completedTrips:
-            (driverProfile['completedTrips'] as num?)?.toInt() ?? 0,
+        completedTrips: (driverProfile['completedTrips'] as num?)?.toInt() ?? 0,
         acceptanceRate: _toDouble(driverProfile['acceptanceRate']) ?? 100.0,
       );
 
       final negIdx =
           _activeNegotiations.indexWhere((n) => n.id == negotiationId);
       if (negIdx != -1) {
-        final updated = List<DriverOffer>.from(
-            _activeNegotiations[negIdx].driverOffers)
-          ..removeWhere((o) => o.driverId == userId)
-          ..add(offer);
+        final updated =
+            List<DriverOffer>.from(_activeNegotiations[negIdx].driverOffers)
+              ..removeWhere((o) => o.driverId == userId)
+              ..add(offer);
         _activeNegotiations[negIdx] = _activeNegotiations[negIdx].copyWith(
           driverOffers: updated,
           status: NegotiationStatus.negotiating,
@@ -908,8 +924,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
       final updatedOffers = List<DriverOffer>.from(negotiation.driverOffers);
       for (int i = 0; i < updatedOffers.length; i++) {
         updatedOffers[i] = updatedOffers[i].copyWith(
-          status:
-              i == offerIndex ? OfferStatus.accepted : OfferStatus.rejected,
+          status: i == offerIndex ? OfferStatus.accepted : OfferStatus.rejected,
         );
       }
 
@@ -941,8 +956,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
   /// El backend no expone un endpoint por-oferta; la UX es que el pasajero
   /// simplemente esconde la oferta rechazada. La negociación sigue viva y
   /// otros conductores pueden seguir ofertando.
-  Future<void> rejectDriverOffer(
-      String negotiationId, String driverId) async {
+  Future<void> rejectDriverOffer(String negotiationId, String driverId) async {
     try {
       final negIndex =
           _activeNegotiations.indexWhere((n) => n.id == negotiationId);
@@ -959,8 +973,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
         final hasPending = updated.any((o) => o.status == OfferStatus.pending);
         _activeNegotiations[negIndex] = negotiation.copyWith(
           driverOffers: updated,
-          status:
-              hasPending ? negotiation.status : NegotiationStatus.waiting,
+          status: hasPending ? negotiation.status : NegotiationStatus.waiting,
         );
 
         if (_currentNegotiation?.id == negotiationId) {
@@ -997,7 +1010,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
   }
 
   String _formatVehicleModel(Map<String, dynamic> vehicleData) {
-    final marca = (vehicleData['brand'] ?? vehicleData['make'] ?? '').toString();
+    final marca =
+        (vehicleData['brand'] ?? vehicleData['make'] ?? '').toString();
     final modelo = (vehicleData['model'] ?? '').toString();
     final anio = (vehicleData['year'] ?? '').toString();
     if (marca.isNotEmpty && modelo.isNotEmpty) {
@@ -1067,7 +1081,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
     final pickupMap =
         _extractMap(ride, keys: ['pickup', 'pickupLocation']) ?? const {};
     final destMap =
-        _extractMap(ride, keys: ['destination', 'destinationLocation']) ?? const {};
+        _extractMap(ride, keys: ['destination', 'destinationLocation']) ??
+            const {};
 
     final pickupPoint = LocationPoint(
       latitude: _toDouble(pickupMap['latitude']) ??
@@ -1076,17 +1091,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
       longitude: _toDouble(pickupMap['longitude']) ??
           _toDouble(pickupMap['lng']) ??
           0.0,
-      address:
-          (pickupMap['address'] ?? ride['pickupAddress'] ?? '').toString(),
+      address: (pickupMap['address'] ?? ride['pickupAddress'] ?? '').toString(),
       reference: pickupMap['reference']?.toString(),
     );
     final destPoint = LocationPoint(
-      latitude: _toDouble(destMap['latitude']) ??
-          _toDouble(destMap['lat']) ??
-          0.0,
-      longitude: _toDouble(destMap['longitude']) ??
-          _toDouble(destMap['lng']) ??
-          0.0,
+      latitude:
+          _toDouble(destMap['latitude']) ?? _toDouble(destMap['lat']) ?? 0.0,
+      longitude:
+          _toDouble(destMap['longitude']) ?? _toDouble(destMap['lng']) ?? 0.0,
       address:
           (destMap['address'] ?? ride['destinationAddress'] ?? '').toString(),
       reference: destMap['reference']?.toString(),
@@ -1101,8 +1113,7 @@ class PriceNegotiationProvider extends ChangeNotifier {
           _extractMap(raw, keys: ['vehicle']) ?? const <String, dynamic>{};
 
       driverOffers.add(DriverOffer(
-        driverId:
-            (raw['driverId'] ?? rawDriver['id'] ?? '').toString(),
+        driverId: (raw['driverId'] ?? rawDriver['id'] ?? '').toString(),
         driverName: (raw['driverName'] ??
                 rawDriver['displayName'] ??
                 rawDriver['name'] ??
@@ -1121,9 +1132,8 @@ class PriceNegotiationProvider extends ChangeNotifier {
             (raw['vehiclePlate'] ?? rawVehicle['plate'] ?? '').toString(),
         vehicleColor:
             (raw['vehicleColor'] ?? rawVehicle['color'] ?? '').toString(),
-        acceptedPrice: _toDouble(raw['amount']) ??
-            _toDouble(raw['acceptedPrice']) ??
-            0.0,
+        acceptedPrice:
+            _toDouble(raw['amount']) ?? _toDouble(raw['acceptedPrice']) ?? 0.0,
         estimatedArrival: (raw['estimatedArrival'] as num?)?.toInt() ??
             ((raw['etaSeconds'] as num?) != null
                 ? ((raw['etaSeconds'] as num).toInt() / 60).round()
@@ -1238,6 +1248,17 @@ class PriceNegotiationProvider extends ChangeNotifier {
       appliedPromotionCode: ride['appliedPromotionCode']?.toString(),
       discountAmount: _toDouble(ride['discountAmount']),
       discountPercentage: _toDouble(ride['discountPercentage']),
+      // Ronda 285: sin esto el banner naranja "Pedido telefónico" no salía
+      // NUNCA en la lista de solicitudes.
+      //
+      // El widget existía, el modelo tenía el campo y la otra ruta (la del
+      // aviso push) sí lo rellenaba. Pero esta —la que construye la lista a
+      // partir de /api/rides/available, que es la que el conductor mira— se
+      // saltaba el campo, así que se quedaba en `false` por defecto y un
+      // pedido de la central se veía igual que cualquier otro.
+      isManualOrder: ride['isManualOrder'] == true,
+      guestPassengerName: ride['guestPassengerName']?.toString(),
+      guestPassengerPhone: ride['guestPassengerPhone']?.toString(),
     );
   }
 }

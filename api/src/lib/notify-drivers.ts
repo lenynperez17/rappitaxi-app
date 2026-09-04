@@ -23,6 +23,12 @@ interface RideOfferData {
   vehicleType: string | null
   /** Ronda 280: el servicio que pidió el pasajero (express, vip, minivan…). */
   serviceLabel?: string | null
+  /**
+   * Ronda 285: lo pidió alguien por teléfono a la central, no un pasajero
+   * desde su app. La app del conductor ya sabía pintarlo (banner naranja
+   * "Pedido telefónico"), pero nadie le mandaba el dato.
+   */
+  isManualOrder?: boolean
   paymentMethod: string | null
 }
 
@@ -171,6 +177,11 @@ export async function notifyRideOffer(
     // Ronda 280: el conductor cobraba la tarifa VIP sin enterarse de que le
     // habían pedido VIP. Ahora el servicio viaja con la solicitud.
     serviceLabel: ride.serviceLabel ?? null,
+    isManualOrder: ride.isManualOrder === true,
+    // El nombre viaja en `passenger.name`, que el banner ya sabe leer. El
+    // teléfono también va ahí desde siempre, y aquí sí es defendible: este
+    // aviso es para un conductor concreto al que se le está ofreciendo el
+    // viaje, no una lista pública como /rides/available.
     paymentMethod: ride.paymentMethod,
     createdAt: new Date().toISOString(),
   }

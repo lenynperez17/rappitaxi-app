@@ -442,6 +442,9 @@ export async function POST(req: NextRequest) {
         passengerName: passenger?.full_name ?? null,
         passengerPhone: passenger?.phone ?? null,
         vehicleType: canonicalVehicleType,
+        // Ronda 285: este viaje nace en la central, y el conductor tiene que
+        // verlo distinto de una solicitud normal de la app.
+        isManualOrder: true,
         paymentMethod: body.paymentMethod ?? null,
       })
     }
