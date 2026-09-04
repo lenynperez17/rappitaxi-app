@@ -699,7 +699,14 @@ class PriceNegotiationProvider extends ChangeNotifier {
         if (negotiation.expiresAt.isBefore(now)) continue;
 
         // Si tenemos ubicación y el server no filtró por radio, filtrar aquí.
-        if (loc != null) {
+        //
+        // Ronda 285: los pedidos de la central NO se recortan por distancia.
+        // El servidor los devuelve a propósito sin límite (los pide alguien
+        // por teléfono y los coge quien pueda, no quien esté más cerca), y
+        // este filtro los volvía a tirar ya dentro del teléfono. El conductor
+        // recibía el aviso, abría la app y no había nada: el viaje había
+        // llegado hasta aquí y lo descartaba la propia app en la última línea.
+        if (loc != null && !negotiation.isManualOrder) {
           final distanceKm = _calculateHaversineDistance(
             loc,
             _locationPointToLatLng(negotiation.pickup),

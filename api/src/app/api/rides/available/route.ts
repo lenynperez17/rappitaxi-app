@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-middleware'
 import { maybeOne, query } from '@/lib/db'
 import { keyedRateLimit } from '@/lib/rate-limit'
-import { expireStaleRides } from '@/lib/expire-stale-rides'
+import { expireStaleRides, MINUTOS_SIN_CONDUCTOR } from '@/lib/expire-stale-rides'
 
 export const runtime = 'nodejs'
 
@@ -204,6 +204,16 @@ export async function GET(req: NextRequest) {
       guestPassengerName: r.from_panel === true ? r.passenger_name : null,
       distanceKm: Number(r.distance_km),
       createdAt: r.created_at,
+      // Ronda 285: decirle a la app CUÁNDO caduca, en vez de que se lo invente.
+      //
+      // Sin este campo la app aplicaba su fallback de "creado + 5 minutos",
+      // mientras el servidor la mantiene ofrecible 15. Diez minutos en los que
+      // el viaje seguía vivo, seguía saliendo en el panel y ningún conductor
+      // lo veía ya en su lista. Ahora manda el servidor, que es quien la
+      // caduca de verdad.
+      expiresAt: new Date(
+        new Date(r.created_at).getTime() + MINUTOS_SIN_CONDUCTOR * 60_000,
+      ).toISOString(),
     })),
     center: { lat, lng },
     radiusKm,

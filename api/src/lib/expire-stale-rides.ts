@@ -47,7 +47,7 @@ import { query } from '@/lib/db'
  * Corto a propósito: el pasajero está mirando la pantalla. Quince minutos ya
  * es mucho más de lo que nadie espera con el móvil en la mano.
  */
-const MINUTOS_SIN_CONDUCTOR = 15
+export const MINUTOS_SIN_CONDUCTOR = 15
 
 /**
  * Horas que puede durar un viaje aceptado antes de considerarlo abandonado.
