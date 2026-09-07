@@ -14,7 +14,9 @@ import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
 import '../../utils/document_storage_scope.dart';
+import '../../core/utils/photo_picker.dart';
 import '../../services/app_config_service.dart';
+
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
 
@@ -28,50 +30,50 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
-  
+
   // Documents data
   List<DocumentInfo> _documents = [];
   bool _isLoading = true;
   String _overallStatus = 'pending';
 
-  // API cliente y pickers
+  // API cliente (las fotos van por PhotoPicker)
   final RapiApiClient _api = RapiApiClient.instance;
-  final ImagePicker _picker = ImagePicker();
-  
+
   @override
   void initState() {
     super.initState();
-    
+    _recoverLostPhoto();
+
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _slideController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
     );
-    
+
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeIn,
     );
-    
+
     _slideAnimation = CurvedAnimation(
       parent: _slideController,
       curve: Curves.easeOut,
     );
-    
+
     _loadDocuments();
   }
-  
+
   @override
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
     super.dispose();
   }
-  
+
   /// Ronda 279: el catálogo que el administrador mantiene en el panel, si llegó.
   ///
   /// Devuelve `null` —y no una lista vacía— cuando el servidor no dijo nada,
@@ -95,7 +97,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   /// esta pantalla. Por eso se deduce aquí y no viaja en el catálogo — al
   /// servidor no le importa cómo se pintan.
   static DocumentCategory _categoriaDe(String code) {
-    if (code.startsWith('dni') || code == 'selfie') return DocumentCategory.identity;
+    if (code.startsWith('dni') || code == 'selfie') {
+      return DocumentCategory.identity;
+    }
     if (code.startsWith('license')) return DocumentCategory.license;
     if (code == 'soat') return DocumentCategory.insurance;
     if (code == 'criminal_record') return DocumentCategory.background;
@@ -116,17 +120,63 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       // backend Node, no con los IDs legacy Firebase
       // (license/id_card/insurance) que jamás matcheaban → 0/7 aprobados
       // aunque hubiera 9 approved en DB.
-      final requiredDocTypes = _docTypesFromConfig() ?? {
-        'dni_front':          {'name': 'DNI (frente)',                 'description': 'Documento Nacional de Identidad — cara frontal',   'category': DocumentCategory.identity, 'required': true},
-        'dni_back':           {'name': 'DNI (reverso)',                'description': 'Documento Nacional de Identidad — cara posterior', 'category': DocumentCategory.identity, 'required': true},
-        'license_front':      {'name': 'Licencia (frente)',            'description': 'Licencia de conducir vigente — cara frontal',      'category': DocumentCategory.license,  'required': true},
-        'license_back':       {'name': 'Licencia (reverso)',           'description': 'Licencia de conducir vigente — cara posterior',    'category': DocumentCategory.license,  'required': true},
-        'soat':               {'name': 'SOAT vigente',                 'description': 'Seguro Obligatorio de Accidentes de Tránsito',     'category': DocumentCategory.insurance,'required': true},
-        'tarjeta_propiedad':  {'name': 'Tarjeta de propiedad (frente)','description': 'Registro vehicular — cara frontal',                'category': DocumentCategory.vehicle,  'required': false},
-        'ownership':          {'name': 'Tarjeta de propiedad (reverso)','description': 'Registro vehicular — cara posterior',             'category': DocumentCategory.vehicle,  'required': false},
-        'selfie':              {'name': 'Selfie del conductor',         'description': 'Foto de rostro para verificación',                 'category': DocumentCategory.identity, 'required': false},
-        'vehicle_photo':      {'name': 'Foto del vehículo',            'description': 'Foto del vehículo que usarás',                     'category': DocumentCategory.vehicle,  'required': false},
-      };
+      final requiredDocTypes = _docTypesFromConfig() ??
+          {
+            'dni_front': {
+              'name': 'DNI (frente)',
+              'description': 'Documento Nacional de Identidad — cara frontal',
+              'category': DocumentCategory.identity,
+              'required': true
+            },
+            'dni_back': {
+              'name': 'DNI (reverso)',
+              'description': 'Documento Nacional de Identidad — cara posterior',
+              'category': DocumentCategory.identity,
+              'required': true
+            },
+            'license_front': {
+              'name': 'Licencia (frente)',
+              'description': 'Licencia de conducir vigente — cara frontal',
+              'category': DocumentCategory.license,
+              'required': true
+            },
+            'license_back': {
+              'name': 'Licencia (reverso)',
+              'description': 'Licencia de conducir vigente — cara posterior',
+              'category': DocumentCategory.license,
+              'required': true
+            },
+            'soat': {
+              'name': 'SOAT vigente',
+              'description': 'Seguro Obligatorio de Accidentes de Tránsito',
+              'category': DocumentCategory.insurance,
+              'required': true
+            },
+            'tarjeta_propiedad': {
+              'name': 'Tarjeta de propiedad (frente)',
+              'description': 'Registro vehicular — cara frontal',
+              'category': DocumentCategory.vehicle,
+              'required': false
+            },
+            'ownership': {
+              'name': 'Tarjeta de propiedad (reverso)',
+              'description': 'Registro vehicular — cara posterior',
+              'category': DocumentCategory.vehicle,
+              'required': false
+            },
+            'selfie': {
+              'name': 'Selfie del conductor',
+              'description': 'Foto de rostro para verificación',
+              'category': DocumentCategory.identity,
+              'required': false
+            },
+            'vehicle_photo': {
+              'name': 'Foto del vehículo',
+              'description': 'Foto del vehículo que usarás',
+              'category': DocumentCategory.vehicle,
+              'required': false
+            },
+          };
 
       // Cargar documentos subidos desde el backend Node
       final resp = await _api.myDocuments();
@@ -157,16 +207,16 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           // Ronda 251: el backend envía `expiresAt` (documents/route.ts:61),
           // no `expiryDate` — así que la fecha de vencimiento de TODOS los
           // documentos salía vacía y ninguno se marcaba como "por vencer".
-          final expiryRaw = (data['expiresAt'] ??
-                  data['expiryDate'] ??
-                  data['expires_at'])
-              ?.toString();
+          final expiryRaw =
+              (data['expiresAt'] ?? data['expiryDate'] ?? data['expires_at'])
+                  ?.toString();
           if (expiryRaw != null && expiryRaw.isNotEmpty) {
             expiryDate = DateTime.tryParse(expiryRaw);
           }
 
           DateTime? uploadDate;
-          final uploadRaw = (data['uploadedAt'] ?? data['uploadDate'])?.toString();
+          final uploadRaw =
+              (data['uploadedAt'] ?? data['uploadDate'])?.toString();
           if (uploadRaw != null && uploadRaw.isNotEmpty) {
             uploadDate = DateTime.tryParse(uploadRaw);
           }
@@ -179,7 +229,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             case 'verified':
               status = DocumentStatus.approved;
               if (expiryDate != null) {
-                final daysUntilExpiry = expiryDate.difference(DateTime.now()).inDays;
+                final daysUntilExpiry =
+                    expiryDate.difference(DateTime.now()).inDays;
                 if (daysUntilExpiry <= 30 && daysUntilExpiry > 0) {
                   status = DocumentStatus.expiring;
                 } else if (daysUntilExpiry <= 0) {
@@ -236,41 +287,43 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         _slideController.forward();
       }
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al cargar documentos'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al cargar documentos'));
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al cargar documentos')),
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al cargar documentos')),
             backgroundColor: ModernTheme.error,
           ),
         );
       }
     }
   }
-  
+
   String _calculateOverallStatus() {
     final required = _documents.where((d) => d.isRequired);
-    
+
     if (required.any((d) => d.status == DocumentStatus.rejected)) {
       return 'rejected';
     }
-    
+
     if (required.any((d) => d.status == DocumentStatus.missing)) {
       return 'incomplete';
     }
-    
+
     if (required.any((d) => d.status == DocumentStatus.pending)) {
       return 'pending';
     }
-    
+
     if (required.any((d) => d.status == DocumentStatus.expiring)) {
       return 'expiring';
     }
-    
+
     return 'approved';
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -302,7 +355,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       body: _isLoading ? _buildLoadingState() : _buildDocumentsList(),
     );
   }
-  
+
   Widget _buildLoadingState() {
     return Center(
       child: Column(
@@ -322,12 +375,14 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   Widget _buildDocumentsList() {
     // UI: Progress circular de completitud arriba del checklist
-    final approvedCount = _documents.where((d) => d.status == DocumentStatus.approved).length;
+    final approvedCount =
+        _documents.where((d) => d.status == DocumentStatus.approved).length;
     final totalCount = _documents.length;
-    final completionProgress = totalCount > 0 ? approvedCount / totalCount : 0.0;
+    final completionProgress =
+        totalCount > 0 ? approvedCount / totalCount : 0.0;
 
     return AnimatedBuilder(
       animation: _fadeAnimation,
@@ -339,7 +394,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               children: [
                 // UI: Progress circular de completitud
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
                   color: Theme.of(context).colorScheme.surface,
                   child: Row(
                     children: [
@@ -352,8 +408,10 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                             child: CircularProgressIndicator(
                               value: completionProgress,
                               strokeWidth: 7,
-                              backgroundColor: ModernTheme.rappiOrange.withValues(alpha: 0.15),
-                              valueColor: AlwaysStoppedAnimation<Color>(ModernTheme.rappiOrange),
+                              backgroundColor: ModernTheme.rappiOrange
+                                  .withValues(alpha: 0.15),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  ModernTheme.rappiOrange),
                             ),
                           ),
                           Text(
@@ -382,15 +440,18 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                             const SizedBox(height: 4),
                             Text(
                               '$approvedCount de $totalCount documentos aprobados',
-                              style: TextStyle(fontSize: 13, color: context.secondaryText),
+                              style: TextStyle(
+                                  fontSize: 13, color: context.secondaryText),
                             ),
                             const SizedBox(height: 8),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(4),
                               child: LinearProgressIndicator(
                                 value: completionProgress,
-                                backgroundColor: ModernTheme.rappiOrange.withValues(alpha: 0.15),
-                                valueColor: AlwaysStoppedAnimation<Color>(ModernTheme.rappiOrange),
+                                backgroundColor: ModernTheme.rappiOrange
+                                    .withValues(alpha: 0.15),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    ModernTheme.rappiOrange),
                                 minHeight: 6,
                               ),
                             ),
@@ -418,7 +479,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       },
     );
   }
-  
+
   Widget _buildStatusOverview() {
     return AnimatedBuilder(
       animation: _slideAnimation,
@@ -473,7 +534,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                           Text(
                             _getStatusDescription(),
                             style: TextStyle(
-                              color: context.surfaceColor.withValues(alpha: 0.7),
+                              color:
+                                  context.surfaceColor.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
                             maxLines: 2,
@@ -517,11 +579,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       },
     );
   }
-  
+
   Widget _buildStatItem(String label, String value, IconData icon) {
     return Column(
       children: [
-        Icon(icon, color: context.surfaceColor.withValues(alpha: 0.7), size: 16),
+        Icon(icon,
+            color: context.surfaceColor.withValues(alpha: 0.7), size: 16),
         SizedBox(height: 4),
         Text(
           value,
@@ -541,7 +604,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ],
     );
   }
-  
+
   Widget _buildDocumentsSection() {
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 16),
@@ -576,8 +639,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               CurvedAnimation(
                 parent: _slideController,
                 curve: Interval(
-                  animationStart,  // ✅ Garantizado entre 0.0 y 0.7
-                  animationEnd,    // ✅ Garantizado entre 0.0 y 1.0
+                  animationStart, // ✅ Garantizado entre 0.0 y 0.7
+                  animationEnd, // ✅ Garantizado entre 0.0 y 1.0
                   curve: Curves.easeOutBack,
                 ),
               ),
@@ -589,7 +652,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 return Transform.translate(
                   offset: Offset(50 * (1 - animation.value.clamp(0.0, 1.0)), 0),
                   child: Opacity(
-                    opacity: animation.value.clamp(0.0, 1.0),  // ✅ Garantizar opacity válido
+                    opacity: animation.value
+                        .clamp(0.0, 1.0), // ✅ Garantizar opacity válido
                     child: _buildDocumentCard(document),
                   ),
                 );
@@ -600,7 +664,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   Widget _buildDocumentCard(DocumentInfo document) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
@@ -609,7 +673,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: ModernTheme.getCardShadow(context),
         border: Border.all(
-          color: _getDocumentStatusColor(document.status).withValues(alpha: 0.3),
+          color:
+              _getDocumentStatusColor(document.status).withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -626,7 +691,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   Container(
                     padding: EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _getDocumentStatusColor(document.status).withValues(alpha: 0.1),
+                      color: _getDocumentStatusColor(document.status)
+                          .withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -659,7 +725,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: ModernTheme.error.withValues(alpha: 0.1),
+                                  color:
+                                      ModernTheme.error.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
@@ -687,7 +754,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getDocumentStatusColor(document.status).withValues(alpha: 0.1),
+                      color: _getDocumentStatusColor(document.status)
+                          .withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -701,13 +769,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   ),
                 ],
               ),
-              
               if (document.status != DocumentStatus.missing) ...[
                 SizedBox(height: 12),
                 Row(
                   children: [
                     if (document.uploadDate != null) ...[
-                      Icon(Icons.upload, size: 14, color: context.secondaryText),
+                      Icon(Icons.upload,
+                          size: 14, color: context.secondaryText),
                       SizedBox(width: 4),
                       Text(
                         'Subido: ${_formatDate(document.uploadDate!)}',
@@ -740,7 +808,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   ],
                 ),
               ],
-              
               if (document.rejectionReason != null) ...[
                 SizedBox(height: 12),
                 Container(
@@ -755,7 +822,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.error_outline, color: ModernTheme.error, size: 16),
+                      Icon(Icons.error_outline,
+                          color: ModernTheme.error, size: 16),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -770,7 +838,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   ),
                 ),
               ],
-              
               SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -782,14 +849,17 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                       onPressed: () => _uploadDocument(document),
                       icon: Icon(Icons.cloud_upload, size: 16),
                       label: Text(
-                        document.status == DocumentStatus.missing ? 'Subir' : 'Actualizar',
+                        document.status == DocumentStatus.missing
+                            ? 'Subir'
+                            : 'Actualizar',
                         style: TextStyle(fontSize: 12),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ModernTheme.rappiOrange,
                         foregroundColor: context.surfaceColor,
                         elevation: 0,
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
                     ),
                   if (document.fileUrl != null) ...[
@@ -800,7 +870,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                       label: Text('Ver', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ModernTheme.primaryBlue,
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
                     ),
                   ],
@@ -812,7 +883,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   Widget _buildActionsSection() {
     return Container(
       margin: EdgeInsets.all(16),
@@ -854,7 +925,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   Color _getStatusColor() {
     switch (_overallStatus) {
       case 'approved':
@@ -870,7 +941,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return context.secondaryText;
     }
   }
-  
+
   LinearGradient _getStatusGradient() {
     final color = _getStatusColor();
     return LinearGradient(
@@ -879,7 +950,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       end: Alignment.bottomRight,
     );
   }
-  
+
   IconData _getStatusIcon() {
     switch (_overallStatus) {
       case 'approved':
@@ -895,7 +966,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return Icons.description;
     }
   }
-  
+
   String _getStatusTitle() {
     switch (_overallStatus) {
       case 'approved':
@@ -912,7 +983,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return 'Estado de Documentos';
     }
   }
-  
+
   String _getStatusDescription() {
     switch (_overallStatus) {
       case 'approved':
@@ -929,7 +1000,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return 'Revisa el estado de tus documentos';
     }
   }
-  
+
   Color _getDocumentStatusColor(DocumentStatus status) {
     switch (status) {
       case DocumentStatus.approved:
@@ -944,7 +1015,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return context.secondaryText;
     }
   }
-  
+
   String _getDocumentStatusText(DocumentStatus status) {
     switch (status) {
       case DocumentStatus.approved:
@@ -959,7 +1030,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return 'Faltante';
     }
   }
-  
+
   IconData _getDocumentIcon(DocumentCategory category) {
     switch (category) {
       case DocumentCategory.license:
@@ -976,17 +1047,17 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return Icons.account_balance;
     }
   }
-  
+
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
   }
-  
+
   void _viewDocument(DocumentInfo document) {
     if (document.fileUrl == null) {
       _uploadDocument(document);
       return;
     }
-    
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1033,21 +1104,25 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   child: Container(
                     width: double.infinity,
                     color: context.surfaceColor,
-                    child: (document.fileUrl != null && document.fileUrl!.isNotEmpty)
+                    child: (document.fileUrl != null &&
+                            document.fileUrl!.isNotEmpty)
                         ? Image.network(
                             document.fileUrl!.startsWith('http')
                                 ? document.fileUrl!
                                 : '${RapiApiClient.baseUrl}${document.fileUrl}',
                             headers: {
-                              if (RapiApiClient.instance.currentAccessToken != null)
-                                'Authorization': 'Bearer ${RapiApiClient.instance.currentAccessToken}',
+                              if (RapiApiClient.instance.currentAccessToken !=
+                                  null)
+                                'Authorization':
+                                    'Bearer ${RapiApiClient.instance.currentAccessToken}',
                             },
                             fit: BoxFit.contain,
                             loadingBuilder: (ctx, child, progress) {
                               if (progress == null) return child;
                               return SizedBox(
                                 height: 200,
-                                child: Center(child: CircularProgressIndicator()),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
                               );
                             },
                             errorBuilder: (ctx, e, s) => SizedBox(
@@ -1055,10 +1130,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.broken_image, size: 48, color: context.secondaryText),
+                                  Icon(Icons.broken_image,
+                                      size: 48, color: context.secondaryText),
                                   SizedBox(height: 8),
                                   Text('No se pudo cargar la imagen',
-                                      style: TextStyle(color: context.secondaryText)),
+                                      style: TextStyle(
+                                          color: context.secondaryText)),
                                 ],
                               ),
                             ),
@@ -1068,10 +1145,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.image_outlined, size: 48, color: context.secondaryText),
+                                Icon(Icons.image_outlined,
+                                    size: 48, color: context.secondaryText),
                                 SizedBox(height: 8),
                                 Text('Sin documento subido',
-                                    style: TextStyle(color: context.secondaryText)),
+                                    style: TextStyle(
+                                        color: context.secondaryText)),
                               ],
                             ),
                           ),
@@ -1116,7 +1195,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   void _uploadDocument(DocumentInfo document) {
     showResponsiveBottomSheet(
       context: context,
@@ -1216,81 +1295,125 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
-  Future<void> _pickFromCamera(DocumentInfo document) async {
+
+  /// Ronda 286: la foto que se estaba tomando cuando Android mató la app con
+  /// la cámara abierta. Se comprueba al abrir la pantalla; casi siempre no
+  /// hay nada y cuesta una lectura de preferencias. Ver [PhotoPicker].
+  Future<void> _recoverLostPhoto() async {
+    final lost = await PhotoPicker.recover(prefix: 'documents.');
+    if (lost == null || !mounted) return;
+    if (_documents.isEmpty) await _loadDocuments();
+    if (!mounted) return;
+    final document = _documents.where((d) => d.id == lost.name).firstOrNull;
+    if (document == null) {
+      AppLogger.warning(
+          'Foto recuperada de un documento desconocido: ${lost.name}');
+      return;
+    }
     try {
-      // ✅ Capturar imagen desde la cámara usando image_picker
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
-
-      if (image == null) {
-        // Usuario canceló
-        return;
-      }
-
-      // Mostrar indicador de carga
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.surfaceColor)),
-                SizedBox(width: 16),
-                Text('Subiendo documento...'),
-              ],
-            ),
-            duration: Duration(seconds: 30),
-            backgroundColor: ModernTheme.info,
-          ),
-        );
-      }
-
-      // Subir archivo al backend Node y registrar el documento
-      final file = File(image.path);
-      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
-      final fileUrl = uploaded['url']?.toString() ?? '';
-      if (fileUrl.isEmpty) {
-        throw Exception('El servidor no devolvió URL del archivo');
-      }
-      await _api.uploadDocument(docType: document.id, fileUrl: fileUrl);
-
-      await _loadDocuments();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Documento capturado y subido exitosamente'),
-            backgroundColor: ModernTheme.success,
-          ),
-        );
-      }
+      await _uploadCaptured(
+          lost.file, document, 'Documento recuperado y subido');
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al capturar desde cámara'));
+      AppLogger.error(userFriendlyError(e,
+          fallback: 'Error al subir documento recuperado'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
       }
     }
   }
-  
+
+  /// Sube [image] como [document] y refresca la lista. Lanza si algo falla:
+  /// quien llama decide cómo contarlo.
+  Future<void> _uploadCaptured(
+      XFile image, DocumentInfo document, String successMessage) async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: context.surfaceColor)),
+              SizedBox(width: 16),
+              Text('Subiendo documento...'),
+            ],
+          ),
+          duration: Duration(seconds: 30),
+          backgroundColor: ModernTheme.info,
+        ),
+      );
+    }
+
+    // Subir archivo al backend Node y registrar el documento
+    final file = File(image.path);
+    final uploaded = await _api.uploadFile(
+        file: file, scope: storageScopeForDocType(document.id));
+    final fileUrl = uploaded['url']?.toString() ?? '';
+    if (fileUrl.isEmpty) {
+      throw Exception('El servidor no devolvió URL del archivo');
+    }
+    await _api.uploadDocument(docType: document.id, fileUrl: fileUrl);
+
+    await _loadDocuments();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(successMessage),
+          backgroundColor: ModernTheme.success,
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickFromCamera(DocumentInfo document) async {
+    try {
+      // Ronda 286: por PhotoPicker, que apunta qué documento se estaba
+      // fotografiando para recuperarlo si Android mata la app con la
+      // cámara abierta (ver `_recoverLostPhoto`).
+      final XFile? image = await PhotoPicker.pick(
+        source: ImageSource.camera,
+        target: 'documents.${document.id}',
+      );
+
+      if (image == null) {
+        // Usuario canceló
+        return;
+      }
+
+      await _uploadCaptured(
+          image, document, 'Documento capturado y subido exitosamente');
+    } catch (e) {
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al capturar desde cámara'));
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al subir documento')),
+            backgroundColor: ModernTheme.error,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickFromGallery(DocumentInfo document) async {
     try {
-      // ✅ Seleccionar imagen desde la galería usando image_picker
-      final XFile? image = await _picker.pickImage(
+      final XFile? image = await PhotoPicker.pick(
         source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        target: 'documents.${document.id}',
       );
 
       if (image == null) {
@@ -1304,7 +1427,11 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           SnackBar(
             content: Row(
               children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.surfaceColor)),
+                SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: context.surfaceColor)),
                 SizedBox(width: 16),
                 Text('Subiendo documento...'),
               ],
@@ -1317,7 +1444,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Subir archivo al backend Node y registrar el documento
       final file = File(image.path);
-      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
+      final uploaded = await _api.uploadFile(
+          file: file, scope: storageScopeForDocType(document.id));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');
@@ -1336,25 +1464,32 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar desde galería'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al seleccionar desde galería'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
       }
     }
   }
-  
+
   Future<void> _pickFromFiles(DocumentInfo document) async {
     try {
       // ✅ Seleccionar archivo usando file_picker (soporta PDF, imágenes, documentos)
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'], // Permitir PDFs e imágenes
+        allowedExtensions: [
+          'pdf',
+          'jpg',
+          'jpeg',
+          'png'
+        ], // Permitir PDFs e imágenes
         allowMultiple: false,
       );
 
@@ -1387,7 +1522,11 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           SnackBar(
             content: Row(
               children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.surfaceColor)),
+                SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: context.surfaceColor)),
                 SizedBox(width: 16),
                 Text('Subiendo documento...'),
               ],
@@ -1400,7 +1539,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Subir archivo al backend Node y registrar el documento
       final file = File(pickedFile.path!);
-      final uploaded = await _api.uploadFile(file: file, scope: storageScopeForDocType(document.id));
+      final uploaded = await _api.uploadFile(
+          file: file, scope: storageScopeForDocType(document.id));
       final fileUrl = uploaded['url']?.toString() ?? '';
       if (fileUrl.isEmpty) {
         throw Exception('El servidor no devolvió URL del archivo');
@@ -1419,19 +1559,21 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         );
       }
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar archivo'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al seleccionar archivo'));
       if (mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al subir documento')),
+            content: Text(
+                userFriendlyError(e, fallback: 'Error al subir documento')),
             backgroundColor: ModernTheme.error,
           ),
         );
       }
     }
   }
-  
+
   Future<void> _downloadDocument(DocumentInfo document) async {
     // ✅ Verificar que el widget esté montado antes de usar context
     if (!mounted) return;
@@ -1456,7 +1598,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 height: 16,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(context.surfaceColor),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(context.surfaceColor),
                 ),
               ),
               SizedBox(width: 16),
@@ -1490,7 +1633,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               Icon(Icons.check_circle, color: context.surfaceColor),
               SizedBox(width: 12),
               Expanded(
-                child: Text('Documento abierto. Puedes descargarlo desde el visor.'),
+                child: Text(
+                    'Documento abierto. Puedes descargarlo desde el visor.'),
               ),
             ],
           ),
@@ -1499,26 +1643,30 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         ),
       );
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al abrir documento'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al abrir documento'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'Error al abrir el documento')),
+          content: Text(
+              userFriendlyError(e, fallback: 'Error al abrir el documento')),
           backgroundColor: ModernTheme.error,
           duration: Duration(seconds: 4),
         ),
       );
     }
   }
-  
+
   void _uploadAllDocuments() {
     // ✅ Verificar que el widget esté montado antes de usar context
     if (!mounted) return;
 
     final missingDocs = _documents.where((d) =>
-        d.isRequired && (d.status == DocumentStatus.missing || d.status == DocumentStatus.rejected));
+        d.isRequired &&
+        (d.status == DocumentStatus.missing ||
+            d.status == DocumentStatus.rejected));
 
     if (missingDocs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1529,7 +1677,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       );
       return;
     }
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1544,9 +1692,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             Text('Documentos pendientes:'),
             SizedBox(height: 8),
             ...missingDocs.map((doc) => Padding(
-              padding: EdgeInsets.symmetric(vertical: 2),
-              child: Text('• ${doc.name}'),
-            )),
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: Text('• ${doc.name}'),
+                )),
           ],
         ),
         actions: [
@@ -1568,7 +1716,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   void _bulkUploadDocuments(List<DocumentInfo> documents) {
     // ✅ Verificar que el widget esté montado antes de usar context
     if (!mounted) return;
@@ -1590,7 +1738,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       });
     }
   }
-  
+
   Future<void> _downloadTemplate() async {
     // ✅ Verificar que el widget esté montado antes de usar context
     if (!mounted) return;
@@ -1627,7 +1775,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       content.writeln('         CONDUCTORES RAPI TEAM');
       content.writeln('═══════════════════════════════════════════');
       content.writeln('');
-      content.writeln('Fecha de generación: ${DateTime.now().toString().substring(0, 16)}');
+      content.writeln(
+          'Fecha de generación: ${DateTime.now().toString().substring(0, 16)}');
       content.writeln('');
       content.writeln('DOCUMENTOS OBLIGATORIOS:');
       content.writeln('');
@@ -1637,10 +1786,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         content.writeln('$index. ${doc.name}');
         content.writeln('   Estado: ${_getStatusTextForDownload(doc.status)}');
         if (doc.expiryDate != null) {
-          content.writeln('   Vencimiento: ${doc.expiryDate!.toString().substring(0, 10)}');
+          content.writeln(
+              '   Vencimiento: ${doc.expiryDate!.toString().substring(0, 10)}');
         }
         if (doc.uploadDate != null) {
-          content.writeln('   Subido: ${doc.uploadDate!.toString().substring(0, 10)}');
+          content.writeln(
+              '   Subido: ${doc.uploadDate!.toString().substring(0, 10)}');
         }
         content.writeln('');
         index++;
@@ -1664,7 +1815,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Crear archivo temporal
       final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/documentos_requeridos_rappiteam.txt');
+      final file =
+          File('${directory.path}/documentos_requeridos_rappiteam.txt');
       await file.writeAsString(content.toString());
 
       if (!mounted) return;
@@ -1689,7 +1841,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               Icon(Icons.check_circle, color: context.surfaceColor),
               SizedBox(width: 12),
               Expanded(
-                child: Text('Lista generada. Puedes guardarla en tu dispositivo.'),
+                child:
+                    Text('Lista generada. Puedes guardarla en tu dispositivo.'),
               ),
             ],
           ),
@@ -1698,13 +1851,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         ),
       );
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al generar lista de documentos'));
+      AppLogger.error(userFriendlyError(e,
+          fallback: 'Error al generar lista de documentos'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'Error al generar la lista')),
+          content:
+              Text(userFriendlyError(e, fallback: 'Error al generar la lista')),
           backgroundColor: ModernTheme.error,
           duration: Duration(seconds: 4),
         ),
@@ -1726,7 +1881,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return 'Faltante - Debe subirse';
     }
   }
-  
+
   void _showDocumentInfo() {
     // ✅ Verificar que el widget esté montado antes de usar context
     if (!mounted) return;
@@ -1760,18 +1915,30 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
-              _buildInfoItem(Icons.check_circle, 'Aprobado', 'El documento fue verificado y aceptado', ModernTheme.success),
-              _buildInfoItem(Icons.schedule, 'Pendiente', 'El documento está siendo revisado', ModernTheme.warning),
-              _buildInfoItem(Icons.error, 'Rechazado', 'El documento fue rechazado y debe ser actualizado', ModernTheme.error),
-              _buildInfoItem(Icons.warning, 'Por vencer', 'El documento está próximo a vencer', ModernTheme.warning),
-              _buildInfoItem(Icons.description, 'Faltante', 'El documento no ha sido subido', context.secondaryText),
+              _buildInfoItem(
+                  Icons.check_circle,
+                  'Aprobado',
+                  'El documento fue verificado y aceptado',
+                  ModernTheme.success),
+              _buildInfoItem(Icons.schedule, 'Pendiente',
+                  'El documento está siendo revisado', ModernTheme.warning),
+              _buildInfoItem(
+                  Icons.error,
+                  'Rechazado',
+                  'El documento fue rechazado y debe ser actualizado',
+                  ModernTheme.error),
+              _buildInfoItem(Icons.warning, 'Por vencer',
+                  'El documento está próximo a vencer', ModernTheme.warning),
+              _buildInfoItem(Icons.description, 'Faltante',
+                  'El documento no ha sido subido', context.secondaryText),
               SizedBox(height: 16),
               Text(
                 'Consejos:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
-              Text('• Asegúrate de que los documentos sean legibles y estén vigentes'),
+              Text(
+                  '• Asegúrate de que los documentos sean legibles y estén vigentes'),
               Text('• Usa buena iluminación al tomar las fotos'),
               Text('• Evita documentos borrosos o con reflejos'),
               Text('• Mantén tus documentos actualizados'),
@@ -1790,8 +1957,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
-  Widget _buildInfoItem(IconData icon, String title, String description, Color color) {
+
+  Widget _buildInfoItem(
+      IconData icon, String title, String description, Color color) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1824,7 +1992,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
     );
   }
-  
+
   void _refreshDocuments() {
     // ✅ Verificar que el widget esté montado antes de usar setState
     if (!mounted) return;
@@ -1846,7 +2014,7 @@ class DocumentInfo {
   final bool isRequired;
   final DocumentCategory category;
   final String? rejectionReason;
-  
+
   DocumentInfo({
     required this.id,
     required this.name,

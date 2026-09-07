@@ -9,12 +9,14 @@ import '../../core/theme/modern_theme.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 import '../../core/utils/currency_formatter.dart';
+import '../../core/utils/photo_picker.dart';
 import 'documents_screen.dart';
 import 'earnings_withdrawal_screen.dart';
 
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
 import '../../services/app_config_service.dart';
+
 class DriverProfileScreen extends StatefulWidget {
   const DriverProfileScreen({super.key});
 
@@ -33,18 +35,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   DriverProfile? _profile;
   bool _isLoading = true;
 
-  // ImagePicker para foto de perfil (upload va por RapiApiClient)
-  final ImagePicker _picker = ImagePicker();
+  // La foto de perfil va por PhotoPicker; la subida por RapiApiClient
   final RapiApiClient _api = RapiApiClient.instance;
 
   // ID del usuario autenticado (obtenido del backend Node)
   String? _authUserId;
 
   // ✅ FLAGS DE EDICIÓN INLINE PARA CADA SECCIÓN
-  bool _isEditingPersonal = false;  // Información Personal
-  bool _isEditingVehicle = false;   // Información del Vehículo
+  bool _isEditingPersonal = false; // Información Personal
+  bool _isEditingVehicle = false; // Información del Vehículo
   bool _isEditingPreferences = false; // Preferencias
-  bool _isEditingSchedule = false;  // Horario de Trabajo
+  bool _isEditingSchedule = false; // Horario de Trabajo
 
   // ✅ NUEVO: Documentos del conductor
   Map<String, String>? _documents;
@@ -59,8 +60,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _emergencyContactController = TextEditingController();
-  final TextEditingController _emergencyPhoneController = TextEditingController();
+  final TextEditingController _emergencyContactController =
+      TextEditingController();
+  final TextEditingController _emergencyPhoneController =
+      TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
   // ✅ CONTROLADORES - INFORMACIÓN DEL VEHÍCULO
@@ -81,42 +84,71 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
   // ✅ VARIABLES DE ESTADO - HORARIO DE TRABAJO
   Map<String, Map<String, dynamic>> _weekSchedule = {
-    'Lunes': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': true},
-    'Martes': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': true},
-    'Miércoles': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': true},
-    'Jueves': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': true},
-    'Viernes': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': true},
-    'Sábado': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': false},
-    'Domingo': {'start': TimeOfDay(hour: 8, minute: 0), 'end': TimeOfDay(hour: 18, minute: 0), 'active': false},
+    'Lunes': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': true
+    },
+    'Martes': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': true
+    },
+    'Miércoles': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': true
+    },
+    'Jueves': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': true
+    },
+    'Viernes': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': true
+    },
+    'Sábado': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': false
+    },
+    'Domingo': {
+      'start': TimeOfDay(hour: 8, minute: 0),
+      'end': TimeOfDay(hour: 18, minute: 0),
+      'active': false
+    },
   };
 
   @override
   void initState() {
     super.initState();
-    
+    _recoverLostPhoto();
+
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _slideController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
     );
-    
+
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeIn,
     );
-    
+
     _slideAnimation = CurvedAnimation(
       parent: _slideController,
       curve: Curves.easeOut,
     );
-    
+
     _loadProfile();
   }
-  
+
   @override
   void dispose() {
     // Animación
@@ -141,7 +173,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
     super.dispose();
   }
-  
+
   // Cargar perfil real desde el backend Node (RapiApiClient)
   Future<void> _loadProfile() async {
     try {
@@ -164,7 +196,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       try {
         driverProfileData = await _api.myDriverProfile();
       } catch (e) {
-        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo cargar driver profile'));
+        AppLogger.warning(
+            userFriendlyError(e, fallback: 'No se pudo cargar driver profile'));
       }
 
       // Estadísticas desde /api/rides (viajes completados como conductor)
@@ -179,7 +212,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           status: 'completed',
           pageSize: 100,
         );
-        final rides = ridesResp['rides'] ?? ridesResp['items'] ?? ridesResp['data'];
+        final rides =
+            ridesResp['rides'] ?? ridesResp['items'] ?? ridesResp['data'];
         if (rides is List) {
           totalTripsCount = rides.length;
           for (final r in rides.whereType<Map>()) {
@@ -194,24 +228,31 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               final startedAt = DateTime.tryParse(startedRaw);
               final completedAt = DateTime.tryParse(completedRaw);
               if (startedAt != null && completedAt != null) {
-                totalHours += completedAt.difference(startedAt).inMinutes / 60.0;
+                totalHours +=
+                    completedAt.difference(startedAt).inMinutes / 60.0;
               }
             }
           }
         }
       } catch (e) {
-        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudieron cargar estadísticas de rides'));
+        AppLogger.warning(userFriendlyError(e,
+            fallback: 'No se pudieron cargar estadísticas de rides'));
         totalTripsCount = (userData['totalTrips'] as num?)?.toInt() ?? 0;
         totalEarnings = (userData['totalEarnings'] as num?)?.toDouble() ?? 0.0;
       }
 
       // Extraer datos ricos del perfil (vienen en driverProfile o en user)
-      final richProfile = (userData['driverProfile'] as Map<String, dynamic>?) ??
-          driverProfileData;
-      final emergencyContactData = richProfile['emergencyContact'] as Map<String, dynamic>?;
-      final preferencesData = richProfile['preferences'] as Map<String, dynamic>?;
-      final vehicleInfoData = (richProfile['vehicle'] ?? richProfile['vehicleInfo']) as Map<String, dynamic>?;
-      final workScheduleData = richProfile['workSchedule'] as Map<String, dynamic>?;
+      final richProfile =
+          (userData['driverProfile'] as Map<String, dynamic>?) ??
+              driverProfileData;
+      final emergencyContactData =
+          richProfile['emergencyContact'] as Map<String, dynamic>?;
+      final preferencesData =
+          richProfile['preferences'] as Map<String, dynamic>?;
+      final vehicleInfoData = (richProfile['vehicle'] ??
+          richProfile['vehicleInfo']) as Map<String, dynamic>?;
+      final workScheduleData =
+          richProfile['workSchedule'] as Map<String, dynamic>?;
 
       // Documentos del conductor (vienen como lista en /api/drivers/me/documents)
       try {
@@ -229,7 +270,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           _documents = map;
         }
       } catch (e) {
-        AppLogger.warning(userFriendlyError(e, fallback: 'No se pudieron cargar documentos'));
+        AppLogger.warning(
+            userFriendlyError(e, fallback: 'No se pudieron cargar documentos'));
       }
 
       // Ronda 235: catálogo de logros con progreso real. Bloqueados hasta
@@ -239,178 +281,190 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         totalTrips: totalTripsCount,
         rating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
         totalEarnings: totalEarnings,
-        memberSince: DateTime.tryParse((userData['createdAt'] ?? '').toString()) ?? DateTime.now(),
+        memberSince:
+            DateTime.tryParse((userData['createdAt'] ?? '').toString()) ??
+                DateTime.now(),
       );
 
       if (mounted) {
         setState(() {
           _profile = DriverProfile(
             id: userId,
-          name: (userData['fullName'] ?? '') as String,
-          email: (userData['email'] ?? '') as String,
-          phone: (userData['phone'] ?? '') as String,
-          profileImageUrl: (userData['profilePhotoUrl'] ?? '') as String,
-          rating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
-          totalTrips: totalTripsCount,
-          totalDistance: totalDistance,
-          totalHours: totalHours,
-          totalEarnings: totalEarnings,
-          memberSince: DateTime.tryParse((userData['createdAt'] ?? '').toString()) ?? DateTime.now(),
-          bio: userData['bio'] ?? '',
-          emergencyContact: EmergencyContact(
-            name: emergencyContactData?['name'] ?? '',
-            phone: emergencyContactData?['phone'] ?? '',
-            relationship: emergencyContactData?['relationship'] ?? '',
-          ),
-          // Ronda 235: defaults sensatos cuando el backend aún no envía
-          // preferencias. Antes todo era false/vacío → sección "Preferencias"
-          // se veía como si el driver no hubiera configurado nada.
-          preferences: DriverPreferences(
-            acceptPets: preferencesData?['acceptPets'] ?? true,
-            acceptSmoking: preferencesData?['acceptSmoking'] ?? false,
-            musicPreference: preferencesData?['musicPreference'] ?? 'A gusto del pasajero',
-            languages: (preferencesData?['languages'] as List<dynamic>?)?.cast<String>() ?? const ['Español'],
-            maxTripDistance: ((preferencesData?['maxTripDistance'] ?? 50.0) as num).toDouble().clamp(5.0, 100.0),
-            preferredZones: (preferencesData?['preferredZones'] as List<dynamic>?)?.cast<String>() ?? const ['Lima Metropolitana'],
-          ),
-          achievements: achievementsList,
-          vehicleInfo: VehicleInfo(
-            make: (vehicleInfoData?['make'] ?? vehicleInfoData?['brand'] ?? '') as String,
-            model: (vehicleInfoData?['model'] ?? '') as String,
-            year: (vehicleInfoData?['year'] as num?)?.toInt() ?? 0,
-            color: (vehicleInfoData?['color'] ?? '') as String,
-            plate: (vehicleInfoData?['plate'] ?? '') as String,
-            capacity: (vehicleInfoData?['capacity'] as num?)?.toInt() ?? (vehicleInfoData?['seats'] as num?)?.toInt() ?? 4,
-          ),
-          // Ronda 235: horario por defecto 08:00-20:00 lun-sab, 09:00-18:00
-          // domingo. Antes 00:00-00:00 se leía como "no trabaja ningún día"
-          // y no había manera de saber que era default vacío.
-          workSchedule: WorkSchedule(
-            mondayStart: workScheduleData?['mondayStart'] ?? '08:00',
-            mondayEnd: workScheduleData?['mondayEnd'] ?? '20:00',
-            tuesdayStart: workScheduleData?['tuesdayStart'] ?? '08:00',
-            tuesdayEnd: workScheduleData?['tuesdayEnd'] ?? '20:00',
-            wednesdayStart: workScheduleData?['wednesdayStart'] ?? '08:00',
-            wednesdayEnd: workScheduleData?['wednesdayEnd'] ?? '20:00',
-            thursdayStart: workScheduleData?['thursdayStart'] ?? '08:00',
-            thursdayEnd: workScheduleData?['thursdayEnd'] ?? '20:00',
-            fridayStart: workScheduleData?['fridayStart'] ?? '08:00',
-            fridayEnd: workScheduleData?['fridayEnd'] ?? '20:00',
-            saturdayStart: workScheduleData?['saturdayStart'] ?? '08:00',
-            saturdayEnd: workScheduleData?['saturdayEnd'] ?? '20:00',
-            sundayStart: workScheduleData?['sundayStart'] ?? '09:00',
-            sundayEnd: workScheduleData?['sundayEnd'] ?? '18:00',
-          ),
-        );
-        _isLoading = false;
+            name: (userData['fullName'] ?? '') as String,
+            email: (userData['email'] ?? '') as String,
+            phone: (userData['phone'] ?? '') as String,
+            profileImageUrl: (userData['profilePhotoUrl'] ?? '') as String,
+            rating: (userData['rating'] as num?)?.toDouble() ?? 5.0,
+            totalTrips: totalTripsCount,
+            totalDistance: totalDistance,
+            totalHours: totalHours,
+            totalEarnings: totalEarnings,
+            memberSince:
+                DateTime.tryParse((userData['createdAt'] ?? '').toString()) ??
+                    DateTime.now(),
+            bio: userData['bio'] ?? '',
+            emergencyContact: EmergencyContact(
+              name: emergencyContactData?['name'] ?? '',
+              phone: emergencyContactData?['phone'] ?? '',
+              relationship: emergencyContactData?['relationship'] ?? '',
+            ),
+            // Ronda 235: defaults sensatos cuando el backend aún no envía
+            // preferencias. Antes todo era false/vacío → sección "Preferencias"
+            // se veía como si el driver no hubiera configurado nada.
+            preferences: DriverPreferences(
+              acceptPets: preferencesData?['acceptPets'] ?? true,
+              acceptSmoking: preferencesData?['acceptSmoking'] ?? false,
+              musicPreference:
+                  preferencesData?['musicPreference'] ?? 'A gusto del pasajero',
+              languages: (preferencesData?['languages'] as List<dynamic>?)
+                      ?.cast<String>() ??
+                  const ['Español'],
+              maxTripDistance:
+                  ((preferencesData?['maxTripDistance'] ?? 50.0) as num)
+                      .toDouble()
+                      .clamp(5.0, 100.0),
+              preferredZones:
+                  (preferencesData?['preferredZones'] as List<dynamic>?)
+                          ?.cast<String>() ??
+                      const ['Lima Metropolitana'],
+            ),
+            achievements: achievementsList,
+            vehicleInfo: VehicleInfo(
+              make: (vehicleInfoData?['make'] ??
+                  vehicleInfoData?['brand'] ??
+                  '') as String,
+              model: (vehicleInfoData?['model'] ?? '') as String,
+              year: (vehicleInfoData?['year'] as num?)?.toInt() ?? 0,
+              color: (vehicleInfoData?['color'] ?? '') as String,
+              plate: (vehicleInfoData?['plate'] ?? '') as String,
+              capacity: (vehicleInfoData?['capacity'] as num?)?.toInt() ??
+                  (vehicleInfoData?['seats'] as num?)?.toInt() ??
+                  4,
+            ),
+            // Ronda 235: horario por defecto 08:00-20:00 lun-sab, 09:00-18:00
+            // domingo. Antes 00:00-00:00 se leía como "no trabaja ningún día"
+            // y no había manera de saber que era default vacío.
+            workSchedule: WorkSchedule(
+              mondayStart: workScheduleData?['mondayStart'] ?? '08:00',
+              mondayEnd: workScheduleData?['mondayEnd'] ?? '20:00',
+              tuesdayStart: workScheduleData?['tuesdayStart'] ?? '08:00',
+              tuesdayEnd: workScheduleData?['tuesdayEnd'] ?? '20:00',
+              wednesdayStart: workScheduleData?['wednesdayStart'] ?? '08:00',
+              wednesdayEnd: workScheduleData?['wednesdayEnd'] ?? '20:00',
+              thursdayStart: workScheduleData?['thursdayStart'] ?? '08:00',
+              thursdayEnd: workScheduleData?['thursdayEnd'] ?? '20:00',
+              fridayStart: workScheduleData?['fridayStart'] ?? '08:00',
+              fridayEnd: workScheduleData?['fridayEnd'] ?? '20:00',
+              saturdayStart: workScheduleData?['saturdayStart'] ?? '08:00',
+              saturdayEnd: workScheduleData?['saturdayEnd'] ?? '20:00',
+              sundayStart: workScheduleData?['sundayStart'] ?? '09:00',
+              sundayEnd: workScheduleData?['sundayEnd'] ?? '18:00',
+            ),
+          );
+          _isLoading = false;
 
-        // ✅ Inicializar controladores - Información Personal
-        _nameController.text = _profile!.name;
-        _phoneController.text = _profile!.phone;
-        _emailController.text = _profile!.email;
-        _emergencyContactController.text = _profile!.emergencyContact.name;
-        _emergencyPhoneController.text = _profile!.emergencyContact.phone;
-        _bioController.text = _profile!.bio;
+          // ✅ Inicializar controladores - Información Personal
+          _nameController.text = _profile!.name;
+          _phoneController.text = _profile!.phone;
+          _emailController.text = _profile!.email;
+          _emergencyContactController.text = _profile!.emergencyContact.name;
+          _emergencyPhoneController.text = _profile!.emergencyContact.phone;
+          _bioController.text = _profile!.bio;
 
-        // ✅ Inicializar controladores - Información del Vehículo
-        _makeController.text = _profile!.vehicleInfo.make;
-        _modelController.text = _profile!.vehicleInfo.model;
-        _yearController.text = '${_profile!.vehicleInfo.year}';
-        _colorController.text = _profile!.vehicleInfo.color;
-        _plateController.text = _profile!.vehicleInfo.plate;
-        _capacityController.text = '${_profile!.vehicleInfo.capacity}';
+          // ✅ Inicializar controladores - Información del Vehículo
+          _makeController.text = _profile!.vehicleInfo.make;
+          _modelController.text = _profile!.vehicleInfo.model;
+          _yearController.text = '${_profile!.vehicleInfo.year}';
+          _colorController.text = _profile!.vehicleInfo.color;
+          _plateController.text = _profile!.vehicleInfo.plate;
+          _capacityController.text = '${_profile!.vehicleInfo.capacity}';
 
-        // ✅ Inicializar variables de estado - Preferencias
-        _acceptPets = _profile!.preferences.acceptPets;
-        _acceptSmoking = _profile!.preferences.acceptSmoking;
-        _musicPreference = _profile!.preferences.musicPreference.isEmpty
-            ? 'Ninguna'
-            : _profile!.preferences.musicPreference;
-        _languages = List<String>.from(_profile!.preferences.languages);
-        _maxTripDistance = (_profile!.preferences.maxTripDistance).clamp(5.0, 100.0);
-        _preferredZones = List<String>.from(_profile!.preferences.preferredZones);
+          // ✅ Inicializar variables de estado - Preferencias
+          _acceptPets = _profile!.preferences.acceptPets;
+          _acceptSmoking = _profile!.preferences.acceptSmoking;
+          _musicPreference = _profile!.preferences.musicPreference.isEmpty
+              ? 'Ninguna'
+              : _profile!.preferences.musicPreference;
+          _languages = List<String>.from(_profile!.preferences.languages);
+          _maxTripDistance =
+              (_profile!.preferences.maxTripDistance).clamp(5.0, 100.0);
+          _preferredZones =
+              List<String>.from(_profile!.preferences.preferredZones);
 
-        // ✅ Inicializar variables de estado - Horario de Trabajo
-        final schedule = _profile!.workSchedule;
-        _weekSchedule = {
-          'Lunes': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.mondayStart.split(':')[0]),
-              minute: int.parse(schedule.mondayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.mondayEnd.split(':')[0]),
-              minute: int.parse(schedule.mondayEnd.split(':')[1])
-            ),
-            'active': schedule.mondayStart != '00:00' || schedule.mondayEnd != '00:00',
-          },
-          'Martes': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.tuesdayStart.split(':')[0]),
-              minute: int.parse(schedule.tuesdayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.tuesdayEnd.split(':')[0]),
-              minute: int.parse(schedule.tuesdayEnd.split(':')[1])
-            ),
-            'active': schedule.tuesdayStart != '00:00' || schedule.tuesdayEnd != '00:00',
-          },
-          'Miércoles': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.wednesdayStart.split(':')[0]),
-              minute: int.parse(schedule.wednesdayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.wednesdayEnd.split(':')[0]),
-              minute: int.parse(schedule.wednesdayEnd.split(':')[1])
-            ),
-            'active': schedule.wednesdayStart != '00:00' || schedule.wednesdayEnd != '00:00',
-          },
-          'Jueves': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.thursdayStart.split(':')[0]),
-              minute: int.parse(schedule.thursdayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.thursdayEnd.split(':')[0]),
-              minute: int.parse(schedule.thursdayEnd.split(':')[1])
-            ),
-            'active': schedule.thursdayStart != '00:00' || schedule.thursdayEnd != '00:00',
-          },
-          'Viernes': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.fridayStart.split(':')[0]),
-              minute: int.parse(schedule.fridayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.fridayEnd.split(':')[0]),
-              minute: int.parse(schedule.fridayEnd.split(':')[1])
-            ),
-            'active': schedule.fridayStart != '00:00' || schedule.fridayEnd != '00:00',
-          },
-          'Sábado': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.saturdayStart.split(':')[0]),
-              minute: int.parse(schedule.saturdayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.saturdayEnd.split(':')[0]),
-              minute: int.parse(schedule.saturdayEnd.split(':')[1])
-            ),
-            'active': schedule.saturdayStart != '00:00' || schedule.saturdayEnd != '00:00',
-          },
-          'Domingo': {
-            'start': TimeOfDay(
-              hour: int.parse(schedule.sundayStart.split(':')[0]),
-              minute: int.parse(schedule.sundayStart.split(':')[1])
-            ),
-            'end': TimeOfDay(
-              hour: int.parse(schedule.sundayEnd.split(':')[0]),
-              minute: int.parse(schedule.sundayEnd.split(':')[1])
-            ),
-            'active': schedule.sundayStart != '00:00' || schedule.sundayEnd != '00:00',
-          },
-        };
+          // ✅ Inicializar variables de estado - Horario de Trabajo
+          final schedule = _profile!.workSchedule;
+          _weekSchedule = {
+            'Lunes': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.mondayStart.split(':')[0]),
+                  minute: int.parse(schedule.mondayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.mondayEnd.split(':')[0]),
+                  minute: int.parse(schedule.mondayEnd.split(':')[1])),
+              'active': schedule.mondayStart != '00:00' ||
+                  schedule.mondayEnd != '00:00',
+            },
+            'Martes': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.tuesdayStart.split(':')[0]),
+                  minute: int.parse(schedule.tuesdayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.tuesdayEnd.split(':')[0]),
+                  minute: int.parse(schedule.tuesdayEnd.split(':')[1])),
+              'active': schedule.tuesdayStart != '00:00' ||
+                  schedule.tuesdayEnd != '00:00',
+            },
+            'Miércoles': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.wednesdayStart.split(':')[0]),
+                  minute: int.parse(schedule.wednesdayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.wednesdayEnd.split(':')[0]),
+                  minute: int.parse(schedule.wednesdayEnd.split(':')[1])),
+              'active': schedule.wednesdayStart != '00:00' ||
+                  schedule.wednesdayEnd != '00:00',
+            },
+            'Jueves': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.thursdayStart.split(':')[0]),
+                  minute: int.parse(schedule.thursdayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.thursdayEnd.split(':')[0]),
+                  minute: int.parse(schedule.thursdayEnd.split(':')[1])),
+              'active': schedule.thursdayStart != '00:00' ||
+                  schedule.thursdayEnd != '00:00',
+            },
+            'Viernes': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.fridayStart.split(':')[0]),
+                  minute: int.parse(schedule.fridayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.fridayEnd.split(':')[0]),
+                  minute: int.parse(schedule.fridayEnd.split(':')[1])),
+              'active': schedule.fridayStart != '00:00' ||
+                  schedule.fridayEnd != '00:00',
+            },
+            'Sábado': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.saturdayStart.split(':')[0]),
+                  minute: int.parse(schedule.saturdayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.saturdayEnd.split(':')[0]),
+                  minute: int.parse(schedule.saturdayEnd.split(':')[1])),
+              'active': schedule.saturdayStart != '00:00' ||
+                  schedule.saturdayEnd != '00:00',
+            },
+            'Domingo': {
+              'start': TimeOfDay(
+                  hour: int.parse(schedule.sundayStart.split(':')[0]),
+                  minute: int.parse(schedule.sundayStart.split(':')[1])),
+              'end': TimeOfDay(
+                  hour: int.parse(schedule.sundayEnd.split(':')[0]),
+                  minute: int.parse(schedule.sundayEnd.split(':')[1])),
+              'active': schedule.sundayStart != '00:00' ||
+                  schedule.sundayEnd != '00:00',
+            },
+          };
         });
       }
 
@@ -425,7 +479,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -434,7 +488,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       body: _isLoading ? _buildLoadingState() : _buildProfile(),
     );
   }
-  
+
   Widget _buildLoadingState() {
     return Center(
       child: Column(
@@ -454,7 +508,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildProfile() {
     // ✅ CRÍTICO: Validar que _profile no sea null antes de renderizar
     if (_profile == null) {
@@ -498,7 +552,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         return Opacity(
           opacity: _fadeAnimation.value,
           child: SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
             child: Column(
               children: [
                 // Profile header
@@ -506,10 +561,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
                 // Stats overview
                 _buildStatsOverview(),
-                
+
                 // Personal information
                 _buildPersonalInfoSection(),
-                
+
                 // Vehicle information
                 _buildVehicleInfoSection(),
 
@@ -521,13 +576,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
                 // Achievements
                 _buildAchievementsSection(),
-                
+
                 // Preferences
                 _buildPreferencesSection(),
-                
+
                 // Work schedule
                 _buildWorkScheduleSection(),
-                
+
                 SizedBox(height: 24),
               ],
             ),
@@ -536,7 +591,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       },
     );
   }
-  
+
   Widget _buildProfileHeader() {
     // UI: Estilo LinkedIn - portada naranja (height 200) + avatar overlapping + rating prominente
     return AnimatedBuilder(
@@ -558,7 +613,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       width: double.infinity,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [ModernTheme.rappiOrange, ModernTheme.rappiOrange.withValues(alpha: 0.75)],
+                          colors: [
+                            ModernTheme.rappiOrange,
+                            ModernTheme.rappiOrange.withValues(alpha: 0.75)
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -595,7 +653,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                             child: Padding(
                               padding: const EdgeInsets.all(8),
                               child: IconButton(
-                                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                icon: const Icon(Icons.arrow_back,
+                                    color: Colors.white),
                                 onPressed: () => Navigator.pop(context),
                               ),
                             ),
@@ -617,12 +676,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                               border: Border.all(color: Colors.white, width: 4),
                               gradient: _profile!.profileImageUrl.isEmpty
                                   ? LinearGradient(
-                                      colors: [ModernTheme.rappiOrange.withValues(alpha: 0.5), ModernTheme.rappiOrange],
+                                      colors: [
+                                        ModernTheme.rappiOrange
+                                            .withValues(alpha: 0.5),
+                                        ModernTheme.rappiOrange
+                                      ],
                                     )
                                   : null,
                               image: _profile!.profileImageUrl.isNotEmpty
                                   ? DecorationImage(
-                                      image: NetworkImage(_profile!.profileImageUrl),
+                                      image: NetworkImage(
+                                          _profile!.profileImageUrl),
                                       fit: BoxFit.cover,
                                     )
                                   : null,
@@ -635,7 +699,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                               ],
                             ),
                             child: _profile!.profileImageUrl.isEmpty
-                                ? const Icon(Icons.person, size: 48, color: Colors.white)
+                                ? const Icon(Icons.person,
+                                    size: 48, color: Colors.white)
                                 : null,
                           ),
                           Positioned(
@@ -649,9 +714,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: ModernTheme.rappiOrange, width: 2),
+                                  border: Border.all(
+                                      color: ModernTheme.rappiOrange, width: 2),
                                 ),
-                                child: const Icon(Icons.camera_alt, color: ModernTheme.rappiOrange, size: 14),
+                                child: const Icon(Icons.camera_alt,
+                                    color: ModernTheme.rappiOrange, size: 14),
                               ),
                             ),
                           ),
@@ -684,22 +751,27 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
 
                       // Rating prominente
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: ModernTheme.rappiOrange.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: ModernTheme.rappiOrange.withValues(alpha: 0.3)),
+                          border: Border.all(
+                              color: ModernTheme.rappiOrange
+                                  .withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            ...List.generate(5, (index) => Icon(
-                              Icons.star,
-                              size: 18,
-                              color: index < _profile!.rating.floor()
-                                  ? Colors.amber
-                                  : Colors.amber.withValues(alpha: 0.3),
-                            )),
+                            ...List.generate(
+                                5,
+                                (index) => Icon(
+                                      Icons.star,
+                                      size: 18,
+                                      color: index < _profile!.rating.floor()
+                                          ? Colors.amber
+                                          : Colors.amber.withValues(alpha: 0.3),
+                                    )),
                             const SizedBox(width: 8),
                             Text(
                               '${_profile!.rating}',
@@ -711,7 +783,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                             ),
                             Text(
                               ' (${_profile!.totalTrips} viajes)',
-                              style: TextStyle(fontSize: 13, color: context.secondaryText),
+                              style: TextStyle(
+                                  fontSize: 13, color: context.secondaryText),
                             ),
                           ],
                         ),
@@ -719,7 +792,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       const SizedBox(height: 8),
                       Text(
                         'Miembro desde ${_formatMemberSince(_profile!.memberSince)}',
-                        style: TextStyle(color: context.secondaryText, fontSize: 12),
+                        style: TextStyle(
+                            color: context.secondaryText, fontSize: 12),
                       ),
                     ],
                   ),
@@ -760,7 +834,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             child: _buildStatCard(
               'Ganancias',
               _profile!.totalEarnings.toCurrencyCompact(),
-              Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
+              Icons
+                  .account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
               ModernTheme.warning,
             ),
           ),
@@ -768,8 +843,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+
+  Widget _buildStatCard(
+      String label, String value, IconData icon, Color color) {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -807,7 +883,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildPersonalInfoSection() {
     return _buildSection(
       'Información Personal',
@@ -882,7 +958,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           if (_profile!.bio.isNotEmpty)
             _buildInfoRow('Bio', _profile!.bio, Icons.description),
         ],
-        
+
         SizedBox(height: 20),
 
         // Emergency contact
@@ -922,9 +998,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             },
           ),
         ] else ...[
-          _buildInfoRow('Nombre', _profile!.emergencyContact.name, Icons.emergency),
-          _buildInfoRow('Teléfono', _profile!.emergencyContact.phone, Icons.phone_in_talk),
-          _buildInfoRow('Relación', _profile!.emergencyContact.relationship, Icons.family_restroom),
+          _buildInfoRow(
+              'Nombre', _profile!.emergencyContact.name, Icons.emergency),
+          _buildInfoRow('Teléfono', _profile!.emergencyContact.phone,
+              Icons.phone_in_talk),
+          _buildInfoRow('Relación', _profile!.emergencyContact.relationship,
+              Icons.family_restroom),
         ],
 
         // ✅ NUEVO: Botones de acción cuando está en modo edición
@@ -942,12 +1021,15 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       _phoneController.text = _profile!.phone;
                       _emailController.text = _profile!.email;
                       _bioController.text = _profile!.bio;
-                      _emergencyContactController.text = _profile!.emergencyContact.name;
-                      _emergencyPhoneController.text = _profile!.emergencyContact.phone;
+                      _emergencyContactController.text =
+                          _profile!.emergencyContact.name;
+                      _emergencyPhoneController.text =
+                          _profile!.emergencyContact.phone;
                     });
                   },
                   icon: Icon(Icons.cancel, color: ModernTheme.error),
-                  label: Text('Cancelar', style: TextStyle(color: ModernTheme.error)),
+                  label: Text('Cancelar',
+                      style: TextStyle(color: ModernTheme.error)),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: ModernTheme.error),
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -958,8 +1040,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _saveProfile,
-                  icon: Icon(Icons.save, color: Theme.of(context).colorScheme.onPrimary),
-                  label: Text('Guardar', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                  icon: Icon(Icons.save,
+                      color: Theme.of(context).colorScheme.onPrimary),
+                  label: Text('Guardar',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ModernTheme.success,
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -1027,7 +1112,9 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       return 'Ingresa el año del vehículo';
                     }
                     final year = int.tryParse(value);
-                    if (year == null || year < 1900 || year > DateTime.now().year + 1) {
+                    if (year == null ||
+                        year < 1900 ||
+                        year > DateTime.now().year + 1) {
                       return 'Ingresa un año válido';
                     }
                     return null;
@@ -1078,12 +1165,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ),
           ),
         ] else ...[
-          _buildInfoRow('Marca', _profile!.vehicleInfo.make, Icons.directions_car),
+          _buildInfoRow(
+              'Marca', _profile!.vehicleInfo.make, Icons.directions_car),
           _buildInfoRow('Modelo', _profile!.vehicleInfo.model, Icons.drive_eta),
-          _buildInfoRow('Año', '${_profile!.vehicleInfo.year}', Icons.calendar_today),
+          _buildInfoRow(
+              'Año', '${_profile!.vehicleInfo.year}', Icons.calendar_today),
           _buildInfoRow('Color', _profile!.vehicleInfo.color, Icons.palette),
-          _buildInfoRow('Placa', _profile!.vehicleInfo.plate, Icons.confirmation_number),
-          _buildInfoRow('Capacidad', '${_profile!.vehicleInfo.capacity} pasajeros', Icons.people),
+          _buildInfoRow(
+              'Placa', _profile!.vehicleInfo.plate, Icons.confirmation_number),
+          _buildInfoRow('Capacidad',
+              '${_profile!.vehicleInfo.capacity} pasajeros', Icons.people),
         ],
 
         // Botones de acción
@@ -1102,7 +1193,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       _yearController.text = '${_profile!.vehicleInfo.year}';
                       _colorController.text = _profile!.vehicleInfo.color;
                       _plateController.text = _profile!.vehicleInfo.plate;
-                      _capacityController.text = '${_profile!.vehicleInfo.capacity}';
+                      _capacityController.text =
+                          '${_profile!.vehicleInfo.capacity}';
                     });
                   },
                   icon: Icon(Icons.cancel, color: ModernTheme.error),
@@ -1118,8 +1210,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _saveVehicleInfo,
-                  icon: Icon(Icons.save, color: Theme.of(context).colorScheme.onPrimary),
-                  label: Text('Guardar', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                  icon: Icon(Icons.save,
+                      color: Theme.of(context).colorScheme.onPrimary),
+                  label: Text('Guardar',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ModernTheme.success,
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -1163,27 +1258,27 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     // legacy Firebase (dniPhoto/licensePhoto/etc) → los labels no salían y
     // solo se veía el key técnico con guiones bajos.
     final documentLabels = {
-      'dni_front':          'DNI (frente)',
-      'dni_back':           'DNI (reverso)',
-      'license_front':      'Licencia de conducir (frente)',
-      'license_back':       'Licencia de conducir (reverso)',
-      'soat':               'SOAT vigente',
-      'tarjeta_propiedad':  'Tarjeta de propiedad (frente)',
-      'ownership':          'Tarjeta de propiedad (reverso)',
-      'selfie':             'Selfie del conductor',
-      'vehicle_photo':      'Foto del vehículo',
+      'dni_front': 'DNI (frente)',
+      'dni_back': 'DNI (reverso)',
+      'license_front': 'Licencia de conducir (frente)',
+      'license_back': 'Licencia de conducir (reverso)',
+      'soat': 'SOAT vigente',
+      'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
+      'ownership': 'Tarjeta de propiedad (reverso)',
+      'selfie': 'Selfie del conductor',
+      'vehicle_photo': 'Foto del vehículo',
     };
 
     final documentIcons = {
-      'dni_front':          Icons.badge,
-      'dni_back':           Icons.badge_outlined,
-      'license_front':      Icons.credit_card,
-      'license_back':       Icons.credit_card_outlined,
-      'soat':               Icons.verified_user_outlined,
-      'tarjeta_propiedad':  Icons.article_outlined,
-      'ownership':          Icons.article,
-      'selfie':             Icons.person_outlined,
-      'vehicle_photo':      Icons.directions_car,
+      'dni_front': Icons.badge,
+      'dni_back': Icons.badge_outlined,
+      'license_front': Icons.credit_card,
+      'license_back': Icons.credit_card_outlined,
+      'soat': Icons.verified_user_outlined,
+      'tarjeta_propiedad': Icons.article_outlined,
+      'ownership': Icons.article,
+      'selfie': Icons.person_outlined,
+      'vehicle_photo': Icons.directions_car,
     };
 
     return _buildSection(
@@ -1206,61 +1301,67 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: context.secondaryText),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.secondaryText,
-                          fontWeight: FontWeight.w500,
+              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: context.secondaryText),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.secondaryText,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Row(
-                        children: [
-                          Icon(
-                            hasDocument ? Icons.check_circle : Icons.cancel,
-                            size: 14,
-                            color: hasDocument ? ModernTheme.success : ModernTheme.error,
-                          ),
-                          SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              hasDocument ? 'Subido' : 'No subido',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: hasDocument ? ModernTheme.success : ModernTheme.error,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Icon(
+                              hasDocument ? Icons.check_circle : Icons.cancel,
+                              size: 14,
+                              color: hasDocument
+                                  ? ModernTheme.success
+                                  : ModernTheme.error,
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (hasDocument)
-                  SizedBox(
-                    width: 48,
-                    child: IconButton(
-                      icon: Icon(Icons.visibility, color: ModernTheme.primaryBlue, size: 20),
-                      onPressed: () => _viewDocument(entry.key, entry.value),
-                      tooltip: 'Ver documento',
-                      padding: EdgeInsets.zero,
+                            SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                hasDocument ? 'Subido' : 'No subido',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: hasDocument
+                                      ? ModernTheme.success
+                                      : ModernTheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                Icon(Icons.chevron_right, size: 18, color: context.secondaryText),
-              ],
-            ),
+                  if (hasDocument)
+                    SizedBox(
+                      width: 48,
+                      child: IconButton(
+                        icon: Icon(Icons.visibility,
+                            color: ModernTheme.primaryBlue, size: 20),
+                        onPressed: () => _viewDocument(entry.key, entry.value),
+                        tooltip: 'Ver documento',
+                        padding: EdgeInsets.zero,
+                      ),
+                    ),
+                  Icon(Icons.chevron_right,
+                      size: 18, color: context.secondaryText),
+                ],
+              ),
             ),
           );
         }),
@@ -1406,19 +1507,27 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   /// llama al image_picker y re-sube al backend con el mismo doc_type.
   void _viewDocument(String documentType, String url) {
     final labels = {
-      'dni_front': 'DNI (frente)', 'dni_back': 'DNI (reverso)',
-      'license_front': 'Licencia (frente)', 'license_back': 'Licencia (reverso)',
-      'soat': 'SOAT vigente', 'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
+      'dni_front': 'DNI (frente)',
+      'dni_back': 'DNI (reverso)',
+      'license_front': 'Licencia (frente)',
+      'license_back': 'Licencia (reverso)',
+      'soat': 'SOAT vigente',
+      'tarjeta_propiedad': 'Tarjeta de propiedad (frente)',
       'ownership': 'Tarjeta de propiedad (reverso)',
-      'selfie': 'Selfie del conductor', 'vehicle_photo': 'Foto del vehículo',
+      'selfie': 'Selfie del conductor',
+      'vehicle_photo': 'Foto del vehículo',
     };
     // Ronda 235: mapping cliente→backend scope para el upload de reemplazo.
     const clientToScope = {
-      'dni_front': 'identity_front', 'dni_back': 'identity_back',
-      'license_front': 'driver_license', 'license_back': 'driver_license',
-      'soat': 'soat', 'tarjeta_propiedad': 'vehicle_registration',
+      'dni_front': 'identity_front',
+      'dni_back': 'identity_back',
+      'license_front': 'driver_license',
+      'license_back': 'driver_license',
+      'soat': 'soat',
+      'tarjeta_propiedad': 'vehicle_registration',
       'ownership': 'vehicle_registration',
-      'selfie': 'profile_photo', 'vehicle_photo': 'vehicle_photo',
+      'selfie': 'profile_photo',
+      'vehicle_photo': 'vehicle_photo',
     };
     final label = labels[documentType] ?? documentType;
 
@@ -1462,7 +1571,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     final accountTypeController = TextEditingController(text: 'savings');
     final accountNumberController = TextEditingController();
     final cciController = TextEditingController();
-    final holderNameController = TextEditingController(text: _profile?.name ?? '');
+    final holderNameController =
+        TextEditingController(text: _profile?.name ?? '');
     final holderDniController = TextEditingController();
 
     // Bancos de Perú
@@ -1503,7 +1613,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ],
           ),
           content: SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
             child: Form(
               key: formKey,
               child: Column(
@@ -1549,7 +1660,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                   // Tipo de cuenta
                   DropdownButtonFormField<String>(
                     value: accountTypeController.text.isEmpty ||
-                           (accountTypeController.text != 'savings' && accountTypeController.text != 'checking')
+                            (accountTypeController.text != 'savings' &&
+                                accountTypeController.text != 'checking')
                         ? 'savings'
                         : accountTypeController.text,
                     decoration: InputDecoration(
@@ -1560,8 +1672,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       ),
                     ),
                     items: [
-                      DropdownMenuItem(value: 'savings', child: Text('Ahorros')),
-                      DropdownMenuItem(value: 'checking', child: Text('Corriente')),
+                      DropdownMenuItem(
+                          value: 'savings', child: Text('Ahorros')),
+                      DropdownMenuItem(
+                          value: 'checking', child: Text('Corriente')),
                     ],
                     onChanged: (value) {
                       setState(() => accountTypeController.text = value!);
@@ -1694,7 +1808,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('✅ Cuenta bancaria guardada. Pendiente de verificación.'),
+                          content: Text(
+                              '✅ Cuenta bancaria guardada. Pendiente de verificación.'),
                           backgroundColor: ModernTheme.success,
                           duration: Duration(seconds: 3),
                         ),
@@ -1706,7 +1821,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Error al guardar. Intenta nuevamente.'),
+                          content:
+                              Text('Error al guardar. Intenta nuevamente.'),
                           backgroundColor: ModernTheme.error,
                         ),
                       );
@@ -1736,7 +1852,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
   void _showDebitCardForm() {
     final formKey = GlobalKey<FormState>(debugLabel: 'debitCardForm');
     final cardNumberController = TextEditingController();
-    final cardHolderController = TextEditingController(text: _profile?.name ?? '');
+    final cardHolderController =
+        TextEditingController(text: _profile?.name ?? '');
 
     final banks = [
       'BCP - Banco de Crédito del Perú',
@@ -1766,7 +1883,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             ],
           ),
           content: SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
             child: Form(
               key: formKey,
               child: Column(
@@ -1893,7 +2011,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                   // Guardar via backend Node (solo metadata: methodType + label).
                   try {
                     if (_authUserId == null) return;
-                    final label = '$selectedBank · ****${cardNumberController.text.trim()}';
+                    final label =
+                        '$selectedBank · ****${cardNumberController.text.trim()}';
                     await _api.addPaymentMethod(
                       methodType: 'card',
                       label: label,
@@ -1907,7 +2026,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('✅ Tarjeta de débito guardada. Pendiente de verificación.'),
+                          content: Text(
+                              '✅ Tarjeta de débito guardada. Pendiente de verificación.'),
                           backgroundColor: ModernTheme.success,
                           duration: Duration(seconds: 3),
                         ),
@@ -1919,7 +2039,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Error al guardar. Intenta nuevamente.'),
+                          content:
+                              Text('Error al guardar. Intenta nuevamente.'),
                           backgroundColor: ModernTheme.error,
                         ),
                       );
@@ -1983,7 +2104,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                   ? AppConfigService.instance.config.companyAddress
                   : 'Consulta la dirección con soporte',
             ),
-            _buildInfoItem(Icons.access_time, 'Lunes a Viernes: 9:00 AM - 6:00 PM'),
+            _buildInfoItem(
+                Icons.access_time, 'Lunes a Viernes: 9:00 AM - 6:00 PM'),
             _buildInfoItem(Icons.access_time, 'Sábados: 9:00 AM - 1:00 PM'),
             _buildInfoItem(Icons.badge, 'Presenta tu DNI al retirar'),
             SizedBox(height: 16),
@@ -1995,7 +2117,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               ),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: ModernTheme.success, size: 16),
+                  Icon(Icons.check_circle,
+                      color: ModernTheme.success, size: 16),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -2104,7 +2227,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ],
     );
   }
-  
+
   Widget _buildAchievementCard(Achievement achievement) {
     // Ronda 235: card diferenciada — desbloqueado (dorado) vs bloqueado (gris
     // con candado). Muestra barra de progreso cuando el logro tiene meta.
@@ -2115,7 +2238,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       decoration: BoxDecoration(
         color: color.withValues(alpha: unlocked ? 0.08 : 0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: unlocked ? 0.4 : 0.2)),
+        border:
+            Border.all(color: color.withValues(alpha: unlocked ? 0.4 : 0.2)),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -2186,14 +2310,19 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
     required DateTime memberSince,
   }) {
     final daysMember = DateTime.now().difference(memberSince).inDays;
-    Achievement unlockOr(String id, String name, String desc, {required bool met, required int current, required int target}) {
+    Achievement unlockOr(String id, String name, String desc,
+        {required bool met, required int current, required int target}) {
       return Achievement(
-        id: id, name: name, description: desc, iconUrl: '',
+        id: id,
+        name: name,
+        description: desc,
+        iconUrl: '',
         unlockedDate: met ? DateTime.now() : null,
         progressCurrent: current > target ? target : current,
         progressTarget: target,
       );
     }
+
     return [
       unlockOr('first_trip', 'Primer viaje', 'Completa tu primer viaje',
           met: totalTrips >= 1, current: totalTrips, target: 1),
@@ -2208,12 +2337,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       unlockOr('rating_gold', 'Estrella dorada', 'Mantén rating ≥ 4.8',
           met: rating >= 4.8, current: (rating * 10).round(), target: 48),
       unlockOr('earnings_1k', 'Mil soles', 'Gana S/ 1000 en total',
-          met: totalEarnings >= 1000, current: totalEarnings.round(), target: 1000),
+          met: totalEarnings >= 1000,
+          current: totalEarnings.round(),
+          target: 1000),
       unlockOr('veteran', 'Veterano', 'Cumple 90 días en la app',
           met: daysMember >= 90, current: daysMember, target: 90),
     ];
   }
-  
+
   Widget _buildPreferencesSection() {
     return _buildSection(
       'Preferencias de Trabajo',
@@ -2324,7 +2455,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                               // Al menos un idioma debe estar seleccionado
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Debes seleccionar al menos un idioma'),
+                                  content: Text(
+                                      'Debes seleccionar al menos un idioma'),
                                   backgroundColor: ModernTheme.warning,
                                 ),
                               );
@@ -2410,11 +2542,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ),
         ] else ...[
           // ✅ MODO VISTA - Información de solo lectura
-          _buildPreferenceRow('Acepta mascotas', _profile!.preferences.acceptPets),
-          _buildPreferenceRow('Permite fumar', _profile!.preferences.acceptSmoking),
-          _buildInfoRow('Música preferida', _profile!.preferences.musicPreference, Icons.music_note),
-          _buildInfoRow('Idiomas', _profile!.preferences.languages.join(', '), Icons.language),
-          _buildInfoRow('Distancia máxima', '${_profile!.preferences.maxTripDistance} km', Icons.straighten),
+          _buildPreferenceRow(
+              'Acepta mascotas', _profile!.preferences.acceptPets),
+          _buildPreferenceRow(
+              'Permite fumar', _profile!.preferences.acceptSmoking),
+          _buildInfoRow('Música preferida',
+              _profile!.preferences.musicPreference, Icons.music_note),
+          _buildInfoRow('Idiomas', _profile!.preferences.languages.join(', '),
+              Icons.language),
+          _buildInfoRow('Distancia máxima',
+              '${_profile!.preferences.maxTripDistance} km', Icons.straighten),
 
           SizedBox(height: 12),
           Text(
@@ -2459,12 +2596,16 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       // Restaurar valores originales
                       _acceptPets = _profile!.preferences.acceptPets;
                       _acceptSmoking = _profile!.preferences.acceptSmoking;
-                      _musicPreference = _profile!.preferences.musicPreference.isEmpty
-                          ? 'Ninguna'
-                          : _profile!.preferences.musicPreference;
-                      _languages = List<String>.from(_profile!.preferences.languages);
-                      _maxTripDistance = (_profile!.preferences.maxTripDistance).clamp(5.0, 100.0);
-                      _preferredZones = List<String>.from(_profile!.preferences.preferredZones);
+                      _musicPreference =
+                          _profile!.preferences.musicPreference.isEmpty
+                              ? 'Ninguna'
+                              : _profile!.preferences.musicPreference;
+                      _languages =
+                          List<String>.from(_profile!.preferences.languages);
+                      _maxTripDistance = (_profile!.preferences.maxTripDistance)
+                          .clamp(5.0, 100.0);
+                      _preferredZones = List<String>.from(
+                          _profile!.preferences.preferredZones);
                       _isEditingPreferences = false;
                     });
                   },
@@ -2483,8 +2624,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _savePreferences,
-                  icon: Icon(Icons.save, color: Theme.of(context).colorScheme.onPrimary),
-                  label: Text('Guardar', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                  icon: Icon(Icons.save,
+                      color: Theme.of(context).colorScheme.onPrimary),
+                  label: Text('Guardar',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.purple,
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -2498,7 +2642,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       onEdit: _isEditingPreferences ? null : () => _toggleEditPreferences(),
     );
   }
-  
+
   Widget _buildWorkScheduleSection() {
     return _buildSection(
       'Horario de Trabajo',
@@ -2588,7 +2732,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Icon(
                                           Icons.access_time,
@@ -2596,7 +2741,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                                           color: Colors.orange,
                                         ),
                                         SizedBox(width: 8),
-                                        Text('${dayData['start'].format(context)}'),
+                                        Text(
+                                            '${dayData['start'].format(context)}'),
                                       ],
                                     ),
                                   ),
@@ -2644,7 +2790,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Icon(
                                           Icons.access_time,
@@ -2652,7 +2799,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                                           color: Colors.orange,
                                         ),
                                         SizedBox(width: 8),
-                                        Text('${dayData['end'].format(context)}'),
+                                        Text(
+                                            '${dayData['end'].format(context)}'),
                                       ],
                                     ),
                                   ),
@@ -2670,13 +2818,20 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           ),
         ] else ...[
           // ✅ MODO VISTA - Información de solo lectura
-          _buildScheduleRow('Lunes', _profile!.workSchedule.mondayStart, _profile!.workSchedule.mondayEnd),
-          _buildScheduleRow('Martes', _profile!.workSchedule.tuesdayStart, _profile!.workSchedule.tuesdayEnd),
-          _buildScheduleRow('Miércoles', _profile!.workSchedule.wednesdayStart, _profile!.workSchedule.wednesdayEnd),
-          _buildScheduleRow('Jueves', _profile!.workSchedule.thursdayStart, _profile!.workSchedule.thursdayEnd),
-          _buildScheduleRow('Viernes', _profile!.workSchedule.fridayStart, _profile!.workSchedule.fridayEnd),
-          _buildScheduleRow('Sábado', _profile!.workSchedule.saturdayStart, _profile!.workSchedule.saturdayEnd),
-          _buildScheduleRow('Domingo', _profile!.workSchedule.sundayStart, _profile!.workSchedule.sundayEnd),
+          _buildScheduleRow('Lunes', _profile!.workSchedule.mondayStart,
+              _profile!.workSchedule.mondayEnd),
+          _buildScheduleRow('Martes', _profile!.workSchedule.tuesdayStart,
+              _profile!.workSchedule.tuesdayEnd),
+          _buildScheduleRow('Miércoles', _profile!.workSchedule.wednesdayStart,
+              _profile!.workSchedule.wednesdayEnd),
+          _buildScheduleRow('Jueves', _profile!.workSchedule.thursdayStart,
+              _profile!.workSchedule.thursdayEnd),
+          _buildScheduleRow('Viernes', _profile!.workSchedule.fridayStart,
+              _profile!.workSchedule.fridayEnd),
+          _buildScheduleRow('Sábado', _profile!.workSchedule.saturdayStart,
+              _profile!.workSchedule.saturdayEnd),
+          _buildScheduleRow('Domingo', _profile!.workSchedule.sundayStart,
+              _profile!.workSchedule.sundayEnd),
         ],
 
         // ✅ BOTONES DE ACCIÓN (solo en modo edición)
@@ -2693,80 +2848,98 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
                       _weekSchedule = {
                         'Lunes': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.mondayStart.split(':')[0]),
-                            minute: int.parse(schedule.mondayStart.split(':')[1])
-                          ),
+                              hour:
+                                  int.parse(schedule.mondayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.mondayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.mondayEnd.split(':')[0]),
-                            minute: int.parse(schedule.mondayEnd.split(':')[1])
-                          ),
-                          'active': schedule.mondayStart != '00:00' || schedule.mondayEnd != '00:00',
+                              hour: int.parse(schedule.mondayEnd.split(':')[0]),
+                              minute:
+                                  int.parse(schedule.mondayEnd.split(':')[1])),
+                          'active': schedule.mondayStart != '00:00' ||
+                              schedule.mondayEnd != '00:00',
                         },
                         'Martes': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.tuesdayStart.split(':')[0]),
-                            minute: int.parse(schedule.tuesdayStart.split(':')[1])
-                          ),
+                              hour: int.parse(
+                                  schedule.tuesdayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.tuesdayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.tuesdayEnd.split(':')[0]),
-                            minute: int.parse(schedule.tuesdayEnd.split(':')[1])
-                          ),
-                          'active': schedule.tuesdayStart != '00:00' || schedule.tuesdayEnd != '00:00',
+                              hour:
+                                  int.parse(schedule.tuesdayEnd.split(':')[0]),
+                              minute:
+                                  int.parse(schedule.tuesdayEnd.split(':')[1])),
+                          'active': schedule.tuesdayStart != '00:00' ||
+                              schedule.tuesdayEnd != '00:00',
                         },
                         'Miércoles': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.wednesdayStart.split(':')[0]),
-                            minute: int.parse(schedule.wednesdayStart.split(':')[1])
-                          ),
+                              hour: int.parse(
+                                  schedule.wednesdayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.wednesdayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.wednesdayEnd.split(':')[0]),
-                            minute: int.parse(schedule.wednesdayEnd.split(':')[1])
-                          ),
-                          'active': schedule.wednesdayStart != '00:00' || schedule.wednesdayEnd != '00:00',
+                              hour: int.parse(
+                                  schedule.wednesdayEnd.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.wednesdayEnd.split(':')[1])),
+                          'active': schedule.wednesdayStart != '00:00' ||
+                              schedule.wednesdayEnd != '00:00',
                         },
                         'Jueves': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.thursdayStart.split(':')[0]),
-                            minute: int.parse(schedule.thursdayStart.split(':')[1])
-                          ),
+                              hour: int.parse(
+                                  schedule.thursdayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.thursdayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.thursdayEnd.split(':')[0]),
-                            minute: int.parse(schedule.thursdayEnd.split(':')[1])
-                          ),
-                          'active': schedule.thursdayStart != '00:00' || schedule.thursdayEnd != '00:00',
+                              hour:
+                                  int.parse(schedule.thursdayEnd.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.thursdayEnd.split(':')[1])),
+                          'active': schedule.thursdayStart != '00:00' ||
+                              schedule.thursdayEnd != '00:00',
                         },
                         'Viernes': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.fridayStart.split(':')[0]),
-                            minute: int.parse(schedule.fridayStart.split(':')[1])
-                          ),
+                              hour:
+                                  int.parse(schedule.fridayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.fridayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.fridayEnd.split(':')[0]),
-                            minute: int.parse(schedule.fridayEnd.split(':')[1])
-                          ),
-                          'active': schedule.fridayStart != '00:00' || schedule.fridayEnd != '00:00',
+                              hour: int.parse(schedule.fridayEnd.split(':')[0]),
+                              minute:
+                                  int.parse(schedule.fridayEnd.split(':')[1])),
+                          'active': schedule.fridayStart != '00:00' ||
+                              schedule.fridayEnd != '00:00',
                         },
                         'Sábado': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.saturdayStart.split(':')[0]),
-                            minute: int.parse(schedule.saturdayStart.split(':')[1])
-                          ),
+                              hour: int.parse(
+                                  schedule.saturdayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.saturdayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.saturdayEnd.split(':')[0]),
-                            minute: int.parse(schedule.saturdayEnd.split(':')[1])
-                          ),
-                          'active': schedule.saturdayStart != '00:00' || schedule.saturdayEnd != '00:00',
+                              hour:
+                                  int.parse(schedule.saturdayEnd.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.saturdayEnd.split(':')[1])),
+                          'active': schedule.saturdayStart != '00:00' ||
+                              schedule.saturdayEnd != '00:00',
                         },
                         'Domingo': {
                           'start': TimeOfDay(
-                            hour: int.parse(schedule.sundayStart.split(':')[0]),
-                            minute: int.parse(schedule.sundayStart.split(':')[1])
-                          ),
+                              hour:
+                                  int.parse(schedule.sundayStart.split(':')[0]),
+                              minute: int.parse(
+                                  schedule.sundayStart.split(':')[1])),
                           'end': TimeOfDay(
-                            hour: int.parse(schedule.sundayEnd.split(':')[0]),
-                            minute: int.parse(schedule.sundayEnd.split(':')[1])
-                          ),
-                          'active': schedule.sundayStart != '00:00' || schedule.sundayEnd != '00:00',
+                              hour: int.parse(schedule.sundayEnd.split(':')[0]),
+                              minute:
+                                  int.parse(schedule.sundayEnd.split(':')[1])),
+                          'active': schedule.sundayStart != '00:00' ||
+                              schedule.sundayEnd != '00:00',
                         },
                       };
                       _isEditingSchedule = false;
@@ -2787,8 +2960,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _saveWorkSchedule,
-                  icon: Icon(Icons.save, color: Theme.of(context).colorScheme.onPrimary),
-                  label: Text('Guardar', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                  icon: Icon(Icons.save,
+                      color: Theme.of(context).colorScheme.onPrimary),
+                  label: Text('Guardar',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimary)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -2802,7 +2978,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       onEdit: _isEditingSchedule ? null : () => _toggleEditSchedule(),
     );
   }
-  
+
   Widget _buildScheduleRow(String day, String startTime, String endTime) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4),
@@ -2834,7 +3010,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildPreferenceRow(String label, bool value) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 8),
@@ -2860,7 +3036,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildInfoRow(String label, String value, IconData icon) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 8),
@@ -2898,7 +3074,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildSection(
     String title,
     IconData icon,
@@ -2953,7 +3129,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildTextFormField({
     required TextEditingController controller,
     required String label,
@@ -2980,13 +3156,25 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
+
   String _formatMemberSince(DateTime date) {
-    final months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    final months = [
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre'
+    ];
     return '${months[date.month - 1]} ${date.year}';
   }
-  
+
   // ✅ OBSOLETO - Eliminado después de migrar todas las secciones
   // void _toggleEdit() {
   //   setState(() {
@@ -3023,7 +3211,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
             );
           }
         } catch (e) {
-          AppLogger.warning(userFriendlyError(e, fallback: 'No se pudo guardar contacto de emergencia'));
+          AppLogger.warning(userFriendlyError(e,
+              fallback: 'No se pudo guardar contacto de emergencia'));
         }
 
         // Actualizar estado local
@@ -3065,7 +3254,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al actualizar')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error al actualizar')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -3086,7 +3276,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         // Obtener valores de los controladores (TODO EN MAYÚSCULAS)
         final make = _makeController.text.trim().toUpperCase();
         final model = _modelController.text.trim().toUpperCase();
-        final year = int.tryParse(_yearController.text.trim()) ?? DateTime.now().year;
+        final year =
+            int.tryParse(_yearController.text.trim()) ?? DateTime.now().year;
         final color = _colorController.text.trim().toUpperCase();
         final plate = _plateController.text.trim().toUpperCase();
         final capacity = int.tryParse(_capacityController.text.trim()) ?? 4;
@@ -3146,7 +3337,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al actualizar')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error al actualizar')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -3207,7 +3399,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al actualizar preferencias')),
+            content: Text(userFriendlyError(e,
+                fallback: 'Error al actualizar preferencias')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -3233,7 +3426,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           final endMinutes = end.hour * 60 + end.minute;
 
           if (endMinutes <= startMinutes) {
-            validationError = 'La hora de fin debe ser mayor que la hora de inicio en $day';
+            validationError =
+                'La hora de fin debe ser mayor que la hora de inicio en $day';
             break;
           }
         }
@@ -3279,20 +3473,48 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           achievements: _profile!.achievements,
           vehicleInfo: _profile!.vehicleInfo,
           workSchedule: WorkSchedule(
-            mondayStart: _weekSchedule['Lunes']!['active'] ? formatTime(_weekSchedule['Lunes']!['start']) : '00:00',
-            mondayEnd: _weekSchedule['Lunes']!['active'] ? formatTime(_weekSchedule['Lunes']!['end']) : '00:00',
-            tuesdayStart: _weekSchedule['Martes']!['active'] ? formatTime(_weekSchedule['Martes']!['start']) : '00:00',
-            tuesdayEnd: _weekSchedule['Martes']!['active'] ? formatTime(_weekSchedule['Martes']!['end']) : '00:00',
-            wednesdayStart: _weekSchedule['Miércoles']!['active'] ? formatTime(_weekSchedule['Miércoles']!['start']) : '00:00',
-            wednesdayEnd: _weekSchedule['Miércoles']!['active'] ? formatTime(_weekSchedule['Miércoles']!['end']) : '00:00',
-            thursdayStart: _weekSchedule['Jueves']!['active'] ? formatTime(_weekSchedule['Jueves']!['start']) : '00:00',
-            thursdayEnd: _weekSchedule['Jueves']!['active'] ? formatTime(_weekSchedule['Jueves']!['end']) : '00:00',
-            fridayStart: _weekSchedule['Viernes']!['active'] ? formatTime(_weekSchedule['Viernes']!['start']) : '00:00',
-            fridayEnd: _weekSchedule['Viernes']!['active'] ? formatTime(_weekSchedule['Viernes']!['end']) : '00:00',
-            saturdayStart: _weekSchedule['Sábado']!['active'] ? formatTime(_weekSchedule['Sábado']!['start']) : '00:00',
-            saturdayEnd: _weekSchedule['Sábado']!['active'] ? formatTime(_weekSchedule['Sábado']!['end']) : '00:00',
-            sundayStart: _weekSchedule['Domingo']!['active'] ? formatTime(_weekSchedule['Domingo']!['start']) : '00:00',
-            sundayEnd: _weekSchedule['Domingo']!['active'] ? formatTime(_weekSchedule['Domingo']!['end']) : '00:00',
+            mondayStart: _weekSchedule['Lunes']!['active']
+                ? formatTime(_weekSchedule['Lunes']!['start'])
+                : '00:00',
+            mondayEnd: _weekSchedule['Lunes']!['active']
+                ? formatTime(_weekSchedule['Lunes']!['end'])
+                : '00:00',
+            tuesdayStart: _weekSchedule['Martes']!['active']
+                ? formatTime(_weekSchedule['Martes']!['start'])
+                : '00:00',
+            tuesdayEnd: _weekSchedule['Martes']!['active']
+                ? formatTime(_weekSchedule['Martes']!['end'])
+                : '00:00',
+            wednesdayStart: _weekSchedule['Miércoles']!['active']
+                ? formatTime(_weekSchedule['Miércoles']!['start'])
+                : '00:00',
+            wednesdayEnd: _weekSchedule['Miércoles']!['active']
+                ? formatTime(_weekSchedule['Miércoles']!['end'])
+                : '00:00',
+            thursdayStart: _weekSchedule['Jueves']!['active']
+                ? formatTime(_weekSchedule['Jueves']!['start'])
+                : '00:00',
+            thursdayEnd: _weekSchedule['Jueves']!['active']
+                ? formatTime(_weekSchedule['Jueves']!['end'])
+                : '00:00',
+            fridayStart: _weekSchedule['Viernes']!['active']
+                ? formatTime(_weekSchedule['Viernes']!['start'])
+                : '00:00',
+            fridayEnd: _weekSchedule['Viernes']!['active']
+                ? formatTime(_weekSchedule['Viernes']!['end'])
+                : '00:00',
+            saturdayStart: _weekSchedule['Sábado']!['active']
+                ? formatTime(_weekSchedule['Sábado']!['start'])
+                : '00:00',
+            saturdayEnd: _weekSchedule['Sábado']!['active']
+                ? formatTime(_weekSchedule['Sábado']!['end'])
+                : '00:00',
+            sundayStart: _weekSchedule['Domingo']!['active']
+                ? formatTime(_weekSchedule['Domingo']!['start'])
+                : '00:00',
+            sundayEnd: _weekSchedule['Domingo']!['active']
+                ? formatTime(_weekSchedule['Domingo']!['end'])
+                : '00:00',
           ),
         );
         _isEditingSchedule = false;
@@ -3303,7 +3525,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         SnackBar(
           content: Row(
             children: [
-              Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary),
+              Icon(Icons.check_circle,
+                  color: Theme.of(context).colorScheme.onPrimary),
               SizedBox(width: 12),
               Text('Horario actualizado correctamente'),
             ],
@@ -3316,7 +3539,8 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'Error al guardar horario')),
+          content:
+              Text(userFriendlyError(e, fallback: 'Error al guardar horario')),
           backgroundColor: ModernTheme.error,
         ),
       );
@@ -3398,95 +3622,26 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       ),
     );
   }
-  
-  Future<void> _pickImageFromCamera() async {
+
+  /// Ronda 286: la foto de perfil que se estaba tomando cuando Android mató
+  /// la app con la cámara abierta. Ver [PhotoPicker].
+  Future<void> _recoverLostPhoto() async {
+    final lost = await PhotoPicker.recover(prefix: 'driver_profile.photo');
+    if (lost == null || !mounted) return;
+    // La subida necesita el perfil cargado para reconstruirlo con la URL nueva.
+    if (_profile == null) await _loadProfile();
+    if (!mounted || _profile == null) return;
     try {
-      // Seleccionar imagen desde la cámara usando image_picker
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
-
-      if (image == null) {
-        // Usuario canceló
-        return;
-      }
-
-      // Mostrar indicador de carga
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary)),
-                SizedBox(width: 16),
-                Text('Subiendo foto de perfil...'),
-              ],
-            ),
-            duration: Duration(seconds: 30),
-            backgroundColor: ModernTheme.info,
-          ),
-        );
-      }
-
-      // Subir imagen al backend Node
-      if (_authUserId == null) {
-        throw Exception('Usuario no autenticado');
-      }
-
-      final file = File(image.path);
-      final uploaded = await _api.uploadFile(file: file, scope: 'profile');
-      final downloadUrl = (uploaded['url'] ?? '') as String;
-      if (downloadUrl.isEmpty) {
-        throw Exception('El servidor no devolvió URL de la foto');
-      }
-
-      // Actualizar perfil del usuario con la nueva URL
-      await _api.updateMe(profilePhotoUrl: downloadUrl);
-
-      // Actualizar el estado local
-      if (mounted) {
-        setState(() {
-          _profile = DriverProfile(
-            id: _profile!.id,
-            name: _profile!.name,
-            email: _profile!.email,
-            phone: _profile!.phone,
-            profileImageUrl: downloadUrl,
-            rating: _profile!.rating,
-            totalTrips: _profile!.totalTrips,
-            totalDistance: _profile!.totalDistance,
-            totalHours: _profile!.totalHours,
-            totalEarnings: _profile!.totalEarnings,
-            memberSince: _profile!.memberSince,
-            bio: _profile!.bio,
-            emergencyContact: _profile!.emergencyContact,
-            preferences: _profile!.preferences,
-            achievements: _profile!.achievements,
-            vehicleInfo: _profile!.vehicleInfo,
-            workSchedule: _profile!.workSchedule,
-          );
-        });
-
-        // Ocultar indicador de carga y mostrar mensaje de éxito
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Foto de perfil actualizada exitosamente'),
-            backgroundColor: ModernTheme.success,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      await _uploadProfilePhoto(lost.file);
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar foto desde cámara'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error al subir foto recuperada'));
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'No se pudo actualizar tu foto.')),
+            content: Text(userFriendlyError(e,
+                fallback: 'No se pudo actualizar tu foto.')),
             backgroundColor: ModernTheme.error,
             duration: const Duration(seconds: 3),
           ),
@@ -3494,15 +3649,120 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
       }
     }
   }
-  
+
+  /// Sube [image] como foto de perfil y actualiza el perfil en pantalla.
+  /// Lanza si algo falla: quien llama decide cómo contarlo.
+  Future<void> _uploadProfilePhoto(XFile image) async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.onPrimary)),
+              SizedBox(width: 16),
+              Text('Subiendo foto de perfil...'),
+            ],
+          ),
+          duration: Duration(seconds: 30),
+          backgroundColor: ModernTheme.info,
+        ),
+      );
+    }
+
+    // Subir imagen al backend Node
+    if (_authUserId == null) {
+      throw Exception('Usuario no autenticado');
+    }
+
+    final file = File(image.path);
+    final uploaded = await _api.uploadFile(file: file, scope: 'profile');
+    final downloadUrl = (uploaded['url'] ?? '') as String;
+    if (downloadUrl.isEmpty) {
+      throw Exception('El servidor no devolvió URL de la foto');
+    }
+
+    // Actualizar perfil del usuario con la nueva URL
+    await _api.updateMe(profilePhotoUrl: downloadUrl);
+
+    // Actualizar el estado local
+    if (mounted) {
+      setState(() {
+        _profile = DriverProfile(
+          id: _profile!.id,
+          name: _profile!.name,
+          email: _profile!.email,
+          phone: _profile!.phone,
+          profileImageUrl: downloadUrl,
+          rating: _profile!.rating,
+          totalTrips: _profile!.totalTrips,
+          totalDistance: _profile!.totalDistance,
+          totalHours: _profile!.totalHours,
+          totalEarnings: _profile!.totalEarnings,
+          memberSince: _profile!.memberSince,
+          bio: _profile!.bio,
+          emergencyContact: _profile!.emergencyContact,
+          preferences: _profile!.preferences,
+          achievements: _profile!.achievements,
+          vehicleInfo: _profile!.vehicleInfo,
+          workSchedule: _profile!.workSchedule,
+        );
+      });
+
+      // Ocultar indicador de carga y mostrar mensaje de éxito
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto de perfil actualizada exitosamente'),
+          backgroundColor: ModernTheme.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    try {
+      // Ronda 286: por PhotoPicker, que deja apuntado que se estaba tomando
+      // la foto de perfil para recuperarla si Android mata la app con la
+      // cámara abierta (ver `_recoverLostPhoto`).
+      final XFile? image = await PhotoPicker.pick(
+        source: ImageSource.camera,
+        target: 'driver_profile.photo',
+      );
+
+      if (image == null) {
+        // Usuario canceló
+        return;
+      }
+
+      await _uploadProfilePhoto(image);
+    } catch (e) {
+      AppLogger.error(userFriendlyError(e,
+          fallback: 'Error al seleccionar foto desde cámara'));
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(userFriendlyError(e,
+                fallback: 'No se pudo actualizar tu foto.')),
+            backgroundColor: ModernTheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _pickImageFromGallery() async {
     try {
-      // Seleccionar imagen desde la galería usando image_picker
-      final XFile? image = await _picker.pickImage(
+      final XFile? image = await PhotoPicker.pick(
         source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        target: 'driver_profile.photo',
       );
 
       if (image == null) {
@@ -3516,7 +3776,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
           SnackBar(
             content: Row(
               children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary)),
+                SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.onPrimary)),
                 SizedBox(width: 16),
                 Text('Subiendo foto de perfil...'),
               ],
@@ -3577,12 +3842,14 @@ class _DriverProfileScreenState extends State<DriverProfileScreen>
         );
       }
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error al seleccionar foto desde galería'));
+      AppLogger.error(userFriendlyError(e,
+          fallback: 'Error al seleccionar foto desde galería'));
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'No se pudo actualizar tu foto.')),
+            content: Text(userFriendlyError(e,
+                fallback: 'No se pudo actualizar tu foto.')),
             backgroundColor: ModernTheme.error,
             duration: const Duration(seconds: 3),
           ),
@@ -3614,7 +3881,7 @@ class DriverProfile {
   final List<Achievement> achievements;
   final VehicleInfo vehicleInfo;
   final WorkSchedule workSchedule;
-  
+
   DriverProfile({
     required this.id,
     required this.name,
@@ -3640,7 +3907,7 @@ class EmergencyContact {
   final String name;
   final String phone;
   final String relationship;
-  
+
   EmergencyContact({
     required this.name,
     required this.phone,
@@ -3655,7 +3922,7 @@ class DriverPreferences {
   final List<String> languages;
   final double maxTripDistance;
   final List<String> preferredZones;
-  
+
   DriverPreferences({
     required this.acceptPets,
     required this.acceptSmoking,
@@ -3701,7 +3968,7 @@ class VehicleInfo {
   final String color;
   final String plate;
   final int capacity;
-  
+
   VehicleInfo({
     required this.make,
     required this.model,
@@ -3727,7 +3994,7 @@ class WorkSchedule {
   final String saturdayEnd;
   final String sundayStart;
   final String sundayEnd;
-  
+
   WorkSchedule({
     required this.mondayStart,
     required this.mondayEnd,
@@ -3745,6 +4012,7 @@ class WorkSchedule {
     required this.sundayEnd,
   });
 }
+
 /// Ronda 235: dialog que carga la imagen real del documento (fetch autenticado)
 /// y permite reemplazarla eligiendo un nuevo archivo del image_picker.
 class _DocumentPreviewDialog extends StatefulWidget {
@@ -3807,7 +4075,13 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
       ),
     );
     if (source == null || !mounted) return;
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 80);
+    // Ronda 286: acotada a 1920 px como el resto; aquí salía a resolución
+    // completa, que es lo que dispara la memoria y hace que Android mate la
+    // app con la cámara abierta.
+    final picked = await PhotoPicker.pick(
+      source: source,
+      target: 'driver_profile.document.${widget.docType}',
+    );
     if (picked == null || !mounted) return;
     setState(() => _replacing = true);
     try {
@@ -3819,7 +4093,8 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
       if (newUrl == null || newUrl.isEmpty) {
         throw StateError('El backend no devolvió URL');
       }
-      await RapiApiClient.instance.uploadDocument(docType: widget.docType, fileUrl: newUrl);
+      await RapiApiClient.instance
+          .uploadDocument(docType: widget.docType, fileUrl: newUrl);
       if (!mounted) return;
       await widget.onReplaced();
     } catch (e) {
@@ -3850,7 +4125,8 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
                   Expanded(
                     child: Text(
                       widget.label,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -3867,7 +4143,8 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
                 width: double.infinity,
                 color: Colors.black12,
                 child: _bytes != null
-                    ? InteractiveViewer(child: Image.memory(_bytes!, fit: BoxFit.contain))
+                    ? InteractiveViewer(
+                        child: Image.memory(_bytes!, fit: BoxFit.contain))
                     : _error != null
                         ? Center(
                             child: Padding(
@@ -3884,7 +4161,8 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _replacing ? null : () => Navigator.pop(context),
+                      onPressed:
+                          _replacing ? null : () => Navigator.pop(context),
                       icon: const Icon(Icons.close),
                       label: const Text('Cerrar'),
                     ),
@@ -3894,7 +4172,10 @@ class _DocumentPreviewDialogState extends State<_DocumentPreviewDialog> {
                     child: ElevatedButton.icon(
                       onPressed: _replacing ? null : _replace,
                       icon: _replacing
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.upload),
                       label: Text(_replacing ? 'Subiendo…' : 'Reemplazar'),
                       style: ElevatedButton.styleFrom(

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/photo_picker.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/driver_registration_draft.dart';
 import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/error_messages.dart';
@@ -21,12 +23,18 @@ class DriverRegistrationDocumentsScreen extends StatefulWidget {
   });
 
   @override
-  State<DriverRegistrationDocumentsScreen> createState() => _DriverRegistrationDocumentsScreenState();
+  State<DriverRegistrationDocumentsScreen> createState() =>
+      _DriverRegistrationDocumentsScreenState();
 }
 
-class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDocumentsScreen> {
-  final _picker = ImagePicker();
+class _DriverRegistrationDocumentsScreenState
+    extends State<DriverRegistrationDocumentsScreen> {
   bool _isLoading = false;
+
+  /// Los datos del alta: lo que traen los pasos anteriores o, tras un
+  /// reinicio, lo que había en el borrador.
+  late Map<String, dynamic> _data =
+      Map<String, dynamic>.from(widget.registrationData);
 
   // Documentos
   File? _licenseFront;
@@ -36,6 +44,68 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
   File? _propertyCardFront;
   File? _propertyCardBack;
   File? _soat;
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  /// Ronda 286: ESTE era el paso donde "la app se cerraba y se volvía a
+  /// abrir". Siete fotos a resolución completa en memoria y Android matando
+  /// la actividad al abrir la cámara; al volver, ni datos ni fotos.
+  ///
+  /// Ahora las fotos ya hechas vuelven del borrador, y la que se estaba
+  /// tomando en el momento de la muerte se rescata con [PhotoPicker.recover].
+  Future<void> _restore() async {
+    final draft = await DriverRegistrationDraft.load();
+    if (draft != null && mounted) {
+      if (_data.isEmpty) _data = Map<String, dynamic>.from(draft.data);
+      setState(() {
+        draft.documents.forEach((type, path) {
+          final file = File(path);
+          if (file.existsSync()) _setDocument(type, file);
+        });
+      });
+    }
+    final lost = await PhotoPicker.recover(prefix: 'registration.documents.');
+    if (lost != null && mounted) await _applyDocument(lost.name, lost.file);
+  }
+
+  /// Guarda la foto en sitio seguro y la apunta en el borrador al momento:
+  /// la siguiente toma puede volver a matar la app, y esta no se pierde.
+  Future<void> _applyDocument(String type, XFile picked) async {
+    final kept = await PhotoPicker.keep(picked, type);
+    if (!mounted) return;
+    setState(() => _setDocument(type, kept));
+    await DriverRegistrationDraft.saveDocument(type, kept.path);
+  }
+
+  void _setDocument(String type, File file) {
+    switch (type) {
+      case 'license_front':
+        _licenseFront = file;
+        break;
+      case 'license_back':
+        _licenseBack = file;
+        break;
+      case 'dni_front':
+        _dniFront = file;
+        break;
+      case 'dni_back':
+        _dniBack = file;
+        break;
+      case 'property_front':
+        _propertyCardFront = file;
+        break;
+      case 'property_back':
+        _propertyCardBack = file;
+        break;
+      case 'soat':
+        _soat = file;
+        break;
+    }
+  }
 
   Future<void> _pickDocument(String type) async {
     final source = await showResponsiveBottomSheet<ImageSource>(
@@ -58,44 +128,19 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
 
     if (source == null || !mounted) return;
 
-    final pickedFile = await _picker.pickImage(
+    final pickedFile = await PhotoPicker.pick(
       source: source,
-      imageQuality: 80,
+      target: 'registration.documents.$type',
     );
 
-    if (pickedFile != null && mounted) {
-      setState(() {
-        switch (type) {
-          case 'license_front':
-            _licenseFront = File(pickedFile.path);
-            break;
-          case 'license_back':
-            _licenseBack = File(pickedFile.path);
-            break;
-          case 'dni_front':
-            _dniFront = File(pickedFile.path);
-            break;
-          case 'dni_back':
-            _dniBack = File(pickedFile.path);
-            break;
-          case 'property_front':
-            _propertyCardFront = File(pickedFile.path);
-            break;
-          case 'property_back':
-            _propertyCardBack = File(pickedFile.path);
-            break;
-          case 'soat':
-            _soat = File(pickedFile.path);
-            break;
-        }
-      });
-    }
+    if (pickedFile != null && mounted) await _applyDocument(type, pickedFile);
   }
 
   bool get _isFormValid {
-    final isCourier = (widget.registrationData['workType'] as String? ?? 'driver') == 'courier';
+    final isCourier = (_data['workType'] as String? ?? 'driver') == 'courier';
     // Courier no requiere licencia de conducir
-    final licenseValid = isCourier || (_licenseFront != null && _licenseBack != null);
+    final licenseValid =
+        isCourier || (_licenseFront != null && _licenseBack != null);
     return licenseValid &&
         _dniFront != null &&
         _dniBack != null &&
@@ -120,11 +165,12 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       AppLogger.info('Subiendo documentos al backend Node...');
 
       // Subir imágenes al backend Node (storage propio del VPS).
-      final selfieUrl = widget.registrationData['selfieLocalPath'] != null
-          ? await _uploadImage(File(widget.registrationData['selfieLocalPath']), 'selfie')
+      final selfieUrl = _data['selfieLocalPath'] != null
+          ? await _uploadImage(File(_data['selfieLocalPath']), 'selfie')
           : null;
-      final vehiclePhotoUrl = widget.registrationData['vehiclePhotoLocalPath'] != null
-          ? await _uploadImage(File(widget.registrationData['vehiclePhotoLocalPath']), 'vehicle_photo')
+      final vehiclePhotoUrl = _data['vehiclePhotoLocalPath'] != null
+          ? await _uploadImage(
+              File(_data['vehiclePhotoLocalPath']), 'vehicle_photo')
           : null;
       final licenseFrontUrl = _licenseFront != null
           ? await _uploadImage(_licenseFront!, 'license_front')
@@ -134,7 +180,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
           : null;
       final dniFrontUrl = await _uploadImage(_dniFront!, 'dni_front');
       final dniBackUrl = await _uploadImage(_dniBack!, 'dni_back');
-      final propertyCardFrontUrl = await _uploadImage(_propertyCardFront!, 'property_front');
+      final propertyCardFrontUrl =
+          await _uploadImage(_propertyCardFront!, 'property_front');
       final propertyCardBackUrl = _propertyCardBack != null
           ? await _uploadImage(_propertyCardBack!, 'property_back')
           : null;
@@ -148,19 +195,20 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       // → el catch silenciaba el error → vehículo jamás se guardaba → al
       // aprobar docs el auto-upgrade a dual no dispara por falta de vehículo.
       // Además el catch que "silencia" ahora relanza para que el user vea el error.
-      final workType = (widget.registrationData['workType'] ?? 'auto') as String;
+      final workType = (_data['workType'] ?? 'auto') as String;
       final backendVehicleType = _mapWorkTypeToVehicleType(workType);
-      final plate = (widget.registrationData['vehiclePlate'] ?? '') as String;
+      final plate = (_data['vehiclePlate'] ?? '') as String;
       if (plate.trim().isEmpty) {
-        throw StateError('Falta la placa del vehículo. Vuelve al paso anterior y complétala.');
+        throw StateError(
+            'Falta la placa del vehículo. Vuelve al paso anterior y complétala.');
       }
       await api.upsertVehicle(
         vehicleType: backendVehicleType,
         plate: plate,
-        make: widget.registrationData['vehicleBrand'] as String?,
-        model: widget.registrationData['vehicleModel'] as String?,
-        color: widget.registrationData['vehicleColor'] as String?,
-        year: int.tryParse('${widget.registrationData['vehicleYear'] ?? ''}'),
+        make: _data['vehicleBrand'] as String?,
+        model: _data['vehicleModel'] as String?,
+        color: _data['vehicleColor'] as String?,
+        year: int.tryParse('${_data['vehicleYear'] ?? ''}'),
       );
 
       // 2) Registrar cada documento subido en /api/drivers/me/documents.
@@ -201,11 +249,15 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
 
       AppLogger.info('Solicitud de conductor enviada al backend Node');
 
+      // Ronda 286: ya está todo en el servidor; el borrador y las fotos
+      // guardadas en el teléfono no tienen por qué quedarse.
+      await DriverRegistrationDraft.clear();
+
       if (!mounted) return;
 
       // Crear mapa limpio para navegación.
       final navData = {
-        'workType': widget.registrationData['workType'],
+        'workType': _data['workType'],
         'status': 'pending',
         'userName': userName,
       };
@@ -218,12 +270,14 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
         arguments: navData,
       );
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error enviando solicitud'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error enviando solicitud'));
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'Error al enviar solicitud')),
+          content:
+              Text(userFriendlyError(e, fallback: 'Error al enviar solicitud')),
           backgroundColor: AppColors.error,
         ),
       );
@@ -284,14 +338,16 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
       }
       return url;
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo imagen $scope (backend scope: $backendScope)'));
+      AppLogger.error(userFriendlyError(e,
+          fallback:
+              'Error subiendo imagen $scope (backend scope: $backendScope)'));
       rethrow;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final workType = widget.registrationData['workType'] as String? ?? 'driver';
+    final workType = _data['workType'] as String? ?? 'driver';
     final isCourier = workType == 'courier';
 
     return Scaffold(
@@ -300,7 +356,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
+          icon:
+              Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
           onPressed: () => safePopOrHome(context),
         ),
         title: Text(
@@ -362,7 +419,9 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
 
               // Tarjeta de propiedad
               _buildDocumentSection(
-                title: isCourier ? 'Documento del vehículo' : 'Tarjeta de propiedad',
+                title: isCourier
+                    ? 'Documento del vehículo'
+                    : 'Tarjeta de propiedad',
                 icon: Icons.description,
                 frontFile: _propertyCardFront,
                 backFile: _propertyCardBack,
@@ -413,7 +472,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isFormValid && !_isLoading ? _submitApplication : null,
+                  onPressed:
+                      _isFormValid && !_isLoading ? _submitApplication : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.rappiRed,
                     disabledBackgroundColor: Colors.grey[300],
@@ -428,7 +488,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : Text(
@@ -436,7 +497,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: _isFormValid ? Colors.white : Colors.grey[600],
+                            color:
+                                _isFormValid ? Colors.white : Colors.grey[600],
                           ),
                         ),
                 ),
@@ -547,7 +609,8 @@ class _DriverRegistrationDocumentsScreenState extends State<DriverRegistrationDo
           color: AppColors.getInputFill(context),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: file != null ? AppColors.success : AppColors.getBorder(context),
+            color:
+                file != null ? AppColors.success : AppColors.getBorder(context),
             width: file != null ? 2 : 1,
           ),
           image: file != null

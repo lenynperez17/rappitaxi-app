@@ -2,9 +2,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async' show unawaited;
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/photo_picker.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../services/driver_registration_draft.dart';
 import '../../utils/safe_navigation.dart';
 
 /// Pantalla 2: Datos personales + Selfie
@@ -17,16 +20,63 @@ class DriverRegistrationPersonalScreen extends StatefulWidget {
   });
 
   @override
-  State<DriverRegistrationPersonalScreen> createState() => _DriverRegistrationPersonalScreenState();
+  State<DriverRegistrationPersonalScreen> createState() =>
+      _DriverRegistrationPersonalScreenState();
 }
 
-class _DriverRegistrationPersonalScreenState extends State<DriverRegistrationPersonalScreen> {
+class _DriverRegistrationPersonalScreenState
+    extends State<DriverRegistrationPersonalScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _documentController = TextEditingController();
   DateTime? _birthDate;
   File? _selfieImage;
-  final _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  /// Ronda 286: si hay un alta a medias, se rellena lo que ya se había
+  /// escrito y se rescata la selfie que se estuviera tomando cuando Android
+  /// mató la app con la cámara abierta. Ver [DriverRegistrationDraft] y
+  /// [PhotoPicker].
+  Future<void> _restore() async {
+    final draft = await DriverRegistrationDraft.load();
+    if (draft != null && mounted) {
+      final d = draft.data;
+      final name = d['fullName'] as String?;
+      final document = d['documentNumber'] as String?;
+      if (name != null && _nameController.text.isEmpty) {
+        _nameController.text = name;
+      }
+      if (document != null && _documentController.text.isEmpty) {
+        _documentController.text = document;
+      }
+      final birth = DateTime.tryParse((d['birthDate'] as String?) ?? '');
+      final selfiePath = d['selfieLocalPath'] as String?;
+      final selfie = selfiePath != null ? File(selfiePath) : null;
+      setState(() {
+        _birthDate ??= birth;
+        if (selfie != null && selfie.existsSync()) _selfieImage = selfie;
+      });
+    }
+    final lost = await PhotoPicker.recover(prefix: 'registration.personal.');
+    if (lost != null && mounted) await _applySelfie(lost.file);
+  }
+
+  /// Guarda la selfie en sitio seguro y la apunta en el borrador al momento,
+  /// para que un reinicio en la siguiente foto no se la lleve.
+  Future<void> _applySelfie(XFile picked) async {
+    final kept = await PhotoPicker.keep(picked, 'selfie');
+    if (!mounted) return;
+    setState(() => _selfieImage = kept);
+    await DriverRegistrationDraft.save(
+      step: DriverRegistrationDraft.stepPersonal,
+      data: {'workType': widget.workType, 'selfieLocalPath': kept.path},
+    );
+  }
 
   @override
   void dispose() {
@@ -56,15 +106,28 @@ class _DriverRegistrationPersonalScreenState extends State<DriverRegistrationPer
 
     if (source == null || !mounted) return;
 
-    final pickedFile = await _picker.pickImage(
+    // Ronda 286: lo escrito hasta ahora se guarda ANTES de abrir la cámara.
+    // Es el momento exacto en que Android puede matar la app; si pasa, al
+    // volver el nombre y el DNI siguen donde se dejaron.
+    await DriverRegistrationDraft.save(
+      step: DriverRegistrationDraft.stepPersonal,
+      data: {
+        'workType': widget.workType,
+        if (_nameController.text.isNotEmpty) 'fullName': _nameController.text,
+        if (_documentController.text.isNotEmpty)
+          'documentNumber': _documentController.text,
+        if (_birthDate != null) 'birthDate': _birthDate!.toIso8601String(),
+      },
+    );
+    if (!mounted) return;
+
+    final pickedFile = await PhotoPicker.pick(
       source: source,
+      target: 'registration.personal.selfie',
       preferredCameraDevice: CameraDevice.front,
-      imageQuality: 80,
     );
 
-    if (pickedFile != null && mounted) {
-      setState(() => _selfieImage = File(pickedFile.path));
-    }
+    if (pickedFile != null && mounted) await _applySelfie(pickedFile);
   }
 
   Future<void> _selectBirthDate() async {
@@ -98,7 +161,8 @@ class _DriverRegistrationPersonalScreenState extends State<DriverRegistrationPer
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
+          icon:
+              Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
           onPressed: () => safePopOrHome(context),
         ),
         title: Text(
@@ -304,16 +368,24 @@ class _DriverRegistrationPersonalScreenState extends State<DriverRegistrationPer
                   child: ElevatedButton(
                     onPressed: _isFormValid
                         ? () {
+                            final data = <String, dynamic>{
+                              'workType': widget.workType,
+                              'fullName': _nameController.text,
+                              'documentNumber': _documentController.text,
+                              'birthDate': _birthDate!.toIso8601String(),
+                              'selfieLocalPath': _selfieImage!.path,
+                            };
+                            // Ronda 286: el paso queda guardado antes de
+                            // avanzar; si la app muere en el siguiente, esto
+                            // no hay que volver a escribirlo.
+                            unawaited(DriverRegistrationDraft.save(
+                              step: DriverRegistrationDraft.stepVehicle,
+                              data: data,
+                            ));
                             Navigator.pushNamed(
                               context,
                               '/driver/register/vehicle',
-                              arguments: {
-                                'workType': widget.workType,
-                                'fullName': _nameController.text,
-                                'documentNumber': _documentController.text,
-                                'birthDate': _birthDate!.toIso8601String(),
-                                'selfieLocalPath': _selfieImage!.path,
-                              },
+                              arguments: data,
                             );
                           }
                         : null,

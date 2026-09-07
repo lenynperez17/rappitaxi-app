@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
+import '../../services/driver_registration_draft.dart';
 import '../../utils/safe_navigation.dart';
 
 /// Pantalla 1: Selección de tipo de trabajo (Auto, Moto, Repartidor)
@@ -8,11 +9,61 @@ class DriverRegistrationTypeScreen extends StatefulWidget {
   const DriverRegistrationTypeScreen({super.key});
 
   @override
-  State<DriverRegistrationTypeScreen> createState() => _DriverRegistrationTypeScreenState();
+  State<DriverRegistrationTypeScreen> createState() =>
+      _DriverRegistrationTypeScreenState();
 }
 
-class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScreen> {
+class _DriverRegistrationTypeScreenState
+    extends State<DriverRegistrationTypeScreen> {
   String? _selectedType;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerToResume());
+  }
+
+  /// Ronda 286: si quedó un alta a medias, se ofrece seguir por donde iba en
+  /// vez de hacer repetir los cuatro pasos. Los datos y las fotos ya hechas
+  /// están en [DriverRegistrationDraft].
+  Future<void> _offerToResume() async {
+    final draft = await DriverRegistrationDraft.load();
+    if (draft == null || !mounted) return;
+
+    final resume = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tienes un registro sin terminar'),
+        content: const Text(
+          'Guardamos lo que ya habías completado. '
+          '¿Quieres continuar por donde lo dejaste?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Empezar de nuevo'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.rappiRed,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+
+    if (resume == true) {
+      Navigator.pushNamed(context, draft.route, arguments: draft.arguments);
+    } else if (resume == false) {
+      await DriverRegistrationDraft.clear();
+    }
+    // Cerrar el diálogo sin elegir deja el borrador intacto: se volverá a
+    // ofrecer la próxima vez.
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +73,8 @@ class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScr
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
+          icon:
+              Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
           onPressed: () => safePopOrHome(context),
         ),
       ),
@@ -31,7 +83,8 @@ class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScr
           builder: (context, constraints) => SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+              constraints:
+                  BoxConstraints(minHeight: constraints.maxHeight - 48),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -116,7 +169,9 @@ class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScr
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: _selectedType != null ? Colors.white : Colors.grey[600],
+                          color: _selectedType != null
+                              ? Colors.white
+                              : Colors.grey[600],
                         ),
                       ),
                     ),
@@ -145,7 +200,9 @@ class _DriverRegistrationTypeScreenState extends State<DriverRegistrationTypeScr
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.1) : AppColors.getSurface(context),
+          color: isSelected
+              ? color.withValues(alpha: 0.1)
+              : AppColors.getSurface(context),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? color : AppColors.getBorder(context),

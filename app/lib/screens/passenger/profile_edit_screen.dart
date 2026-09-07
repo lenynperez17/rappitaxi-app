@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart'; // ✅ NUEVO: Para tomar/seleccionar fotos
 import 'dart:io';
 import '../../core/theme/modern_theme.dart';
+import '../../core/utils/photo_picker.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../core/extensions/theme_extensions.dart'; // ✅ Extensión para colores que se adaptan al tema
 
@@ -14,6 +15,7 @@ import '../../services/rapi_api_client.dart';
 import '../../utils/logger.dart';
 import '../../utils/date_utils_rapi.dart';
 import '../../utils/error_messages.dart';
+
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
 
@@ -25,20 +27,22 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
     with TickerProviderStateMixin {
   final RapiApiClient _api = RapiApiClient.instance;
   String? _userId; // Se obtendrá del usuario actual
-  
+
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
-  
+
   // Form controllers
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _emergencyNameController = TextEditingController();
-  final TextEditingController _emergencyPhoneController = TextEditingController();
+  final TextEditingController _emergencyNameController =
+      TextEditingController();
+  final TextEditingController _emergencyPhoneController =
+      TextEditingController();
 
   // ✅ FocusNodes para manejo de teclado y navegación entre campos
   final FocusNode _nameFocusNode = FocusNode();
@@ -58,39 +62,40 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
   bool _smsEnabled = false;
   bool _emailPromotions = true;
   bool _locationSharing = true;
-  
+
   // Form state
   bool _isLoading = false;
   bool _hasChanges = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
+    _recoverLostPhoto();
+
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _slideController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
     );
-    
+
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeIn,
     );
-    
+
     _slideAnimation = CurvedAnimation(
       parent: _slideController,
       curve: Curves.easeOut,
     );
-    
+
     _loadUserData();
     _fadeController.forward();
     _slideController.forward();
-    
+
     // Listen for changes
     _nameController.addListener(_onFieldChanged);
     _lastNameController.addListener(_onFieldChanged);
@@ -99,7 +104,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
     _emergencyNameController.addListener(_onFieldChanged);
     _emergencyPhoneController.addListener(_onFieldChanged);
   }
-  
+
   @override
   void dispose() {
     _fadeController.dispose();
@@ -123,7 +128,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
   // ✅ Método helper para ocultar teclado de manera confiable en Android
   void _hideKeyboard() {
     FocusScope.of(context).unfocus(); // Quita el foco
-    SystemChannels.textInput.invokeMethod('TextInput.hide'); // Fuerza el ocultamiento en Android
+    SystemChannels.textInput
+        .invokeMethod('TextInput.hide'); // Fuerza el ocultamiento en Android
   }
 
   void _onFieldChanged() {
@@ -131,7 +137,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       setState(() => _hasChanges = true);
     }
   }
-  
+
   Future<void> _loadUserData() async {
     try {
       setState(() => _isLoading = true);
@@ -160,9 +166,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       // TODO(node-migration): mapear extras en GET /api/auth/me cuando existan.
       final fullNameParts = currentUser.fullName.trim().split(' ');
       final firstName = fullNameParts.isNotEmpty ? fullNameParts.first : '';
-      final lastName = fullNameParts.length > 1
-          ? fullNameParts.sublist(1).join(' ')
-          : '';
+      final lastName =
+          fullNameParts.length > 1 ? fullNameParts.sublist(1).join(' ') : '';
 
       setState(() {
         _nameController.text = firstName;
@@ -174,7 +179,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         _profileImagePath = currentUser.profilePhotoUrl;
       });
     } catch (e) {
-      AppLogger.error(userFriendlyError(e, fallback: 'Error cargando datos del usuario'));
+      AppLogger.error(
+          userFriendlyError(e, fallback: 'Error cargando datos del usuario'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -189,8 +195,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       }
     }
   }
-  
-  
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -235,57 +240,59 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
               child: Form(
                 key: _formKey,
                 child: GestureDetector(
-                  onTap: _hideKeyboard, // ✅ Cierra teclado al tocar fuera (Android compatible)
+                  onTap:
+                      _hideKeyboard, // ✅ Cierra teclado al tocar fuera (Android compatible)
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16,
+                        MediaQuery.of(context).viewInsets.bottom + 16),
                     child: Column(
                       children: [
-                      // Profile image section
-                      _buildProfileImageSection(),
-                      
-                      SizedBox(height: 32),
-                      
-                      // Personal information
-                      _buildPersonalInfoSection(),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Contact information
-                      _buildContactInfoSection(),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Document information
-                      _buildDocumentInfoSection(),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Emergency contact
-                      _buildEmergencyContactSection(),
-                      
-                      SizedBox(height: 24),
-                      
-                      // Preferences
-                      _buildPreferencesSection(),
-                      
-                      SizedBox(height: 32),
-                      
-                      // Save button
-                      _buildSaveButton(),
-                      
-                      SizedBox(height: 32),
-                    ],
+                        // Profile image section
+                        _buildProfileImageSection(),
+
+                        SizedBox(height: 32),
+
+                        // Personal information
+                        _buildPersonalInfoSection(),
+
+                        SizedBox(height: 24),
+
+                        // Contact information
+                        _buildContactInfoSection(),
+
+                        SizedBox(height: 24),
+
+                        // Document information
+                        _buildDocumentInfoSection(),
+
+                        SizedBox(height: 24),
+
+                        // Emergency contact
+                        _buildEmergencyContactSection(),
+
+                        SizedBox(height: 24),
+
+                        // Preferences
+                        _buildPreferencesSection(),
+
+                        SizedBox(height: 32),
+
+                        // Save button
+                        _buildSaveButton(),
+
+                        SizedBox(height: 32),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    ), // Scaffold
-  ); // PopScope
-}
-  
+            );
+          },
+        ),
+      ), // Scaffold
+    ); // PopScope
+  }
+
   Widget _buildProfileImageSection() {
     return AnimatedBuilder(
       animation: _slideAnimation,
@@ -303,13 +310,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                       shape: BoxShape.circle,
                       gradient: _profileImagePath.isEmpty
                           ? LinearGradient(
-                              colors: [ModernTheme.rappiOrange, ModernTheme.rappiOrange.withValues(alpha: 0.7)],
+                              colors: [
+                                ModernTheme.rappiOrange,
+                                ModernTheme.rappiOrange.withValues(alpha: 0.7)
+                              ],
                             )
                           : null,
                       image: _profileImagePath.isNotEmpty
                           ? DecorationImage(
                               image: _profileImagePath.startsWith('http')
-                                  ? NetworkImage(_profileImagePath) as ImageProvider
+                                  ? NetworkImage(_profileImagePath)
+                                      as ImageProvider
                                   : FileImage(File(_profileImagePath)),
                               fit: BoxFit.cover,
                             )
@@ -341,7 +352,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                         decoration: BoxDecoration(
                           color: ModernTheme.primaryBlue,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Theme.of(context).colorScheme.onPrimary, width: 2),
+                          border: Border.all(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              width: 2),
                         ),
                         child: Icon(
                           Icons.camera_alt,
@@ -367,7 +380,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       },
     );
   }
-  
+
   Widget _buildPersonalInfoSection() {
     return _buildSection(
       'Información Personal',
@@ -382,8 +395,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                 label: 'Nombres',
                 icon: Icons.person_outline,
                 focusNode: _nameFocusNode, // ✅ FocusNode configurado
-                textInputAction: TextInputAction.next, // ✅ Botón Next para ir a apellido
-                onFieldSubmitted: (_) => _lastNameFocusNode.requestFocus(), // ✅ Avanza al campo de apellido
+                textInputAction:
+                    TextInputAction.next, // ✅ Botón Next para ir a apellido
+                onFieldSubmitted: (_) => _lastNameFocusNode
+                    .requestFocus(), // ✅ Avanza al campo de apellido
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Ingresa tu nombre';
@@ -399,8 +414,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                 label: 'Apellidos',
                 icon: Icons.person_outline,
                 focusNode: _lastNameFocusNode, // ✅ FocusNode configurado
-                textInputAction: TextInputAction.next, // ✅ Botón Next para ir a email
-                onFieldSubmitted: (_) => _emailFocusNode.requestFocus(), // ✅ Avanza al campo de email
+                textInputAction:
+                    TextInputAction.next, // ✅ Botón Next para ir a email
+                onFieldSubmitted: (_) => _emailFocusNode
+                    .requestFocus(), // ✅ Avanza al campo de email
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Ingresa tus apellidos';
@@ -417,7 +434,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           child: Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
+              border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.3)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -428,7 +449,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                   child: Text(
                     _birthDate.isEmpty ? 'Fecha de nacimiento' : _birthDate,
                     style: TextStyle(
-                      color: _birthDate.isEmpty ? context.secondaryText : context.primaryText,
+                      color: _birthDate.isEmpty
+                          ? context.secondaryText
+                          : context.primaryText,
                       fontSize: 16,
                     ),
                   ),
@@ -448,7 +471,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          items: ['Masculino', 'Femenino', 'Otro', 'Prefiero no decir'].map((gender) {
+          items: ['Masculino', 'Femenino', 'Otro', 'Prefiero no decir']
+              .map((gender) {
             return DropdownMenuItem(
               value: gender,
               child: Text(gender),
@@ -464,7 +488,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ],
     );
   }
-  
+
   Widget _buildContactInfoSection() {
     return _buildSection(
       'Información de Contacto',
@@ -476,8 +500,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           label: 'Correo electrónico',
           icon: Icons.email_outlined,
           focusNode: _emailFocusNode, // ✅ FocusNode configurado
-          textInputAction: TextInputAction.next, // ✅ Botón Next para ir a teléfono
-          onFieldSubmitted: (_) => _phoneFocusNode.requestFocus(), // ✅ Avanza al campo de teléfono
+          textInputAction:
+              TextInputAction.next, // ✅ Botón Next para ir a teléfono
+          onFieldSubmitted: (_) =>
+              _phoneFocusNode.requestFocus(), // ✅ Avanza al campo de teléfono
           keyboardType: TextInputType.emailAddress,
           validator: (value) {
             if (value == null || value.isEmpty) {
@@ -532,7 +558,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: ModernTheme.rappiOrange, width: 2),
+                  borderSide:
+                      BorderSide(color: ModernTheme.rappiOrange, width: 2),
                 ),
                 helperText: 'Toca para cambiar tu número de teléfono',
                 helperStyle: TextStyle(
@@ -552,7 +579,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ],
     );
   }
-  
+
   Widget _buildDocumentInfoSection() {
     return _buildSection(
       'Documento de Identidad',
@@ -619,7 +646,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ],
     );
   }
-  
+
   Widget _buildEmergencyContactSection() {
     return _buildSection(
       'Contacto de Emergencia',
@@ -631,8 +658,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           label: 'Nombre completo',
           icon: Icons.person_pin,
           focusNode: _emergencyNameFocusNode, // ✅ FocusNode configurado
-          textInputAction: TextInputAction.next, // ✅ Botón Next para ir a teléfono de emergencia
-          onFieldSubmitted: (_) => _emergencyPhoneFocusNode.requestFocus(), // ✅ Avanza al teléfono de emergencia
+          textInputAction: TextInputAction
+              .next, // ✅ Botón Next para ir a teléfono de emergencia
+          onFieldSubmitted: (_) => _emergencyPhoneFocusNode
+              .requestFocus(), // ✅ Avanza al teléfono de emergencia
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'Ingresa el nombre del contacto';
@@ -646,8 +675,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           label: 'Teléfono de emergencia',
           icon: Icons.phone_in_talk,
           focusNode: _emergencyPhoneFocusNode, // ✅ FocusNode configurado
-          textInputAction: TextInputAction.done, // ✅ Botón Done en teclado (último campo)
-          onFieldSubmitted: (_) => FocusScope.of(context).unfocus(), // ✅ Cierra teclado al presionar Done
+          textInputAction:
+              TextInputAction.done, // ✅ Botón Done en teclado (último campo)
+          onFieldSubmitted: (_) => FocusScope.of(context)
+              .unfocus(), // ✅ Cierra teclado al presionar Done
           keyboardType: TextInputType.phone,
           validator: (value) {
             if (value == null || value.isEmpty) {
@@ -659,7 +690,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ],
     );
   }
-  
+
   Widget _buildPreferencesSection() {
     return _buildSection(
       'Preferencias',
@@ -717,8 +748,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ],
     );
   }
-  
-  Widget _buildSection(String title, IconData icon, Color color, List<Widget> children) {
+
+  Widget _buildSection(
+      String title, IconData icon, Color color, List<Widget> children) {
     // Cards por sección con borderRadius 16, padding 20, borde gris claro
     return Card(
       elevation: 0,
@@ -726,7 +758,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+          color:
+              Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
           width: 1,
         ),
       ),
@@ -766,14 +799,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ),
     );
   }
-  
+
   Widget _buildTextFormField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     FocusNode? focusNode, // ✅ FocusNode para navegación
     TextInputAction? textInputAction, // ✅ Acción del teclado (next/done)
-    ValueChanged<String>? onFieldSubmitted, // ✅ Callback al presionar Enter/Done
+    ValueChanged<String>?
+        onFieldSubmitted, // ✅ Callback al presionar Enter/Done
     TextInputType keyboardType = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
@@ -799,7 +833,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ),
     );
   }
-  
+
   Widget _buildSaveButton() {
     return SizedBox(
       width: double.infinity,
@@ -820,7 +854,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
                 width: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.onPrimary),
                 ),
               )
             : Text(
@@ -833,7 +868,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ),
     );
   }
-  
+
   void _changeProfileImage() {
     showResponsiveBottomSheet(
       context: context,
@@ -934,16 +969,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ),
     );
   }
-  
+
+  /// Ronda 286: la foto que se estaba tomando cuando Android mató la app con
+  /// la cámara abierta. Ver [PhotoPicker].
+  Future<void> _recoverLostPhoto() async {
+    final lost = await PhotoPicker.recover(prefix: 'profile_edit.photo');
+    if (lost == null || !mounted) return;
+    setState(() {
+      _profileImagePath = lost.file.path;
+      _hasChanges = true;
+    });
+  }
+
   /// ✅ CORREGIDO: Tomar foto con la cámara real usando image_picker
   Future<void> _pickImageFromCamera() async {
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
+      // Ronda 286: por PhotoPicker, que deja apuntado que se estaba tomando
+      // la foto de perfil para recuperarla si Android mata la app con la
+      // cámara abierta (ver `_recoverLostPhoto`).
+      final XFile? image = await PhotoPicker.pick(
         source: ImageSource.camera,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+        target: 'profile_edit.photo',
       );
 
       if (image == null) return;
@@ -958,7 +1004,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         SnackBar(
           content: Row(
             children: [
-              Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary, size: 20),
+              Icon(Icons.check_circle,
+                  color: Theme.of(context).colorScheme.onPrimary, size: 20),
               SizedBox(width: 12),
               Text('Foto tomada desde la cámara'),
             ],
@@ -981,12 +1028,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
   /// ✅ CORREGIDO: Seleccionar imagen de galería real usando image_picker
   Future<void> _pickImageFromGallery() async {
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
+      final XFile? image = await PhotoPicker.pick(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+        target: 'profile_edit.photo',
       );
 
       if (image == null) return;
@@ -1001,7 +1045,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         SnackBar(
           content: Row(
             children: [
-              Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary, size: 20),
+              Icon(Icons.check_circle,
+                  color: Theme.of(context).colorScheme.onPrimary, size: 20),
               SizedBox(width: 12),
               Text('Imagen seleccionada de la galería'),
             ],
@@ -1014,19 +1059,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(userFriendlyError(e, fallback: 'Error al seleccionar imagen')),
+          content: Text(
+              userFriendlyError(e, fallback: 'Error al seleccionar imagen')),
           backgroundColor: ModernTheme.error,
         ),
       );
     }
   }
-  
+
   void _removeProfileImage() {
     setState(() {
       _profileImagePath = '';
       _hasChanges = true;
     });
-    
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1035,13 +1081,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       ),
     );
   }
-  
+
   void _selectBirthDate() async {
     final selectedDate = await showDatePicker(
       context: context,
       initialDate: DateTime(1990, 1, 1),
       firstDate: DateTime(1950),
-      lastDate: DateTime.now().subtract(Duration(days: 365 * 18)), // Minimum 18 years
+      lastDate:
+          DateTime.now().subtract(Duration(days: 365 * 18)), // Minimum 18 years
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -1053,23 +1100,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         );
       },
     );
-    
+
     if (selectedDate != null && mounted) {
       setState(() {
-        _birthDate = '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}';
+        _birthDate =
+            '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}';
         _hasChanges = true;
       });
     }
   }
-  
+
   Future<bool> _onWillPop() async {
     if (!_hasChanges) return true;
-    
+
     final shouldDiscard = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('¿Descartar cambios?'),
-        content: Text('Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?'),
+        content: Text(
+            'Tienes cambios sin guardar. ¿Estás seguro de que quieres salir?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1085,10 +1134,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
         ],
       ),
     );
-    
+
     return shouldDiscard ?? false;
   }
-  
+
   /// Guarda el perfil llamando al backend Node (upload + PATCH /me).
   /// Guarda el contacto de emergencia en su módulo real
   /// (/api/emergency-contacts). Si ya existe uno marcado como principal, lo
@@ -1167,7 +1216,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
             AppLogger.debug('✅ Foto subida: $profileImageUrl');
           }
         } catch (e) {
-          AppLogger.error(userFriendlyError(e, fallback: 'Error subiendo foto de perfil'));
+          AppLogger.error(
+              userFriendlyError(e, fallback: 'Error subiendo foto de perfil'));
           // No fallar el guardado si hay error en la foto
         }
       }
@@ -1206,7 +1256,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           'locationSharing': _locationSharing,
         },
       );
-      
+
       if (mounted && !ok) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1234,7 +1284,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
           _isLoading = false;
           _hasChanges = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Perfil actualizado exitosamente'),
@@ -1253,7 +1303,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen>
       AppLogger.error(userFriendlyError(e, fallback: 'Error guardando perfil'));
       if (mounted) {
         setState(() => _isLoading = false);
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al actualizar el perfil'),

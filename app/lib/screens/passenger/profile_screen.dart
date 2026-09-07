@@ -15,6 +15,7 @@ import '../../utils/logger.dart';
 import '../../utils/date_utils_rapi.dart';
 import '../../providers/locale_provider.dart'; // ✅ NUEVO: Para cambio de idioma
 import '../../generated/l10n/app_localizations.dart'; // ✅ NUEVO: Textos localizados
+import '../../core/utils/photo_picker.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
 import '../../services/account_deletion_service.dart';
 import '../auth/email_verification_screen.dart'; // Verificación de email nativa de Firebase
@@ -34,16 +35,16 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _statsController;
   late AnimationController _settingsController;
   late TabController _tabController;
-  
+
   // Controllers para edición
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _birthDateController = TextEditingController();
-  
+
   bool _isEditing = false;
   File? _imageFile;
-  
+
   // Preferencias
   bool _notificationsEnabled = true;
   bool _soundEnabled = true;
@@ -65,30 +66,31 @@ class _ProfileScreenState extends State<ProfileScreen>
     'level': 'Bronze',
     'points': 0,
   };
-  
+
   bool _isLoadingProfile = true;
-  
+
   @override
   void initState() {
     super.initState();
-    
+    _recoverLostPhoto();
+
     _headerController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
     )..forward();
-    
+
     _statsController = AnimationController(
       duration: Duration(milliseconds: 1000),
       vsync: this,
     )..forward();
-    
+
     _settingsController = AnimationController(
       duration: Duration(milliseconds: 1200),
       vsync: this,
     )..forward();
-    
+
     _tabController = TabController(length: 3, vsync: this);
-    
+
     // Cargar datos del usuario
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadUserProfile();
@@ -101,7 +103,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       // final rideProvider = Provider.of<RideProvider>(context, listen: false); // Se usará para estadísticas reales
       final user = authProvider.currentUser;
-      
+
       if (user != null) {
         // Cargar datos básicos del usuario
         _nameController.text = user.fullName;
@@ -140,7 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     }
   }
-  
+
   // Obtener nivel del usuario basado en viajes
   String _getUserLevel(int totalTrips) {
     if (totalTrips >= 100) return 'Platinum';
@@ -148,7 +150,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (totalTrips >= 20) return 'Silver';
     return 'Bronze';
   }
-  
+
   @override
   void dispose() {
     _headerController.dispose();
@@ -161,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _birthDateController.dispose();
     super.dispose();
   }
-  
+
   void _toggleEdit() {
     setState(() {
       _isEditing = !_isEditing;
@@ -171,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     });
   }
-  
+
   /// Guarda el perfil llamando a `PATCH /api/auth/me` vía AuthProvider.
   Future<void> _saveProfile() async {
     try {
@@ -218,7 +220,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               height: 20,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Theme.of(context).colorScheme.onPrimary),
               ),
             ),
             SizedBox(width: 12),
@@ -241,7 +244,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       SnackBar(
         content: Row(
           children: [
-            Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary),
+            Icon(Icons.check_circle,
+                color: Theme.of(context).colorScheme.onPrimary),
             SizedBox(width: 12),
             Text(message),
           ],
@@ -261,7 +265,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       SnackBar(
         content: Row(
           children: [
-            Icon(Icons.error_outline, color: Theme.of(context).colorScheme.onPrimary),
+            Icon(Icons.error_outline,
+                color: Theme.of(context).colorScheme.onPrimary),
             SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],
@@ -317,7 +322,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     final phone = auth.currentUser?.phone ?? '';
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tienes un número asociado a tu cuenta.')),
+        const SnackBar(
+            content: Text('No tienes un número asociado a tu cuenta.')),
       );
       return;
     }
@@ -325,55 +331,72 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   /// ✅ IMPLEMENTADO: Seleccionar foto de perfil desde cámara o galería
-  Future<void> _pickImage() async {
+  /// Ronda 286: la foto que se estaba tomando cuando Android mató la app con
+  /// la cámara abierta. Entra por [_pickImage] con [recovered] para pasar por
+  /// la misma subida que una foto recién hecha. Ver [PhotoPicker].
+  Future<void> _recoverLostPhoto() async {
+    final lost = await PhotoPicker.recover(prefix: 'profile.photo');
+    if (lost == null || !mounted) return;
+    await _pickImage(recovered: lost.file);
+  }
+
+  Future<void> _pickImage({XFile? recovered}) async {
     try {
-      // Mostrar diálogo para elegir fuente
-      final source = await showResponsiveBottomSheet<ImageSource>(
-        context: context,
-        builder: (context) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Text(
-              AppLocalizations.of(context)!.changeProfilePhoto,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: ModernTheme.rappiOrange),
-              title: Text(AppLocalizations.of(context)!.takePhoto),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: ModernTheme.rappiOrange),
-              title: Text(AppLocalizations.of(context)!.chooseFromGallery),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-            if (_imageFile != null)
-              ListTile(
-                leading: const Icon(Icons.delete, color: ModernTheme.error),
-                title: Text(AppLocalizations.of(context)!.deletePhoto),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() {
-                    _imageFile = null;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(AppLocalizations.of(context)!.profilePhotoDeleted),
-                      backgroundColor: ModernTheme.info,
-                      behavior: SnackBarBehavior.floating,
+      // Mostrar diálogo para elegir fuente (salvo que la foto venga
+      // recuperada de un reinicio: entonces ya está hecha)
+      final source = recovered != null
+          ? ImageSource.camera
+          : await showResponsiveBottomSheet<ImageSource>(
+              context: context,
+              builder: (context) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 8),
+                  Text(
+                    AppLocalizations.of(context)!.changeProfilePhoto,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
-                  );
-                },
+                  ),
+                  const SizedBox(height: 20),
+                  ListTile(
+                    leading: const Icon(Icons.camera_alt,
+                        color: ModernTheme.rappiOrange),
+                    title: Text(AppLocalizations.of(context)!.takePhoto),
+                    onTap: () => Navigator.pop(context, ImageSource.camera),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.photo_library,
+                        color: ModernTheme.rappiOrange),
+                    title:
+                        Text(AppLocalizations.of(context)!.chooseFromGallery),
+                    onTap: () => Navigator.pop(context, ImageSource.gallery),
+                  ),
+                  if (_imageFile != null)
+                    ListTile(
+                      leading:
+                          const Icon(Icons.delete, color: ModernTheme.error),
+                      title: Text(AppLocalizations.of(context)!.deletePhoto),
+                      onTap: () {
+                        Navigator.pop(context);
+                        setState(() {
+                          _imageFile = null;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(AppLocalizations.of(context)!
+                                .profilePhotoDeleted),
+                            backgroundColor: ModernTheme.info,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 12),
+                ],
               ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      );
+            );
 
       if (source == null) return;
 
@@ -394,13 +417,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       //
       // Si el permiso está denegado de verdad, lo sabremos por la excepción que
       // lance el selector, y entonces sí ofrecemos ir a Ajustes.
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 90,
-      );
+      // Ronda 286: por PhotoPicker, que deja apuntado que se estaba tomando
+      // la foto de perfil para recuperarla si Android mata la app con la
+      // cámara abierta (ver `_recoverLostPhoto`).
+      final XFile? image = recovered ??
+          await PhotoPicker.pick(
+            source: source,
+            target: 'profile.photo',
+          );
 
       if (image == null) return;
 
@@ -426,7 +450,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.onPrimary),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.onPrimary),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -439,7 +464,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           );
 
-          AppLogger.debug('🚕 RappiTeam [DEBUG] Subiendo foto de perfil al backend Node...');
+          AppLogger.debug(
+              '🚕 RappiTeam [DEBUG] Subiendo foto de perfil al backend Node...');
           final uploadResp = await RapiApiClient.instance.uploadFile(
             file: _imageFile!,
             scope: 'profile',
@@ -450,9 +476,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             throw Exception('El backend no devolvió la URL de la foto');
           }
 
-          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Foto de perfil subida: $profileImageUrl');
+          AppLogger.debug(
+              '🚕 RappiTeam [INFO] ✅ Foto de perfil subida: $profileImageUrl');
           await authProvider.updateProfile(profilePhotoUrl: profileImageUrl);
-          AppLogger.debug('🚕 RappiTeam [INFO] ✅ Perfil actualizado con nueva foto');
+          AppLogger.debug(
+              '🚕 RappiTeam [INFO] ✅ Perfil actualizado con nueva foto');
 
           if (!mounted) return;
           ScaffoldMessenger.of(context).clearSnackBars();
@@ -460,7 +488,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary, size: 20),
+                  Icon(Icons.check_circle,
+                      color: Theme.of(context).colorScheme.onPrimary, size: 20),
                   const SizedBox(width: 12),
                   Text(AppLocalizations.of(context)!.profilePhotoUpdated),
                 ],
@@ -471,15 +500,18 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           );
         } else {
-          AppLogger.warning('🚕 RappiTeam [WARNING] No se pudo subir foto: userId o _imageFile es null');
+          AppLogger.warning(
+              '🚕 RappiTeam [WARNING] No se pudo subir foto: userId o _imageFile es null');
         }
       } catch (uploadError) {
-        AppLogger.error('🚕 RappiTeam [ERROR] Error subiendo foto de perfil: $uploadError');
+        AppLogger.error(
+            '🚕 RappiTeam [ERROR] Error subiendo foto de perfil: $uploadError');
         if (!mounted) return;
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(uploadError, fallback: 'Error al subir foto')),
+            content: Text(userFriendlyError(uploadError,
+                fallback: 'Error al subir foto')),
             backgroundColor: ModernTheme.error,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 5),
@@ -503,7 +535,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             esPermiso
                 ? AppLocalizations.of(context)!.permissionsNeeded
                 : userFriendlyError(e,
-                    fallback: AppLocalizations.of(context)!.errorSelectingImage),
+                    fallback:
+                        AppLocalizations.of(context)!.errorSelectingImage),
           ),
           backgroundColor: ModernTheme.error,
           behavior: SnackBarBehavior.floating,
@@ -518,294 +551,362 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.surfaceColor,
-      body: _isLoadingProfile 
-        ? Center(
-            child: CircularProgressIndicator(
-              color: ModernTheme.rappiOrange,
-            ),
-          )
-        : CustomScrollView(
-        slivers: [
-          // AppBar animado con foto de perfil
-          SliverAppBar(
-            expandedHeight: 280,
-            pinned: true,
-            backgroundColor: ModernTheme.rappiOrange,
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onPrimary),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              IconButton(
-                icon: Icon(
-                  _isEditing ? Icons.check : Icons.edit,
-                  color: Theme.of(context).colorScheme.surface,
-                ),
-                onPressed: _toggleEdit,
+      body: _isLoadingProfile
+          ? Center(
+              child: CircularProgressIndicator(
+                color: ModernTheme.rappiOrange,
               ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: AnimatedBuilder(
-                animation: _headerController,
-                builder: (context, child) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: ModernTheme.primaryGradient,
+            )
+          : CustomScrollView(
+              slivers: [
+                // AppBar animado con foto de perfil
+                SliverAppBar(
+                  expandedHeight: 280,
+                  pinned: true,
+                  backgroundColor: ModernTheme.rappiOrange,
+                  leading: IconButton(
+                    icon: Icon(Icons.arrow_back,
+                        color: Theme.of(context).colorScheme.onPrimary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: Icon(
+                        _isEditing ? Icons.check : Icons.edit,
+                        color: Theme.of(context).colorScheme.surface,
+                      ),
+                      onPressed: _toggleEdit,
                     ),
-                    child: Stack(
-                      children: [
-                        // Patrón de fondo
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: ProfileBackgroundPainter(
-                              animation: _headerController,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
+                  ],
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: AnimatedBuilder(
+                      animation: _headerController,
+                      builder: (context, child) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            gradient: ModernTheme.primaryGradient,
                           ),
-                        ),
-                        // Contenido del perfil
-                        Center(
-                          child: Transform.scale(
-                            scale: 0.8 + (0.2 * _headerController.value),
-                            child: Opacity(
-                              opacity: _headerController.value,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(height: 60),
-                                  // Foto de perfil
-                                  Stack(
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Theme.of(context).colorScheme.surface,
-                                            width: 3,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.26),
-                                              blurRadius: 20,
-                                              offset: Offset(0, 10),
+                          child: Stack(
+                            children: [
+                              // Patrón de fondo
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: ProfileBackgroundPainter(
+                                    animation: _headerController,
+                                    color:
+                                        Theme.of(context).colorScheme.onPrimary,
+                                  ),
+                                ),
+                              ),
+                              // Contenido del perfil
+                              Center(
+                                child: Transform.scale(
+                                  scale: 0.8 + (0.2 * _headerController.value),
+                                  child: Opacity(
+                                    opacity: _headerController.value,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(height: 60),
+                                        // Foto de perfil
+                                        Stack(
+                                          children: [
+                                            Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surface,
+                                                  width: 3,
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface
+                                                        .withValues(
+                                                            alpha: 0.26),
+                                                    blurRadius: 20,
+                                                    offset: Offset(0, 10),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Consumer<AuthProvider>(
+                                                builder:
+                                                    (context, authProvider, _) {
+                                                  final profilePhotoUrl =
+                                                      authProvider.currentUser
+                                                          ?.profilePhotoUrl;
+
+                                                  // ✅ Prioridad: 1) Archivo local recién seleccionado, 2) URL de Firestore, 3) Icono por defecto
+                                                  ImageProvider?
+                                                      backgroundImage;
+                                                  Widget? child;
+
+                                                  if (_imageFile != null) {
+                                                    // Usuario acaba de seleccionar una foto nueva
+                                                    backgroundImage =
+                                                        FileImage(_imageFile!);
+                                                    child = null;
+                                                  } else if (profilePhotoUrl !=
+                                                          null &&
+                                                      profilePhotoUrl
+                                                          .isNotEmpty) {
+                                                    // Cargar foto desde Firestore
+                                                    backgroundImage =
+                                                        NetworkImage(
+                                                            profilePhotoUrl);
+                                                    child = null;
+                                                  } else {
+                                                    // No hay foto, mostrar icono por defecto
+                                                    backgroundImage = null;
+                                                    child = Icon(
+                                                      Icons.person,
+                                                      size: 60,
+                                                      color: ModernTheme
+                                                          .rappiOrange,
+                                                    );
+                                                  }
+
+                                                  return CircleAvatar(
+                                                    radius: 60,
+                                                    backgroundColor:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .surface,
+                                                    backgroundImage:
+                                                        backgroundImage,
+                                                    child: child,
+                                                  );
+                                                },
+                                              ),
                                             ),
+                                            if (_isEditing)
+                                              Positioned(
+                                                bottom: 0,
+                                                right: 0,
+                                                child: Container(
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surface,
+                                                    shape: BoxShape.circle,
+                                                    boxShadow: ModernTheme
+                                                        .getCardShadow(context),
+                                                  ),
+                                                  child: IconButton(
+                                                    icon: Icon(
+                                                      Icons.camera_alt,
+                                                      color: ModernTheme
+                                                          .rappiOrange,
+                                                    ),
+                                                    onPressed: _pickImage,
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
-                                        child: Consumer<AuthProvider>(
-                                          builder: (context, authProvider, _) {
-                                            final profilePhotoUrl = authProvider.currentUser?.profilePhotoUrl;
-
-                                            // ✅ Prioridad: 1) Archivo local recién seleccionado, 2) URL de Firestore, 3) Icono por defecto
-                                            ImageProvider? backgroundImage;
-                                            Widget? child;
-
-                                            if (_imageFile != null) {
-                                              // Usuario acaba de seleccionar una foto nueva
-                                              backgroundImage = FileImage(_imageFile!);
-                                              child = null;
-                                            } else if (profilePhotoUrl != null && profilePhotoUrl.isNotEmpty) {
-                                              // Cargar foto desde Firestore
-                                              backgroundImage = NetworkImage(profilePhotoUrl);
-                                              child = null;
-                                            } else {
-                                              // No hay foto, mostrar icono por defecto
-                                              backgroundImage = null;
-                                              child = Icon(
-                                                Icons.person,
-                                                size: 60,
-                                                color: ModernTheme.rappiOrange,
-                                              );
-                                            }
-
-                                            return CircleAvatar(
-                                              radius: 60,
-                                              backgroundColor: Theme.of(context).colorScheme.surface,
-                                              backgroundImage: backgroundImage,
-                                              child: child,
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      if (_isEditing)
-                                        Positioned(
-                                          bottom: 0,
-                                          right: 0,
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: Theme.of(context).colorScheme.surface,
-                                              shape: BoxShape.circle,
-                                              boxShadow: ModernTheme.getCardShadow(context),
-                                            ),
-                                            child: IconButton(
-                                              icon: Icon(
-                                                Icons.camera_alt,
-                                                color: ModernTheme.rappiOrange,
-                                              ),
-                                              onPressed: _pickImage,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  SizedBox(height: 16),
-                                  // Nombre y nivel — Ronda 234: nombres largos
-                                  // desbordaban el header con gradiente.
-                                  Text(
-                                    _nameController.text,
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.surface,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  SizedBox(height: 8),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: ModernTheme.warning,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.star,
-                                          size: 16,
-                                          color: Theme.of(context).colorScheme.surface,
-                                        ),
-                                        SizedBox(width: 4),
+                                        SizedBox(height: 16),
+                                        // Nombre y nivel — Ronda 234: nombres largos
+                                        // desbordaban el header con gradiente.
                                         Text(
-                                          '${_userStats['level']} • ${_userStats['points']} pts',
+                                          _nameController.text,
                                           style: TextStyle(
-                                            color: Theme.of(context).colorScheme.surface,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surface,
+                                            fontSize: 24,
                                             fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        SizedBox(height: 8),
+                                        Container(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: ModernTheme.warning,
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.star,
+                                                size: 16,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surface,
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                '${_userStats['level']} • ${_userStats['points']} pts',
+                                                style: TextStyle(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surface,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                            ],
                           ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                // Tabs
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _SliverAppBarDelegate(
+                    TabBar(
+                      controller: _tabController,
+                      labelColor: ModernTheme.rappiOrange,
+                      unselectedLabelColor: context.secondaryText,
+                      indicatorColor: ModernTheme.rappiOrange,
+                      tabs: [
+                        Tab(
+                            text: AppLocalizations.of(context)!.information,
+                            icon: Icon(Icons.person)),
+                        Tab(
+                            text: AppLocalizations.of(context)!.statistics,
+                            icon: Icon(Icons.bar_chart)),
+                        Tab(
+                            text: AppLocalizations.of(context)!.preferences,
+                            icon: Icon(Icons.settings)),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Stats del usuario en fila horizontal debajo del avatar/header
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    color: Theme.of(context).colorScheme.surface,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Stat: Viajes
+                        Column(
+                          children: [
+                            Icon(Icons.route,
+                                size: 22, color: ModernTheme.rappiOrange),
+                            SizedBox(height: 4),
+                            Text(
+                              '${_userStats['totalTrips'] ?? 0}',
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.primaryText),
+                            ),
+                            Text(
+                              AppLocalizations.of(context)!.trips,
+                              style: TextStyle(
+                                  fontSize: 12, color: context.secondaryText),
+                            ),
+                          ],
+                        ),
+                        Container(
+                            width: 1,
+                            height: 40,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.15)),
+                        // Stat: Rating
+                        Column(
+                          children: [
+                            Icon(Icons.star, size: 22, color: Colors.amber),
+                            SizedBox(height: 4),
+                            Text(
+                              ((_userStats['rating'] ?? 5.0) as num)
+                                  .toStringAsFixed(1),
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.primaryText),
+                            ),
+                            Text(
+                              AppLocalizations.of(context)!.rating,
+                              style: TextStyle(
+                                  fontSize: 12, color: context.secondaryText),
+                            ),
+                          ],
+                        ),
+                        Container(
+                            width: 1,
+                            height: 40,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.15)),
+                        // Stat: Miembro desde
+                        Column(
+                          children: [
+                            Icon(Icons.calendar_today,
+                                size: 22, color: ModernTheme.rappiOrange),
+                            SizedBox(height: 4),
+                            Text(
+                              () {
+                                final ms = _userStats['memberSince'];
+                                if (ms is DateTime) return '${ms.year}';
+                                return '-';
+                              }(),
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.primaryText),
+                            ),
+                            Text(
+                              'Miembro',
+                              style: TextStyle(
+                                  fontSize: 12, color: context.secondaryText),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  );
-                },
-              ),
-            ),
-          ),
-          
-          // Tabs
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _SliverAppBarDelegate(
-              TabBar(
-                controller: _tabController,
-                labelColor: ModernTheme.rappiOrange,
-                unselectedLabelColor: context.secondaryText,
-                indicatorColor: ModernTheme.rappiOrange,
-                tabs: [
-                  Tab(text: AppLocalizations.of(context)!.information, icon: Icon(Icons.person)),
-                  Tab(text: AppLocalizations.of(context)!.statistics, icon: Icon(Icons.bar_chart)),
-                  Tab(text: AppLocalizations.of(context)!.preferences, icon: Icon(Icons.settings)),
-                ],
-              ),
-            ),
-          ),
-          
-          // Stats del usuario en fila horizontal debajo del avatar/header
-          SliverToBoxAdapter(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: Theme.of(context).colorScheme.surface,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Stat: Viajes
-                  Column(
-                    children: [
-                      Icon(Icons.route, size: 22, color: ModernTheme.rappiOrange),
-                      SizedBox(height: 4),
-                      Text(
-                        '${_userStats['totalTrips'] ?? 0}',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.primaryText),
-                      ),
-                      Text(
-                        AppLocalizations.of(context)!.trips,
-                        style: TextStyle(fontSize: 12, color: context.secondaryText),
-                      ),
-                    ],
                   ),
-                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15)),
-                  // Stat: Rating
-                  Column(
-                    children: [
-                      Icon(Icons.star, size: 22, color: Colors.amber),
-                      SizedBox(height: 4),
-                      Text(
-                        ((_userStats['rating'] ?? 5.0) as num).toStringAsFixed(1),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.primaryText),
-                      ),
-                      Text(
-                        AppLocalizations.of(context)!.rating,
-                        style: TextStyle(fontSize: 12, color: context.secondaryText),
-                      ),
-                    ],
-                  ),
-                  Container(width: 1, height: 40, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15)),
-                  // Stat: Miembro desde
-                  Column(
-                    children: [
-                      Icon(Icons.calendar_today, size: 22, color: ModernTheme.rappiOrange),
-                      SizedBox(height: 4),
-                      Text(
-                        () {
-                          final ms = _userStats['memberSince'];
-                          if (ms is DateTime) return '${ms.year}';
-                          return '-';
-                        }(),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.primaryText),
-                      ),
-                      Text(
-                        'Miembro',
-                        style: TextStyle(fontSize: 12, color: context.secondaryText),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+                ),
 
-          // Contenido de tabs
-          SliverFillRemaining(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPersonalInfoTab(),
-                _buildStatisticsTab(),
-                _buildPreferencesTab(),
+                // Contenido de tabs
+                SliverFillRemaining(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildPersonalInfoTab(),
+                      _buildStatisticsTab(),
+                      _buildPreferencesTab(),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
-  
+
   Widget _buildPersonalInfoTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(20),
@@ -842,41 +943,46 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           // ✅ MODIFICADO: Campo de teléfono con botón para cambiar número
           GestureDetector(
-            onTap: !_isEditing ? () async {
-              // Solo permitir cambio cuando NO está en modo edición
-              final result = await Navigator.pushNamed(
-                context,
-                '/change-phone-number',
-                arguments: _phoneController.text.trim(),
-              );
+            onTap: !_isEditing
+                ? () async {
+                    // Solo permitir cambio cuando NO está en modo edición
+                    final result = await Navigator.pushNamed(
+                      context,
+                      '/change-phone-number',
+                      arguments: _phoneController.text.trim(),
+                    );
 
-              // Si se cambió exitosamente, recargar datos
-              if (result == true && mounted) {
-                await _loadUserProfile();
+                    // Si se cambió exitosamente, recargar datos
+                    if (result == true && mounted) {
+                      await _loadUserProfile();
 
-                // ✅ CORREGIDO: Verificar mounted nuevamente después del async
-                if (!mounted) return;
+                      // ✅ CORREGIDO: Verificar mounted nuevamente después del async
+                      if (!mounted) return;
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary),
-                        SizedBox(width: 12),
-                        Text('Número actualizado correctamente'),
-                      ],
-                    ),
-                    backgroundColor: ModernTheme.success,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                );
-              }
-            } : null,
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(Icons.check_circle,
+                                  color:
+                                      Theme.of(context).colorScheme.onPrimary),
+                              SizedBox(width: 12),
+                              Text('Número actualizado correctamente'),
+                            ],
+                          ),
+                          backgroundColor: ModernTheme.success,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                : null,
             child: AbsorbPointer(
-              absorbing: !_isEditing, // Bloquear edición directa cuando no está en modo edición
+              absorbing:
+                  !_isEditing, // Bloquear edición directa cuando no está en modo edición
               child: _buildTextField(
                 controller: _phoneController,
                 label: AppLocalizations.of(context)!.phone,
@@ -884,7 +990,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                 enabled: _isEditing,
                 keyboardType: TextInputType.phone,
                 // ✅ Mostrar ícono de edición solo cuando NO está en modo edición
-                suffixIcon: !_isEditing ? Icon(Icons.edit, color: ModernTheme.rappiOrange, size: 20) : null,
+                suffixIcon: !_isEditing
+                    ? Icon(Icons.edit, color: ModernTheme.rappiOrange, size: 20)
+                    : null,
               ),
             ),
           ),
@@ -929,7 +1037,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               AppLocalizations.of(context)!.emailVerified,
               authProvider.emailVerified, // ✅ Estado real desde Firestore
               Icons.email,
-              onTap: authProvider.emailVerified ? null : () => _navigateToEmailVerification(authProvider),
+              onTap: authProvider.emailVerified
+                  ? null
+                  : () => _navigateToEmailVerification(authProvider),
             ),
           ),
           Consumer<AuthProvider>(
@@ -937,20 +1047,23 @@ class _ProfileScreenState extends State<ProfileScreen>
               AppLocalizations.of(context)!.phoneVerified,
               authProvider.phoneVerified, // ✅ Estado real desde Firestore
               Icons.phone,
-              onTap: authProvider.phoneVerified ? null : () => _navigateToPhoneVerification(),
+              onTap: authProvider.phoneVerified
+                  ? null
+                  : () => _navigateToPhoneVerification(),
             ),
           ),
           Consumer<AuthProvider>(
             builder: (context, authProvider, _) => _buildVerificationItem(
               AppLocalizations.of(context)!.identityDocument,
-              authProvider.documentVerified, // ✅ Estado real desde Firestore (validado por admin)
+              authProvider
+                  .documentVerified, // ✅ Estado real desde Firestore (validado por admin)
               Icons.badge,
               // DNI no tiene onTap - lo valida el administrador
             ),
           ),
-          
+
           SizedBox(height: 30),
-          
+
           // Botones de acción
           if (!_isEditing) ...[
             // ✅ OPTIMIZADO: Botón para convertirse en conductor (solo si no es dual-account)
@@ -993,7 +1106,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.2),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimary
+                                  .withValues(alpha: 0.2),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -1010,16 +1126,21 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 Text(
                                   AppLocalizations.of(context)!.becomeDriver,
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.surface,
+                                    color:
+                                        Theme.of(context).colorScheme.surface,
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  AppLocalizations.of(context)!.earnMoneyDriving,
+                                  AppLocalizations.of(context)!
+                                      .earnMoneyDriving,
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimary
+                                        .withValues(alpha: 0.9),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -1028,7 +1149,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           IconButton(
                             onPressed: () {
-                              Navigator.pushNamed(context, '/shared/upgrade-to-driver');
+                              Navigator.pushNamed(
+                                  context, '/shared/upgrade-to-driver');
                             },
                             icon: Icon(
                               Icons.arrow_forward_ios,
@@ -1074,7 +1196,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildStatisticsTab() {
     return AnimatedBuilder(
       animation: _statsController,
@@ -1101,7 +1223,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 crossAxisCount: 2,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
-                childAspectRatio: 1.4, // ✅ Aumentado de 1.3 a 1.4 para más espacio vertical
+                childAspectRatio:
+                    1.4, // ✅ Aumentado de 1.3 a 1.4 para más espacio vertical
                 children: [
                   _buildStatCard(
                     AppLocalizations.of(context)!.totalTrips,
@@ -1113,7 +1236,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   _buildStatCard(
                     AppLocalizations.of(context)!.totalSpent,
                     'S/ ${_userStats['totalSpent'].toStringAsFixed(2)}',
-                    Icons.account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
+                    Icons
+                        .account_balance_wallet, // ✅ Cambiado de attach_money ($) a wallet
                     ModernTheme.success,
                     1,
                   ),
@@ -1193,7 +1317,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
               SizedBox(height: 16),
-              
+
               Container(
                 height: 200,
                 padding: EdgeInsets.all(16),
@@ -1205,14 +1329,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: CustomPaint(
                   painter: ActivityChartPainter(
                     animation: _statsController,
-                    textColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    textColor: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
                   ),
                   child: Container(),
                 ),
               ),
-              
+
               SizedBox(height: 30),
-              
+
               // Información adicional
               Container(
                 padding: EdgeInsets.all(16),
@@ -1281,7 +1408,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  
+
   Widget _buildPreferencesTab() {
     return AnimatedBuilder(
       animation: _settingsController,
@@ -1355,7 +1482,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
               SizedBox(height: 16),
-              
+
               // Método de pago predeterminado
               Container(
                 padding: EdgeInsets.all(16),
@@ -1385,19 +1512,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                     SizedBox(height: 12),
                     Row(
                       children: [
-                        _buildPaymentOption(AppLocalizations.of(context)!.cash, 'cash', Icons.money),
+                        _buildPaymentOption(AppLocalizations.of(context)!.cash,
+                            'cash', Icons.money),
                         SizedBox(width: 8),
-                        _buildPaymentOption(AppLocalizations.of(context)!.card, 'card', Icons.credit_card),
+                        _buildPaymentOption(AppLocalizations.of(context)!.card,
+                            'card', Icons.credit_card),
                         SizedBox(width: 8),
-                        _buildPaymentOption(AppLocalizations.of(context)!.wallet, 'wallet', Icons.account_balance_wallet),
+                        _buildPaymentOption(
+                            AppLocalizations.of(context)!.wallet,
+                            'wallet',
+                            Icons.account_balance_wallet),
                       ],
                     ),
                   ],
                 ),
               ),
-              
+
               SizedBox(height: 16),
-              
+
               // Idioma - ✅ CONECTADO CON LocaleProvider
               Consumer<LocaleProvider>(
                 builder: (context, localeProvider, _) => Container(
@@ -1422,31 +1554,38 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                       Spacer(),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: context.surfaceColor,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: DropdownButton<String>(
-                          value: localeProvider.currentLanguageCode, // ✅ Usar provider
+                          value: localeProvider
+                              .currentLanguageCode, // ✅ Usar provider
                           underline: SizedBox(),
                           isDense: true,
                           items: [
                             DropdownMenuItem(
                               value: 'es',
-                              child: Text(AppLocalizations.of(context)!.spanish),
+                              child:
+                                  Text(AppLocalizations.of(context)!.spanish),
                             ),
                             DropdownMenuItem(
                               value: 'en',
-                              child: Text(AppLocalizations.of(context)!.english),
+                              child:
+                                  Text(AppLocalizations.of(context)!.english),
                             ),
                           ],
                           onChanged: (value) async {
                             if (value != null) {
                               // ✅ Capturar messenger y tema antes del await para evitar warning
                               final messenger = ScaffoldMessenger.of(context);
-                              final iconColor = Theme.of(context).colorScheme.onPrimary;
-                              final message = value == 'es' ? 'Idioma cambiado a Español' : 'Language changed to English';
+                              final iconColor =
+                                  Theme.of(context).colorScheme.onPrimary;
+                              final message = value == 'es'
+                                  ? 'Idioma cambiado a Español'
+                                  : 'Language changed to English';
 
                               // ✅ Cambiar idioma usando el provider
                               await localeProvider.setLocale(Locale(value));
@@ -1457,7 +1596,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   SnackBar(
                                     content: Row(
                                       children: [
-                                        Icon(Icons.check_circle, color: iconColor, size: 20),
+                                        Icon(Icons.check_circle,
+                                            color: iconColor, size: 20),
                                         SizedBox(width: 12),
                                         Text(message),
                                       ],
@@ -1476,7 +1616,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ),
               ),
-              
+
               SizedBox(height: 30),
 
               // Privacidad
@@ -1516,7 +1656,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  
+
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -1543,12 +1683,15 @@ class _ProfileScreenState extends State<ProfileScreen>
           borderSide: BorderSide(color: ModernTheme.rappiOrange, width: 2),
         ),
         filled: true,
-        fillColor: enabled ? Theme.of(context).colorScheme.surface : context.surfaceColor,
+        fillColor: enabled
+            ? Theme.of(context).colorScheme.surface
+            : context.surfaceColor,
       ),
     );
   }
-  
-  Widget _buildVerificationItem(String title, bool verified, IconData icon, {VoidCallback? onTap}) {
+
+  Widget _buildVerificationItem(String title, bool verified, IconData icon,
+      {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: verified ? null : onTap,
       child: Container(
@@ -1556,20 +1699,28 @@ class _ProfileScreenState extends State<ProfileScreen>
         padding: EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: verified
-            ? ModernTheme.success.withValues(alpha: 0.1)
-            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+              ? ModernTheme.success.withValues(alpha: 0.1)
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: verified
-              ? ModernTheme.success.withValues(alpha: 0.3)
-              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                ? ModernTheme.success.withValues(alpha: 0.3)
+                : Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.3),
           ),
         ),
         child: Row(
           children: [
             Icon(
               icon,
-              color: verified ? ModernTheme.success : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              color: verified
+                  ? ModernTheme.success
+                  : Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6),
             ),
             SizedBox(width: 12),
             Expanded(
@@ -1579,7 +1730,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Text(
                     title,
                     style: TextStyle(
-                      color: verified ? context.primaryText : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      color: verified
+                          ? context.primaryText
+                          : Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1604,7 +1760,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildStatCard(
     String title,
     String value,
@@ -1622,18 +1778,20 @@ class _ProfileScreenState extends State<ProfileScreen>
         curve: Interval(
           delay,
           delay + 0.5,
-          curve: Curves.easeOut, // ✅ Cambiado de easeOutBack a easeOut para evitar overflow
+          curve: Curves
+              .easeOut, // ✅ Cambiado de easeOutBack a easeOut para evitar overflow
         ),
       ),
     );
-    
+
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
         return Transform.scale(
           scale: animation.value,
           child: Container(
-            padding: EdgeInsets.all(12), // ✅ Reducido de 16 a 12 para más espacio interno
+            padding: EdgeInsets.all(
+                12), // ✅ Reducido de 16 a 12 para más espacio interno
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(16),
@@ -1648,7 +1806,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                     color: color.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: color, size: 20), // ✅ Reducido de 22 a 20
+                  child: Icon(icon,
+                      color: color, size: 20), // ✅ Reducido de 22 a 20
                 ),
                 SizedBox(height: 4), // ✅ Reducido de 8 a 4
                 Text(
@@ -1677,7 +1836,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  
+
   Widget _buildAchievementBadge(String title, IconData icon, bool unlocked) {
     return Container(
       width: 80,
@@ -1689,8 +1848,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             height: 60,
             decoration: BoxDecoration(
               color: unlocked
-                ? ModernTheme.rappiOrange
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  ? ModernTheme.rappiOrange
+                  : Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.3),
               shape: BoxShape.circle,
               boxShadow: unlocked ? ModernTheme.getCardShadow(context) : null,
             ),
@@ -1705,9 +1867,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             title,
             style: TextStyle(
               fontSize: 11,
-              color: unlocked 
-                ? context.primaryText 
-                : context.secondaryText,
+              color: unlocked ? context.primaryText : context.secondaryText,
             ),
             textAlign: TextAlign.center,
             maxLines: 2,
@@ -1717,7 +1877,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildSwitchTile(
     String title,
     String subtitle,
@@ -1740,7 +1900,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       ),
     );
-    
+
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
@@ -1774,7 +1934,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  
+
   Widget _buildPaymentOption(String label, String value, IconData icon) {
     final isSelected = _defaultPayment == value;
 
@@ -1787,9 +1947,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimary, size: 20),
+                  Icon(Icons.check_circle,
+                      color: Theme.of(context).colorScheme.onPrimary, size: 20),
                   const SizedBox(width: 12),
-                  Text('${AppLocalizations.of(context)!.paymentMethodPrefix} $label'),
+                  Text(
+                      '${AppLocalizations.of(context)!.paymentMethodPrefix} $label'),
                 ],
               ),
               backgroundColor: ModernTheme.rappiOrange,
@@ -1807,23 +1969,28 @@ class _ProfileScreenState extends State<ProfileScreen>
           decoration: BoxDecoration(
             // ✅ MEJORADO: Alpha aumentado de 0.1 a 0.25 para mejor visibilidad
             color: isSelected
-              ? ModernTheme.rappiOrange.withValues(alpha: 0.25)
-              : Colors.transparent,
+                ? ModernTheme.rappiOrange.withValues(alpha: 0.25)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isSelected
-                ? ModernTheme.rappiOrange
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  ? ModernTheme.rappiOrange
+                  : Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.3),
               width: isSelected ? 2 : 1,
             ),
             // ✅ NUEVO: Sombra cuando está seleccionado
-            boxShadow: isSelected ? [
-              BoxShadow(
-                color: ModernTheme.rappiOrange.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ] : null,
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: ModernTheme.rappiOrange.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ]
+                : null,
           ),
           child: Stack(
             children: [
@@ -1833,8 +2000,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Icon(
                     icon,
                     color: isSelected
-                      ? ModernTheme.rappiOrange
-                      : context.secondaryText,
+                        ? ModernTheme.rappiOrange
+                        : context.secondaryText,
                     size: 20,
                   ),
                   SizedBox(height: 4),
@@ -1843,9 +2010,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: TextStyle(
                       fontSize: 12,
                       color: isSelected
-                        ? ModernTheme.rappiOrange
-                        : context.secondaryText,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ? ModernTheme.rappiOrange
+                          : context.secondaryText,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
                 ],
@@ -1874,7 +2042,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-  
+
   Widget _buildPrivacyOption(String title, IconData icon, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
@@ -1905,7 +2073,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-  
+
   void _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -1923,15 +2091,15 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       },
     );
-    
+
     if (picked != null) {
       setState(() {
-        _birthDateController.text = 
-          '${picked.day}/${picked.month}/${picked.year}';
+        _birthDateController.text =
+            '${picked.day}/${picked.month}/${picked.year}';
       });
     }
   }
-  
+
   void _showChangePasswordDialog() {
     // ✅ AGREGAR CONTROLLERS para capturar los valores
     final currentPasswordController = TextEditingController();
@@ -1970,7 +2138,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                     borderRadius: BorderRadius.circular(12),
                   ),
                   prefixIcon: Icon(Icons.lock),
-                  helperText: 'Mín. 8 caracteres, mayúsculas, minúsculas, números y símbolos',
+                  helperText:
+                      'Mín. 8 caracteres, mayúsculas, minúsculas, números y símbolos',
                   helperMaxLines: 2,
                 ),
               ),
@@ -2003,7 +2172,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           ElevatedButton(
             onPressed: () async {
               // ✅ VALIDAR QUE LAS CONTRASEÑAS COINCIDAN
-              if (newPasswordController.text != confirmPasswordController.text) {
+              if (newPasswordController.text !=
+                  confirmPasswordController.text) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Las contraseñas no coinciden'),
@@ -2022,7 +2192,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   !password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'))) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('La contraseña debe tener al menos 8 caracteres con mayúsculas, minúsculas, números y caracteres especiales'),
+                    content: Text(
+                        'La contraseña debe tener al menos 8 caracteres con mayúsculas, minúsculas, números y caracteres especiales'),
                     backgroundColor: ModernTheme.error,
                     duration: Duration(seconds: 5),
                   ),
@@ -2031,10 +2202,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               }
 
               // ✅ LLAMAR A authProvider.changePassword()
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              final authProvider =
+                  Provider.of<AuthProvider>(context, listen: false);
               final navigator = Navigator.of(context);
               final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final passwordUpdatedMsg = AppLocalizations.of(context)!.passwordUpdated;
+              final passwordUpdatedMsg =
+                  AppLocalizations.of(context)!.passwordUpdated;
 
               final success = await authProvider.changePassword(
                 currentPasswordController.text,
@@ -2059,7 +2232,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               } else {
                 scaffoldMessenger.showSnackBar(
                   SnackBar(
-                    content: Text(authProvider.errorMessage ?? 'Error al cambiar contraseña'),
+                    content: Text(authProvider.errorMessage ??
+                        'Error al cambiar contraseña'),
                     backgroundColor: ModernTheme.error,
                   ),
                 );
@@ -2086,7 +2260,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: ModernTheme.error, size: 28),
+            Icon(Icons.warning_amber_rounded,
+                color: ModernTheme.error, size: 28),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -2111,7 +2286,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 decoration: BoxDecoration(
                   color: ModernTheme.error.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: ModernTheme.error.withValues(alpha: 0.3)),
+                  border: Border.all(
+                      color: ModernTheme.error.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2132,7 +2308,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       '• Lugares favoritos\n'
                       '• Métodos de pago guardados\n'
                       '• Fotos y documentos',
-                      style: TextStyle(fontSize: 12, color: context.secondaryText),
+                      style:
+                          TextStyle(fontSize: 12, color: context.secondaryText),
                     ),
                   ],
                 ),
@@ -2151,7 +2328,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               _confirmDeleteWithKeyword();
             },
             style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
-            child: Text('Continuar', style: const TextStyle(color: Colors.white)),
+            child:
+                Text('Continuar', style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -2171,7 +2349,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         builder: (innerCtx, setLocal) {
           final valid = controller.text.trim().toUpperCase() == keyword;
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text('Confirmación final'),
             // Ronda 223: scroll para con teclado abierto acceder al botón.
             content: SingleChildScrollView(
@@ -2202,9 +2381,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: Text(AppLocalizations.of(context)!.cancel),
               ),
               ElevatedButton(
-                onPressed: valid ? () { Navigator.pop(ctx); _executeAccountDeletion(); } : null,
-                style: ElevatedButton.styleFrom(backgroundColor: ModernTheme.error),
-                child: Text(AppLocalizations.of(context)!.delete, style: const TextStyle(color: Colors.white)),
+                onPressed: valid
+                    ? () {
+                        Navigator.pop(ctx);
+                        _executeAccountDeletion();
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: ModernTheme.error),
+                child: Text(AppLocalizations.of(context)!.delete,
+                    style: const TextStyle(color: Colors.white)),
               ),
             ],
           );
@@ -2265,9 +2451,11 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
         title: Row(
           children: [
-            Icon(Icons.description, color: ModernTheme.rappiOrange, size: 20), // ✅ Reducido tamaño
+            Icon(Icons.description,
+                color: ModernTheme.rappiOrange, size: 20), // ✅ Reducido tamaño
             SizedBox(width: 8), // ✅ Reducido espacio
-            Expanded( // ✅ AGREGADO: Expanded para evitar overflow
+            Expanded(
+              // ✅ AGREGADO: Expanded para evitar overflow
               child: Text(
                 'Términos y Condiciones',
                 style: TextStyle(fontSize: 16), // ✅ Reducido tamaño de fuente
@@ -2390,9 +2578,11 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
         title: Row(
           children: [
-            Icon(Icons.privacy_tip, color: ModernTheme.rappiOrange, size: 20), // ✅ Reducido tamaño
+            Icon(Icons.privacy_tip,
+                color: ModernTheme.rappiOrange, size: 20), // ✅ Reducido tamaño
             SizedBox(width: 8), // ✅ Reducido espacio
-            Expanded( // ✅ AGREGADO: Expanded para evitar overflow
+            Expanded(
+              // ✅ AGREGADO: Expanded para evitar overflow
               child: Text(
                 'Política de Privacidad',
                 style: TextStyle(fontSize: 16), // ✅ Reducido tamaño de fuente
@@ -2540,7 +2730,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       }
     } catch (e) {
-      debugPrint(userFriendlyError(e, fallback: 'Error abriendo configuración'));
+      debugPrint(
+          userFriendlyError(e, fallback: 'Error abriendo configuración'));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2556,7 +2747,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _exportUserData() async {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final localeProvider = Provider.of<LocaleProvider>(context, listen: false); // ✅ Obtener LocaleProvider
+      final localeProvider = Provider.of<LocaleProvider>(context,
+          listen: false); // ✅ Obtener LocaleProvider
       final user = authProvider.currentUser;
 
       if (user == null) {
@@ -2593,7 +2785,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           'promotionsEnabled': _promotionsEnabled,
           'newsEnabled': _newsEnabled,
           'defaultPayment': _defaultPayment,
-          'language': localeProvider.currentLanguageCode, // ✅ Usar LocaleProvider
+          'language':
+              localeProvider.currentLanguageCode, // ✅ Usar LocaleProvider
         },
       };
 
@@ -2667,7 +2860,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(userFriendlyError(e, fallback: 'Error al exportar datos')),
+            content:
+                Text(userFriendlyError(e, fallback: 'Error al exportar datos')),
             backgroundColor: ModernTheme.error,
           ),
         );
@@ -2679,15 +2873,15 @@ class _ProfileScreenState extends State<ProfileScreen>
 // Delegate para el tab bar fijo
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;
-  
+
   _SliverAppBarDelegate(this._tabBar);
-  
+
   @override
   double get minExtent => _tabBar.preferredSize.height;
-  
+
   @override
   double get maxExtent => _tabBar.preferredSize.height;
-  
+
   @override
   Widget build(
     BuildContext context,
@@ -2699,7 +2893,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
       child: _tabBar,
     );
   }
-  
+
   @override
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }
@@ -2709,7 +2903,8 @@ class ProfileBackgroundPainter extends CustomPainter {
   final Animation<double> animation;
   final Color color;
 
-  const ProfileBackgroundPainter({super.repaint, required this.animation, required this.color});
+  const ProfileBackgroundPainter(
+      {super.repaint, required this.animation, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2717,7 +2912,7 @@ class ProfileBackgroundPainter extends CustomPainter {
       ..color = color.withValues(alpha: 0.1)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
-    
+
     // Círculos animados
     for (int i = 0; i < 3; i++) {
       final radius = (50 + i * 30) * animation.value;
@@ -2728,7 +2923,7 @@ class ProfileBackgroundPainter extends CustomPainter {
       );
     }
   }
-  
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
@@ -2738,7 +2933,8 @@ class ActivityChartPainter extends CustomPainter {
   final Animation<double> animation;
   final Color textColor;
 
-  const ActivityChartPainter({super.repaint, required this.animation, required this.textColor});
+  const ActivityChartPainter(
+      {super.repaint, required this.animation, required this.textColor});
 
   @override
   void paint(Canvas canvas, Size size) {

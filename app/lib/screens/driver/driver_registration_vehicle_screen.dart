@@ -2,9 +2,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async' show unawaited;
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/photo_picker.dart';
 import '../../core/utils/responsive_bottom_sheet.dart';
+import '../../services/driver_registration_draft.dart';
 import '../../utils/safe_navigation.dart';
 
 /// Pantalla 3: Datos del vehículo
@@ -17,10 +20,12 @@ class DriverRegistrationVehicleScreen extends StatefulWidget {
   });
 
   @override
-  State<DriverRegistrationVehicleScreen> createState() => _DriverRegistrationVehicleScreenState();
+  State<DriverRegistrationVehicleScreen> createState() =>
+      _DriverRegistrationVehicleScreenState();
 }
 
-class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehicleScreen> {
+class _DriverRegistrationVehicleScreenState
+    extends State<DriverRegistrationVehicleScreen> {
   final _formKey = GlobalKey<FormState>();
   final _plateController = TextEditingController();
 
@@ -29,55 +34,428 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
   int? _selectedYear;
   String? _selectedColor;
   File? _vehicleImage;
-  final _picker = ImagePicker();
+
+  /// Los datos del alta: lo que trae la pantalla anterior o, tras un
+  /// reinicio, lo que había en el borrador.
+  late Map<String, dynamic> _data =
+      Map<String, dynamic>.from(widget.registrationData);
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  /// Ronda 286: vuelve a poner lo que ya se había elegido y rescata la foto
+  /// del vehículo si Android mató la app con la cámara abierta. Ver
+  /// [DriverRegistrationDraft] y [PhotoPicker].
+  Future<void> _restore() async {
+    final draft = await DriverRegistrationDraft.load();
+    if (draft != null && mounted) {
+      // Lo que llega por argumentos manda; el borrador rellena los huecos.
+      _data = <String, dynamic>{...draft.data, ..._data};
+      final d = draft.data;
+      final brand = d['vehicleBrand'] as String?;
+      final model = d['vehicleModel'] as String?;
+      final year = d['vehicleYear'];
+      final color = d['vehicleColor'] as String?;
+      final plate = d['vehiclePlate'] as String?;
+      final photoPath = d['vehiclePhotoLocalPath'] as String?;
+      final photo = photoPath != null ? File(photoPath) : null;
+      setState(() {
+        if (brand != null && _brands.contains(brand)) {
+          _selectedBrand ??= brand;
+          if (model != null &&
+              (_modelsByBrand[brand] ?? const []).contains(model)) {
+            _selectedModel ??= model;
+          }
+        }
+        if (year is int && _years.contains(year)) _selectedYear ??= year;
+        if (color != null && _colors.contains(color)) _selectedColor ??= color;
+        if (plate != null && _plateController.text.isEmpty) {
+          _plateController.text = plate;
+        }
+        if (photo != null && photo.existsSync()) _vehicleImage = photo;
+      });
+    }
+    final lost = await PhotoPicker.recover(prefix: 'registration.vehicle.');
+    if (lost != null && mounted) await _applyVehiclePhoto(lost.file);
+  }
+
+  Future<void> _applyVehiclePhoto(XFile picked) async {
+    final kept = await PhotoPicker.keep(picked, 'vehicle_photo');
+    if (!mounted) return;
+    setState(() => _vehicleImage = kept);
+    await DriverRegistrationDraft.save(
+      step: DriverRegistrationDraft.stepVehicle,
+      data: {'vehiclePhotoLocalPath': kept.path},
+    );
+  }
 
   // Listas de opciones - Marcas ordenadas alfabéticamente
   final List<String> _brands = [
-    'BAIC', 'BYD', 'Changan', 'Chery', 'Chevrolet', 'Citroën',
-    'Daewoo', 'Daihatsu', 'DFSK', 'Dodge', 'FAW', 'Fiat',
-    'Ford', 'Foton', 'Geely', 'Great Wall', 'Haval', 'Honda',
-    'Hyundai', 'JAC', 'Jeep', 'Kia', 'Lifan', 'Mazda',
-    'Mercedes-Benz', 'MG', 'Mitsubishi', 'Nissan', 'Peugeot',
-    'Renault', 'Ssangyong', 'Subaru', 'Suzuki', 'Toyota',
-    'Volkswagen', 'Volvo', 'Wuling', 'Zotye', 'Otro'
+    'BAIC',
+    'BYD',
+    'Changan',
+    'Chery',
+    'Chevrolet',
+    'Citroën',
+    'Daewoo',
+    'Daihatsu',
+    'DFSK',
+    'Dodge',
+    'FAW',
+    'Fiat',
+    'Ford',
+    'Foton',
+    'Geely',
+    'Great Wall',
+    'Haval',
+    'Honda',
+    'Hyundai',
+    'JAC',
+    'Jeep',
+    'Kia',
+    'Lifan',
+    'Mazda',
+    'Mercedes-Benz',
+    'MG',
+    'Mitsubishi',
+    'Nissan',
+    'Peugeot',
+    'Renault',
+    'Ssangyong',
+    'Subaru',
+    'Suzuki',
+    'Toyota',
+    'Volkswagen',
+    'Volvo',
+    'Wuling',
+    'Zotye',
+    'Otro'
   ];
 
   final Map<String, List<String>> _modelsByBrand = {
     'BAIC': ['X25', 'X35', 'X55', 'D20', 'M50', 'Senova X25', 'Otro'],
-    'BYD': ['F3', 'Song Plus', 'Yuan Plus', 'Dolphin', 'Seal', 'Han', 'Tang', 'Atto 3', 'E1', 'E2', 'Otro'],
-    'Changan': ['Alsvin', 'CS15', 'CS35 Plus', 'CS55 Plus', 'CS75 Plus', 'Eado', 'V7', 'Honor', 'Star', 'Otro'],
-    'Chery': ['Tiggo 2', 'Tiggo 3', 'Tiggo 4', 'Tiggo 5X', 'Tiggo 7', 'Tiggo 8', 'Arrizo 5', 'QQ', 'Fulwin', 'Otro'],
-    'Chevrolet': ['Sail', 'Spark', 'Aveo', 'Cruze', 'Beat', 'Onix', 'Tracker', 'Captiva', 'N300', 'N400', 'Groove', 'Cobalt', 'Otro'],
+    'BYD': [
+      'F3',
+      'Song Plus',
+      'Yuan Plus',
+      'Dolphin',
+      'Seal',
+      'Han',
+      'Tang',
+      'Atto 3',
+      'E1',
+      'E2',
+      'Otro'
+    ],
+    'Changan': [
+      'Alsvin',
+      'CS15',
+      'CS35 Plus',
+      'CS55 Plus',
+      'CS75 Plus',
+      'Eado',
+      'V7',
+      'Honor',
+      'Star',
+      'Otro'
+    ],
+    'Chery': [
+      'Tiggo 2',
+      'Tiggo 3',
+      'Tiggo 4',
+      'Tiggo 5X',
+      'Tiggo 7',
+      'Tiggo 8',
+      'Arrizo 5',
+      'QQ',
+      'Fulwin',
+      'Otro'
+    ],
+    'Chevrolet': [
+      'Sail',
+      'Spark',
+      'Aveo',
+      'Cruze',
+      'Beat',
+      'Onix',
+      'Tracker',
+      'Captiva',
+      'N300',
+      'N400',
+      'Groove',
+      'Cobalt',
+      'Otro'
+    ],
     'Citroën': ['C3', 'C4', 'C-Elysée', 'Berlingo', 'C4 Cactus', 'Otro'],
     'Daewoo': ['Matiz', 'Lanos', 'Cielo', 'Tico', 'Racer', 'Otro'],
     'Daihatsu': ['Terios', 'Sirion', 'Rocky', 'Charade', 'Otro'],
-    'DFSK': ['Glory 330', 'Glory 560', 'K01', 'K05', 'C35', 'C37', 'V21', 'V22', 'Otro'],
+    'DFSK': [
+      'Glory 330',
+      'Glory 560',
+      'K01',
+      'K05',
+      'C35',
+      'C37',
+      'V21',
+      'V22',
+      'Otro'
+    ],
     'Dodge': ['Journey', 'Attitude', 'Neon', 'Ram', 'Durango', 'Otro'],
     'FAW': ['N5', 'R7', 'D60', 'T77', 'Besturn B30', 'Otro'],
-    'Fiat': ['Uno', 'Palio', 'Mobi', 'Argo', 'Cronos', 'Strada', 'Toro', '500', 'Punto', 'Otro'],
-    'Ford': ['Focus', 'Fiesta', 'Escape', 'Ranger', 'EcoSport', 'Explorer', 'Ka', 'Fusion', 'Territory', 'Mustang', 'F-150', 'Edge', 'Otro'],
+    'Fiat': [
+      'Uno',
+      'Palio',
+      'Mobi',
+      'Argo',
+      'Cronos',
+      'Strada',
+      'Toro',
+      '500',
+      'Punto',
+      'Otro'
+    ],
+    'Ford': [
+      'Focus',
+      'Fiesta',
+      'Escape',
+      'Ranger',
+      'EcoSport',
+      'Explorer',
+      'Ka',
+      'Fusion',
+      'Territory',
+      'Mustang',
+      'F-150',
+      'Edge',
+      'Otro'
+    ],
     'Foton': ['Tunland', 'Sauvana', 'Gratour', 'View', 'Toano', 'Otro'],
     'Geely': ['Coolray', 'Azkarra', 'Emgrand', 'GC6', 'CK', 'Monjaro', 'Otro'],
-    'Great Wall': ['Wingle 5', 'Wingle 6', 'Wingle 7', 'H3', 'H5', 'H6', 'Poer', 'Otro'],
+    'Great Wall': [
+      'Wingle 5',
+      'Wingle 6',
+      'Wingle 7',
+      'H3',
+      'H5',
+      'H6',
+      'Poer',
+      'Otro'
+    ],
     'Haval': ['H1', 'H2', 'H6', 'Jolion', 'Dargo', 'H9', 'Otro'],
-    'Honda': ['Civic', 'City', 'CR-V', 'HR-V', 'Fit', 'Accord', 'Jazz', 'WR-V', 'BR-V', 'Pilot', 'Otro'],
-    'Hyundai': ['Accent', 'Elantra', 'Tucson', 'i10', 'i20', 'Grand i10', 'Creta', 'Santa Fe', 'Kona', 'Venue', 'Verna', 'Ioniq', 'Starex', 'H1', 'Otro'],
-    'JAC': ['S1', 'S2', 'S3', 'S4', 'S5', 'S7', 'J2', 'J3', 'J4', 'iEV', 'Refine', 'X200', 'Otro'],
-    'Jeep': ['Renegade', 'Compass', 'Cherokee', 'Grand Cherokee', 'Wrangler', 'Otro'],
-    'Kia': ['Rio', 'Cerato', 'Sportage', 'Picanto', 'Soul', 'Seltos', 'Sorento', 'Stonic', 'Carnival', 'K3', 'Niro', 'Forte', 'Otro'],
+    'Honda': [
+      'Civic',
+      'City',
+      'CR-V',
+      'HR-V',
+      'Fit',
+      'Accord',
+      'Jazz',
+      'WR-V',
+      'BR-V',
+      'Pilot',
+      'Otro'
+    ],
+    'Hyundai': [
+      'Accent',
+      'Elantra',
+      'Tucson',
+      'i10',
+      'i20',
+      'Grand i10',
+      'Creta',
+      'Santa Fe',
+      'Kona',
+      'Venue',
+      'Verna',
+      'Ioniq',
+      'Starex',
+      'H1',
+      'Otro'
+    ],
+    'JAC': [
+      'S1',
+      'S2',
+      'S3',
+      'S4',
+      'S5',
+      'S7',
+      'J2',
+      'J3',
+      'J4',
+      'iEV',
+      'Refine',
+      'X200',
+      'Otro'
+    ],
+    'Jeep': [
+      'Renegade',
+      'Compass',
+      'Cherokee',
+      'Grand Cherokee',
+      'Wrangler',
+      'Otro'
+    ],
+    'Kia': [
+      'Rio',
+      'Cerato',
+      'Sportage',
+      'Picanto',
+      'Soul',
+      'Seltos',
+      'Sorento',
+      'Stonic',
+      'Carnival',
+      'K3',
+      'Niro',
+      'Forte',
+      'Otro'
+    ],
     'Lifan': ['X50', 'X60', 'X70', '520', '530', '620', 'Otro'],
-    'Mazda': ['2', '3', '6', 'CX-3', 'CX-5', 'CX-30', 'CX-50', 'CX-9', 'BT-50', 'Otro'],
-    'Mercedes-Benz': ['Clase A', 'Clase C', 'Clase E', 'GLA', 'GLC', 'Sprinter', 'Vito', 'Otro'],
-    'MG': ['3', '5', 'ZS', 'HS', 'RX5', 'GT', 'ZS EV', 'Marvel R', 'MG One', 'Otro'],
-    'Mitsubishi': ['Lancer', 'ASX', 'Outlander', 'L200', 'Eclipse Cross', 'Mirage', 'Xpander', 'Montero', 'Pajero', 'Otro'],
-    'Nissan': ['Sentra', 'Versa', 'March', 'Frontier', 'Kicks', 'Note', 'Tiida', 'Almera', 'Qashqai', 'X-Trail', 'Navara', 'NP300', 'Juke', 'V16', 'Otro'],
-    'Peugeot': ['208', '301', '308', '2008', '3008', '5008', 'Partner', 'Rifter', 'Otro'],
-    'Renault': ['Logan', 'Sandero', 'Duster', 'Kwid', 'Stepway', 'Captur', 'Koleos', 'Kangoo', 'Symbol', 'Clio', 'Otro'],
+    'Mazda': [
+      '2',
+      '3',
+      '6',
+      'CX-3',
+      'CX-5',
+      'CX-30',
+      'CX-50',
+      'CX-9',
+      'BT-50',
+      'Otro'
+    ],
+    'Mercedes-Benz': [
+      'Clase A',
+      'Clase C',
+      'Clase E',
+      'GLA',
+      'GLC',
+      'Sprinter',
+      'Vito',
+      'Otro'
+    ],
+    'MG': [
+      '3',
+      '5',
+      'ZS',
+      'HS',
+      'RX5',
+      'GT',
+      'ZS EV',
+      'Marvel R',
+      'MG One',
+      'Otro'
+    ],
+    'Mitsubishi': [
+      'Lancer',
+      'ASX',
+      'Outlander',
+      'L200',
+      'Eclipse Cross',
+      'Mirage',
+      'Xpander',
+      'Montero',
+      'Pajero',
+      'Otro'
+    ],
+    'Nissan': [
+      'Sentra',
+      'Versa',
+      'March',
+      'Frontier',
+      'Kicks',
+      'Note',
+      'Tiida',
+      'Almera',
+      'Qashqai',
+      'X-Trail',
+      'Navara',
+      'NP300',
+      'Juke',
+      'V16',
+      'Otro'
+    ],
+    'Peugeot': [
+      '208',
+      '301',
+      '308',
+      '2008',
+      '3008',
+      '5008',
+      'Partner',
+      'Rifter',
+      'Otro'
+    ],
+    'Renault': [
+      'Logan',
+      'Sandero',
+      'Duster',
+      'Kwid',
+      'Stepway',
+      'Captur',
+      'Koleos',
+      'Kangoo',
+      'Symbol',
+      'Clio',
+      'Otro'
+    ],
     'Ssangyong': ['Tivoli', 'Korando', 'Rexton', 'Musso', 'Actyon', 'Otro'],
     'Subaru': ['Impreza', 'XV', 'Forester', 'Outback', 'Legacy', 'WRX', 'Otro'],
-    'Suzuki': ['Swift', 'Alto', 'Dzire', 'Vitara', 'Ignis', 'S-Cross', 'Ciaz', 'Celerio', 'Jimny', 'Ertiga', 'APV', 'Carry', 'Otro'],
-    'Toyota': ['Corolla', 'Yaris', 'RAV4', 'Hilux', 'Avanza', 'Etios', 'Probox', 'Vitz', 'Rush', 'Fortuner', 'Land Cruiser', 'Camry', 'Prius', 'Agya', 'Urban Cruiser', 'Prado', 'Starlet', 'Innova', '4Runner', 'Tacoma', 'Otro'],
-    'Volkswagen': ['Gol', 'Polo', 'Jetta', 'Tiguan', 'Virtus', 'T-Cross', 'Taos', 'Amarok', 'Saveiro', 'Up!', 'Golf', 'Nivus', 'Otro'],
+    'Suzuki': [
+      'Swift',
+      'Alto',
+      'Dzire',
+      'Vitara',
+      'Ignis',
+      'S-Cross',
+      'Ciaz',
+      'Celerio',
+      'Jimny',
+      'Ertiga',
+      'APV',
+      'Carry',
+      'Otro'
+    ],
+    'Toyota': [
+      'Corolla',
+      'Yaris',
+      'RAV4',
+      'Hilux',
+      'Avanza',
+      'Etios',
+      'Probox',
+      'Vitz',
+      'Rush',
+      'Fortuner',
+      'Land Cruiser',
+      'Camry',
+      'Prius',
+      'Agya',
+      'Urban Cruiser',
+      'Prado',
+      'Starlet',
+      'Innova',
+      '4Runner',
+      'Tacoma',
+      'Otro'
+    ],
+    'Volkswagen': [
+      'Gol',
+      'Polo',
+      'Jetta',
+      'Tiguan',
+      'Virtus',
+      'T-Cross',
+      'Taos',
+      'Amarok',
+      'Saveiro',
+      'Up!',
+      'Golf',
+      'Nivus',
+      'Otro'
+    ],
     'Volvo': ['XC40', 'XC60', 'XC90', 'S60', 'S90', 'V40', 'Otro'],
     'Wuling': ['Hongguang', 'Almaz', 'Cortez', 'Confero', 'Air EV', 'Otro'],
     'Zotye': ['T300', 'T500', 'T600', 'T700', 'Z100', 'Z300', 'Otro'],
@@ -85,10 +463,30 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
   };
 
   final List<String> _colors = [
-    'Blanco', 'Negro', 'Plata', 'Plateado', 'Gris', 'Gris Oscuro',
-    'Rojo', 'Azul', 'Azul Oscuro', 'Celeste', 'Verde', 'Verde Oscuro',
-    'Amarillo', 'Naranja', 'Marrón', 'Beige', 'Crema', 'Champagne',
-    'Dorado', 'Bronce', 'Vino', 'Guinda', 'Turquesa', 'Otro'
+    'Blanco',
+    'Negro',
+    'Plata',
+    'Plateado',
+    'Gris',
+    'Gris Oscuro',
+    'Rojo',
+    'Azul',
+    'Azul Oscuro',
+    'Celeste',
+    'Verde',
+    'Verde Oscuro',
+    'Amarillo',
+    'Naranja',
+    'Marrón',
+    'Beige',
+    'Crema',
+    'Champagne',
+    'Dorado',
+    'Bronce',
+    'Vino',
+    'Guinda',
+    'Turquesa',
+    'Otro'
   ];
 
   List<int> get _years {
@@ -123,14 +521,28 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
 
     if (source == null || !mounted) return;
 
-    final pickedFile = await _picker.pickImage(
+    // Ronda 286: lo elegido hasta ahora se guarda ANTES de abrir la cámara.
+    // Es el momento exacto en que Android puede matar la app; si pasa, al
+    // volver la marca, el modelo y la placa siguen donde se dejaron.
+    await DriverRegistrationDraft.save(
+      step: DriverRegistrationDraft.stepVehicle,
+      data: {
+        if (_selectedBrand != null) 'vehicleBrand': _selectedBrand,
+        if (_selectedModel != null) 'vehicleModel': _selectedModel,
+        if (_selectedYear != null) 'vehicleYear': _selectedYear,
+        if (_selectedColor != null) 'vehicleColor': _selectedColor,
+        if (_plateController.text.isNotEmpty)
+          'vehiclePlate': _plateController.text,
+      },
+    );
+    if (!mounted) return;
+
+    final pickedFile = await PhotoPicker.pick(
       source: source,
-      imageQuality: 80,
+      target: 'registration.vehicle.photo',
     );
 
-    if (pickedFile != null && mounted) {
-      setState(() => _vehicleImage = File(pickedFile.path));
-    }
+    if (pickedFile != null && mounted) await _applyVehiclePhoto(pickedFile);
   }
 
   bool get _isFormValid {
@@ -144,7 +556,7 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
 
   @override
   Widget build(BuildContext context) {
-    final workType = widget.registrationData['workType'] as String? ?? 'driver';
+    final workType = _data['workType'] as String? ?? 'driver';
     final isCourier = workType == 'courier';
 
     return Scaffold(
@@ -153,7 +565,8 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
+          icon:
+              Icon(Icons.arrow_back, color: AppColors.getTextPrimary(context)),
           onPressed: () => safePopOrHome(context),
         ),
         title: Text(
@@ -174,7 +587,9 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isCourier ? 'Tu vehículo de reparto' : 'Información del vehículo',
+                  isCourier
+                      ? 'Tu vehículo de reparto'
+                      : 'Información del vehículo',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -227,7 +642,8 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
                         label: 'Año',
                         value: _selectedYear?.toString(),
                         items: _years.map((y) => y.toString()).toList(),
-                        onChanged: (value) => setState(() => _selectedYear = int.tryParse(value ?? '')),
+                        onChanged: (value) => setState(
+                            () => _selectedYear = int.tryParse(value ?? '')),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -236,7 +652,8 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
                         label: 'Color',
                         value: _selectedColor,
                         items: _colors,
-                        onChanged: (value) => setState(() => _selectedColor = value),
+                        onChanged: (value) =>
+                            setState(() => _selectedColor = value),
                       ),
                     ),
                   ],
@@ -346,7 +763,7 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
                   child: ElevatedButton(
                     onPressed: _isFormValid
                         ? () {
-                            final data = Map<String, dynamic>.from(widget.registrationData);
+                            final data = Map<String, dynamic>.from(_data);
                             data.addAll({
                               'vehicleBrand': _selectedBrand,
                               'vehicleModel': _selectedModel,
@@ -355,6 +772,13 @@ class _DriverRegistrationVehicleScreenState extends State<DriverRegistrationVehi
                               'vehiclePlate': _plateController.text,
                               'vehiclePhotoLocalPath': _vehicleImage!.path,
                             });
+                            // Ronda 286: el paso queda guardado antes de
+                            // avanzar; si la app muere en el siguiente, esto
+                            // no hay que volver a elegirlo.
+                            unawaited(DriverRegistrationDraft.save(
+                              step: DriverRegistrationDraft.stepDocuments,
+                              data: data,
+                            ));
 
                             Navigator.pushNamed(
                               context,

@@ -15,6 +15,7 @@ import '../../services/app_config_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/error_messages.dart';
 import '../../core/utils/home_route_resolver.dart';
+import '../../services/driver_registration_draft.dart';
 
 /// Pantalla de splash con animaciones modernas
 ///
@@ -33,7 +34,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
   late AnimationController _textController;
   late AnimationController _rippleController;
   late AnimationController _carController;
-  
+
   late Animation<double> _logoScaleAnimation;
   late Animation<double> _logoRotateAnimation;
   late Animation<double> _textFadeAnimation;
@@ -45,7 +46,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
   void initState() {
     super.initState();
     AppLogger.lifecycle('ModernSplashScreen', 'initState');
-    
+
     _logoController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -65,7 +66,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       duration: const Duration(seconds: 3),
       vsync: this,
     );
-    
+
     _logoScaleAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -73,7 +74,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _logoController,
       curve: Curves.elasticOut,
     ));
-    
+
     _logoRotateAnimation = Tween<double>(
       begin: 0.0,
       end: 2 * math.pi,
@@ -81,7 +82,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _logoController,
       curve: Curves.easeInOut,
     ));
-    
+
     _textFadeAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -89,7 +90,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _textController,
       curve: Curves.easeIn,
     ));
-    
+
     _textSlideAnimation = Tween<double>(
       begin: 50.0,
       end: 0.0,
@@ -97,7 +98,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _textController,
       curve: Curves.easeOut,
     ));
-    
+
     _rippleAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -105,7 +106,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _rippleController,
       curve: Curves.easeOut,
     ));
-    
+
     _carAnimation = Tween<double>(
       begin: -1.0,
       end: 1.0,
@@ -113,10 +114,10 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       parent: _carController,
       curve: Curves.easeInOut,
     ));
-    
+
     _startAnimations();
   }
-  
+
   Future<void> _startAnimations() async {
     AppLogger.info('Iniciando animaciones del Splash Screen');
     await Future.delayed(const Duration(milliseconds: 300));
@@ -140,7 +141,7 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
 
     // Esperar a que isInitializing sea false
     while (authProvider.isInitializing &&
-           DateTime.now().difference(startTime) < maxWaitTime) {
+        DateTime.now().difference(startTime) < maxWaitTime) {
       await Future.delayed(const Duration(milliseconds: 100));
     }
 
@@ -165,35 +166,40 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
       } else {
         final sp = await SharedPreferences.getInstance();
         final tourOn = sp.getBool('dev_tour_mode') ?? false;
-        const alwaysOnInDebug = bool.fromEnvironment('DEV_TOUR', defaultValue: false);
+        const alwaysOnInDebug =
+            bool.fromEnvironment('DEV_TOUR', defaultValue: false);
         if ((tourOn || alwaysOnInDebug) && mounted) {
-        AppLogger.info('DEV_TOUR: modo tour activo, autenticando…');
-        // Auto-login con el test phone
-        try {
-          await RapiApiClient.instance.sendSmsCode('+51962321336');
-          await RapiApiClient.instance.verifySmsCode(
-            phoneNumber: '+51962321336',
-            code: '1234',
-          );
-          AppLogger.info('DEV_TOUR: auto-login OK, refrescando AuthProvider…');
-          await authProvider.refreshUserData();
-        } catch (e) {
-          AppLogger.warning(userFriendlyError(e, fallback: 'DEV_TOUR: auto-login falló, tour continuará como no-auth'));
-        }
+          AppLogger.info('DEV_TOUR: modo tour activo, autenticando…');
+          // Auto-login con el test phone
+          try {
+            await RapiApiClient.instance.sendSmsCode('+51962321336');
+            await RapiApiClient.instance.verifySmsCode(
+              phoneNumber: '+51962321336',
+              code: '1234',
+            );
+            AppLogger.info(
+                'DEV_TOUR: auto-login OK, refrescando AuthProvider…');
+            await authProvider.refreshUserData();
+          } catch (e) {
+            AppLogger.warning(userFriendlyError(e,
+                fallback:
+                    'DEV_TOUR: auto-login falló, tour continuará como no-auth'));
+          }
 
-        if (!mounted) return;
-        AppLogger.info('DEV_TOUR: arrancando orchestrator interactivo');
-        final orchestrator = DevTourOrchestrator(
-          navigator: Navigator.of(context, rootNavigator: true),
-        );
-        // Fire-and-forget; el orchestrator maneja timing interno.
-        // ignore: unawaited_futures
-        orchestrator.start();
-        return;
+          if (!mounted) return;
+          AppLogger.info('DEV_TOUR: arrancando orchestrator interactivo');
+          final orchestrator = DevTourOrchestrator(
+            navigator: Navigator.of(context, rootNavigator: true),
+          );
+          // Fire-and-forget; el orchestrator maneja timing interno.
+          // ignore: unawaited_futures
+          orchestrator.start();
+          return;
         }
       }
     } catch (e) {
-      AppLogger.warning(userFriendlyError(e, fallback: 'DEV_TOUR check failed'));
+      AppLogger.warning(
+          userFriendlyError(e, fallback: 'DEV_TOUR check failed'));
     }
 
     _navigateToHome();
@@ -288,14 +294,32 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
         if (HomeRouteResolver.needsModeSync(user)) {
           unawaited(
             authProvider.switchMode('passenger').catchError((Object e) {
-              AppLogger.warning(
-                  userFriendlyError(e, fallback: 'Error sincronizando currentMode'));
+              AppLogger.warning(userFriendlyError(e,
+                  fallback: 'Error sincronizando currentMode'));
               return false;
             }),
           );
         }
 
+        // Ronda 286: un alta de conductor interrumpida hace un momento se
+        // retoma sola. Si Android mató la app con la cámara abierta en pleno
+        // registro, la persona vuelve a la pantalla exacta donde estaba, con
+        // sus datos y sus fotos, en vez de aterrizar en el inicio y tener que
+        // buscar «Modo conductor» y empezar de cero. Solo si el borrador es
+        // reciente: uno de hace días se ofrece, no se impone.
+        final draft = route == HomeRouteResolver.passengerHome
+            ? await DriverRegistrationDraft.load()
+            : null;
+
         Navigator.pushReplacementNamed(context, route);
+
+        if (draft != null && draft.isFresh) {
+          AppLogger.navigation('ModernSplashScreen', draft.route, {
+            'reason': 'Registro de conductor interrumpido hace un momento',
+            'step': draft.step,
+          });
+          Navigator.pushNamed(context, draft.route, arguments: draft.arguments);
+        }
       } else {
         // Sin autenticación
         // ✅ NUEVO: Si está en mantenimiento, mostrar pantalla de mantenimiento (incluso sin login)
@@ -324,16 +348,19 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
           AppLogger.warning(
               'AuthProvider no terminó a tiempo pero hay sesión guardada: '
               'entrando igualmente en vez de mandar a login');
-          Navigator.pushReplacementNamed(context, HomeRouteResolver.passengerHome);
+          Navigator.pushReplacementNamed(
+              context, HomeRouteResolver.passengerHome);
           return;
         }
 
-        AppLogger.navigation('ModernSplashScreen', '/login', {'reason': 'Sin autenticación'});
+        AppLogger.navigation(
+            'ModernSplashScreen', '/login', {'reason': 'Sin autenticación'});
         Navigator.pushReplacementNamed(context, '/login');
       }
     } catch (e, stackTrace) {
       // ✅ iOS FIX: FALLBACK - Si hay CUALQUIER error, ir a login en vez de crashear
-      AppLogger.error('Error en navegación desde splash - redirigiendo a login', e, stackTrace);
+      AppLogger.error('Error en navegación desde splash - redirigiendo a login',
+          e, stackTrace);
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/login');
       }
@@ -387,7 +414,8 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFFE31E24).withValues(alpha: 0.35),
+                                color: const Color(0xFFE31E24)
+                                    .withValues(alpha: 0.35),
                                 blurRadius: 40,
                                 spreadRadius: 8,
                               ),
@@ -416,7 +444,8 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
 
                   // Texto animado
                   AnimatedBuilder(
-                    animation: Listenable.merge([_textFadeAnimation, _textSlideAnimation]),
+                    animation: Listenable.merge(
+                        [_textFadeAnimation, _textSlideAnimation]),
                     builder: (context, child) {
                       return Opacity(
                         opacity: _textFadeAnimation.value,
@@ -434,7 +463,8 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                                   letterSpacing: 2,
                                   shadows: [
                                     Shadow(
-                                      color: const Color(0xFFE31E24).withValues(alpha: 0.6),
+                                      color: const Color(0xFFE31E24)
+                                          .withValues(alpha: 0.6),
                                       blurRadius: 12,
                                     ),
                                   ],
@@ -451,7 +481,8 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                                   letterSpacing: 0.5,
                                   shadows: [
                                     Shadow(
-                                      color: const Color(0xFFE31E24).withValues(alpha: 0.5),
+                                      color: const Color(0xFFE31E24)
+                                          .withValues(alpha: 0.5),
                                       blurRadius: 8,
                                     ),
                                   ],
@@ -464,8 +495,11 @@ class _ModernSplashScreenState extends State<ModernSplashScreen>
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: LinearProgressIndicator(
-                                    backgroundColor: Colors.white.withValues(alpha: 0.3),
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                    backgroundColor:
+                                        Colors.white.withValues(alpha: 0.3),
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                            Colors.white),
                                     minHeight: 4,
                                   ),
                                 ),
