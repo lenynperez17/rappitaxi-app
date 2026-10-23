@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, Tag, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { DateTime } from '../../components/DateTime'
 
 interface Vale {
@@ -19,24 +21,17 @@ interface Vale {
 }
 
 export function PromotionsPage() {
-  const [vales, setVales] = useState<Vale[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      const resp = await adminApi.listVales()
-      setVales(resp.vales)
-    } catch (err) {
-      setFlash({ kind: 'err', msg: err instanceof Error ? err.message : 'Error cargando' })
-    } finally {
-      setLoading(false)
-    }
-  }
+  const valesQuery = useQuery({
+    queryKey: queryKeys.vouchers.list(),
+    queryFn: () => adminApi.listVales(),
+  })
+  const vales: Vale[] = valesQuery.data?.vales ?? []
+  const loading = valesQuery.isPending
 
-  useEffect(() => { void load() }, [])
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 4000)
@@ -65,6 +60,13 @@ export function PromotionsPage() {
         }`}>
           {flash.kind === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           {flash.msg}
+        </div>
+      )}
+
+      {valesQuery.isError && (
+        <div className="flex items-center gap-3 p-3 rounded-lg text-sm border bg-red-50 border-red-200 text-red-700">
+          <AlertCircle className="w-4 h-4" />
+          {valesQuery.error instanceof Error ? valesQuery.error.message : 'Error cargando'}
         </div>
       )}
 
@@ -131,7 +133,7 @@ export function PromotionsPage() {
           onCreated={async () => {
             setShowCreate(false)
             setFlash({ kind: 'ok', msg: 'Vale creado' })
-            await load()
+            await queryClient.invalidateQueries({ queryKey: queryKeys.vouchers.all })
           }}
         />
       )}
@@ -153,7 +155,7 @@ function CreateValeModal({ onClose, onCreated }: { onClose: () => void; onCreate
   // creaban dos vales duplicados. Mismo patrón que LoginPage.tsx.
   const submittingRef = useRef(false)
 
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submittingRef.current) return
     if (!code.trim() || discountValue <= 0) {

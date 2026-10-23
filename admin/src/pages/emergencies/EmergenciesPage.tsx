@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, AlertCircle, MapPin, Phone, AlertTriangle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminEmergency } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { DateTime } from '../../components/DateTime'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -17,34 +19,37 @@ const STATUS_LABEL: Record<string, { bg: string; label: string }> = {
   cancelled:  { bg: 'bg-gray-100 text-gray-700', label: 'Cancelada' },
 }
 
+/**
+ * Ronda 287: la cola de emergencias se refresca sola. Antes solo cambiaba al
+ * recargar la página: un pánico nuevo podía quedarse sin ver hasta que el
+ * operador pulsara F5. Es una consulta barata a la API propia, no a Firestore.
+ */
+const EMERGENCIES_REFRESH_MS = 15_000
+
 export function EmergenciesPage() {
-  const [items, setItems] = useState<AdminEmergency[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [status, setStatus] = useState<string>('all')
-  const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const filters = { status: status !== 'all' ? status : undefined, pageSize: 100 }
+  const emergenciesQuery = useQuery({
+    queryKey: queryKeys.emergencies.list(filters),
+    queryFn: () => adminApi.listEmergencies(filters),
+    refetchInterval: EMERGENCIES_REFRESH_MS,
+  })
+  const items = emergenciesQuery.data?.emergencies ?? []
+  const total = emergenciesQuery.data?.total ?? 0
+  const loading = emergenciesQuery.isPending
+  const error = emergenciesQuery.isError
+    ? (emergenciesQuery.error instanceof AdminApiError ? emergenciesQuery.error.message : 'Error cargando emergencias')
+    : null
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.emergencies.all })
 
   useEffect(() => {
     if (!actionError) return
     const t = setTimeout(() => setActionError(null), 6000)
     return () => clearTimeout(t)
   }, [actionError])
-
-  const load = async () => {
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listEmergencies({
-        status: status !== 'all' ? status : undefined,
-        pageSize: 100,
-      })
-      setItems(resp.emergencies); setTotal(resp.total)
-    } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando emergencias')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(() => { void load() }, [status])
 
   return (
     <div className="space-y-6">
@@ -139,7 +144,7 @@ export function EmergenciesPage() {
                       <DateTime value={e.createdAt} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <EmergencyActions emergency={e} onChanged={load} onError={setActionError} />
+                      <EmergencyActions emergency={e} onChanged={refresh} onError={setActionError} />
                     </td>
                   </tr>
                 ))}

@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Receipt, Loader2, AlertCircle, Search, Plus, X, CheckCircle2, Ban, FileText,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminInvoice } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { formatPEN } from '../../utils/currency'
 import { DateTime } from '../../components/DateTime'
 
@@ -29,37 +32,40 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export function InvoicesPage() {
-  const [items, setItems] = useState<AdminInvoice[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [status, setStatus] = useState<string>('all')
   const [type, setType] = useState<string>('all')
   const [search, setSearch] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  const load = async () => {
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listInvoices({
-        status: status !== 'all' ? status : undefined,
-        type: type !== 'all' ? type : undefined,
-        search: search || undefined,
-        pageSize: 100,
-      })
-      setItems(resp.invoices); setTotal(resp.total)
-    } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando facturas')
-    } finally { setLoading(false) }
+  // Ronda 287: antes había un efecto para los filtros y otro para el buscador,
+  // y al abrir la página se disparaban los dos: dos peticiones idénticas.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = {
+    status: status !== 'all' ? status : undefined,
+    type: type !== 'all' ? type : undefined,
+    search: debouncedSearch || undefined,
+    pageSize: 100,
+  }
+  const invoicesQuery = useQuery({
+    queryKey: queryKeys.invoices.list(filters),
+    queryFn: () => adminApi.listInvoices(filters),
+    // Mientras se teclea se sigue viendo la tabla anterior en vez de un spinner.
+    placeholderData: keepPreviousData,
+  })
+  const items = invoicesQuery.data?.invoices ?? []
+  const total = invoicesQuery.data?.total ?? 0
+  const loading = invoicesQuery.isPending
+  const error = invoicesQuery.isError
+    ? (invoicesQuery.error instanceof AdminApiError ? invoicesQuery.error.message : 'Error cargando facturas')
+    : null
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all })
+    // Anular o emitir cambia lo que ofrece el buscador de notas de crédito.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.creditNotes.all })
   }
 
-  useEffect(() => { void load() }, [status, type])
-  useEffect(() => {
-    const t = setTimeout(() => void load(), 350)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 4000)
@@ -74,7 +80,7 @@ export function InvoicesPage() {
     try {
       await adminApi.voidInvoice(inv.id)
       setFlash({ kind: 'ok', msg: 'Comprobante anulado' })
-      void load()
+      refresh()
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error anulando' })
     } finally {
@@ -218,7 +224,7 @@ export function InvoicesPage() {
           onCreated={(inv) => {
             setModalOpen(false)
             setFlash({ kind: 'ok', msg: `Comprobante ${inv.number} emitido correctamente` })
-            void load()
+            refresh()
           }}
           onError={(msg) => setFlash({ kind: 'err', msg })}
         />
@@ -241,15 +247,23 @@ function NewInvoiceModal({ onClose, onCreated, onError }: {
   const [quantity, setQuantity] = useState('1')
   const [unitPrice, setUnitPrice] = useState('')
   const [saving, setSaving] = useState(false)
+  // Ronda 287: ref síncrono contra doble-Enter, como en vales y recargas. Aquí
+  // pesa más que en ningún sitio: cada envío emite un comprobante real con su
+  // correlativo, y `saving` tarda un render en desactivar el botón.
+  const savingRef = useRef(false)
 
-  // Cambiar tipo doc según tipo de comprobante
-  useEffect(() => {
-    if (docType === 'invoice') setCustomerDocType('RUC')
-    else if (docType === 'boleta' && customerDocType === 'RUC') setCustomerDocType('DNI')
-  }, [docType])  // eslint-disable-line react-hooks/exhaustive-deps
+  // El tipo de documento del cliente sigue al del comprobante: una factura
+  // exige RUC y una boleta no lo admite. Antes lo hacía un efecto que repintaba
+  // el formulario dos veces; ahora se decide en el mismo clic.
+  const selectDocType = (next: typeof docType) => {
+    setDocType(next)
+    if (next === 'invoice') setCustomerDocType('RUC')
+    else if (next === 'boleta' && customerDocType === 'RUC') setCustomerDocType('DNI')
+  }
 
-  const submit = async (e: { preventDefault: () => void }) => {
+  const submit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
+    if (savingRef.current) return
     if (!customerName.trim()) { onError('Ingresa el nombre del cliente'); return }
     const qty = Number(quantity), price = Number(unitPrice)
     if (!isFinite(qty) || qty <= 0) { onError('Cantidad inválida'); return }
@@ -259,6 +273,7 @@ function NewInvoiceModal({ onClose, onCreated, onError }: {
       return
     }
 
+    savingRef.current = true
     setSaving(true)
     try {
       const resp = await adminApi.createInvoice({
@@ -273,7 +288,10 @@ function NewInvoiceModal({ onClose, onCreated, onError }: {
       onCreated(resp.invoice)
     } catch (err) {
       onError(err instanceof AdminApiError ? err.message : 'Error emitiendo comprobante')
-    } finally { setSaving(false) }
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   const total = Number(quantity) * Number(unitPrice) || 0
@@ -298,7 +316,7 @@ function NewInvoiceModal({ onClose, onCreated, onError }: {
                 <button
                   key={t}
                   type="button"
-                  onClick={() => setDocType(t)}
+                  onClick={() => selectDocType(t)}
                   className={`px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
                     docType === t ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                   }`}

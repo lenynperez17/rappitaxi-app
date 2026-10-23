@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Mail, Phone, Calendar, User as UserIcon, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react'
-import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { adminApi, AdminApiError } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 import { formatDateTime } from '../../utils/timeFormat'
 import { DateTime } from '../../components/DateTime'
 
@@ -24,31 +26,19 @@ const TYPE_LABEL: Record<string, string> = {
 
 export function UserDetailPage() {
   const { userId } = useParams<{ userId: string }>()
-  const [user, setUser] = useState<AdminUser | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!userId) return
-    // Ronda 190 IDOR-UI: cancellation al cambiar userId. Antes: si el fetch
-    // de user A resolvía DESPUÉS del de B (navegación rápida A→B), setUser
-    // sobrescribía con datos de A → panel mostraba PII de A pero URL decía B.
-    let cancelled = false
-    setUser(null)
-    setError(null)
-    setLoading(true)
-    void (async () => {
-      try {
-        const u = await adminApi.getUser(userId)
-        if (!cancelled) setUser(u)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof AdminApiError ? err.message : 'Error cargando usuario')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [userId])
+  // Ronda 190 IDOR-UI: navegar rápido A→B no puede enseñar los datos de A con
+  // la URL de B. Antes lo evitaba un flag `cancelled`; ahora cada usuario tiene
+  // su propia clave de caché y la respuesta de A nunca llega a la vista de B.
+  const userQuery = useQuery({
+    queryKey: queryKeys.users.detail(userId ?? ''),
+    queryFn: () => adminApi.getUser(userId!),
+    enabled: !!userId,
+  })
+  const user = userQuery.data ?? null
+  const loading = userQuery.isPending
+  const error = userQuery.isError
+    ? (userQuery.error instanceof AdminApiError ? userQuery.error.message : 'Error cargando usuario')
+    : null
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">

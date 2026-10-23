@@ -1,55 +1,15 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Layers, ChevronDown } from 'lucide-react'
 import { MAP_COLORS } from './mapIcons'
+import type { MapLayers } from './useMapLayers'
 
 /**
  * Ronda 270: control de capas del mapa en vivo.
  *
  * Con la flota entera encima del plano, el operador no podía quitarse de
- * delante lo que no estaba mirando. Ahora cada grupo se enciende y se apaga, y
- * la elección se recuerda entre sesiones: quien trabaja despachando no quiere
- * volver a apagar los desconectados cada vez que entra.
+ * delante lo que no estaba mirando. Ahora cada grupo se enciende y se apaga.
+ * El estado y su persistencia viven en `useMapLayers`.
  */
-
-export interface MapLayers {
-  free: boolean
-  busy: boolean
-  offline: boolean
-  trips: boolean
-}
-
-const STORAGE_KEY = 'rapi_map_layers_v1'
-
-export const DEFAULT_LAYERS: MapLayers = {
-  free: true,
-  busy: true,
-  trips: true,
-  offline: false, // apagados por defecto: son los más numerosos y los que menos dicen
-}
-
-/** Lee la preferencia guardada. Se hace en un efecto, no en el render. */
-export function useMapLayers(): [MapLayers, (k: keyof MapLayers) => void] {
-  const [layers, setLayers] = useState<MapLayers>(DEFAULT_LAYERS)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) setLayers({ ...DEFAULT_LAYERS, ...JSON.parse(raw) })
-    } catch {
-      // localStorage inaccesible (modo privado) o JSON corrupto: valores por defecto
-    }
-  }, [])
-
-  const toggle = useCallback((key: keyof MapLayers) => {
-    setLayers((prev) => {
-      const next = { ...prev, [key]: !prev[key] }
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch { /* no persistible */ }
-      return next
-    })
-  }, [])
-
-  return [layers, toggle]
-}
 
 export function MapLayerPanel({
   layers,

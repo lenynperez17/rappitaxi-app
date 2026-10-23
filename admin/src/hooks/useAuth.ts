@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../stores/authStore'
 import { adminApi, AdminApiError } from '../lib/adminApi'
 import type { User } from '../types/user'
@@ -23,6 +24,7 @@ function toAdminUserData(me: {
 
 export function useAuth() {
   const store = useAuthStore()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     void (async () => {
@@ -60,6 +62,9 @@ export function useAuth() {
 
   const handleLogout = async () => {
     try { await adminApi.logout() } catch { /* ignore */ }
+    // Ronda 287: la caché de React Query guarda DNIs, teléfonos y saldos. Sin
+    // vaciarla, quien entre después en la misma pestaña los vería al instante.
+    queryClient.clear()
     store.logout()
   }
 

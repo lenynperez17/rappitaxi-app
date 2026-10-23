@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, Car, Loader2, Save,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminServiceType } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+
+type ServiceTypeEdit = Partial<Pick<AdminServiceType, 'enabled' | 'priceMultiplier'>>
+const NO_SERVICE_TYPES: AdminServiceType[] = []
 
 /**
  * Ronda 281 — qué servicios se le ofrecen al pasajero y a cuánto.
@@ -22,42 +27,39 @@ import { adminApi, AdminApiError, type AdminServiceType } from '../../lib/adminA
  * de activar una que se quedaría sin nadie.
  */
 export function ServiceTypesPage() {
-  const [types, setTypes] = useState<AdminServiceType[]>([])
-  const [original, setOriginal] = useState<AdminServiceType[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  // Ronda 287: lo del servidor vive en la caché y aquí solo los cambios sin
+  // guardar, aplicados encima. Un refresco en segundo plano ya no pisa lo que
+  // el admin estaba editando.
+  const [edits, setEdits] = useState<Record<string, ServiceTypeEdit>>({})
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [zeroWarning, setZeroWarning] = useState<string | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const resp = await adminApi.listServiceTypes()
-      setTypes(resp.serviceTypes)
-      setOriginal(resp.serviceTypes)
-    } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando los servicios')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const serviceTypesQuery = useQuery({
+    queryKey: queryKeys.serviceTypes.all,
+    queryFn: () => adminApi.listServiceTypes(),
+  })
+  const original = serviceTypesQuery.data?.serviceTypes ?? NO_SERVICE_TYPES
+  const types = original.map((t) => ({ ...t, ...edits[t.code] }))
+  const loading = serviceTypesQuery.isPending
+  const error = saveError ?? (serviceTypesQuery.isError
+    ? (serviceTypesQuery.error instanceof AdminApiError ? serviceTypesQuery.error.message : 'Error cargando los servicios')
+    : null)
 
-  useEffect(() => { void load() }, [])
-
-  const setEnabled = (code: string, value: boolean) => {
+  const editType = (code: string, patch: ServiceTypeEdit) => {
     setSaved(false)
     setZeroWarning(null)
-    setTypes((prev) => prev.map((t) => (t.code === code ? { ...t, enabled: value } : t)))
+    setEdits((prev) => ({ ...prev, [code]: { ...prev[code], ...patch } }))
   }
+
+  const setEnabled = (code: string, value: boolean) => editType(code, { enabled: value })
 
   const setMultiplier = (code: string, raw: string) => {
-    setSaved(false)
-    setZeroWarning(null)
     const n = Number(raw)
     if (!Number.isFinite(n)) return
-    setTypes((prev) => prev.map((t) => (t.code === code ? { ...t, priceMultiplier: n } : t)))
+    editType(code, { priceMultiplier: n })
   }
 
   const changed = types.filter((t) => {
@@ -72,11 +74,11 @@ export function ServiceTypesPage() {
     // y vuelta y un mensaje más críptico.
     const fuera = changed.find((t) => t.priceMultiplier <= 0 || t.priceMultiplier > 10)
     if (fuera) {
-      setError(`El multiplicador de ${fuera.label} debe estar entre 0 y 10.`)
+      setSaveError(`El multiplicador de ${fuera.label} debe estar entre 0 y 10.`)
       return
     }
     setSaving(true)
-    setError(null)
+    setSaveError(null)
     try {
       await adminApi.updateServiceTypes(
         changed.map((t) => ({
@@ -88,12 +90,15 @@ export function ServiceTypesPage() {
       )
       setZeroWarning(null)
       setSaved(true)
-      await load()
+      // Primero llega lo guardado y después se sueltan los cambios locales, para
+      // que la tabla no enseñe un instante los valores de antes.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.serviceTypes.all })
+      setEdits({})
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 409) {
         setZeroWarning(err.message)
       } else {
-        setError(err instanceof AdminApiError ? err.message : 'Error guardando')
+        setSaveError(err instanceof AdminApiError ? err.message : 'Error guardando')
       }
     } finally {
       setSaving(false)

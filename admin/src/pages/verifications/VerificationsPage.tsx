@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Search, Loader2, AlertCircle, ShieldCheck, Phone, Mail, CheckCircle2, ChevronRight, FileText } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 import { DateTime } from '../../components/DateTime'
 
 export function VerificationsPage() {
-  const [drivers, setDrivers] = useState<AdminDriver[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   /**
    * Ronda 283: abre mostrando TODOS.
@@ -23,34 +24,27 @@ export function VerificationsPage() {
    * vistazo cuántos hay de cada clase.
    */
   const [status, setStatus] = useState<'unverified' | 'verified' | 'all'>('all')
-  const [error, setError] = useState<string | null>(null)
 
-  // Ronda 113: request id (mismo patrón Rondas 111/112).
-  const requestSeq = useRef(0)
-
-  const load = async () => {
-    const seq = ++requestSeq.current
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listDrivers({
-        status: status !== 'all' ? status : undefined,
-        search: search || undefined,
-        pageSize: 100,
-      })
-      if (seq !== requestSeq.current) return
-      setDrivers(resp.drivers); setTotal(resp.total)
-    } catch (err) {
-      if (seq !== requestSeq.current) return
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando verificaciones')
-    } finally { if (seq === requestSeq.current) setLoading(false) }
+  // Ronda 287: mismo esquema que DriversPage (sustituye al `requestSeq` de la
+  // Ronda 113 y al efecto único de la 214). Comparte caché con Conductores:
+  // verificar a alguien desde su ficha refresca las dos listas.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = {
+    status: status !== 'all' ? status : undefined,
+    search: debouncedSearch || undefined,
+    pageSize: 100,
   }
-
-  // Ronda 214: un solo useEffect (evita doble fetch en mount).
-  useEffect(() => {
-    const t = setTimeout(() => void load(), search ? 350 : 0)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, search])
+  const driversQuery = useQuery({
+    queryKey: queryKeys.drivers.list(filters),
+    queryFn: () => adminApi.listDrivers(filters),
+    placeholderData: keepPreviousData,
+  })
+  const drivers: AdminDriver[] = driversQuery.data?.drivers ?? []
+  const total = driversQuery.data?.total ?? 0
+  const loading = driversQuery.isPending
+  const error = driversQuery.isError
+    ? (driversQuery.error instanceof AdminApiError ? driversQuery.error.message : 'Error cargando verificaciones')
+    : null
 
   return (
     <div className="space-y-6">

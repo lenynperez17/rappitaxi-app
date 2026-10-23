@@ -71,17 +71,3 @@ export function Avatar({ src, name, size = 'md', className = '' }: AvatarProps) 
     </div>
   )
 }
-
-/**
- * Picks the best available photo url from a user document, falling back
- * across the various field names used in the app codebase.
- */
-export function pickPhotoUrl(data: any): string | null {
-  return (
-    data?.profilePhotoUrl ||
-    data?.photoUrl ||
-    data?.photoURL ||
-    data?.avatarUrl ||
-    null
-  )
-}

@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type SubmitEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search, Phone, Mail, Plus, MoreVertical, Trash2, Edit, Ban, CheckCircle2,
   ShieldCheck, User as UserIcon, X, AlertCircle, Loader2, KeyRound,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { FloatingLayer } from '../../components/FloatingLayer'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 import { DateTime } from '../../components/DateTime'
 
 /**
@@ -66,10 +70,11 @@ const TYPE_LABEL: Record<string, string> = {
   admin: 'Admin',
 }
 
+/** Referencia estable: `counters` usa useMemo sobre la lista. */
+const NO_USERS: AdminUser[] = []
+
 export function UsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   /**
@@ -107,74 +112,51 @@ export function UsersPage() {
   const deletingRef = useRef<Set<string>>(new Set())
   const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null)
 
+  // Ronda 287: el texto "asentado" del buscador entra en la clave y React
+  // Query decide cuándo pedir. Desaparece la coreografía de la Ronda 110
+  // (setPage funcional + load forzado) que evitaba el doble fetch: cambiar el
+  // buscador ya vuelve a la página 1 en el propio onChange.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = {
+    type: typeFilter !== 'all' ? typeFilter : undefined,
+    status: statusFilter,
+    search: debouncedSearch || undefined,
+    page,
+    pageSize: 200,
+  }
+  const usersQuery = useQuery({
+    queryKey: queryKeys.users.list(filters),
+    queryFn: () => adminApi.listUsers(filters),
+    placeholderData: keepPreviousData,
+  })
+  const users = usersQuery.data?.users ?? NO_USERS
+  const total = usersQuery.data?.total ?? 0
+  const loading = usersQuery.isPending
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+
   // Deep-link: /users?edit=<userId> abre el modal de edición. Se usa desde
   // DriversPage → "Editar" para reutilizar el mismo UI de edición sin
   // duplicarlo. Si el user no está en la lista actual (filtro distinto),
-  // hacemos GET directo del user.
-  useEffect(() => {
-    const editId = searchParams.get('edit')
-    if (!editId || editUser) return
-    const target = users.find((u) => u.id === editId)
-    if (target) {
-      setEditUser(target)
-      searchParams.delete('edit')
-      setSearchParams(searchParams, { replace: true })
-      return
-    }
-    // Fallback: usuario no visible con los filtros actuales.
-    void (async () => {
-      try {
-        const u = await adminApi.getUser(editId)
-        setEditUser(u)
-        searchParams.delete('edit')
-        setSearchParams(searchParams, { replace: true })
-      } catch { /* silent — el user simplemente no existe */ }
-    })()
-  }, [users, searchParams, setSearchParams, editUser])
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const resp = await adminApi.listUsers({
-        type: typeFilter !== 'all' ? typeFilter : undefined,
-        status: statusFilter,
-        search: search || undefined,
-        page,
-        pageSize: 200,
-      })
-      setUsers(resp.users)
-      setTotal(resp.total)
-    } catch (err) {
-      const msg = err instanceof AdminApiError ? err.message : 'Error cargando usuarios'
-      setFlash({ kind: 'err', msg })
-      setUsers([])
-    } finally {
-      setLoading(false)
+  // se pide directo. Ronda 287: antes un efecto copiaba el usuario a
+  // `editUser`; ahora se deriva de la URL y la caché, y el parámetro se quita
+  // al cerrar el modal (un usuario que no existe simplemente no lo abre).
+  const editId = searchParams.get('edit')
+  const editFromList = editId ? users.find((u) => u.id === editId) : undefined
+  const editLookup = useQuery({
+    queryKey: queryKeys.users.detail(editId ?? ''),
+    queryFn: () => adminApi.getUser(editId!),
+    enabled: !!editId && !editFromList && !usersQuery.isPending,
+  })
+  const deepLinkedUser = editId ? (editFromList ?? editLookup.data ?? null) : null
+  const activeEditUser = editUser ?? deepLinkedUser
+  const closeEdit = () => {
+    setEditUser(null)
+    if (editId) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('edit')
+      setSearchParams(next, { replace: true })
     }
   }
-
-  useEffect(() => { void load() }, [typeFilter, statusFilter, page])
-
-  // Debounce del search: reseteamos page a 1 y dejamos que el efecto de arriba
-  // (que depende de page) haga el fetch. Ronda 110: usar functional setPage
-  // que devuelve el prev anterior + evaluar en tiempo real para saber si
-  // efectivamente cambió. Si cambió, el efecto de arriba dispara (skip load);
-  // si no cambió (ya era 1), forzamos load. Antes: closure de setTimeout leía
-  // page al momento de programar → doble fetch cuando el user tipeaba en page>1.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      let pageChanged = false
-      setPage((prev) => {
-        if (prev !== 1) { pageChanged = true; return 1 }
-        return prev
-      })
-      // Solo si NO cambió page (ya era 1), el efecto de arriba no disparará
-      // → forzamos load. Si cambió, el efecto lo hará y evitamos duplicado.
-      if (!pageChanged) void load()
-    }, 350)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
 
   useEffect(() => {
     if (!flash) return
@@ -198,7 +180,7 @@ export function UsersPage() {
     try {
       await adminApi.suspendUser(u.id, reason || undefined)
       setFlash({ kind: 'ok', msg: 'Usuario suspendido' })
-      await load()
+      await refresh()
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error suspendiendo' })
     }
@@ -209,7 +191,7 @@ export function UsersPage() {
     try {
       await adminApi.reactivateUser(u.id)
       setFlash({ kind: 'ok', msg: 'Usuario reactivado' })
-      await load()
+      await refresh()
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error reactivando' })
     }
@@ -224,7 +206,7 @@ export function UsersPage() {
     try {
       await adminApi.deleteUser(u.id)
       setFlash({ kind: 'ok', msg: 'Usuario eliminado' })
-      await load()
+      await refresh()
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error eliminando' })
     } finally {
@@ -280,13 +262,20 @@ export function UsersPage() {
         </div>
       )}
 
+      {usersQuery.isError && (
+        <div className="p-3 rounded-lg border text-sm flex items-center gap-2 bg-red-50 border-red-200 text-red-700">
+          <AlertCircle className="w-4 h-4" />
+          {usersQuery.error instanceof AdminApiError ? usersQuery.error.message : 'Error cargando usuarios'}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col md:flex-row gap-3">
         <div className="flex-1 relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             placeholder="Buscar por nombre, correo, teléfono o ID..."
             className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm"
           />
@@ -503,19 +492,20 @@ export function UsersPage() {
           onCreated={() => {
             setShowCreate(false)
             setFlash({ kind: 'ok', msg: 'Usuario creado exitosamente' })
-            void load()
+            void refresh()
           }}
         />
       )}
 
-      {editUser && (
+      {activeEditUser && (
         <EditUserModal
-          user={editUser}
-          onClose={() => setEditUser(null)}
+          key={activeEditUser.id}
+          user={activeEditUser}
+          onClose={closeEdit}
           onUpdated={() => {
-            setEditUser(null)
+            closeEdit()
             setFlash({ kind: 'ok', msg: 'Usuario actualizado' })
-            void load()
+            void refresh()
           }}
         />
       )}
@@ -545,7 +535,7 @@ function ResetPasswordModal({
 
   const label = user.fullName ?? user.email ?? user.phone ?? user.id.slice(0, 8)
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
     if (password.length < 8) return setError('Mínimo 8 caracteres')
@@ -645,7 +635,7 @@ function CreateUserModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
 
@@ -818,7 +808,7 @@ function EditUserModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
 

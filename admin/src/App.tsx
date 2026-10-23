@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuth } from './hooks/useAuth'
+import { AdminApiError } from './lib/adminApi'
 import { AdminLayout } from './components/layout/AdminLayout'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -34,11 +35,23 @@ import { DocumentTypesPage } from './pages/verifications/DocumentTypesPage'
 import { ServiceTypesPage } from './pages/settings/ServiceTypesPage'
 import { CancellationsPage } from './pages/cancellations/CancellationsPage'
 
+/**
+ * Ronda 287: las páginas pasan a cargar con useQuery.
+ *
+ * `staleTime` de 30 s en vez de 5 min: antes cada visita pedía datos frescos,
+ * y en recargas o facturas cinco minutos de retraso son un saldo equivocado en
+ * pantalla. Con 30 s se muestra al instante lo que hay en caché y se refresca
+ * por detrás si ya envejeció.
+ *
+ * Un error 4xx no se arregla reintentando (sesión caducada, sin permiso, no
+ * existe): se reintenta solo lo que puede ser pasajero, como un 5xx o la red.
+ */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 1,
+      staleTime: 30_000,
+      retry: (failureCount, error) =>
+        !(error instanceof AdminApiError && error.status >= 400 && error.status < 500) && failureCount < 1,
     },
   },
 })

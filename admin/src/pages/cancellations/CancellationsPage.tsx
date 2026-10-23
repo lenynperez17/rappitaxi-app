@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2, AlertCircle, CheckCircle2, XCircle, Ban, MapPin, RotateCcw,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminCancellation } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { contactLine } from '../../utils/contactDisplay'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 import { DateTime } from '../../components/DateTime'
 
 /**
@@ -45,30 +48,29 @@ const STATUS_LABEL: Record<string, string> = {
 type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all'
 
 export function CancellationsPage() {
-  const [items, setItems] = useState<AdminCancellation[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [status, setStatus] = useState<StatusFilter>('pending')
-  const [error, setError] = useState<string | null>(null)
+  // Error de una acción (revisar); el de carga sale de la propia consulta.
+  const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [reviewingId, setReviewingId] = useState<string | null>(null)
   const reviewingRef = useRef<string | null>(null)
-  const requestSeq = useRef(0)
 
-  const load = async () => {
-    const seq = ++requestSeq.current
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listCancellations({ status, pageSize: 100 })
-      if (seq !== requestSeq.current) return
-      setItems(resp.cancellations); setTotal(resp.total)
-    } catch (err) {
-      if (seq !== requestSeq.current) return
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando cancelaciones')
-    } finally { if (seq === requestSeq.current) setLoading(false) }
-  }
-
-  useEffect(() => { void load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status])
+  // Ronda 287: antes un `requestSeq` descartaba respuestas viejas al cambiar de
+  // filtro. Con una clave por filtro, React Query ya entrega solo la del filtro
+  // actual.
+  const filters = { status, pageSize: 100 }
+  const cancellationsQuery = useQuery({
+    queryKey: queryKeys.cancellations.list(filters),
+    queryFn: () => adminApi.listCancellations(filters),
+  })
+  const items = cancellationsQuery.data?.cancellations ?? []
+  const total = cancellationsQuery.data?.total ?? 0
+  const loading = cancellationsQuery.isPending
+  const loadError = cancellationsQuery.isError
+    ? (cancellationsQuery.error instanceof AdminApiError ? cancellationsQuery.error.message : 'Error cargando cancelaciones')
+    : null
+  const error = actionError ?? loadError
 
   useEffect(() => {
     if (!flash) return
@@ -106,9 +108,9 @@ export function CancellationsPage() {
           ? `Se devolvieron S/ ${res.refunded.toFixed(2)} a ${item.driver.fullName ?? 'el conductor'}.`
           : 'Penalidad confirmada. Se notificó al conductor.',
       )
-      await load()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.cancellations.all })
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error registrando la decisión')
+      setActionError(err instanceof AdminApiError ? err.message : 'Error registrando la decisión')
     } finally {
       reviewingRef.current = null
       setReviewingId(null)
@@ -132,7 +134,9 @@ export function CancellationsPage() {
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center justify-between gap-2">
           <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {error}</span>
-          <button type="button" onClick={() => setError(null)} className="text-xs text-red-600 hover:text-red-800">Cerrar</button>
+          {actionError && (
+            <button type="button" onClick={() => setActionError(null)} className="text-xs text-red-600 hover:text-red-800">Cerrar</button>
+          )}
         </div>
       )}
 
@@ -147,7 +151,7 @@ export function CancellationsPage() {
           <option value="rejected">Mantenidas{status === 'rejected' ? ` (${total})` : ''}</option>
           <option value="all">Todas{status === 'all' ? ` (${total})` : ''}</option>
         </select>
-        <button type="button" onClick={() => void load()} className="text-xs text-gray-600 hover:text-gray-900">
+        <button type="button" onClick={() => void cancellationsQuery.refetch()} className="text-xs text-gray-600 hover:text-gray-900">
           Recargar
         </button>
       </div>

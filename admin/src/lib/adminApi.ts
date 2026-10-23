@@ -773,7 +773,7 @@ class AdminApi {
             headers,
             body: JSON.stringify({ refreshToken: this.refreshToken }),
           })
-          let r = await doFetch()
+          const r = await doFetch()
           if (r.status === 401) {
             const refreshed = await this.attemptRefresh()
             if (refreshed) {

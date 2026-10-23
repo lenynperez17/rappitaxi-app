@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, FileText, Loader2, Save,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDocumentType } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+
+type DocumentTypeEdit = Pick<AdminDocumentType, 'enabled' | 'required'>
+const NO_DOCUMENT_TYPES: AdminDocumentType[] = []
 
 /**
  * Ronda 279 — qué documentos se le piden al conductor.
@@ -25,49 +30,43 @@ import { adminApi, AdminApiError, type AdminDocumentType } from '../../lib/admin
  * ser obligatorio, y por eso al apagar el primero se apaga el segundo.
  */
 export function DocumentTypesPage() {
-  const [types, setTypes] = useState<AdminDocumentType[]>([])
-  const [original, setOriginal] = useState<AdminDocumentType[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  // Ronda 287: mismo reparto que ServiceTypesPage — el servidor en la caché y
+  // aquí solo las filas tocadas, con su par de interruptores completo.
+  const [edits, setEdits] = useState<Record<string, DocumentTypeEdit>>({})
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   // Cuando el servidor avisa de que nos quedaríamos sin obligatorios, guardamos
   // el aviso aquí y el botón pasa a pedir confirmación explícita.
   const [zeroRequiredWarning, setZeroRequiredWarning] = useState<string | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const resp = await adminApi.listDocumentTypes()
-      setTypes(resp.documentTypes)
-      setOriginal(resp.documentTypes)
-    } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando los documentos')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void load()
-  }, [])
+  const documentTypesQuery = useQuery({
+    queryKey: queryKeys.documentTypes.all,
+    queryFn: () => adminApi.listDocumentTypes(),
+  })
+  const original = documentTypesQuery.data?.documentTypes ?? NO_DOCUMENT_TYPES
+  const types = original.map((t) => ({ ...t, ...edits[t.code] }))
+  const loading = documentTypesQuery.isPending
+  const error = saveError ?? (documentTypesQuery.isError
+    ? (documentTypesQuery.error instanceof AdminApiError ? documentTypesQuery.error.message : 'Error cargando los documentos')
+    : null)
 
   const setFlag = (code: string, field: 'enabled' | 'required', value: boolean) => {
     setSaved(false)
     setZeroRequiredWarning(null)
-    setTypes((prev) =>
-      prev.map((t) => {
-        if (t.code !== code) return t
-        if (field === 'enabled') {
-          // Dejar de pedir un documento y seguir exigiéndolo dejaría al
-          // conductor sin forma de verificarse nunca.
-          return { ...t, enabled: value, required: value ? t.required : false }
-        }
+    setEdits((prev) => {
+      const base = original.find((t) => t.code === code)
+      if (!base) return prev
+      const current = prev[code] ?? { enabled: base.enabled, required: base.required }
+      const next: DocumentTypeEdit = field === 'enabled'
+        // Dejar de pedir un documento y seguir exigiéndolo dejaría al
+        // conductor sin forma de verificarse nunca.
+        ? { enabled: value, required: value ? current.required : false }
         // Marcarlo obligatorio implica pedirlo.
-        return { ...t, required: value, enabled: value ? true : t.enabled }
-      }),
-    )
+        : { required: value, enabled: value ? true : current.enabled }
+      return { ...prev, [code]: next }
+    })
   }
 
   const changed = types.filter((t) => {
@@ -78,7 +77,7 @@ export function DocumentTypesPage() {
   const save = async (allowZeroRequired = false) => {
     if (changed.length === 0) return
     setSaving(true)
-    setError(null)
+    setSaveError(null)
     try {
       await adminApi.updateDocumentTypes(
         changed.map((t) => ({ code: t.code, enabled: t.enabled, required: t.required })),
@@ -86,12 +85,13 @@ export function DocumentTypesPage() {
       )
       setZeroRequiredWarning(null)
       setSaved(true)
-      await load()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.documentTypes.all })
+      setEdits({})
     } catch (err) {
       if (err instanceof AdminApiError && err.status === 409) {
         setZeroRequiredWarning(err.message)
       } else {
-        setError(err instanceof AdminApiError ? err.message : 'Error guardando')
+        setSaveError(err instanceof AdminApiError ? err.message : 'Error guardando')
       }
     } finally {
       setSaving(false)

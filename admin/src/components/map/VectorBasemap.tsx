@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import 'mapbox-gl-leaflet'
 
 /**
  * Mapa base vectorial de Mapbox.
@@ -59,24 +58,36 @@ export function VectorBasemap() {
 
   useEffect(() => {
     if (failed || !MAPBOX_TOKEN) return
+    let cancelled = false
     let layer: L.MapboxGL | null = null
-    try {
-      layer = L.mapboxGL({ accessToken: MAPBOX_TOKEN, style: MAPBOX_STYLE })
-      layer.addTo(map)
-      map.attributionControl?.addAttribution(MAPBOX_CREDIT)
 
-      const gl = (layer as unknown as MapboxGLLayer).getMapboxMap()
-      // `setLanguage` es nativo en mapbox-gl v3; sin él las etiquetas salen en
-      // inglés ("Lima Province", "Pacific Ocean") en una herramienta que usa
-      // personal peruano.
-      gl.on('load', () => gl.setLanguage?.('es'))
-      // Si el estilo no llega —red caída, token revocado o sin cuota— se vuelve
-      // a las teselas de imagen en lugar de dejar un rectángulo gris.
-      gl.on('error', () => setFailed(true))
-    } catch {
-      setFailed(true)
-    }
+    // Ronda 287: mapbox-gl pesa 1,8 MB minificado y es indivisible. Importado
+    // de forma estática viajaba dentro del chunk del mapa y lo inflaba a 2 MB.
+    // Cargado bajo demanda va en su propio chunk: el mapa abre ya con Leaflet y
+    // el fondo vectorial aparece en cuanto llega la librería (y queda en caché).
+    import('mapbox-gl-leaflet')
+      .then(() => {
+        if (cancelled) return
+        layer = L.mapboxGL({ accessToken: MAPBOX_TOKEN, style: MAPBOX_STYLE })
+        layer.addTo(map)
+        map.attributionControl?.addAttribution(MAPBOX_CREDIT)
+
+        const gl = (layer as unknown as MapboxGLLayer).getMapboxMap()
+        // `setLanguage` es nativo en mapbox-gl v3; sin él las etiquetas salen en
+        // inglés ("Lima Province", "Pacific Ocean") en una herramienta que usa
+        // personal peruano.
+        gl.on('load', () => gl.setLanguage?.('es'))
+        // Si el estilo no llega —red caída, token revocado o sin cuota— se vuelve
+        // a las teselas de imagen en lugar de dejar un rectángulo gris.
+        gl.on('error', () => setFailed(true))
+      })
+      // Falla la descarga del chunk o el constructor del puente: respaldo raster.
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+
     return () => {
+      cancelled = true
       map.attributionControl?.removeAttribution(MAPBOX_CREDIT)
       if (layer) map.removeLayer(layer)
     }

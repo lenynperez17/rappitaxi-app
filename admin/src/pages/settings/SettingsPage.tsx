@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Save, CheckCircle2, AlertCircle, Car } from 'lucide-react'
 import { adminApi } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 
 interface Setting {
   key: string
@@ -77,29 +79,19 @@ function valueTypeOf(v: unknown): 'string' | 'number' | 'boolean' {
 }
 
 export function SettingsPage() {
-  const [settings, setSettings] = useState<Setting[]>([])
+  const queryClient = useQueryClient()
   const [edited, setEdited] = useState<Record<string, unknown>>({})
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   // Ronda 177: ref síncrono contra doble-submit del formulario de settings.
   const savingRef = useRef(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      const resp = await adminApi.listSettings()
-      setSettings(resp.settings)
-      setEdited({})
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error cargando configuración'
-      setFlash({ kind: 'err', msg })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { void load() }, [])
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.settings.all,
+    queryFn: () => adminApi.listSettings(),
+  })
+  const settings: Setting[] = settingsQuery.data?.settings ?? []
+  const loading = settingsQuery.isPending
 
   useEffect(() => {
     if (!flash) return
@@ -116,7 +108,9 @@ export function SettingsPage() {
     try {
       await adminApi.updateSettings(edited)
       setFlash({ kind: 'ok', msg: `${Object.keys(edited).length} ajuste(s) guardado(s)` })
-      await load()
+      // Primero llega lo guardado y después se sueltan los cambios locales.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.all })
+      setEdited({})
     } catch (err) {
       setFlash({ kind: 'err', msg: err instanceof Error ? err.message : 'Error guardando' })
     } finally {
@@ -179,6 +173,13 @@ export function SettingsPage() {
         </div>
       )}
 
+      {settingsQuery.isError && (
+        <div className="flex items-center gap-3 p-3 rounded-lg text-sm border bg-red-50 border-red-200 text-red-700">
+          <AlertCircle className="w-4 h-4" />
+          {settingsQuery.error instanceof Error ? settingsQuery.error.message : 'Error cargando configuración'}
+        </div>
+      )}
+
       {loading ? (
         <div className="p-12 text-center"><Loader2 className="w-6 h-6 mx-auto animate-spin text-gray-400" /></div>
       ) : (
@@ -222,7 +223,7 @@ export function SettingsPage() {
                               disabled={saving}
                               className="w-4 h-4 disabled:opacity-50"
                             />
-                            <span className="text-sm text-gray-700">{Boolean(current) ? 'Sí' : 'No'}</span>
+                            <span className="text-sm text-gray-700">{current ? 'Sí' : 'No'}</span>
                           </label>
                         ) : type === 'number' ? (
                           <input

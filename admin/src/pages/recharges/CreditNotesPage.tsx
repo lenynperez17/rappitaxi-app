@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileMinus, Loader2, AlertCircle, Search, Plus, X, CheckCircle2,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminCreditNote, type AdminInvoice } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { formatPEN } from '../../utils/currency'
 import { DateTime } from '../../components/DateTime'
 
@@ -15,6 +18,8 @@ const REASON_LABEL: Record<string, string> = {
   otros: 'Otros',
 }
 
+type CreditNoteReason = 'anulacion' | 'devolucion' | 'descuento_global' | 'descuento_item' | 'ajuste_precio' | 'otros'
+
 const STATUS_LABEL: Record<string, string> = {
   issued: 'Emitida', sunat_pending: 'Pendiente SUNAT', sunat_sent: 'Aceptada SUNAT', sunat_error: 'Error SUNAT',
 }
@@ -26,33 +31,27 @@ const STATUS_BADGE: Record<string, string> = {
 }
 
 export function CreditNotesPage() {
-  const [items, setItems] = useState<AdminCreditNote[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  const load = async () => {
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listCreditNotes({
-        search: search || undefined,
-        pageSize: 100,
-      })
-      setItems(resp.creditNotes); setTotal(resp.total)
-    } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando notas de crédito')
-    } finally { setLoading(false) }
-  }
+  // Ronda 287: como en InvoicesPage, los dos efectos de antes (montaje y
+  // buscador) pedían la misma lista dos veces al abrir la página.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = { search: debouncedSearch || undefined, pageSize: 100 }
+  const creditNotesQuery = useQuery({
+    queryKey: queryKeys.creditNotes.list(filters),
+    queryFn: () => adminApi.listCreditNotes(filters),
+    placeholderData: keepPreviousData,
+  })
+  const items = creditNotesQuery.data?.creditNotes ?? []
+  const total = creditNotesQuery.data?.total ?? 0
+  const loading = creditNotesQuery.isPending
+  const error = creditNotesQuery.isError
+    ? (creditNotesQuery.error instanceof AdminApiError ? creditNotesQuery.error.message : 'Error cargando notas de crédito')
+    : null
 
-  useEffect(() => { void load() }, [])
-  useEffect(() => {
-    const t = setTimeout(() => void load(), 350)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 4000)
@@ -166,7 +165,9 @@ export function CreditNotesPage() {
           onCreated={(cn) => {
             setModalOpen(false)
             setFlash({ kind: 'ok', msg: `Nota ${cn.number} emitida correctamente` })
-            void load()
+            void queryClient.invalidateQueries({ queryKey: queryKeys.creditNotes.all })
+            // Una nota de anulación cambia el estado de su comprobante.
+            void queryClient.invalidateQueries({ queryKey: queryKeys.invoices.all })
           }}
           onError={(msg) => setFlash({ kind: 'err', msg })}
         />
@@ -181,48 +182,59 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
   onError: (msg: string) => void
 }) {
   const [q, setQ] = useState('')
-  const [invoices, setInvoices] = useState<AdminInvoice[]>([])
   const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoice | null>(null)
-  const [loadingInvoices, setLoadingInvoices] = useState(false)
-  const [invoicesError, setInvoicesError] = useState<string | null>(null)
-  const [reason, setReason] = useState<'anulacion' | 'devolucion' | 'descuento_global' | 'descuento_item' | 'ajuste_precio' | 'otros'>('anulacion')
+  const [reason, setReason] = useState<CreditNoteReason>('anulacion')
   const [reasonNotes, setReasonNotes] = useState('')
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
+  // Ronda 287: ref síncrono contra doble-Enter; cada envío es un documento
+  // SUNAT con su correlativo. Mismo motivo que en NewInvoiceModal.
+  const savingRef = useRef(false)
 
-  useEffect(() => {
-    if (q.trim().length < 2) { setInvoices([]); return }
-    const t = setTimeout(async () => {
-      setLoadingInvoices(true)
-      setInvoicesError(null)
-      try {
-        const resp = await adminApi.listInvoices({ search: q.trim(), pageSize: 20 })
-        setInvoices(resp.invoices.filter((i) => i.documentType !== 'receipt' && i.status !== 'voided'))
-      } catch (e) {
-        setInvoices([])
-        setInvoicesError(
-          e instanceof AdminApiError
-            ? `Error al buscar facturas: ${e.message || e.code}`
-            : 'Error al buscar facturas (revisa conexión).',
-        )
-      } finally { setLoadingInvoices(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [q])
+  // Ronda 287: la búsqueda va por useQuery. Antes no había control de orden y
+  // una respuesta lenta de "bo" podía pisar la de "boleta" ya mostrada.
+  const debouncedQ = useDebouncedValue(q.trim(), 300)
+  const searchFilters = { search: debouncedQ, pageSize: 20 }
+  const invoicesSearch = useQuery({
+    queryKey: queryKeys.invoices.list(searchFilters),
+    queryFn: () => adminApi.listInvoices(searchFilters),
+    enabled: debouncedQ.length >= 2,
+    // Solo se puede abonar sobre facturas y boletas vigentes.
+    select: (resp) => resp.invoices.filter((i) => i.documentType !== 'receipt' && i.status !== 'voided'),
+  })
+  const searching = q.trim().length >= 2
+  const invoices: AdminInvoice[] = searching ? (invoicesSearch.data ?? []) : []
+  const loadingInvoices = searching && invoicesSearch.isFetching
+  const invoicesError = searching && invoicesSearch.isError
+    ? (invoicesSearch.error instanceof AdminApiError
+        ? `Error al buscar facturas: ${invoicesSearch.error.message || invoicesSearch.error.code}`
+        : 'Error al buscar facturas (revisa conexión).')
+    : null
 
-  useEffect(() => {
-    if (selectedInvoice && reason === 'anulacion' && !amount) {
-      setAmount(String(selectedInvoice.total))
-    }
-  }, [selectedInvoice, reason, amount])
+  // Una anulación devuelve el total del comprobante: se propone ese monto en
+  // cuanto hay documento y motivo, sin pisar uno que el admin ya escribió.
+  // Antes lo hacía un efecto que repintaba el modal dos veces.
+  const proposeFullAmount = (invoice: AdminInvoice | null, nextReason: CreditNoteReason) => {
+    if (invoice && nextReason === 'anulacion' && !amount) setAmount(String(invoice.total))
+  }
+  const selectInvoice = (invoice: AdminInvoice) => {
+    setSelectedInvoice(invoice)
+    proposeFullAmount(invoice, reason)
+  }
+  const selectReason = (nextReason: CreditNoteReason) => {
+    setReason(nextReason)
+    proposeFullAmount(selectedInvoice, nextReason)
+  }
 
-  const submit = async (e: { preventDefault: () => void }) => {
+  const submit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
+    if (savingRef.current) return
     if (!selectedInvoice) { onError('Selecciona el documento asociado'); return }
     const amt = amount ? Number(amount) : selectedInvoice.total
     if (!isFinite(amt) || amt <= 0 || amt > selectedInvoice.total) {
       onError(`Monto inválido (entre 0 y ${selectedInvoice.total})`); return
     }
+    savingRef.current = true
     setSaving(true)
     try {
       const resp = await adminApi.createCreditNote({
@@ -234,7 +246,10 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
       onCreated(resp.creditNote)
     } catch (err) {
       onError(err instanceof AdminApiError ? err.message : 'Error emitiendo nota')
-    } finally { setSaving(false) }
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   return (
@@ -281,7 +296,7 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
                       <button
                         key={i.id}
                         type="button"
-                        onClick={() => setSelectedInvoice(i)}
+                        onClick={() => selectInvoice(i)}
                         className="w-full p-2 flex items-center justify-between gap-2 text-left hover:bg-gray-50 text-sm"
                       >
                         <div className="min-w-0">
@@ -311,7 +326,7 @@ function NewCreditNoteModal({ onClose, onCreated, onError }: {
             <>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Motivo *</label>
-                <select value={reason} onChange={(e) => setReason(e.target.value as typeof reason)}
+                <select value={reason} onChange={(e) => selectReason(e.target.value as CreditNoteReason)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                   {Object.entries(REASON_LABEL).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>

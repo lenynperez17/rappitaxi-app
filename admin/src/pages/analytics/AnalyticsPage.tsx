@@ -1,27 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Loader2, TrendingUp, Users, Car, Route, CreditCard, AlertCircle } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminStats } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { formatPEN } from '../../utils/currency'
 
 export function AnalyticsPage() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setStats(await adminApi.getStats())
-        setError(null)
-      } catch (e) {
-        setError(
-          e instanceof AdminApiError
-            ? `Error cargando analíticas: ${e.message || e.code}`
-            : 'Error cargando analíticas (revisa tu conexión)',
-        )
-      } finally { setLoading(false) }
-    })()
-  }, [])
+  // Ronda 287: misma caché que Inicio: llegar desde allí pinta al instante.
+  const statsQuery = useQuery({
+    queryKey: queryKeys.stats.all,
+    queryFn: () => adminApi.getStats(),
+  })
+  const stats: AdminStats | null = statsQuery.data ?? null
+  const loading = statsQuery.isPending
+  const error = statsQuery.isError
+    ? (statsQuery.error instanceof AdminApiError
+        ? `Error cargando analíticas: ${statsQuery.error.message || statsQuery.error.code}`
+        : 'Error cargando analíticas (revisa tu conexión)')
+    : null
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">

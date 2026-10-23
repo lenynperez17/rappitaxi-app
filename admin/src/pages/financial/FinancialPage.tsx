@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Loader2, CreditCard, TrendingUp, AlertCircle } from 'lucide-react'
-import { adminApi, AdminApiError, type AdminStats, type AdminRecharge } from '../../lib/adminApi'
+import { adminApi, AdminApiError, type AdminStats } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { formatPEN } from '../../utils/currency'
 import { contactLine, nameOrDeleted } from '../../utils/contactDisplay'
 import { DateTime } from '../../components/DateTime'
@@ -10,29 +11,29 @@ const METHOD_LABEL: Record<string, string> = {
   yape: 'Yape', plin: 'Plin', admin_manual: 'Manual (admin)', other: 'Otro',
 }
 
-export function FinancialPage() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [recharges, setRecharges] = useState<AdminRecharge[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+const COMPLETED_RECHARGES = { status: 'completed', pageSize: 50 }
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [s, r] = await Promise.all([
-          adminApi.getStats(),
-          adminApi.listRecharges({ status: 'completed', pageSize: 50 }),
-        ])
-        setStats(s); setRecharges(r.recharges); setError(null)
-      } catch (e) {
-        setError(
-          e instanceof AdminApiError
-            ? `Error cargando datos financieros: ${e.message || e.code}`
-            : 'Error cargando datos financieros (revisa tu conexión)',
-        )
-      } finally { setLoading(false) }
-    })()
-  }, [])
+export function FinancialPage() {
+  // Ronda 287: los KPIs salen de la misma caché que Inicio y Analítica, y las
+  // recargas de la de RechargesPage: registrar o anular una recarga refresca
+  // también esta pantalla.
+  const statsQuery = useQuery({
+    queryKey: queryKeys.stats.all,
+    queryFn: () => adminApi.getStats(),
+  })
+  const rechargesQuery = useQuery({
+    queryKey: queryKeys.recharges.list(COMPLETED_RECHARGES),
+    queryFn: () => adminApi.listRecharges(COMPLETED_RECHARGES),
+  })
+  const stats: AdminStats | null = statsQuery.data ?? null
+  const recharges = rechargesQuery.data?.recharges ?? []
+  const loading = statsQuery.isPending || rechargesQuery.isPending
+  const failed = statsQuery.error ?? rechargesQuery.error
+  const error = failed
+    ? (failed instanceof AdminApiError
+        ? `Error cargando datos financieros: ${failed.message || failed.code}`
+        : 'Error cargando datos financieros (revisa tu conexión)')
+    : null
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-gray-500">

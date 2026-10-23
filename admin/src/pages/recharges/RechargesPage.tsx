@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, AlertCircle, CreditCard, Plus, X, CheckCircle2, RotateCcw } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminRecharge, type AdminDriver } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
 import { formatPEN } from '../../utils/currency'
 import { contactLine, nameOrDeleted } from '../../utils/contactDisplay'
 import { DateTime } from '../../components/DateTime'
@@ -30,25 +32,29 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelada',
 }
 
+const RECHARGE_FILTERS = { pageSize: 100 } as const
+
 export function RechargesPage() {
-  const [recharges, setRecharges] = useState<AdminRecharge[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [refundTarget, setRefundTarget] = useState<AdminRecharge | null>(null)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      const resp = await adminApi.listRecharges({ pageSize: 100 })
-      setRecharges(resp.recharges); setTotal(resp.total)
-    } catch (err) {
-      setFlash({ kind: 'err', msg: err instanceof AdminApiError ? err.message : 'Error cargando recargas' })
-    } finally { setLoading(false) }
+  const rechargesQuery = useQuery({
+    queryKey: queryKeys.recharges.list(RECHARGE_FILTERS),
+    queryFn: () => adminApi.listRecharges(RECHARGE_FILTERS),
+  })
+  const recharges = rechargesQuery.data?.recharges ?? []
+  const total = rechargesQuery.data?.total ?? 0
+  const loading = rechargesQuery.isPending
+  // Una recarga mueve los KPIs de dinero de Inicio y Financiero, y el saldo
+  // que muestran las listas de conductores.
+  const refreshAfterChange = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.recharges.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.stats.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all })
   }
 
-  useEffect(() => { void load() }, [])
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(null), 4000)
@@ -84,6 +90,13 @@ export function RechargesPage() {
         }`}>
           {flash.kind === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           {flash.msg}
+        </div>
+      )}
+
+      {rechargesQuery.isError && (
+        <div className="p-3 rounded-lg border text-sm flex items-center gap-2 bg-red-50 border-red-200 text-red-700">
+          <AlertCircle className="w-4 h-4" />
+          {rechargesQuery.error instanceof AdminApiError ? rechargesQuery.error.message : 'Error cargando recargas'}
         </div>
       )}
 
@@ -158,7 +171,7 @@ export function RechargesPage() {
           onCreated={() => {
             setShowCreate(false)
             setFlash({ kind: 'ok', msg: 'Recarga registrada' })
-            void load()
+            refreshAfterChange()
           }}
         />
       )}
@@ -170,7 +183,7 @@ export function RechargesPage() {
           onRefunded={(msg) => {
             setRefundTarget(null)
             setFlash({ kind: 'ok', msg })
-            void load()
+            refreshAfterChange()
           }}
           onError={(msg) => {
             setRefundTarget(null)
@@ -194,7 +207,7 @@ function RefundRechargeModal({
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submittingRef.current) return
     const r = reason.trim()
@@ -294,7 +307,7 @@ function CreateRechargeModal({ onClose, onCreated }: { onClose: () => void; onCr
     })()
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submittingRef.current) return
     setError(null)

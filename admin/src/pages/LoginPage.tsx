@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type SubmitEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { AlertCircle, Loader2, Eye, EyeOff, Mail } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -22,7 +22,7 @@ export function LoginPage() {
     return <Navigate to="/dashboard" replace />
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submittingRef.current) return
     setError('')

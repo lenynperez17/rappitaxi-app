@@ -1,16 +1,55 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { adminApi, AdminApiError, type AdminUser } from '../../lib/adminApi'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { adminApi, AdminApiError } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 
+/**
+ * Ronda 287: `key` por conductor. Al pasar de un conductor a otro sin salir de
+ * la ruta, React reutilizaba el componente y arrastraba los avisos (flash,
+ * error de acción) del anterior; antes se borraban a mano en un efecto. Con la
+ * clave cada conductor monta su propia instancia limpia.
+ */
 export function DriverVerificationDetailPage() {
   const { driverId } = useParams<{ driverId: string }>()
-  const [user, setUser] = useState<AdminUser | null>(null)
-  const [loading, setLoading] = useState(true)
+  return <DriverVerificationDetail key={driverId} driverId={driverId} />
+}
+
+/**
+ * Tras aprobar o subir documentos el backend puede verificar al conductor por
+ * su cuenta: se refrescan sus documentos y también su ficha y las listas.
+ */
+function refreshDriver(queryClient: QueryClient, driverId: string): Promise<unknown> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.documents.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.users.detail(driverId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.users.lists() }),
+    // Conductores y Verificaciones listan el estado de verificación.
+    queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all }),
+  ])
+}
+
+function DriverVerificationDetail({ driverId }: { driverId: string | undefined }) {
+  const queryClient = useQueryClient()
+  // Ronda 287: cada conductor tiene su propia entrada de caché. Antes un fetch
+  // lento del conductor A podía resolver después de haber navegado a B y
+  // enseñar los datos de A con la URL de B (el fallo que la Ronda 190 corrigió
+  // en UserDetailPage pero no aquí).
+  const userQuery = useQuery({
+    queryKey: queryKeys.users.detail(driverId ?? ''),
+    queryFn: () => adminApi.getUser(driverId!),
+    enabled: !!driverId,
+  })
+  const user = userQuery.data ?? null
+  const loading = userQuery.isPending
   // Distinguimos entre "error del fetch inicial" (que sí bloquea la vista) y
   // "error de acción" (mostrar banner pero mantener el detalle visible).
-  const [error, setError] = useState<string | null>(null)
+  const error = userQuery.isError
+    ? (userQuery.error instanceof AdminApiError ? userQuery.error.message : 'Error')
+    : null
   const [actionError, setActionError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [savingVerified, setSavingVerified] = useState(false)
@@ -43,7 +82,9 @@ export function DriverVerificationDetailPage() {
     setActionError(null)
     try {
       const updated = await adminApi.updateUser(driverId, { isVerified: next })
-      setUser(updated)
+      queryClient.setQueryData(queryKeys.users.detail(driverId), updated)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.users.lists() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all })
       setFlash(
         next
           ? 'Conductor verificado. Ya puede recibir viajes.'
@@ -56,21 +97,6 @@ export function DriverVerificationDetailPage() {
       setSavingVerified(false)
     }
   }
-
-  useEffect(() => {
-    if (!driverId) return
-    // Reset explícito al cambiar driverId — evita mostrar datos del anterior
-    // durante el fetch (stale data flash).
-    setUser(null)
-    setError(null)
-    setFlash(null)
-    void (async () => {
-      setLoading(true)
-      try { setUser(await adminApi.getUser(driverId)) }
-      catch (err) { setError(err instanceof AdminApiError ? err.message : 'Error') }
-      finally { setLoading(false) }
-    })()
-  }, [driverId])
 
   // Auto-clear del banner de éxito tras 4 segundos.
   useEffect(() => {
@@ -196,8 +222,15 @@ function OriginBadge({ createdFrom }: { createdFrom?: string }) {
 function DocumentsSection({ driverId, onFlash, onError }: {
   driverId: string; onFlash: (msg: string) => void; onError: (msg: string) => void
 }) {
-  const [docs, setDocs] = useState<Array<{ id: string; docType: string; fileUrl: string; status: string; rejectionReason: string | null; createdAt: string }>>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const docFilters = { driverId, status: 'all', pageSize: 50 }
+  const docsQuery = useQuery({
+    queryKey: queryKeys.documents.list(docFilters),
+    queryFn: () => adminApi.listDocuments(docFilters),
+  })
+  const docs = docsQuery.data?.documents ?? []
+  const loading = docsQuery.isPending
+  const load = () => refreshDriver(queryClient, driverId)
   const [reviewingId, setReviewingId] = useState<string | null>(null)
   // Ronda 165: ref síncrono cierra ventana de race que setReviewingId(id)
   // (asíncrono via React state) deja abierta entre onClick y re-render.
@@ -242,18 +275,6 @@ function DocumentsSection({ driverId, onFlash, onError }: {
     if (preview) URL.revokeObjectURL(preview.url)
     setPreview(null)
   }
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const r = await adminApi.listDocuments({ driverId, status: 'all', pageSize: 50 })
-      setDocs(r.documents)
-    } catch (e) {
-      onError(e instanceof AdminApiError ? e.message : 'Error cargando documentos')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [driverId])
 
   const review = async (id: string, status: 'approved' | 'rejected') => {
     if (reviewingRef.current) return
@@ -369,6 +390,13 @@ function DocumentsSection({ driverId, onFlash, onError }: {
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Loader2 className="w-4 h-4 animate-spin" /> Cargando documentos…
         </div>
+      ) : docsQuery.isError ? (
+        // Sin esta rama un fallo de red se leía como "aún no ha subido
+        // documentos", que es falso y lleva a pedirle al conductor que repita.
+        <p className="text-sm text-red-600 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          {docsQuery.error instanceof AdminApiError ? docsQuery.error.message : 'Error cargando documentos'}
+        </p>
       ) : docs.length === 0 ? (
         <p className="text-sm text-gray-500">Este conductor aún no ha subido documentos.</p>
       ) : (

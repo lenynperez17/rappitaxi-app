@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Users, Car, Route, CreditCard, TrendingUp, AlertCircle, Loader2, AlertTriangle,
   Siren, Clock, RadioTower, FileWarning, ChevronRight, ShieldCheck,
 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminStats } from '../lib/adminApi'
+import { queryKeys } from '../lib/queryKeys'
 import { formatPEN } from '../utils/currency'
 
 /**
@@ -34,42 +35,24 @@ const MINUTOS_VIAJE_COLGADO = 60
 const REFRESCO_MS = 30_000
 
 export function DashboardPage() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [actualizado, setActualizado] = useState<Date | null>(null)
   // Ronda 283: el subtítulo llevaba desde siempre diciendo "automáticamente
   // actualizado" y no había ninguna actualización automática — se cargaba una
   // vez al entrar y ahí se quedaba. O se cumple o no se dice; se cumple.
-  const montado = useRef(true)
-
-  useEffect(() => {
-    montado.current = true
-
-    const cargar = async () => {
-      try {
-        const s = await adminApi.getStats()
-        if (!montado.current) return
-        setStats(s)
-        setActualizado(new Date())
-        setError(null)
-      } catch (err) {
-        if (!montado.current) return
-        // Si ya había datos en pantalla no se borran por un fallo puntual de
-        // red: es peor quedarse sin nada que ver algo de hace treinta segundos.
-        setError(err instanceof AdminApiError ? err.message : 'Error cargando estadísticas')
-      } finally {
-        if (montado.current) setLoading(false)
-      }
-    }
-
-    void cargar()
-    const t = setInterval(() => void cargar(), REFRESCO_MS)
-    return () => {
-      montado.current = false
-      clearInterval(t)
-    }
-  }, [])
+  // Ronda 287: con `refetchInterval` en vez de setInterval + ref `montado`.
+  // Si ya había datos en pantalla no se borran por un fallo puntual de red
+  // (React Query conserva `data` aunque falle el refresco): es peor quedarse
+  // sin nada que ver algo de hace treinta segundos.
+  const statsQuery = useQuery({
+    queryKey: queryKeys.stats.all,
+    queryFn: () => adminApi.getStats(),
+    refetchInterval: REFRESCO_MS,
+  })
+  const stats: AdminStats | null = statsQuery.data ?? null
+  const loading = statsQuery.isPending
+  const error = statsQuery.isError
+    ? (statsQuery.error instanceof AdminApiError ? statsQuery.error.message : 'Error cargando estadísticas')
+    : null
+  const actualizado = statsQuery.dataUpdatedAt ? new Date(statsQuery.dataUpdatedAt) : null
 
   if (loading) {
     return (

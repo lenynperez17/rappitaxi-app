@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Search, Phone, Mail, Star, Car, Loader2, CheckCircle2, AlertCircle, FileText, Pencil } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminDriver } from '../../lib/adminApi'
-import { Avatar, pickPhotoUrl } from '../../components/Avatar'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { Avatar } from '../../components/Avatar'
+import { pickPhotoUrl } from '../../lib/photoUrl'
 import { DateTime } from '../../components/DateTime'
 
 type StatusFilter = 'all' | 'active' | 'suspended' | 'verified' | 'unverified'
@@ -16,51 +20,31 @@ const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
 ]
 
 export function DriversPage() {
-  const [drivers, setDrivers] = useState<AdminDriver[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
-  const [error, setError] = useState<string | null>(null)
 
-  // Ronda 111: request id incrementable para descartar respuestas caducas.
-  // Antes: cambiar status mientras había un debounce pendiente de search
-  // producía 2 requests que resolvían en orden no determinista → la última
-  // sobrescribia con datos que no matcheaban los filtros visibles.
-  const requestSeq = useRef(0)
-
-  const load = async () => {
-    const seq = ++requestSeq.current
-    setLoading(true)
-    setError(null)
-    try {
-      const resp = await adminApi.listDrivers({
-        status: status !== 'all' ? status : undefined,
-        search: search || undefined,
-        pageSize: 100,
-      })
-      if (seq !== requestSeq.current) return // stale — descartamos
-      setDrivers(resp.drivers)
-      setTotal(resp.total)
-    } catch (err) {
-      if (seq !== requestSeq.current) return
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando conductores')
-      setDrivers([])
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
+  // Ronda 287: una clave por combinación de filtros. Sustituye al `requestSeq`
+  // de la Ronda 111 (respuestas fuera de orden que pisaban los filtros
+  // visibles) y al efecto único de la Ronda 214 (doble fetch al montar):
+  // React Query solo entrega la respuesta de la clave actual y pide una vez.
+  // El estado cambia al instante; el buscador espera 350 ms.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = {
+    status: status !== 'all' ? status : undefined,
+    search: debouncedSearch || undefined,
+    pageSize: 100,
   }
-
-  // Ronda 214: antes había DOS useEffect (uno para status, otro para search
-  // debounced). Al montar el componente ambos disparaban → 2 requests en
-  // cascada al backend por cada apertura de página. requestSeq descartaba la
-  // stale response pero el ancho de banda se desperdiciaba. Ahora un solo
-  // useEffect con debounce corto para search y trigger inmediato para status.
-  useEffect(() => {
-    const t = setTimeout(() => void load(), search ? 350 : 0)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, search])
+  const driversQuery = useQuery({
+    queryKey: queryKeys.drivers.list(filters),
+    queryFn: () => adminApi.listDrivers(filters),
+    placeholderData: keepPreviousData,
+  })
+  const drivers: AdminDriver[] = driversQuery.data?.drivers ?? []
+  const total = driversQuery.data?.total ?? 0
+  const loading = driversQuery.isPending
+  const error = driversQuery.isError
+    ? (driversQuery.error instanceof AdminApiError ? driversQuery.error.message : 'Error cargando conductores')
+    : null
 
   return (
     <div className="space-y-6">

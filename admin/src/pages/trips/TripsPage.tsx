@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, AlertCircle, Route, Search, MapPin, MapPinned, XCircle, CheckCircle2 } from 'lucide-react'
 import { adminApi, AdminApiError, type AdminTrip } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { formatPEN } from '../../utils/currency'
 import { DateTime } from '../../components/DateTime'
 
@@ -32,38 +35,32 @@ const ESTADOS_ABIERTOS = new Set([
 ])
 
 export function TripsPage() {
-  const [trips, setTrips] = useState<AdminTrip[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [status, setStatus] = useState<string>('all')
   const [search, setSearch] = useState('')
-  const [error, setError] = useState<string | null>(null)
   // Ronda 283: qué viaje se está cerrando, para no permitir dos clics.
   const [cerrando, setCerrando] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
 
-  // Ronda 112: request id para descartar respuestas caducas (mismo patrón
-  // que DriversPage Ronda 111). Antes: mount inicial disparaba 2 loads
-  // (status + debounced search) → race con respuestas fuera de orden.
-  const requestSeq = useRef(0)
-
-  const load = async () => {
-    const seq = ++requestSeq.current
-    setLoading(true); setError(null)
-    try {
-      const resp = await adminApi.listTrips({
-        status: status !== 'all' ? status : undefined,
-        search: search || undefined,
-        pageSize: 100,
-      })
-      if (seq !== requestSeq.current) return
-      setTrips(resp.trips); setTotal(resp.total)
-    } catch (err) {
-      if (seq !== requestSeq.current) return
-      setError(err instanceof AdminApiError ? err.message : 'Error cargando viajes')
-      setTrips([])
-    } finally { if (seq === requestSeq.current) setLoading(false) }
+  // Ronda 287: mismo esquema que DriversPage; sustituye al `requestSeq` de la
+  // Ronda 112 y al efecto único de la 214.
+  const debouncedSearch = useDebouncedValue(search, 350)
+  const filters = {
+    status: status !== 'all' ? status : undefined,
+    search: debouncedSearch || undefined,
+    pageSize: 100,
   }
+  const tripsQuery = useQuery({
+    queryKey: queryKeys.trips.list(filters),
+    queryFn: () => adminApi.listTrips(filters),
+    placeholderData: keepPreviousData,
+  })
+  const trips: AdminTrip[] = tripsQuery.data?.trips ?? []
+  const total = tripsQuery.data?.total ?? 0
+  const loading = tripsQuery.isPending
+  const error = tripsQuery.isError
+    ? (tripsQuery.error instanceof AdminApiError ? tripsQuery.error.message : 'Error cargando viajes')
+    : null
 
   /**
    * Cierra un viaje que se quedó a medias.
@@ -85,7 +82,12 @@ export function TripsPage() {
     try {
       await adminApi.cancelTrip(trip.id, 'Cerrado por el administrador desde el panel.')
       setFlash({ kind: 'ok', msg: 'Viaje cerrado.' })
-      await load()
+      // Un viaje cerrado deja de estar en el mapa en vivo y mueve los KPIs.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trips.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.live.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.stats.all }),
+      ])
     } catch (err) {
       setFlash({
         kind: 'err',
@@ -101,13 +103,6 @@ export function TripsPage() {
     const t = setTimeout(() => setFlash(null), 4000)
     return () => clearTimeout(t)
   }, [flash])
-
-  // Ronda 214: un solo useEffect en vez de dos (evita doble fetch en mount).
-  useEffect(() => {
-    const t = setTimeout(() => void load(), search ? 350 : 0)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, search])
 
   return (
     <div className="space-y-6">

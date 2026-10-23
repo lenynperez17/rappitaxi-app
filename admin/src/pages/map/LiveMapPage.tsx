@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   MapPin, Loader2, RefreshCw, User, Car, Circle, Route, Plus, X, Search,
   CheckCircle2, AlertCircle, ChevronUp, Phone, Star, Crosshair,
@@ -10,9 +11,12 @@ import {
 import L, { type Map as LeafletMap } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { adminApi, AdminApiError, type AdminUser, type PlacePrediction } from '../../lib/adminApi'
+import { queryKeys } from '../../lib/queryKeys'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { formatPEN } from '../../utils/currency'
 import { driverIcon, pickupIcon, destinationIcon, MAP_COLORS } from '../../components/map/mapIcons'
-import { MapLayerPanel, useMapLayers } from '../../components/map/MapLayerPanel'
+import { MapLayerPanel } from '../../components/map/MapLayerPanel'
+import { useMapLayers } from '../../components/map/useMapLayers'
 import { VectorBasemap } from '../../components/map/VectorBasemap'
 import { DateTime } from '../../components/DateTime'
 import { FloatingLayer } from '../../components/FloatingLayer'
@@ -130,10 +134,40 @@ function FlyTo({ target }: { target: { lat: number; lng: number; key: string } |
 // ---------------------------------------------------------------------------
 
 export function LiveMapPage() {
-  const [data, setData] = useState<LiveData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  /**
+   * Ronda 287: sondeo con useQuery en vez de un setInterval a mano.
+   *
+   * Se mantiene la auto-parada en 401/403 —si el token murió, seguir pegando
+   * cada 10 s solo llena logs; el guard de auth ya va a redirigir— y se gana
+   * que el sondeo se pausa con la pestaña oculta y se reanuda al volver.
+   */
+  const liveQuery = useQuery({
+    queryKey: queryKeys.live.all,
+    queryFn: () => adminApi.getLive(),
+    refetchInterval: (query) => {
+      const err = query.state.error
+      const sesionMuerta = err instanceof AdminApiError && (err.status === 401 || err.status === 403)
+      return sesionMuerta ? false : REFRESH_MS
+    },
+  })
+  const data: LiveData | null = liveQuery.data ?? null
+  const loading = liveQuery.isPending
+  const error = liveQuery.isError
+    ? (liveQuery.error instanceof Error ? liveQuery.error.message : 'Error cargando datos en vivo')
+    : null
+  const lastRefresh = liveQuery.dataUpdatedAt ? new Date(liveQuery.dataUpdatedAt) : null
+  const queryClient = useQueryClient()
+  const { refetch: refetchLive } = liveQuery
+  const load = useCallback(() => refetchLive(), [refetchLive])
+  /**
+   * Tras crear, cerrar o asignar un viaje: el mapa se refresca ya, y la lista
+   * de Viajes y los KPIs de Inicio quedan marcados para pedirse de nuevo.
+   */
+  const afterTripChange = useCallback(async () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.trips.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.stats.all })
+    await refetchLive()
+  }, [queryClient, refetchLive])
   const [tab, setTab] = useState<'trips' | 'online' | 'offline'>('trips')
   const [creating, setCreating] = useState(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null)
@@ -141,7 +175,6 @@ export function LiveMapPage() {
   const [focus, setFocus] = useState<{ lat: number; lng: number; key: string } | null>(null)
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
   const [layers, toggleLayer] = useMapLayers()
-  const timerRef = useRef<number | null>(null)
   const fitRef = useRef<(() => void) | null>(null)
 
   /**
@@ -156,35 +189,13 @@ export function LiveMapPage() {
    * arregla las dos cosas al mismo tiempo, y además es lo único sostenible:
    * pedir rutas para todos los viajes en cada refresco de 10 s serían decenas
    * de peticiones por minuto al servicio de rutas.
+   *
+   * La petición vive más abajo, en `rutaQuery`.
    */
-  const [ruta, setRuta] = useState<{
-    tripId: string
-    haciaRecojo: LatLngTuple[] | null
-    haciaDestino: LatLngTuple[] | null
-    resumen: string | null
-    aproximada: boolean
-  } | null>(null)
-  const rutaSeq = useRef(0)
 
   /** Ronda 283: viaje sobre el que se está actuando, y el que va a asignarse. */
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [asignando, setAsignando] = useState<LiveData['activeTrips'][number] | null>(null)
-
-  const load = useCallback(async (): Promise<{ auth401?: boolean }> => {
-    try {
-      setError(null)
-      const resp = await adminApi.getLive()
-      setData(resp)
-      setLastRefresh(new Date())
-      return {}
-    } catch (err) {
-      const isAuth = err instanceof AdminApiError && (err.status === 401 || err.status === 403)
-      setError(err instanceof Error ? err.message : 'Error cargando datos en vivo')
-      return { auth401: isAuth }
-    } finally {
-      setLoading(false)
-    }
-  }, [])
 
   /**
    * Ronda 283 — cerrar un viaje desde el mapa.
@@ -203,7 +214,7 @@ export function LiveMapPage() {
       await adminApi.cancelTrip(t.id, 'Cerrado por el administrador desde el mapa.')
       setFlash({ kind: 'ok', msg: 'Viaje cerrado.' })
       setSelectedTripId(null)
-      await load()
+      await afterTripChange()
     } catch (err) {
       setFlash({
         kind: 'err',
@@ -212,7 +223,7 @@ export function LiveMapPage() {
     } finally {
       setOcupado(null)
     }
-  }, [load])
+  }, [afterTripChange])
 
   /** Asignar el conductor elegido. La validación de fondo la hace el servidor. */
   const asignarConductor = useCallback(async (tripId: string, driverId: string) => {
@@ -221,7 +232,7 @@ export function LiveMapPage() {
       await adminApi.assignTrip(tripId, driverId)
       setFlash({ kind: 'ok', msg: 'Conductor asignado. Le llegó el aviso a su teléfono.' })
       setAsignando(null)
-      await load()
+      await afterTripChange()
     } catch (err) {
       setFlash({
         kind: 'err',
@@ -230,21 +241,7 @@ export function LiveMapPage() {
     } finally {
       setOcupado(null)
     }
-  }, [load])
-
-  useEffect(() => {
-    void load()
-    // Sondeo periódico con auto-parada en 401/403 — si el token murió, seguir
-    // pegando cada 10s solo llena logs; el guard de auth ya va a redirigir.
-    timerRef.current = window.setInterval(async () => {
-      const res = await load()
-      if (res.auth401 && timerRef.current) {
-        window.clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-    }, REFRESH_MS)
-    return () => { if (timerRef.current) window.clearInterval(timerRef.current) }
-  }, [load])
+  }, [afterTripChange])
 
   useEffect(() => {
     if (!flash) return
@@ -297,14 +294,22 @@ export function LiveMapPage() {
       ].join('|')
     : null
 
-  useEffect(() => {
-    if (!selectedTrip || !rutaKey) { setRuta(null); return }
-
-    const seq = ++rutaSeq.current
-    const t = selectedTrip
-    let cancelado = false
-
-    void (async () => {
+  /**
+   * Ronda 287: la ruta va por useQuery con `rutaKey` como clave. Antes un
+   * contador `rutaSeq` y un flag `cancelado` descartaban respuestas viejas; la
+   * clave ya lo garantiza. `staleTime: Infinity` porque la ruta entre unas
+   * mismas coordenadas no cambia: volver a un viaje ya consultado no gasta
+   * otra llamada al servicio de rutas.
+   */
+  const rutaQuery = useQuery({
+    queryKey: queryKeys.directions.route(rutaKey ?? ''),
+    enabled: !!selectedTrip && !!rutaKey,
+    staleTime: Infinity,
+    // Mientras llega la ruta tras moverse el conductor se sigue viendo la
+    // anterior; el render solo la pinta si es del viaje seleccionado.
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const t = selectedTrip!
       const pedir = async (
         a: { lat: number; lng: number } | null,
         b: { lat: number; lng: number } | null,
@@ -338,10 +343,7 @@ export function LiveMapPage() {
         pedir(recojo, destino),
       ])
 
-      // Descarta la respuesta vieja que llega después de otra selección.
-      if (cancelado || seq !== rutaSeq.current) return
-
-      setRuta({
+      return {
         tripId: t.id,
         haciaRecojo: aRecojo.puntos,
         haciaDestino: aDestino.puntos,
@@ -349,12 +351,10 @@ export function LiveMapPage() {
         // Si el viaje tiene destino y no se pudo trazar, lo que se ve es una
         // recta: hay que decirlo en vez de dejar que parezca un recorrido.
         aproximada: (!!destino && !aDestino.puntos) || (!!conductor && !aRecojo.puntos),
-      })
-    })()
-
-    return () => { cancelado = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rutaKey])
+      }
+    },
+  })
+  const ruta = selectedTrip ? (rutaQuery.data ?? null) : null
 
   // Puntos para el encuadre inicial: solo de las capas encendidas, para no
   // alejar el mapa por culpa de algo que ni siquiera se está viendo.
@@ -446,7 +446,7 @@ export function LiveMapPage() {
               aria-label="Refrescar"
               className="inline-flex items-center gap-1.5 px-2.5 py-2 bg-white/95 backdrop-blur border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-white shadow-md"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${liveQuery.isFetching ? 'animate-spin' : ''}`} />
               <span className="hidden xl:inline">Refrescar</span>
             </button>
             <button
@@ -676,7 +676,7 @@ export function LiveMapPage() {
               msg: `Viaje creado${passengerCreated ? ' y cliente registrado' : ''}. `
                 + `${fanout.notified} conductor(es) notificado(s), ${fanout.fcmSent} push enviado(s).`,
             })
-            void load()
+            void afterTripChange()
           }}
           onError={(msg) => setFlash({ kind: 'err', msg })}
         />
@@ -1165,9 +1165,13 @@ function CreateTripOverlay({
   const [driverId, setDriverId] = useState<string>('')
   const [vehicleType, setVehicleType] = useState('car')
   const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [fare, setFare] = useState('')
-  const [fareEditedManually, setFareEditedManually] = useState(false)
+  // `null` mientras el admin no la toque: entonces manda la tarifa automática.
+  const [manualFare, setManualFare] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Ronda 287: ref síncrono contra doble clic. Crear un viaje notifica a los
+  // conductores al instante; dos clics rápidos antes de que `saving` desactive
+  // el botón eran dos viajes y dos rondas de avisos.
+  const savingRef = useRef(false)
 
   // Cálculo de tarifa auto según distancia (Haversine)
   const distanceKm = useMemo(() => {
@@ -1175,21 +1179,21 @@ function CreateTripOverlay({
     return haversineKm(pickup.lat, pickup.lng, destination.lat, destination.lng)
   }, [pickup, destination])
 
-  // Ronda 115: recalcular fare cuando cambia el destino, salvo que el admin
-  // haya editado manualmente. Antes: la guarda `!fare` bloqueaba el recálculo
-  // si el admin cambiaba destino después del primer cómputo → se cobraba
-  // tarifa vieja para un recorrido nuevo.
-  useEffect(() => {
-    if (distanceKm != null && !fareEditedManually) {
-      // Tarifa base S/5 + S/2 por km. Ajustable manualmente.
-      setFare((5 + distanceKm * 2).toFixed(2))
-    }
-  }, [distanceKm, fareEditedManually])
+  // Ronda 115: la tarifa sigue al destino salvo que el admin la haya editado a
+  // mano. Antes: la guarda `!fare` bloqueaba el recálculo si el admin cambiaba
+  // destino después del primer cómputo → se cobraba tarifa vieja para un
+  // recorrido nuevo. Ronda 287: se deriva en el render en vez de copiarla a un
+  // estado desde un efecto, así que no puede quedarse desfasada ni un render.
+  // Tarifa base S/5 + S/2 por km. Ajustable manualmente.
+  const autoFare = distanceKm != null ? (5 + distanceKm * 2).toFixed(2) : ''
+  const fare = manualFare ?? autoFare
 
   const canSubmit = passenger && pickup && destination && step === 'confirm'
 
   const submit = async () => {
     if (!passenger || !pickup || !destination) return
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     try {
       const resp = await adminApi.createTrip({
@@ -1211,6 +1215,7 @@ function CreateTripOverlay({
     } catch (err) {
       onError(err instanceof AdminApiError ? err.message : 'Error creando viaje')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -1259,7 +1264,7 @@ function CreateTripOverlay({
               driverId={driverId} onDriverChange={setDriverId}
               vehicleType={vehicleType} onVehicleChange={setVehicleType}
               paymentMethod={paymentMethod} onPaymentChange={setPaymentMethod}
-              fare={fare} onFareChange={(v) => { setFare(v); setFareEditedManually(true) }}
+              fare={fare} onFareChange={setManualFare}
             />
           )}
         </div>
@@ -1335,36 +1340,27 @@ function PassengerSearch({ selected, onPick }: {
     selected?.kind === 'guest' ? 'guest' : 'registered',
   )
   const [q, setQ] = useState('')
-  const [results, setResults] = useState<AdminUser[]>([])
-  const [loading, setLoading] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
   const selectedId = selected?.kind === 'registered' ? selected.user.id : null
 
-  useEffect(() => {
-    if (q.trim().length < 2) { setResults([]); setSearchError(null); return }
-    const t = setTimeout(async () => {
-      setLoading(true)
-      setSearchError(null)
-      try {
-        // Traer TODOS los usuarios activos (pasajeros, duales, conductores,
-        // admins) — el admin decide. Excluimos solo eliminados/suspendidos.
-        const resp = await adminApi.listUsers({
-          search: q.trim(),
-          pageSize: 25,
-          status: 'active',
-        })
-        setResults(resp.users)
-      } catch (e) {
-        setResults([])
-        setSearchError(
-          e instanceof AdminApiError
-            ? `Error al buscar: ${e.message || e.code}`
-            : 'Error al buscar usuarios (revisa conexión).',
-        )
-      } finally { setLoading(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [q])
+  // Ronda 287: búsqueda por useQuery; la clave descarta las respuestas de un
+  // texto que ya no es el que hay en la caja.
+  // Traer TODOS los usuarios activos (pasajeros, duales, conductores,
+  // admins) — el admin decide. Excluimos solo eliminados/suspendidos.
+  const debouncedQ = useDebouncedValue(q.trim(), 300)
+  const searchFilters = { search: debouncedQ, pageSize: 25, status: 'active' }
+  const usersSearch = useQuery({
+    queryKey: queryKeys.users.list(searchFilters),
+    queryFn: () => adminApi.listUsers(searchFilters),
+    enabled: debouncedQ.length >= 2,
+  })
+  const searching = q.trim().length >= 2
+  const results: AdminUser[] = searching ? (usersSearch.data?.users ?? []) : []
+  const loading = searching && usersSearch.isFetching
+  const searchError = searching && usersSearch.isError
+    ? (usersSearch.error instanceof AdminApiError
+        ? `Error al buscar: ${usersSearch.error.message || usersSearch.error.code}`
+        : 'Error al buscar usuarios (revisa conexión).')
+    : null
 
   return (
     <div className="p-4 space-y-3">
@@ -1570,18 +1566,49 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
   // Ronda 281: buscar la dirección escribiéndola, además de tocando el mapa.
   // Quien atiende el teléfono oye «Jockey Plaza»; buscar eso a ojo en el mapa
   // es al revés de lo cómodo.
+  /**
+   * Ronda 287: lo que muestra la caja (`q`) y lo que se busca (`search`) van
+   * por separado. `search` solo cambia cuando la persona teclea, y congela el
+   * centro del mapa de ese momento.
+   *
+   * Eso sustituye a dos parches de la Ronda 283: el ref
+   * `textoPuestoPorNosotros` —para que escribir en la caja la sugerencia
+   * elegida no relanzara la búsqueda y reabriera la lista— y sacar `center` de
+   * las dependencias —para que volar el mapa no la relanzara—. Elegir una
+   * sugerencia ahora cambia la caja pero no la búsqueda, y mover el mapa no
+   * toca `search`. La clave de useQuery descarta además las respuestas viejas,
+   * que antes controlaba un `requestSeq`.
+   */
   const [q, setQ] = useState('')
-  const [results, setResults] = useState<PlacePrediction[]>([])
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
+  const [search, setSearch] = useState<{ text: string; center: { lat: number; lng: number } } | null>(null)
+  // Error al ubicar una sugerencia elegida; el de la búsqueda sale de la query.
+  const [pickError, setPickError] = useState<string | null>(null)
   // El centro del mapa sesga las sugerencias hacia lo que se está mirando.
   const [center, setCenter] = useState<{ lat: number; lng: number }>({
     lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1],
   })
-  // Descarta la respuesta vieja que llega después de la nueva. Mismo recurso
-  // que usa `VerificationsPage` para su buscador.
-  const requestSeq = useRef(0)
   const mapRef = useRef<LeafletMap | null>(null)
+
+  const debouncedSearch = useDebouncedValue(search, 300)
+  // El endpoint devuelve lista vacía con menos de 2 caracteres; no gastamos
+  // la petición.
+  const active = search !== null && search.text.length >= 2
+  const placesQuery = useQuery({
+    queryKey: queryKeys.places.search(debouncedSearch?.text ?? '', debouncedSearch?.center ?? null),
+    queryFn: () => adminApi.searchPlaces(debouncedSearch!.text, debouncedSearch!.center),
+    enabled: active && !!debouncedSearch && debouncedSearch.text.length >= 2,
+  })
+  const results: PlacePrediction[] = active ? (placesQuery.data?.predictions ?? []) : []
+  const searching = active && placesQuery.isFetching
+  // El texto tecleado ya llegó a la búsqueda: solo entonces "sin resultados"
+  // significa algo, y no durante los 300 ms de espera.
+  const settled = active && debouncedSearch?.text === search?.text
+  const searchError = pickError ?? (active && placesQuery.isError
+    ? (placesQuery.error instanceof AdminApiError
+        ? `Error al buscar: ${placesQuery.error.message || placesQuery.error.code}`
+        : 'Error al buscar direcciones (revisa conexión).')
+    : null)
+  const closeResults = () => setSearch(null)
   /**
    * Ronda 283: el campo de búsqueda, para colgar de él la lista de resultados
    * desde fuera del panel lateral. Ver `FloatingLayer`.
@@ -1594,55 +1621,6 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
   const buscadorRef = useCallback((el: HTMLDivElement | null) => setBuscadorEl(el), [])
 
   /**
-   * Ronda 283: marca que el texto lo acaba de poner el propio programa al
-   * elegir una sugerencia, no la persona escribiendo.
-   *
-   * Sin esto, elegir una dirección no cerraba la lista: `handlePickPrediction`
-   * la vacía, pero acto seguido escribe la dirección elegida en el campo, y
-   * ese cambio vuelve a disparar la búsqueda, que la rellena otra vez con las
-   * mismas sugerencias. Quedaba tapando el mapa después de haber elegido.
-   *
-   * Es un ref y no un estado a propósito: cambiarlo no debe repintar nada, y
-   * el efecto tiene que verlo ya puesto en la misma vuelta.
-   */
-  const textoPuestoPorNosotros = useRef(false)
-
-  useEffect(() => {
-    // Elegir una sugerencia no es escribir: no se vuelve a buscar.
-    if (textoPuestoPorNosotros.current) {
-      textoPuestoPorNosotros.current = false
-      return
-    }
-    // El endpoint devuelve lista vacía con menos de 2 caracteres; no gastamos
-    // la petición.
-    if (q.trim().length < 2) { setResults([]); setSearchError(null); return }
-    const t = setTimeout(async () => {
-      const seq = ++requestSeq.current
-      setSearching(true)
-      setSearchError(null)
-      try {
-        const resp = await adminApi.searchPlaces(q.trim(), center)
-        if (seq !== requestSeq.current) return
-        setResults(resp.predictions ?? [])
-      } catch (e) {
-        if (seq !== requestSeq.current) return
-        setResults([])
-        setSearchError(
-          e instanceof AdminApiError
-            ? `Error al buscar: ${e.message || e.code}`
-            : 'Error al buscar direcciones (revisa conexión).',
-        )
-      } finally {
-        if (seq === requestSeq.current) setSearching(false)
-      }
-    }, 300)
-    return () => clearTimeout(t)
-    // `center` a propósito fuera: cambiarlo al volar el mapa no debe relanzar
-    // la búsqueda que acaba de provocar ese vuelo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q])
-
-  /**
    * Ronda 281: al pasar de RECOJO a DESTINO hay que vaciar la selección.
    *
    * Este componente es el mismo en los dos pasos —solo cambia la prop `step`—,
@@ -1652,14 +1630,24 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
    * mandar a alguien al sitio del que lo estabas recogiendo. El buscador nuevo
    * lo empeoraba, porque además arrastraba el texto escrito.
    *
-   * De paso, el mapa se acerca al recojo al entrar en el destino: casi siempre
-   * el viaje empieza cerca de ahí.
+   * Ronda 287: el vaciado se hace durante el render al detectar el cambio de
+   * paso (el patrón que recomienda React para "reiniciar estado cuando cambia
+   * una prop"), no en un efecto, que pintaba primero el estado viejo. No se usa
+   * `key={step}` porque remontaría el mapa de Leaflet entero.
    */
-  useEffect(() => {
+  const [prevStep, setPrevStep] = useState(step)
+  if (step !== prevStep) {
+    setPrevStep(step)
     setTemp(null)
     setQ('')
-    setResults([])
-    setSearchError(null)
+    setSearch(null)
+    setPickError(null)
+  }
+
+  // De paso, el mapa se acerca al recojo al entrar en el destino: casi siempre
+  // el viaje empieza cerca de ahí. Esto sí es un efecto: mueve el mapa, que es
+  // un sistema externo a React.
+  useEffect(() => {
     if (step === 'destination' && pickup) {
       mapRef.current?.flyTo([pickup.lat, pickup.lng], 14)
     }
@@ -1687,17 +1675,12 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
    * el texto se escribía y no pasaba nada más.
    */
   const handlePickPrediction = async (p: PlacePrediction) => {
-    setResults([])
-    // Antes de escribir en el campo: si no, el efecto de búsqueda lo tomaría
-    // por tecleo y volvería a abrir la lista que se acaba de cerrar.
-    //
-    // Solo se marca si el texto cambia de verdad: con el mismo valor React no
-    // repinta, el efecto no llega a correr y la marca se quedaría puesta,
-    // comiéndose la siguiente búsqueda que sí escribiera la persona.
-    if (p.description !== q) textoPuestoPorNosotros.current = true
+    // Se cierra la lista y se escribe la elegida en la caja; como `search` no
+    // cambia con esto, no hay búsqueda nueva que la vuelva a abrir.
+    closeResults()
     setQ(p.description)
     setBusy(true)
-    setSearchError(null)
+    setPickError(null)
     try {
       let lat = p.lat
       let lng = p.lng
@@ -1709,13 +1692,13 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
       if (lat == null || lng == null) {
         // Sin coordenada no hay punto. Se dice, en vez de dejar el texto
         // puesto aparentando que se eligió algo.
-        setSearchError('No se pudo ubicar esa dirección. Elige otra o tócala en el mapa.')
+        setPickError('No se pudo ubicar esa dirección. Elige otra o tócala en el mapa.')
         return
       }
       setTemp({ lat, lng, address: p.description })
       mapRef.current?.flyTo([lat, lng], 16)
     } catch (e) {
-      setSearchError(
+      setPickError(
         e instanceof AdminApiError
           ? `No se pudo ubicar: ${e.message || e.code}`
           : 'No se pudo ubicar esa dirección.',
@@ -1737,7 +1720,11 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value)
+            setSearch({ text: e.target.value.trim(), center })
+            setPickError(null)
+          }}
           type="text"
           placeholder={step === 'pickup' ? 'Ej: Jockey Plaza, Surco' : '¿A dónde va?'}
           className="w-full pl-10 pr-9 py-2 border border-gray-200 rounded-lg text-sm"
@@ -1750,7 +1737,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
               <button
                 type="button"
                 aria-label="Limpiar búsqueda"
-                onClick={() => { setQ(''); setResults([]); setSearchError(null) }}
+                onClick={() => { setQ(''); closeResults(); setPickError(null) }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="w-4 h-4" />
@@ -1766,7 +1753,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
           <FloatingLayer
             anchor={buscadorEl}
             matchWidth
-            onClose={() => setResults([])}
+            onClose={closeResults}
           >
           <ul className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
             {results.map((p, i) => (
@@ -1790,7 +1777,7 @@ function MapPicker({ step, pickup, destination, onlineDrivers, onPick }: {
       {searchError && (
         <p className="text-xs text-red-600">{searchError}</p>
       )}
-      {!searching && !searchError && q.trim().length >= 2 && results.length === 0 && !temp && (
+      {settled && !searching && !searchError && results.length === 0 && !temp && (
         <p className="text-xs text-gray-500">Sin resultados. Prueba con otra escritura o tócalo en el mapa.</p>
       )}
 
