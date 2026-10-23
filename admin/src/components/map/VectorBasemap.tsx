@@ -20,7 +20,7 @@ import 'mapbox-gl-leaflet'
  * versiones), nunca escrito en el código. Aun así acaba en el paquete que
  * descarga el navegador: los tokens `pk.` de Mapbox son públicos por diseño y
  * la protección real es restringirlos por dominio desde la cuenta de Mapbox.
- * Conviene tener el de Rapi Team limitado a `panel-rapi-team.nyneln8n.com`.
+ * Conviene tener el de Rapi Team limitado a `rapi-team.nynelmkt.cloud`.
  */
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined

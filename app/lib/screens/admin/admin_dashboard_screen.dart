@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// Pantalla admin legacy dentro de la app móvil.
 ///
 /// El panel administrativo se movió a la web:
-/// https://panel-rapi-team.nyneln8n.com
+/// https://rapi-team.nynelmkt.cloud
 ///
 /// Este widget se conserva sólo para no romper rutas antiguas; muestra un aviso
 /// y ofrece abrir el panel web en el navegador.
@@ -22,7 +22,7 @@ class _AdminMovedScaffold extends StatelessWidget {
 
   final String title;
 
-  static const _panelUrl = 'https://panel-rapi-team.nyneln8n.com';
+  static const _panelUrl = 'https://rapi-team.nynelmkt.cloud';
 
   Future<void> _openPanel(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -58,7 +58,7 @@ class _AdminMovedScaffold extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'https://panel-rapi-team.nyneln8n.com',
+                'https://rapi-team.nynelmkt.cloud',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.blueGrey),
               ),

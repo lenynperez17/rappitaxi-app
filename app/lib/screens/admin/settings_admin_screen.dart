@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Pantalla legacy: la configuracion administrativa se movio al panel web.
-/// https://panel-rapi-team.nyneln8n.com
+/// https://rapi-team.nynelmkt.cloud
 class SettingsAdminScreen extends StatelessWidget {
   const SettingsAdminScreen({super.key});
 
-  static const _panelUrl = 'https://panel-rapi-team.nyneln8n.com';
+  static const _panelUrl = 'https://rapi-team.nynelmkt.cloud';
 
   Future<void> _openPanel(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -42,7 +42,7 @@ class SettingsAdminScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'https://panel-rapi-team.nyneln8n.com',
+                'https://rapi-team.nynelmkt.cloud',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.blueGrey),
               ),

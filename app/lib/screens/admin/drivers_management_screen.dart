@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Pantalla legacy: la gestion de conductores se movio al panel web.
-/// https://panel-rapi-team.nyneln8n.com
+/// https://rapi-team.nynelmkt.cloud
 class DriversManagementScreen extends StatelessWidget {
   const DriversManagementScreen({super.key});
 
-  static const _panelUrl = 'https://panel-rapi-team.nyneln8n.com';
+  static const _panelUrl = 'https://rapi-team.nynelmkt.cloud';
 
   Future<void> _openPanel(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -29,11 +29,7 @@ class DriversManagementScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.local_taxi,
-                size: 96,
-                color: Color(0xFFFF6B00),
-              ),
+              const Icon(Icons.local_taxi, size: 96, color: Color(0xFFFF6B00)),
               const SizedBox(height: 24),
               const Text(
                 'Panel admin movido a la web',
@@ -42,7 +38,7 @@ class DriversManagementScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'https://panel-rapi-team.nyneln8n.com',
+                'https://rapi-team.nynelmkt.cloud',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.blueGrey),
               ),

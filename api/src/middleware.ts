@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 /**
  * Middleware Next.js — inyecta headers CORS.
- * Permite orígenes del admin panel (localhost dev + panel-rapi-team.nyneln8n.com).
+ * Permite orígenes del admin panel (localhost dev + rapi-team.nynelmkt.cloud).
+ * El dominio anterior del panel se retiró en oct-2026.
  */
 const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:4173',
-  'https://panel-rapi-team.nynelmkt.com',
-  'https://panel-rapi-team.nyneln8n.com',
+  'https://rapi-team.nynelmkt.cloud',
   'https://admin.rapiteam.com',
 ])
 
