@@ -189,7 +189,7 @@
 ## 📁 Estructura del Proyecto
 
 ```
-AppOasisTaxi/
+App-Rapi-Team/
 ├── app/
 │   ├── lib/
 │   │   ├── main.dart                    # Punto de entrada de la aplicación
@@ -247,8 +247,7 @@ flutter run
 - **Contraseña**: 123456
 
 #### Administrador
-- **Email**: admin@oasistaxiadmin.com
-- **Contraseña**: admin123
+- Las credenciales del panel no se publican en el repositorio.
 
 ## 📸 Capturas de Pantalla
 

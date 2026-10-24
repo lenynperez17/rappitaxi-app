@@ -58,7 +58,7 @@ App-Rapi-Team/
 > **Ronda 275 — lo que se eliminó y por qué.**
 > `src/` era el backend Express anterior a la migración: no estaba desplegado
 > (el VPS corre Next.js) y nadie lo importaba. `scripts/` y `terraform/` venían
-> copiados del proyecto Oasis Taxi y nunca se aplicaron aquí. `functions/`,
+> copiados de otro proyecto y nunca se aplicaron aquí. `functions/`,
 > `firebase.json`, `.firebaserc`, `firestore.rules` y `storage.rules` eran el
 > stack de Firebase de antes de la migración: nada los llamaba. `.github/workflows/`
 > desplegaba a Cloud Functions y a Firebase Hosting; su única ejecución, en

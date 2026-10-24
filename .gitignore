@@ -198,7 +198,6 @@ secrets/
 *.7z
 
 # Custom
-.oasis-taxi-local/
 local-data/
 test-reports/
 # Fastlane session cookie (sensitive)
